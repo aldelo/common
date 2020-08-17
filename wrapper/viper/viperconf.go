@@ -139,6 +139,15 @@ func (v *ViperConf) Default(key string, value interface{}) *ViperConf {
 }
 
 // Unmarshal serializes config content into output struct, optionally serializes a portion of config identified by key into a struct
+//
+// struct tag use `mapstructure:""`
+// if struct tag refers to sub element of yaml, define struct to contain the sub elements
+//  	for example:
+//			parentkey:
+//				childkey: abc
+//				childkey_2: xyz
+//		type Child struct { ChildKey string `mapstructure:"childkey"`  ChildKey2 string `mapstructure:"childkey_2"` }
+//		type Parent struct { ChildData Child `mapstructure:"parentkey"`}
 func (v *ViperConf) Unmarshal(outputStructPtr interface{}, key ...string) error {
 	if v.viperClient == nil {
 		return errors.New("Unmarshal Config To Struct Failed: " + "Config Object Needs Initialized")

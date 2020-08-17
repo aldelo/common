@@ -51,6 +51,27 @@ func GetLocalIP() string {
 	}
 }
 
+// SplitString will split the source string using delimiter, and return the element indicated by index,
+// if nothing is found, blank is returned,
+// index = -1 returns last index
+func SplitString(source string, delimiter string, index int) string {
+	ar := strings.Split(source, delimiter)
+
+	if len(ar) > 0 {
+		if index <= -1 {
+			return ar[len(ar)-1]
+		} else {
+			if len(ar) > index {
+				return ar[index]
+			} else {
+				return ""
+			}
+		}
+	}
+
+	return ""
+}
+
 // LenTrim returns length of space trimmed string s
 func LenTrim(s string) int {
 	return len(strings.TrimSpace(s))

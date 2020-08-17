@@ -45,7 +45,9 @@ type ViperConf struct {
 	viperClient *viper.Viper
 }
 
-func (v *ViperConf) Init() error {
+// Init will initialize config and readInConfig
+// if config file does not exist, false is returned
+func (v *ViperConf) Init() (bool, error) {
 	// clean up prior client object
 	if v.viperClient != nil {
 		v.viperClient = nil
@@ -53,7 +55,7 @@ func (v *ViperConf) Init() error {
 
 	// validate
 	if util.LenTrim(v.ConfigName) <= 0 && util.LenTrim(v.SpecificConfigFileFullPath) <= 0 {
-		return errors.New("Init Config Failed: " + "Either Config Name or Config Full Path is Required")
+		return false, errors.New("Init Config Failed: " + "Either Config Name or Config Full Path is Required")
 	}
 
 	// create new viper client object
@@ -99,15 +101,15 @@ func (v *ViperConf) Init() error {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			// config file not found, ignore error
 			// v.viperClient.WatchConfig()
-			return nil
+			return false, nil
 		} else {
 			// config file found, but other error occurred
-			return errors.New("Init Config Failed: (ReadInConfig Action) " + err.Error())
+			return false, errors.New("Init Config Failed: (ReadInConfig Action) " + err.Error())
 		}
 	} else {
 		// read success
 		v.viperClient.WatchConfig()
-		return nil
+		return true, nil
 	}
 }
 

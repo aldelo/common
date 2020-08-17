@@ -48,18 +48,15 @@ type ViperConf struct {
 // Init will initialize config and readInConfig
 // if config file does not exist, false is returned
 func (v *ViperConf) Init() (bool, error) {
-	// clean up prior client object
-	if v.viperClient != nil {
-		v.viperClient = nil
-	}
-
 	// validate
 	if util.LenTrim(v.ConfigName) <= 0 && util.LenTrim(v.SpecificConfigFileFullPath) <= 0 {
 		return false, errors.New("Init Config Failed: " + "Either Config Name or Config Full Path is Required")
 	}
 
-	// create new viper client object
-	v.viperClient = viper.New()
+	// create new viper client object if needed
+	if v.viperClient == nil {
+		v.viperClient = viper.New()
+	}
 
 	// set viper properties
 	if util.LenTrim(v.SpecificConfigFileFullPath) <= 0 {
@@ -75,7 +72,7 @@ func (v *ViperConf) Init() (bool, error) {
 			}
 		}
 
-		if util.LenTrim(v.CustomConfigPath) > 0 {
+		if util.LenTrim(v.CustomConfigPath) > 0 && v.CustomConfigPath != "." {
 			v.viperClient.AddConfigPath(v.CustomConfigPath)
 		}
 
@@ -100,7 +97,6 @@ func (v *ViperConf) Init() (bool, error) {
 	if err := v.viperClient.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			// config file not found, ignore error
-			// v.viperClient.WatchConfig()
 			return false, nil
 		} else {
 			// config file found, but other error occurred
@@ -110,6 +106,13 @@ func (v *ViperConf) Init() (bool, error) {
 		// read success
 		v.viperClient.WatchConfig()
 		return true, nil
+	}
+}
+
+// if config file does not exist, this call will panic
+func (v *ViperConf) WatchConfig() {
+	if v.viperClient != nil {
+		v.viperClient.WatchConfig()
 	}
 }
 
@@ -124,7 +127,11 @@ func (v *ViperConf) ConfigFileUsed() string {
 
 // Default will set default key value pairs, allows method chaining
 func (v *ViperConf) Default(key string, value interface{}) *ViperConf {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
+	if v.viperClient == nil {
+		v.viperClient = viper.New()
+	}
+
+	if util.LenTrim(key) > 0 {
 		v.viperClient.SetDefault(key, value)
 	}
 

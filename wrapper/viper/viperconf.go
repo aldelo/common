@@ -98,7 +98,7 @@ func (v *ViperConf) Init() error {
 	if err := v.viperClient.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			// config file not found, ignore error
-			v.viperClient.WatchConfig()
+			// v.viperClient.WatchConfig()
 			return nil
 		} else {
 			// config file found, but other error occurred

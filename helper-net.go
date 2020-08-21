@@ -18,12 +18,7 @@ package helper
 
 import (
 	"fmt"
-	"github.com/google/uuid"
 	"net"
-	"os"
-	"strconv"
-	"strings"
-	"time"
 )
 
 // GetNetListener triggers the specified port to listen via tcp
@@ -76,78 +71,5 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		}
 
 		return ipList
-	}
-}
-
-// SplitString will split the source string using delimiter, and return the element indicated by index,
-// if nothing is found, blank is returned,
-// index = -1 returns last index
-func SplitString(source string, delimiter string, index int) string {
-	ar := strings.Split(source, delimiter)
-
-	if len(ar) > 0 {
-		if index <= -1 {
-			return ar[len(ar)-1]
-		} else {
-			if len(ar) > index {
-				return ar[index]
-			} else {
-				return ""
-			}
-		}
-	}
-
-	return ""
-}
-
-// LenTrim returns length of space trimmed string s
-func LenTrim(s string) int {
-	return len(strings.TrimSpace(s))
-}
-
-// IntPtr casts int to int pointer
-func IntPtr(i int) *int {
-	return &i
-}
-
-// DurationPtr casts Duration to Duration pointer
-func DurationPtr(d time.Duration) *time.Duration {
-	return &d
-}
-
-// StrToUint converts from string to uint
-func StrToUint(s string) uint {
-	if v, e := strconv.ParseUint(s, 10, 32); e != nil {
-		return 0
-	} else {
-		return uint(v)
-	}
-}
-
-// GenerateUUIDv4 will generate a UUID Version 4 (Random) to represent a globally unique identifier (extremely rare chance of collision)
-func GenerateUUIDv4() (string, error) {
-	id, err := uuid.NewRandom()
-
-	if err != nil {
-		// error
-		return "", err
-	} else {
-		// has id
-		return id.String(), nil
-	}
-}
-
-// NewUUID will generate a UUID Version 4 (Random) and ignore error if any
-func NewUUID() string {
-	id, _ := GenerateUUIDv4()
-	return id
-}
-
-// FileExists checks if input file in path exists
-func FileExists(path string) bool {
-	if _, err := os.Stat(path); err == nil {
-		return true
-	} else {
-		return false
 	}
 }

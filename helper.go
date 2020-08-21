@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -48,6 +49,33 @@ func GetLocalIP() string {
 		}
 
 		return ""
+	}
+}
+
+// DnsLookupIps returns list of IPs for the given host
+// if host is private on aws route 53, then lookup ip will work only when within given aws vpc that host was registered with
+func DnsLookupIps(host string) (ipList []net.IP) {
+	if ips, err := net.LookupIP(host); err != nil {
+		return []net.IP{}
+	} else {
+		for _, ip := range ips {
+			ipList = append(ipList, ip)
+		}
+		return ipList
+	}
+}
+
+// DnsLookupSrvs returns list of IP and port addresses based on host
+// if host is private on aws route 53, then lookup ip will work only when within given aws vpc that host was registered with
+func DnsLookupSrvs(host string) (ipList []string) {
+	if _, addrs, err := net.LookupSRV("", "", host); err != nil {
+		return []string{}
+	} else {
+		for _, v := range addrs {
+			ipList = append(ipList, fmt.Sprintf("%s:%d", v.Target, v.Port))
+		}
+
+		return ipList
 	}
 }
 
@@ -85,6 +113,15 @@ func IntPtr(i int) *int {
 // DurationPtr casts Duration to Duration pointer
 func DurationPtr(d time.Duration) *time.Duration {
 	return &d
+}
+
+// StrToUint converts from string to uint
+func StrToUint(s string) uint {
+	if v, e := strconv.ParseUint(s, 10, 32); e != nil {
+		return 0
+	} else {
+		return uint(v)
+	}
 }
 
 // GenerateUUIDv4 will generate a UUID Version 4 (Random) to represent a globally unique identifier (extremely rare chance of collision)

@@ -1,5 +1,7 @@
 package awsregion
 
+import "strings"
+
 /*
  * Copyright 2020 Aldelo, LP
  *
@@ -34,6 +36,29 @@ const (
 	AWS_ap_northeast_1_tokyo     AWSRegion = 7
 	AWS_ap_southeast_2_sydney    AWSRegion = 8
 )
+
+func GetAwsRegion(regionStr string) AWSRegion {
+	switch strings.ToLower(regionStr) {
+	case "us-west-2":
+		return AWS_us_west_2_oregon
+	case "us-east-1":
+		return AWS_us_east_1_nvirginia
+	case "eu-west-2":
+		return AWS_eu_west_2_london
+	case "eu-central-1":
+		return AWS_eu_central_1_frankfurt
+	case "ap-southeast-1":
+		return AWS_ap_southeast_1_singapore
+	case "ap-east-1":
+		return AWS_ap_east_1_hongkong
+	case "ap-northeast-1":
+		return AWS_ap_northeast_1_tokyo
+	case "ap-southeast-2":
+		return AWS_ap_southeast_2_sydney
+	default:
+		return UNKNOWN
+	}
+}
 
 const (
 	_AWSRegionKey_0 = "UNKNOWN"

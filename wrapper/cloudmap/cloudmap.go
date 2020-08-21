@@ -25,12 +25,12 @@ package cloudmap
 import (
 	"context"
 	"errors"
+	util "github.com/aldelo/common"
+	awshttp2 "github.com/aldelo/common/wrapper/aws"
+	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aldelo/common/wrapper/cloudmap/sdhealthchecktype"
 	"github.com/aldelo/common/wrapper/cloudmap/sdnamespacefilter"
 	"github.com/aldelo/common/wrapper/cloudmap/sdoperationfilter"
-	awshttp2 "github.com/aldelo/common/wrapper/aws"
-	util "github.com/aldelo/common"
-	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/servicediscovery"
@@ -55,14 +55,18 @@ type CloudMap struct {
 }
 
 // DnsConf represents a dns config option to be used by CreateService
-// for this project we will only use ipv4 - dns record type A (disregard CNAME, SRV and AAAA)
+// for this project we will only use:
+//		1) ipv4 - dns record type A
+//		2) srv
 //
 // TTL = dns record time to live in seconds
 // MultiValue = true: route 53 returns up to 8 healthy targets if health check is enabled (otherwise, all targets assumed healthy)
 //				false: route 53 uses WEIGHTED to return a random healthy target if health check is enabled (if no healthy target found, then any random target is used)
+// SRV = true: dns use SRV; false: dns use A
 type DnsConf struct {
 	TTL int64
 	MultiValue bool
+	SRV bool
 }
 
 // HealthCheckConf represents target health check configuration
@@ -776,13 +780,18 @@ func (sd *CloudMap) CreateService(name string,
 			routingPolicy = "WEIGHTED"
 		}
 
+		dnsType := "A"
+
+		if dnsConf.SRV {
+			dnsType = "SRV"
+		}
+
 		input.DnsConfig = &servicediscovery.DnsConfig{
 			RoutingPolicy: aws.String(routingPolicy),
-			NamespaceId: aws.String(namespaceId),
 			DnsRecords: []*servicediscovery.DnsRecord{
 				{
 					TTL: aws.Int64(dnsConf.TTL),
-					Type: aws.String("A"),
+					Type: aws.String(dnsType),
 				},
 			},
 		}
@@ -910,11 +919,18 @@ func (sd *CloudMap) UpdateService(serviceId string,
 		}
 	}
 
+	// dns update is TTL only but must provide existing dns type
+	dnsType := "A"
+
+	if dnsConfUpdate.SRV {
+		dnsType = "SRV"
+	}
+
 	input.Service.DnsConfig = &servicediscovery.DnsConfigChange{
 		DnsRecords: []*servicediscovery.DnsRecord{
 			{
 				TTL:  aws.Int64(dnsConfUpdate.TTL),
-				Type: aws.String("A"),
+				Type: aws.String(dnsType),
 			},
 		},
 	}

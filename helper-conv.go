@@ -19,6 +19,7 @@ package helper
 import (
 	"strconv"
 	"time"
+	"fmt"
 )
 
 // IntPtr casts int to int pointer
@@ -38,6 +39,11 @@ func StrToUint(s string) uint {
 	} else {
 		return uint(v)
 	}
+}
+
+// UintToStr converts from uint to string
+func UintToStr(i uint) string {
+	return fmt.Sprintf("%d", i)
 }
 
 

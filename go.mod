@@ -15,6 +15,7 @@ require (
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
 	github.com/google/uuid v1.1.1
 	github.com/jmoiron/sqlx v1.2.0
+	github.com/kardianos/service v1.1.0
 	github.com/mattn/go-sqlite3 v1.9.0
 	github.com/oklog/ulid v1.3.1
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0 // indirect
@@ -23,4 +24,5 @@ require (
 	go.uber.org/zap v1.15.0
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/net v0.0.0-20200813134508-3edf25e44fcc
+	google.golang.org/protobuf v1.23.0
 )

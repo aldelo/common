@@ -9,11 +9,13 @@ require (
 	github.com/aws/aws-dax-go v1.2.0
 	github.com/aws/aws-sdk-go v1.34.8
 	github.com/cactus/go-statsd-client/statsd v0.0.0-20200728222731-a2baea3bbfc6 // indirect
+	github.com/denisenkom/go-mssqldb v0.0.0-20200620013148-b91950f658ec
 	github.com/go-redis/redis/v8 v8.0.0-beta.8
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
 	github.com/google/uuid v1.1.1
 	github.com/jmoiron/sqlx v1.2.0
+	github.com/mattn/go-sqlite3 v1.9.0
 	github.com/oklog/ulid v1.3.1
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0 // indirect
 	github.com/spf13/viper v1.7.1

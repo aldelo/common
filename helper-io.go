@@ -16,7 +16,35 @@ package helper
  * limitations under the License.
  */
 
-import "os"
+import (
+	"io/ioutil"
+	"os"
+)
+
+// FileRead will read all file content of given file in path,
+// return as string if successful,
+// if failed, error will contain the error reason
+func FileRead(path string) (string, error) {
+	data, err := ioutil.ReadFile(path)
+
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}
+
+// FileWrite will write data into file at the given path,
+// if succesful, no error is returned (nil)
+func FileWrite(path string, data string) error {
+	err := ioutil.WriteFile(path, []byte(data), 0644)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // FileExists checks if input file in path exists
 func FileExists(path string) bool {

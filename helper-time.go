@@ -36,6 +36,21 @@ func FormatDateTime(t time.Time) string {
 	return t.Format("2006-01-02 03:04:05 PM")
 }
 
+// DateFormatString returns the date format string constant (yyyy-mm-dd)
+func DateFormatString() string {
+	return "2006-01-02"
+}
+
+// TimeFormatString returns the time format string constant (hh:mm:ss tt)
+func TimeFormatString() string {
+	return "03:04:05 PM"
+}
+
+// DateTimeFormatString returns the date time format string constant (yyyy-mm-dd hh:mm:ss tt)
+func DateTimeFormatString() string {
+	return "2006-01-02 03:04:05 PM"
+}
+
 // ParseDate will parse a date value in yyyy-mm-dd format into time.Time object,
 // check time.IsZero() to verify if a zero time is returned indicating parser failure
 func ParseDate(s string) time.Time {
@@ -94,6 +109,149 @@ func ParseDateTimeCustom(s string, f string) time.Time {
 	}
 
 	return t
+}
+
+// ParseDateTimeFromYYYYMMDDhhmmss from string value
+func ParseDateTimeFromYYYYMMDDhhmmss(s string) time.Time {
+	if IsNumericIntOnly(s) == false {
+		return time.Time{}
+	}
+
+	if LenTrim(s) != 14 {
+		return time.Time{}
+	}
+
+	d := Left(s, 4) + "-" + Mid(s, 4, 2) + "-" + Mid(s, 6, 2)
+	t := Mid(s, 8, 2) + ":" + Mid(s, 10, 2) + ":" + Mid(s, 12, 2)
+
+	dv := d + " " + t
+
+	return ParseDateTime24Hr(dv)
+}
+
+// ParseDateTimeFromMMDDYYYYhhmmss from string value
+func ParseDateTimeFromMMDDYYYYhhmmss(s string) time.Time {
+	if IsNumericIntOnly(s) == false {
+		return time.Time{}
+	}
+
+	if LenTrim(s) != 14 {
+		return time.Time{}
+	}
+
+	d := Mid(s, 4, 4) + "-" + Left(s, 2) + "-" + Mid(s, 2, 2)
+	t := Mid(s, 8, 2) + ":" + Mid(s, 10, 2) + ":" + Mid(s, 12, 2)
+
+	dv := d + " " + t
+
+	return ParseDateTime24Hr(dv)
+}
+
+// ParseDateFromYYYYMMDD from string value
+func ParseDateFromYYYYMMDD(s string) time.Time {
+	if IsNumericIntOnly(s) == false {
+		return time.Time{}
+	}
+
+	if LenTrim(s) != 8 {
+		return time.Time{}
+	}
+
+	d := Left(s, 4) + "-" + Mid(s, 4, 2) + "-" + Mid(s, 6, 2)
+
+	return ParseDate(d)
+}
+
+// ParseDateFromDDMMYYYY from string value
+func ParseDateFromDDMMYYYY(s string) time.Time {
+	if IsNumericIntOnly(s) == false {
+		return time.Time{}
+	}
+
+	if LenTrim(s) != 8 {
+		return time.Time{}
+	}
+
+	d := Right(s, 4) + "-" + Mid(s, 2, 2) + "-" + Left(s, 2)
+
+	return ParseDate(d)
+}
+
+// ParseDateFromYYMMDD from string value
+func ParseDateFromYYMMDD(s string) time.Time {
+	if IsNumericIntOnly(s) == false {
+		return time.Time{}
+	}
+
+	if LenTrim(s) != 6 {
+		return time.Time{}
+	}
+
+	d := Left(s, 2) + "-" + Mid(s, 2, 2) + "-" + Mid(s, 4, 2)
+
+	return ParseDateTimeCustom(d, "06-01-02")
+}
+
+// ParseDateFromYYMM from string value
+func ParseDateFromYYMM(s string) time.Time {
+	if IsNumericIntOnly(s) == false {
+		return time.Time{}
+	}
+
+	if LenTrim(s) != 4 {
+		return time.Time{}
+	}
+
+	d := Left(s, 2) + "-" + Mid(s, 2, 2)
+
+	return ParseDateTimeCustom(d, "06-01")
+}
+
+// ParseDateFromMMYY from string value
+func ParseDateFromMMYY(s string) time.Time {
+	if IsNumericIntOnly(s) == false {
+		return time.Time{}
+	}
+
+	if LenTrim(s) != 4 {
+		return time.Time{}
+	}
+
+	d := Left(s, 2) + "-" + Mid(s, 2, 2)
+
+	return ParseDateTimeCustom(d, "01-06")
+}
+
+// ParseDateToLastDayOfMonth
+func ParseDateToLastDayOfMonth(t time.Time) time.Time {
+	if t.IsZero() {
+		return t
+	}
+
+	newDate := t.AddDate(0, 1, 0)
+
+	y, m, _ := newDate.Date()
+
+	newDate = ParseDateFromYYYYMMDD(Padding(Itoa(y), 4, false, "0") + Padding(Itoa(int(m)), 2, false, "0") + "01")
+
+	newDate = newDate.AddDate(0, 0, -1)
+
+	return newDate
+}
+
+// ParseDateFromMMDD from string value
+func ParseDateFromMMDD(s string) time.Time {
+	if IsNumericIntOnly(s) == false {
+		return time.Time{}
+	}
+
+	if LenTrim(s) != 4 {
+		return time.Time{}
+	}
+
+	d := Left(s, 2) + "-" + Mid(s, 2, 2)
+
+	return ParseDateTimeCustom(d, "01-02")
 }
 
 // CurrentDate returns current date in yyyy-mm-dd format
@@ -288,33 +446,6 @@ func DateToLocal2(t time.Time) time.Time {
 	return v
 }
 
-// DatePtrToString formats pointer time.Time to string date format
-func DatePtrToString(t *time.Time) string {
-	if t == nil {
-		return ""
-	}
-
-	return FormatDate(*t)
-}
-
-// DateTimePtrToString formats pointer time.Time to string date time format
-func DateTimePtrToString(t *time.Time) string {
-	if t == nil {
-		return ""
-	}
-
-	return FormatDateTime(*t)
-}
-
-// DateTimePtrToDateTime formats pointer time.Time to time.Time struct
-func DateTimePtrToDateTime(t *time.Time) time.Time {
-	if t == nil {
-		return time.Time{}
-	} else {
-		return *t
-	}
-}
-
 // IsLeapYear checks if the year input is leap year or not
 func IsLeapYear(year int) bool {
 	if year % 100 == 0 {
@@ -385,4 +516,44 @@ func IsDayOfMonthValid(year int, month int, day int) bool {
 	default:
 		return false
 	}
+}
+
+// FormatDateTimeToYYYYMMDDhhmmss for the date time struct received
+func FormatDateTimeToYYYYMMDDhhmmss(t time.Time) string {
+	return t.Format("20060102150405")
+}
+
+// FormatDateTimeToMMDDYYYYhhmmss for the date time struct received
+func FormatDateTimeToMMDDYYYYhhmmss(t time.Time) string {
+	return t.Format("01022006150405")
+}
+
+// FormatDateToYYYYMMDD for the date time struct received
+func FormatDateToYYYYMMDD(t time.Time) string {
+	return t.Format("20060102")
+}
+
+// FormatDateToDDMMYYYY for the date time struct received
+func FormatDateToDDMMYYYY(t time.Time) string {
+	return t.Format("02012006")
+}
+
+// FormatDateToYYMMDD for the date time struct received
+func FormatDateToYYMMDD(t time.Time) string {
+	return t.Format("060102")
+}
+
+// FormatDateToYYMM for the date time struct received
+func FormatDateToYYMM(t time.Time) string {
+	return t.Format("0601")
+}
+
+// FormatDateToMMYY for the date time struct received
+func FormatDateToMMYY(t time.Time) string {
+	return t.Format("0106")
+}
+
+// FormatDateToMMDD for the date time struct received
+func FormatDateToMMDD(t time.Time) string {
+	return t.Format("0102")
 }

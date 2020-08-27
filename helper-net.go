@@ -19,6 +19,7 @@ package helper
 import (
 	"fmt"
 	"net"
+	"strings"
 )
 
 // GetNetListener triggers the specified port to listen via tcp
@@ -71,5 +72,16 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		}
 
 		return ipList
+	}
+}
+
+// ParseHostFromURL will parse out the host name from url
+func ParseHostFromURL(url string) string {
+	parts := strings.Split(strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(url), "https://", ""), "http://", ""), "/")
+
+	if len(parts) >= 0 {
+		return parts[0]
+	} else {
+		return ""
 	}
 }

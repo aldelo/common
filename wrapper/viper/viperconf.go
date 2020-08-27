@@ -221,7 +221,7 @@ func (v *ViperConf) Save() error {
 			fileName = "./" + v.ConfigName
 
 			if v.UseYAML {
-				fileName += ".yml"
+				fileName += ".yaml"
 			} else {
 				fileName += ".json"
 			}

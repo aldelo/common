@@ -469,7 +469,7 @@ func (c *CircuitBreaker) Do(run RunLogic, fallback FallbackLogic, dataIn interfa
 // 		2) run = required, defines either inline or external function to be executed,
 //				 it is meant for a self contained function and accepts context.Context parameter, returns error
 // 		3) fallback = optional, defines either inline or external function to be executed as fallback when run fails,
-//					  it is meat for a self contained function and accepts context.Context and error parameters, returns error,
+//					  it is meant for a self contained function and accepts context.Context and error parameters, returns error,
 //					  set to nil if fallback is not specified
 //		4) dataIn = optional, input parameter to run and fallback func, may be nil if not needed
 func (c *CircuitBreaker) DoC(ctx context.Context, run RunLogic, fallback FallbackLogic, dataIn interface{}) (interface{}, error) {

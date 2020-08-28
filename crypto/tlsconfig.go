@@ -19,58 +19,120 @@ package crypto
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
+	util "github.com/aldelo/common"
 	"io/ioutil"
-	"errors"
 )
 
 type TlsConfig struct {}
 
-// certPemFilePath = "cert-xyz.pem"
-func (t *TlsConfig) GetServerTlsConfig(certPemFilePath string) (*tls.Config, error) {
-	// create a CA certificate pool and add cert-xyz.pem to it
-	if caCert, err := ioutil.ReadFile(certPemFilePath); err != nil {
-		return nil, errors.New("Read Cert Pem Failed: " + err.Error())
-	} else {
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-
-		// create tls config with CA pool and enable client certificate validation
-		tlsConfig := &tls.Config{
-			ClientCAs: caCertPool,
-			ClientAuth: tls.RequireAndVerifyClientCert,
-			MinVersion: tls.VersionTLS12,
-			CurvePreferences: []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
-			PreferServerCipherSuites: true,
-			CipherSuites: []uint16{
-				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-				tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-			},
-		}
-
-		return tlsConfig, nil
+// GetServerTlsConfig returns *tls.config configured for server TLS or mTLS based on parameters
+//
+// serverCertPemPath = (required) path and file name to the server cert pem (unencrypted version)
+// serverKeyPemPath = (required) path and file name to the server key pem (unencrypted version)
+// clientCaCertPath = (optional) one or more client ca cert path and file name, in case tls.config is for mTLS
+func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
+									   serverKeyPemPath string,
+									   clientCaCertPemPath []string) (*tls.Config, error) {
+	if util.LenTrim(serverCertPemPath) == 0 || util.LenTrim(serverKeyPemPath) == 0 {
+		return nil, fmt.Errorf("Server TLS Config Requires Server Certificate and Key Pem Path")
 	}
+
+	// create server cert
+	serverCert, err := tls.LoadX509KeyPair(serverCertPemPath, serverKeyPemPath)
+
+	if err != nil {
+		return nil, fmt.Errorf("Load X509 Key Pair Failed: %s", err.Error())
+	}
+
+	// if client ca cert pem defined, prep for mTLS
+	certPool := x509.NewCertPool()
+	certPoolCount := 0
+
+	if len(clientCaCertPemPath) > 0 {
+		for _, v := range clientCaCertPemPath {
+			if clientCa, e := ioutil.ReadFile(v); e != nil {
+				return nil, fmt.Errorf("Read Client CA Pem Failed: (%s) %s", v, e.Error())
+			} else {
+				if !certPool.AppendCertsFromPEM(clientCa) {
+					// fail to add client ca to cert pool
+					return nil, fmt.Errorf("Append Client CA From Pem Failed: %s", v)
+				} else {
+					// client ca pem appended to ca pool
+					certPoolCount++
+				}
+			}
+		}
+	}
+
+	config := &tls.Config{
+		Certificates: []tls.Certificate{
+			serverCert,
+		},
+		MinVersion: tls.VersionTLS12,
+		CurvePreferences: []tls.CurveID{
+			tls.CurveP521,
+			tls.CurveP384,
+			tls.CurveP256,
+		},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		},
+	}
+
+	if certPoolCount > 0 {
+		config.ClientAuth = tls.RequireAndVerifyClientCert
+		config.ClientCAs = certPool
+	} else {
+		config.ClientAuth = tls.NoClientCert
+	}
+
+	return config, nil
 }
 
-func (t *TlsConfig) GetClientTlsConfig(certPemFilePath string, keyPemFilePath string) (*tls.Config, error) {
-	// read key pair to create certificate
-	if cert, err := tls.LoadX509KeyPair(certPemFilePath, keyPemFilePath); err != nil {
-		return nil, errors.New("Load X509 KeyPair Failed: " + err.Error())
-	} else {
-		// create CA certificate pool and add cert-xyz.pem to it
-		if caCert, err1 := ioutil.ReadFile(certPemFilePath); err1 != nil {
-			return nil, errors.New("Read Cert Pem Failed: " + err1.Error())
+// GetClientTlsConfig returns *tls.config configured for server TLS or mTLS based on parameters
+//
+// serverCaCertPath = (required) one or more server ca cert path and file name, required for both server TLS or mTLS
+// clientCertPemPath = (optional) for mTLS setup, path and file name to the client cert pem (unencrypted version)
+// clientKeyPemPath = (optional) for mTLS setup, path and file name to the client key pem (unencrypted version)
+func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
+									   clientCertPemPath string,
+									   clientKeyPemPath string) (*tls.Config, error) {
+	if len(serverCaCertPemPath) == 0 {
+		return nil, fmt.Errorf("Client TLS Config Requires Server CA Certificate Pem Path")
+	}
+
+	certPool := x509.NewCertPool()
+
+	for _, v := range serverCaCertPemPath {
+		if serverCa, e := ioutil.ReadFile(v); e != nil {
+			return nil, fmt.Errorf("Read Server CA Pem Failed: (%s) %s", v, e.Error())
 		} else {
-			caCertPool := x509.NewCertPool()
-			caCertPool.AppendCertsFromPEM(caCert)
-
-			tlsConfig := &tls.Config{
-				RootCAs: caCertPool,
-				Certificates: []tls.Certificate{cert},
+			if !certPool.AppendCertsFromPEM(serverCa) {
+				// fail to add server ca to cert pool
+				return nil, fmt.Errorf("Append Server CA From Pem Failed: %s", v)
 			}
-
-			return tlsConfig, nil
 		}
 	}
+
+	config := &tls.Config{
+		RootCAs: certPool,
+	}
+
+	// for mTls set client cert
+	if util.LenTrim(clientCertPemPath) > 0 && util.LenTrim(clientKeyPemPath) > 0 {
+		if clientCert, e := tls.LoadX509KeyPair(clientCertPemPath, clientKeyPemPath); e != nil {
+			return nil, fmt.Errorf("Load X509 Key Pair Failed: %s", e.Error())
+		} else {
+			config.Certificates = []tls.Certificate{
+				clientCert,
+			}
+		}
+	}
+
+	return config, nil
 }

@@ -67,8 +67,9 @@ import (
 			DisplayName: "App Name Descriptive",
 			Description: "More info about the app service",
 
-			Port: 8080,					// port that this service will run on, if port is not used, set to 0
-			ServiceHandler: runHandler,	// runHandler is a function that performs service launch code, such as starting web server or micro service
+			Port: 8080,							// port that this service will run on, if port is not used, set to 0
+			StartServiceHandler: startHandler,	// startHandler is a function that performs service launch code, such as starting web server or micro service
+			StopServiceHandler: stopHandler,	// stopHandler is a function that performs service stop code, such as clean up
 		}
 
 		//
@@ -77,9 +78,13 @@ import (
 		svc.Launch()
 	}
 
-	func runHandler(isSvc bool, port int) {
+	func startHandler(port int) {
 		// place application logic in handler
 		// such as setup gin handlers and start logic handling services etc
+	}
+
+	func stopHandler() {
+		// place applicatipn clean up code here
 	}
  */
 
@@ -101,7 +106,8 @@ type ServiceProgram struct {
 	Description string
 
 	Port int
-	ServiceHandler func(runAsService bool, port int)
+	StartServiceHandler func(port int)
+	StopServiceHandler func()
 }
 
 // Launch will initialize and start the service for operations
@@ -159,11 +165,14 @@ func (p *ServiceProgram) Start(s service.Service) error {
 //
 func (p *ServiceProgram) run() {
 	// do actual work async in this go-routine
+	log.Println("Starting Service Program...")
+
 	if p != nil {
 		if p.Port >= 0 && p.Port < 65535 {
 			// run service handler
-			if p.ServiceHandler != nil {
-				p.ServiceHandler(true, p.Port)
+			if p.StartServiceHandler != nil {
+				log.Println("Start Service Handler Invoked...")
+				p.StartServiceHandler(p.Port)
 			}
 		}
 	}
@@ -174,5 +183,14 @@ func (p *ServiceProgram) run() {
 //
 func (p *ServiceProgram) Stop(s service.Service) error {
 	// stop the service, should not block
+	log.Println("Stopping Service Program...")
+
+	if p != nil {
+		if p.StopServiceHandler != nil {
+			log.Println("Stop Service Handler Invoked...")
+			p.StopServiceHandler()
+		}
+	}
+
 	return nil
 }

@@ -160,8 +160,8 @@ func (p *ServiceProgram) Start(s service.Service) error {
 func (p *ServiceProgram) run() {
 	// do actual work async in this go-routine
 	if p != nil {
-		if p.Port > 0 && p.Port	< 65535 {
-			// run the gin service to handle http rest api requests
+		if p.Port >= 0 && p.Port < 65535 {
+			// run service handler
 			if p.ServiceHandler != nil {
 				p.ServiceHandler(true, p.Port)
 			}

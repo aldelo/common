@@ -51,15 +51,17 @@ func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
 
 	if len(clientCaCertPemPath) > 0 {
 		for _, v := range clientCaCertPemPath {
-			if clientCa, e := ioutil.ReadFile(v); e != nil {
-				return nil, fmt.Errorf("Read Client CA Pem Failed: (%s) %s", v, e.Error())
-			} else {
-				if !certPool.AppendCertsFromPEM(clientCa) {
-					// fail to add client ca to cert pool
-					return nil, fmt.Errorf("Append Client CA From Pem Failed: %s", v)
+			if util.LenTrim(v) > 0 {
+				if clientCa, e := ioutil.ReadFile(v); e != nil {
+					return nil, fmt.Errorf("Read Client CA Pem Failed: (%s) %s", v, e.Error())
 				} else {
-					// client ca pem appended to ca pool
-					certPoolCount++
+					if !certPool.AppendCertsFromPEM(clientCa) {
+						// fail to add client ca to cert pool
+						return nil, fmt.Errorf("Append Client CA From Pem Failed: %s", v)
+					} else {
+						// client ca pem appended to ca pool
+						certPoolCount++
+					}
 				}
 			}
 		}
@@ -109,12 +111,14 @@ func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
 	certPool := x509.NewCertPool()
 
 	for _, v := range serverCaCertPemPath {
-		if serverCa, e := ioutil.ReadFile(v); e != nil {
-			return nil, fmt.Errorf("Read Server CA Pem Failed: (%s) %s", v, e.Error())
-		} else {
-			if !certPool.AppendCertsFromPEM(serverCa) {
-				// fail to add server ca to cert pool
-				return nil, fmt.Errorf("Append Server CA From Pem Failed: %s", v)
+		if util.LenTrim(v) > 0 {
+			if serverCa, e := ioutil.ReadFile(v); e != nil {
+				return nil, fmt.Errorf("Read Server CA Pem Failed: (%s) %s", v, e.Error())
+			} else {
+				if !certPool.AppendCertsFromPEM(serverCa) {
+					// fail to add server ca to cert pool
+					return nil, fmt.Errorf("Append Server CA From Pem Failed: %s", v)
+				}
 			}
 		}
 	}

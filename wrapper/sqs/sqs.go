@@ -25,13 +25,13 @@ package sqs
 import (
 	"context"
 	"errors"
+	util "github.com/aldelo/common"
+	awshttp2 "github.com/aldelo/common/wrapper/aws"
+	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aldelo/common/wrapper/sqs/sqscreatequeueattribute"
 	"github.com/aldelo/common/wrapper/sqs/sqsgetqueueattribute"
 	"github.com/aldelo/common/wrapper/sqs/sqssetqueueattribute"
 	"github.com/aldelo/common/wrapper/sqs/sqssystemattribute"
-	util "github.com/aldelo/common"
-	awshttp2 "github.com/aldelo/common/wrapper/aws"
-	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	awssqs "github.com/aws/aws-sdk-go/service/sqs"
@@ -507,14 +507,14 @@ func (s *SQS) CreateQueue(queueName string,
 // GetQueueUrl returns the queue url for specific SQS queue
 //
 // queueName = required, case-sensitive
-func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (queueUrl string, err error) {
+func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (queueUrl string, notFound bool, err error) {
 	// validate
 	if s.sqsClient == nil {
-		return "", errors.New("GetQueueUrl Failed: " + "SQS Client is Required")
+		return "", true, errors.New("GetQueueUrl Failed: " + "SQS Client is Required")
 	}
 
 	if util.LenTrim(queueName) <= 0 {
-		return "", errors.New("GetQueueUrl Failed: " + "Queue Name is Required")
+		return "", true, errors.New("GetQueueUrl Failed: " + "Queue Name is Required")
 	}
 
 	// create input object
@@ -536,9 +536,15 @@ func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (q
 
 	// evaluate result
 	if err != nil {
-		return "", errors.New("GetQueueUrl Failed: (Get Action) " + err.Error())
+		if awshttp2.ToAwsError(err).Code() == awssqs.ErrCodeQueueDoesNotExist {
+			// queue does not exist
+			return "", true, nil
+		} else {
+			// error
+			return "", true, errors.New("GetQueueUrl Failed: (Get Action) " + err.Error())
+		}
 	} else {
-		return aws.StringValue(output.QueueUrl), nil
+		return aws.StringValue(output.QueueUrl), false,nil
 	}
 }
 

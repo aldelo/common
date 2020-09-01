@@ -5,6 +5,15 @@ When we code projects, we constantly encounter a similar set of functionality an
 
 This package will continue to be updated with more reusable code as well.
 
+# Usage
+- To use the common package:
+  - in the project folder root: 
+  - go mod init
+  - go mod tidy
+- For example, if project is "HelloWorld":
+  - /HelloWorld/go mod init
+  - /HelloWorld/go mod tidy
+
 # types of helpers
 - string helpers
 - number helpers

@@ -374,6 +374,19 @@ func (s *SQS) fromAwsSystemAttributes(attributes map[string]*string) (newMap map
 // queue management methods
 // ----------------------------------------------------------------------------------------------------------------
 
+// GetQueueArnFromQueueUrl encodes arn from url data
+func (s *SQS) GetQueueArnFromQueue(queueUrl string, timeoutDuration ...time.Duration) (string, error) {
+	if attr, err := s.GetQueueAttributes(queueUrl, []sqsgetqueueattribute.SQSGetQueueAttribute{
+		sqsgetqueueattribute.QueueArn,
+	}, timeoutDuration...); err != nil {
+		// error
+		return "", err
+	} else {
+		// found attribute
+		return attr[sqsgetqueueattribute.QueueArn], nil
+	}
+}
+
 // CreateQueue will create a queue in SQS,
 // if Queue is a FIFO, then queueName must suffix with .fifo, otherwise name it without .fifo suffix
 //

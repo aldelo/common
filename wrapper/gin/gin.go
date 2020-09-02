@@ -47,6 +47,8 @@ type Gin struct {
 // Method = (required) GET, POST, PUT, DELETE
 // Binding = (optional) various input data binding to target type option
 // Handler = (required) function handler to be executed per method defined (actual logic goes inside handler)
+//		1) gin.Context Value Return Helpers:
+//		      a) c.String(), c.HTML(), c.JSON(), c.JSONP(), c.PureJSON(), c.AsciiJSON(), c.SecureJSON(), c.XML(), c.YAML(), c.ProtoBuf(), c.Redirect()
 type Route struct {
 	// relative path to the endpoint for the route to handle
 	RelativePath string
@@ -67,6 +69,7 @@ func NewServer() *Gin {
 	gin.SetMode(gin.ReleaseMode)
 
 	g := gin.Default()
+
 	g.GET("/health", func(c *gin.Context) {
 		c.String(200, "OK")
 	})
@@ -97,22 +100,12 @@ func (g *Gin) RunServer() error {
 		return fmt.Errorf("Run Web Server Failed: %s", "Http Routes Not Defined")
 	}
 
-	log.Println("Starting Web Server '" + g.Name + "'...")
+	log.Println("Web Server '" + g.Name + "' Started..." + util.GetLocalIP() + ":" + util.UintToStr(g.Port))
 
-	errInfo := make(chan string)
-
-	go func() {
-		if err := g._ginEngine.Run(); err != nil {
-			errInfo <- fmt.Sprintf("Run Web Server Failed: %s", err.Error())
-		}
-	}()
-
-	select {
-	case s := <-errInfo:
-		log.Println("!!! " + s + " !!!")
-		return fmt.Errorf(s)
-	default:
-		log.Println("... Web Server Started")
+	if err := g._ginEngine.Run(fmt.Sprintf(":%d", g.Port)); err != nil {
+		return fmt.Errorf("Web Server '" + g.Name + "' Failed To Start: " + err.Error())
+	} else {
+		log.Println("Web Server '" + g.Name + "' Stopped")
 		return nil
 	}
 }
@@ -272,9 +265,7 @@ func (g *Gin) setupRoutes() int {
 }
 
 /*
-	List of gin methods:
-
-	c := &gin.Context{}
+	List of gin methods for use in method handlers:
 
 	c.DefaultQuery()
 	c.Query()
@@ -294,19 +285,6 @@ func (g *Gin) setupRoutes() int {
 
 	c.MultipartForm()
 	c.FormFile()
-
-
-	c.String()
-	c.HTML()
-	c.JSON()
-	c.JSONP()
-	c.PureJSON()
-	c.AsciiJSON()
-	c.SecureJSON()
-	c.XML()
-	c.YAML()
-	c.ProtoBuf()
-	c.Redirect()
 
 	c.Request
 	c.ClientIP()
@@ -345,7 +323,6 @@ func (g *Gin) setupRoutes() int {
 	c.Stream()
 	c.GetRawData()
 	c.SSEvent()
-
 
 	c.Value()
 	c.Copy()

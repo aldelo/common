@@ -20,6 +20,7 @@ import (
 	"errors"
 	util "github.com/aldelo/common"
 	"github.com/spf13/viper"
+	"strings"
 	"time"
 )
 
@@ -237,7 +238,11 @@ func (v *ViperConf) Save() error {
 	}
 
 	if err != nil {
-		return errors.New("Save Config Failed: (WriteConfig Action) " + err.Error())
+		if strings.Contains(strings.ToLower(err.Error()), "invalid trailing UTF-8 octet") {
+			return errors.New("Save Config Failed: (WriteConfig Action) " + "Config File Name Must Not Be Same as Folder Name")
+		} else {
+			return errors.New("Save Config Failed: (WriteConfig Action) " + err.Error())
+		}
 	} else {
 		return nil
 	}

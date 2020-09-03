@@ -802,25 +802,36 @@ func method_descriptions_only() {
 	1) Prometheus Export:
 			https://github.com/chenjiandongx/ginprom
 			https://github.com/zsais/go-gin-prometheus
-	2) Request Response Interceptor:
+	2) Request Response Interceptor / Tracer:
 			https://github.com/averageflow/goscope
 			https://github.com/tpkeeper/gin-dump
+			https://github.com/gin-contrib/opengintracing
 	3) Session:
+			https://github.com/gin-contrib/sessions
 			https://github.com/go-session/gin-session
 	4) Jwt:
 			https://github.com/appleboy/gin-jwt
 			https://github.com/ScottHuangZL/gin-jwt-session
 	5) OAuth2:
 			https://github.com/zalando/gin-oauth2
-	6) Templating:
+	6) Authz:
+			https://github.com/gin-contrib/authz
+	7) Templating:
 			https://github.com/michelloworld/ez-gin-template
-	7) Static Bin
+			https://github.com/gin-contrib/multitemplate
+	8) Static Bin
 			https://github.com/olebedev/staticbin
-	8) Recovery Override:
+			https://github.com/gin-contrib/static
+	9) Recovery Override:
 			https://github.com/ekyoung/gin-nice-recovery
-	9) Csrf:
+	10) Csrf:
 			https://github.com/utrack/gin-csrf
-
+	11) Server Send Event (SSE):
+			https://github.com/gin-contrib/sse
+	12) Logger:
+			https://github.com/gin-contrib/zap
+	13) GZip:
+			https://github.com/gin-contrib/gzip
 */
 
 

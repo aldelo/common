@@ -20,10 +20,16 @@ import (
 	"fmt"
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/gin/ginbindtype"
+	"github.com/aldelo/common/wrapper/gin/gingzipcompression"
 	"github.com/aldelo/common/wrapper/gin/ginhttpmethod"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/gzip"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
+	"github.com/gin-contrib/sessions/redis"
+	"github.com/utrack/gin-csrf"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
-	"github.com/gin-contrib/cors"
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/time/rate"
 	"log"
@@ -34,9 +40,12 @@ import (
 //
 // Name = (required) web server descriptive display name
 // Port = (required) tcp port that this web server will run on
+// TlsCertPemFile / TlsCertKeyFile = (optional) when both are set, web server runs secured mode using tls cert; path to pem and key file
 // Routes = (required) map of http route handlers to be registered, middleware to be configured,
 //					   for gin engine or route groups,
 //					   key = * indicates base gin engine routes, otherwise key refers to routeGroup to be created
+// SessionMiddleware = (optional) defines the cookie or redis session middleware to setup for the gin engine
+// CsrfMiddleware = (optional) defines the csrf middleware to setup for the gin engine (requires SessionMiddleware setup)
 type Gin struct {
 	// web server descriptive name (used for display and logging only)
 	Name string
@@ -44,13 +53,46 @@ type Gin struct {
 	// web server port to run gin web server
 	Port uint
 
+	// web server tls certificate pem and key file path
+	TlsCertPemFile string
+	TlsCertKeyFile string
+
 	// web server routes to handle
 	// string = routeGroup path if defined, otherwise, if * refers to base
 	Routes map[string][]*RouteDefinition
 
+	// define the session middleware for the gin engine
+	SessionMiddleware *SessionConfig
+
+	// define the csrf middleware for the gin engine
+	CsrfMiddleware *CsrfConfig
+
 	// web server instance
 	_ginEngine *gin.Engine
+	_ginJwtAuth *GinJwt
 	_limiterCache *cache.Cache
+}
+
+// RouteDefinition struct contains per route group or gin engine's handlers and middleware
+//
+// Note:
+//		1) route definition's map key = * means gin engine; key named refers to Route Group
+//
+// Routes = (required) one or more route handlers defined for current route group or base engine
+// CorsMiddleware = (optional) current cors middleware to use if setup for current route group or base engine
+// MaxLimitMiddleware = (optional) current max rate limit middleware, controls how many concurrent handlers can process actions for the current route group or base engine
+// PerClientQpsMiddleware = (optional) to enable per client Ip QPS limiter middleware, all 3 options must be set
+// UseAuthMiddleware = (optional) to indicate if this route group uses auth middleware
+// CustomMiddleware = (optional) slice of additional custom HandleFunc middleware
+type RouteDefinition struct {
+	Routes []*Route
+
+	CorsMiddleware *cors.Config
+	MaxLimitMiddleware *int
+	PerClientQpsMiddleware *PerClientQps
+	GZipMiddleware *GZipConfig
+	UseAuthMiddleware bool
+	CustomMiddleware []gin.HandlerFunc
 }
 
 // Route struct defines each http route handler endpoint
@@ -77,24 +119,110 @@ type Route struct {
 	Handler func(c *gin.Context, bindingInput interface{})
 }
 
-// RouteDefinition struct contains per route group or gin engine's handlers and middleware
+// PerClientQps defines options for the PerClientQps based rate limit middleware
+type PerClientQps struct {
+	Qps int
+	Burst int
+	TTL time.Duration
+}
+
+// GZipConfig defines options for the GZip middleware
+type GZipConfig struct {
+	Compression gingzipcompression.GinGZipCompression
+	ExcludedExtensions []string
+	ExcludedPaths []string
+	ExcludedPathsRegex []string
+}
+
+// GetGZipCompression returns gzip compression value
+func (gz *GZipConfig) GetGZipCompression() int {
+	switch gz.Compression {
+	case gingzipcompression.Default:
+		return gzip.DefaultCompression
+	case gingzipcompression.BestCompression:
+		return gzip.BestCompression
+	case gingzipcompression.BestSpeed:
+		return gzip.BestSpeed
+	default:
+		return gzip.NoCompression
+	}
+}
+
+// GetGZipExcludedExtensions return gzip option for excluded extensions if any
+func (gz *GZipConfig) GetGZipExcludedExtensions() gzip.Option {
+	if len(gz.ExcludedExtensions) > 0 {
+		return gzip.WithExcludedExtensions(gz.ExcludedExtensions)
+	} else {
+		return nil
+	}
+}
+
+// GetGZipExcludedPaths return gzip option for excluded paths if any
+func (gz *GZipConfig) GetGZipExcludedPaths() gzip.Option {
+	if len(gz.ExcludedPaths) > 0 {
+		return gzip.WithExcludedPaths(gz.ExcludedPaths)
+	} else {
+		return nil
+	}
+}
+
+// GetGZipExcludedPathsRegex return gzip option for excluded paths refex if any
+func (gz *GZipConfig) GetGZipExcludedPathsRegex() gzip.Option {
+	if len(gz.ExcludedPathsRegex) > 0 {
+		return gzip.WithExcludedPathsRegexs(gz.ExcludedPathsRegex)
+	} else {
+		return nil
+	}
+}
+
+// SessionConfig defines redis or cookie session configuration options
 //
-// Routes = (required) one or more route handlers defined for current route group or base engine
-// CorsConfig = (optional) current cors middleware to use if setup for current route group or base engine
-// MaxLimitConfig = (optional) current max rate limit middleware, controls how many concurrent handlers can process actions for the current route group or base engine
-// PerClientIpQpsConfig / BurstConfig / LimiterTTLConfig = (optional) to enable per client Ip QPS limiter middleware, all 3 options must be set
-type RouteDefinition struct {
-	Routes []*Route
-	CorsConfig *cors.Config
-	MaxLimitConfig *int
-	PerClientIpQpsConfig *int
-	PerClientIpBurstConfig *int
-	PerClientIpLimiterTTLConfig *time.Duration
-	CustomMiddlewareHandlers []gin.HandlerFunc
+// SecretKey = (required) for redis or cookie session, the secret key to use
+// SessionNames = (required) for redis or cookie session, defined session names to use by middleware
+// RedisMaxIdleConnections = (optional) for redis session, maximum number of idle connections to keep for redis client
+// RedisHostAndPort = (optional) the redis endpoint host name and port, in host:port format (if not set, then cookie session is assumed)
+//
+// To Use Sessions in Handler:
+//		[Single Session]
+//			session := sessions.Default(c)
+//			v := session.Get("xyz")
+//			session.Set("xyz", xyz)
+//			session.Save()
+//		[Multiple Sessions]
+// 			sessionA := sessions.DefaultMany(c, "a")
+// 			sessionB := sessions.DefaultMany(c, "b")
+// 			sessionA.Get("xyz")
+//			sessionA.Set("xyz", xyz)
+//			sessionA.Save()
+type SessionConfig struct {
+	SecretKey string
+	SessionNames []string
+	RedisMaxIdleConnections int
+	RedisHostAndPort string
+}
+
+// CsrfConfig defines csrf protection middleware options
+//
+// Secret = (required) csrf secret key used for csrf protection
+// ErrorFunc = (required) csrf invalid token error handler
+// TokenGetter = (optional) csrf get token action override from default (in case implementation not using default keys)
+//						    default gets token from:
+//							   - FormValue("_csrf")
+//							   - Url.Query().Get("_csrf")
+//							   - Header.Get("X-CSRF-TOKEN")
+//							   - Header.Get("X-XSRF-TOKEN")
+type CsrfConfig struct {
+	Secret string
+	ErrorFunc func(c *gin.Context)
+	TokenGetter func(c *gin.Context) string
 }
 
 // NewServer returns a gin-gongic web server wrapper ready for setup
-func NewServer(name string, port uint, releaseMode bool) *Gin {
+//
+// if gin default logger is to be replaced, it must be replaced via zaplogger parameter,
+// zaplogger must be fully setup and passed into NewServer in order for zaplogger replacement to be effective,
+// zaplogger will not be setup after gin object is created
+func NewServer(name string, port uint, releaseMode bool, zaplogger *GinZap) *Gin {
 	mode := gin.ReleaseMode
 
 	if !releaseMode {
@@ -102,14 +230,48 @@ func NewServer(name string, port uint, releaseMode bool) *Gin {
 	}
 
 	gin.SetMode(mode)
-	g := gin.Default()
+
+	var g *gin.Engine
+
+	if zaplogger != nil && util.LenTrim(zaplogger.LogName) > 0 {
+		if err := zaplogger.Init(); err == nil {
+			g = gin.New()
+			g.Use(zaplogger.NormalLogger())
+			g.Use(zaplogger.PanicLogger())
+		} else {
+			g = gin.Default()
+		}
+	} else {
+		g = gin.Default()
+	}
 
 	return &Gin{
 		Name: name,
 		Port: port,
 		_ginEngine: g,
+		_ginJwtAuth: nil,
 		_limiterCache: cache.New(5*time.Minute, 10*time.Minute),
 	}
+}
+
+// NewAuthMiddleware will create a new jwt auth middleware with basic info provided,
+// then this new middleware is set into Gin wrapper internal var,
+// this middleware's additional fields and handlers must then be defined by accessing the AuthMiddleware func,
+// once middleware's completely prepared, then call the RunServer which automatically builds the auth middleware for use
+func (g *Gin) NewAuthMiddleware(realm string, identityKey string, signingSecretKey string, authenticateBinding ginbindtype.GinBindType) {
+	g._ginJwtAuth = nil
+
+	if g._ginEngine == nil {
+		return
+	}
+
+	g._ginJwtAuth = NewGinJwtMiddleware(realm, identityKey, signingSecretKey, authenticateBinding)
+}
+
+// AuthMiddleware returns the GinJwt struct object built by NewAuthMiddleware,
+// prepare the necessary field values and handlers via this method's return object access
+func (g *Gin) AuthMiddleware() *GinJwt {
+	return g._ginJwtAuth
 }
 
 // RunServer starts gin-gonic web server,
@@ -128,6 +290,13 @@ func (g *Gin) RunServer() error {
 		return fmt.Errorf("Run Web Server Failed: %s", "Port Number Cannot Exceed 65535")
 	}
 
+	// setup auth middleware
+	if g._ginJwtAuth != nil {
+		if err := g._ginJwtAuth.BuildGinJwtMiddleware(g); err != nil {
+			return fmt.Errorf("Run Web Server Failed: (%s) %s", "Build Auth Middleware Errored", err.Error())
+		}
+	}
+
 	// setup routes
 	if g.setupRoutes() <= 0 {
 		return fmt.Errorf("Run Web Server Failed: %s", "Http Routes Not Defined")
@@ -135,7 +304,17 @@ func (g *Gin) RunServer() error {
 
 	log.Println("Web Server '" + g.Name + "' Started..." + util.GetLocalIP() + ":" + util.UintToStr(g.Port))
 
-	if err := g._ginEngine.Run(fmt.Sprintf(":%d", g.Port)); err != nil {
+	var err error
+
+	if util.LenTrim(g.TlsCertPemFile) > 0 && util.LenTrim(g.TlsCertKeyFile) > 0 {
+		log.Println("Web Server Tls Mode")
+		err = g._ginEngine.RunTLS(fmt.Sprintf(":%d", g.Port), g.TlsCertPemFile, g.TlsCertKeyFile)
+	} else {
+		log.Println("Web Server Non-Tls Mode")
+		g._ginEngine.Run(fmt.Sprintf(":%d", g.Port))
+	}
+
+	if err != nil {
 		return fmt.Errorf("Web Server '" + g.Name + "' Failed To Start: " + err.Error())
 	} else {
 		log.Println("Web Server '" + g.Name + "' Stopped")
@@ -189,10 +368,22 @@ func (g *Gin) setupRoutes() int {
 
 	count := 0
 
+	// setup health check route
 	g._ginEngine.GET("/health", func(c *gin.Context) {
 		c.String(200, "OK")
 	})
 
+	// setup session if configured
+	if g.SessionMiddleware != nil {
+		g.setupSessionMiddleware()
+	}
+
+	// setup csrf if configured
+	if g.CsrfMiddleware != nil {
+		g.setupCsrfMiddleware()
+	}
+
+	// setup routes for engine and route groups
 	for mk, mv := range g.Routes {
 		var rg *gin.RouterGroup
 
@@ -217,20 +408,28 @@ func (g *Gin) setupRoutes() int {
 			//
 			// config any middleware first
 			//
-			if v.CorsConfig != nil {
-				g.setupCorsMiddleware(routeFn(), v.CorsConfig)
+			if v.CorsMiddleware != nil {
+				g.setupCorsMiddleware(routeFn(), v.CorsMiddleware)
 			}
 
-			if v.MaxLimitConfig != nil && *v.MaxLimitConfig > 0 {
-				g.setupMaxLimitMiddleware(routeFn(), *v.MaxLimitConfig)
+			if v.MaxLimitMiddleware != nil && *v.MaxLimitMiddleware > 0 {
+				g.setupMaxLimitMiddleware(routeFn(), *v.MaxLimitMiddleware)
 			}
 
-			if v.PerClientIpQpsConfig != nil && v.PerClientIpBurstConfig != nil && v.PerClientIpLimiterTTLConfig != nil {
-				g.setupPerClientIpQpsMiddleware(routeFn(), *v.PerClientIpQpsConfig, *v.PerClientIpBurstConfig, *v.PerClientIpLimiterTTLConfig)
+			if v.PerClientQpsMiddleware != nil {
+				g.setupPerClientIpQpsMiddleware(routeFn(), v.PerClientQpsMiddleware.Qps, v.PerClientQpsMiddleware.Burst, v.PerClientQpsMiddleware.TTL)
 			}
 
-			if len(v.CustomMiddlewareHandlers) > 0 {
-				routeFn().Use(v.CustomMiddlewareHandlers...)
+			if v.GZipMiddleware != nil {
+				g.setupGZipMiddleware(routeFn(), v.GZipMiddleware)
+			}
+
+			if v.UseAuthMiddleware && g._ginJwtAuth != nil && g._ginJwtAuth._ginJwtMiddleware != nil {
+				routeFn().Use(g._ginJwtAuth.AuthMiddleware())
+			}
+
+			if len(v.CustomMiddleware) > 0 {
+				routeFn().Use(v.CustomMiddleware...)
 			}
 
 			//
@@ -439,6 +638,93 @@ func (g *Gin) setupPerClientIpQpsMiddleware(rg gin.IRoutes, qps int, burst int, 
 		}, func(c *gin.Context) {
 			c.AbortWithStatus(429) // exceed rate limit request
 		})) // code based on github.com/yangxikun/gin-limit-by-key
+	}
+}
+
+// setupGZipMiddleware sets up GZip middleware
+func (g *Gin) setupGZipMiddleware(rg gin.IRoutes, gz *GZipConfig) {
+	if gz != nil && gz.Compression.Valid() && gz.Compression != gingzipcompression.UNKNOWN {
+		c := gz.GetGZipCompression()
+
+		exts := gz.GetGZipExcludedExtensions()
+		paths := gz.GetGZipExcludedPaths()
+		pregex := gz.GetGZipExcludedPathsRegex()
+
+		opts := []gzip.Option{}
+
+		if exts != nil {
+			opts = append(opts, exts)
+		}
+
+		if paths != nil {
+			opts = append(opts, paths)
+		}
+
+		if pregex != nil {
+			opts = append(opts, pregex)
+		}
+
+		if len(opts) > 0 {
+			rg.Use(gzip.Gzip(c, opts...))
+		} else {
+			rg.Use(gzip.Gzip(c))
+		}
+	}
+}
+
+// setupSessionMiddleware sets up session middleware,
+// session is setup on the gin engine level (rather than route groups)
+func (g *Gin) setupSessionMiddleware() {
+	if g._ginEngine != nil && g.SessionMiddleware != nil && util.LenTrim(g.SessionMiddleware.SecretKey) > 0 && len(g.SessionMiddleware.SessionNames) > 0 {
+		var store sessions.Store
+
+		if util.LenTrim(g.SessionMiddleware.RedisHostAndPort) == 0 {
+			// cookie store
+			store = cookie.NewStore([]byte(g.SessionMiddleware.SecretKey))
+		} else {
+			// redis store
+			size := g.SessionMiddleware.RedisMaxIdleConnections
+
+			if size <= 0 {
+				size = 1
+			}
+
+			store, _ = redis.NewStore(size, "tcp", g.SessionMiddleware.RedisHostAndPort, "", []byte(g.SessionMiddleware.SecretKey))
+		}
+
+		if store != nil {
+			if len(g.SessionMiddleware.SessionNames) == 1 {
+				g._ginEngine.Use(sessions.Sessions(g.SessionMiddleware.SessionNames[0], store))
+			} else {
+				g._ginEngine.Use(sessions.SessionsMany(g.SessionMiddleware.SessionNames, store))
+			}
+		}
+	}
+}
+
+// setupCsrfMiddleware sets up csrf protection middleware,
+// this middleware is setup on the gin engine level (rather than route groups),
+// this middleware requires gin-contrib/sessions middleware setup and used before setting this up
+func (g *Gin) setupCsrfMiddleware() {
+	if g._ginEngine != nil && g.SessionMiddleware != nil && g.CsrfMiddleware != nil && util.LenTrim(g.SessionMiddleware.SecretKey) > 0 && len(g.SessionMiddleware.SessionNames) > 0 && util.LenTrim(g.CsrfMiddleware.Secret) > 0 {
+		opt := csrf.Options{
+			Secret: g.CsrfMiddleware.Secret,
+		}
+
+		if g.CsrfMiddleware.ErrorFunc != nil {
+			opt.ErrorFunc = g.CsrfMiddleware.ErrorFunc
+		} else {
+			opt.ErrorFunc = func(c *gin.Context) {
+				c.String(400, "CSRF Token Mismatch")
+				c.Abort()
+			}
+		}
+
+		if g.CsrfMiddleware.TokenGetter != nil {
+			opt.TokenGetter = g.CsrfMiddleware.TokenGetter
+		}
+
+		g._ginEngine.Use(csrf.Middleware(opt))
 	}
 }
 
@@ -798,40 +1084,30 @@ func method_descriptions_only() {
 */
 
 /*
-	Gin Middleware to Review for Inclusion:
-	1) Prometheus Export:
-			https://github.com/chenjiandongx/ginprom
-			https://github.com/zsais/go-gin-prometheus
-	2) Request Response Interceptor / Tracer:
+	*) Templating:
+			https://github.com/michelloworld/ez-gin-template
+			https://github.com/gin-contrib/multitemplate <<<
+
+
+
+	Additional Gin Middleware That Can Be Added via CustomMiddleware Slice:
+
+	*) Request Response Interceptor / Tracer:
 			https://github.com/averageflow/goscope
 			https://github.com/tpkeeper/gin-dump
 			https://github.com/gin-contrib/opengintracing
-	3) Session:
-			https://github.com/gin-contrib/sessions
-			https://github.com/go-session/gin-session
-	4) Jwt:
-			https://github.com/appleboy/gin-jwt
-			https://github.com/ScottHuangZL/gin-jwt-session
-	5) OAuth2:
+	*) Prometheus Export:
+			https://github.com/zsais/go-gin-prometheus
+			https://github.com/chenjiandongx/ginprom
+	*) OAuth2:
 			https://github.com/zalando/gin-oauth2
-	6) Authz:
-			https://github.com/gin-contrib/authz
-	7) Templating:
-			https://github.com/michelloworld/ez-gin-template
-			https://github.com/gin-contrib/multitemplate
-	8) Static Bin
+	*) Recovery Override:
+			https://github.com/ekyoung/gin-nice-recovery
+	*) Static Bin
 			https://github.com/olebedev/staticbin
 			https://github.com/gin-contrib/static
-	9) Recovery Override:
-			https://github.com/ekyoung/gin-nice-recovery
-	10) Csrf:
-			https://github.com/utrack/gin-csrf
-	11) Server Send Event (SSE):
+	*) Server Send Event (SSE):
 			https://github.com/gin-contrib/sse
-	12) Logger:
-			https://github.com/gin-contrib/zap
-	13) GZip:
-			https://github.com/gin-contrib/gzip
 */
 
 

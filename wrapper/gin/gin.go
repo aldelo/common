@@ -238,11 +238,14 @@ func NewServer(name string, port uint, releaseMode bool, zaplogger *GinZap) *Gin
 			g = gin.New()
 			g.Use(zaplogger.NormalLogger())
 			g.Use(zaplogger.PanicLogger())
+			log.Println("Using Zap Logger...")
 		} else {
 			g = gin.Default()
+			log.Println("Using Default Recovery, Logger...")
 		}
 	} else {
 		g = gin.Default()
+		log.Println("Using Default Recovery, Logger...")
 	}
 
 	return &Gin{
@@ -272,6 +275,15 @@ func (g *Gin) NewAuthMiddleware(realm string, identityKey string, signingSecretK
 // prepare the necessary field values and handlers via this method's return object access
 func (g *Gin) AuthMiddleware() *GinJwt {
 	return g._ginJwtAuth
+}
+
+// Engine represents the gin engine itself
+func (g *Gin) Engine() *gin.Engine {
+	if g._ginEngine == nil {
+		return nil
+	} else {
+		return g._ginEngine
+	}
 }
 
 // RunServer starts gin-gonic web server,
@@ -426,10 +438,12 @@ func (g *Gin) setupRoutes() int {
 
 			if v.UseAuthMiddleware && g._ginJwtAuth != nil && g._ginJwtAuth._ginJwtMiddleware != nil {
 				routeFn().Use(g._ginJwtAuth.AuthMiddleware())
+				log.Println("Using Jwt Auth Middleware...")
 			}
 
 			if len(v.CustomMiddleware) > 0 {
 				routeFn().Use(v.CustomMiddleware...)
+				log.Println("Using Custom Middleware...")
 			}
 
 			//
@@ -577,6 +591,7 @@ func (g *Gin) setupCorsMiddleware(rg gin.IRoutes, corsConfig *cors.Config) {
 		config.AllowWildcard = corsConfig.AllowWildcard
 
 		rg.Use(cors.New(config))
+		log.Println("Using Cors Middleware...")
 	}
 }
 
@@ -600,6 +615,8 @@ func (g *Gin) setupMaxLimitMiddleware(rg gin.IRoutes, maxLimit int) {
 				c.Next()
 			}
 		}())
+
+		log.Println("Using Max Limit Middleware...")
 	}
 }
 
@@ -638,6 +655,8 @@ func (g *Gin) setupPerClientIpQpsMiddleware(rg gin.IRoutes, qps int, burst int, 
 		}, func(c *gin.Context) {
 			c.AbortWithStatus(429) // exceed rate limit request
 		})) // code based on github.com/yangxikun/gin-limit-by-key
+
+		log.Println("Using Per Client Ip Qps Middleware...")
 	}
 }
 
@@ -669,6 +688,8 @@ func (g *Gin) setupGZipMiddleware(rg gin.IRoutes, gz *GZipConfig) {
 		} else {
 			rg.Use(gzip.Gzip(c))
 		}
+
+		log.Println("Using GZip Middleware...")
 	}
 }
 
@@ -698,6 +719,8 @@ func (g *Gin) setupSessionMiddleware() {
 			} else {
 				g._ginEngine.Use(sessions.SessionsMany(g.SessionMiddleware.SessionNames, store))
 			}
+
+			log.Println("Using Session Middleware...")
 		}
 	}
 }
@@ -725,6 +748,7 @@ func (g *Gin) setupCsrfMiddleware() {
 		}
 
 		g._ginEngine.Use(csrf.Middleware(opt))
+		log.Println("Using Csrf Middleware...")
 	}
 }
 

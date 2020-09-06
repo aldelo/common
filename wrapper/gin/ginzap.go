@@ -71,7 +71,7 @@ func (z *GinZap) Init() error {
 		AppName: z.LogName,
 	}
 
-	if err := z.Init(); err != nil {
+	if err := z._zapLog.Init(); err != nil {
 		z._zapLog = nil
 		return err
 	} else {

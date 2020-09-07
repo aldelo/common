@@ -16,6 +16,7 @@ require (
 	github.com/gin-contrib/multitemplate v0.0.0-20200815104402-b0f455fefd87
 	github.com/gin-contrib/sessions v0.0.3
 	github.com/gin-gonic/gin v1.6.3
+	github.com/go-errors/errors v1.1.1
 	github.com/go-redis/redis/v8 v8.0.0-beta.8
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect

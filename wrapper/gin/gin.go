@@ -67,6 +67,9 @@ type Gin struct {
 	// define the csrf middleware for the gin engine
 	CsrfMiddleware *CsrfConfig
 
+	// define html template renderer
+	HtmlTemplateRenderer *GinTemplate
+
 	// web server instance
 	_ginEngine *gin.Engine
 	_ginJwtAuth *GinJwt
@@ -219,10 +222,18 @@ type CsrfConfig struct {
 
 // NewServer returns a gin-gongic web server wrapper ready for setup
 //
+// customRecovery = indicates if the gin engine default recovery will be replaced, with one that has more custom render
+//
 // if gin default logger is to be replaced, it must be replaced via zaplogger parameter,
 // zaplogger must be fully setup and passed into NewServer in order for zaplogger replacement to be effective,
 // zaplogger will not be setup after gin object is created
-func NewServer(name string, port uint, releaseMode bool, zaplogger *GinZap) *Gin {
+func NewServer(name string, port uint, releaseMode bool, customRecovery bool, zaplogger ...*GinZap) *Gin {
+	var z *GinZap
+
+	if len(zaplogger) > 0 {
+		z = zaplogger[0]
+	}
+
 	mode := gin.ReleaseMode
 
 	if !releaseMode {
@@ -233,19 +244,37 @@ func NewServer(name string, port uint, releaseMode bool, zaplogger *GinZap) *Gin
 
 	var g *gin.Engine
 
-	if zaplogger != nil && util.LenTrim(zaplogger.LogName) > 0 {
-		if err := zaplogger.Init(); err == nil {
+	if z != nil && util.LenTrim(z.LogName) > 0 {
+		if err := z.Init(); err == nil {
 			g = gin.New()
-			g.Use(zaplogger.NormalLogger())
-			g.Use(zaplogger.PanicLogger())
+			g.Use(z.NormalLogger())
+			g.Use(z.PanicLogger())
 			log.Println("Using Zap Logger...")
+		} else {
+			if customRecovery {
+				g = gin.New()
+				g.Use(gin.Logger())
+				g.Use(NiceRecovery(func(c *gin.Context, err interface{}) {
+					c.String(500, err.(error).Error())
+				}))
+				log.Println("Using Custom Recovery...")
+			} else {
+				g = gin.Default()
+				log.Println("Using Default Recovery, Logger...")
+			}
+		}
+	} else {
+		if customRecovery {
+			g = gin.New()
+			g.Use(gin.Logger())
+			g.Use(NiceRecovery(func(c *gin.Context, err interface{}) {
+				c.String(500, err.(error).Error())
+			}))
+			log.Println("Using Custom Recovery...")
 		} else {
 			g = gin.Default()
 			log.Println("Using Default Recovery, Logger...")
 		}
-	} else {
-		g = gin.Default()
-		log.Println("Using Default Recovery, Logger...")
 	}
 
 	return &Gin{
@@ -302,6 +331,11 @@ func (g *Gin) RunServer() error {
 		return fmt.Errorf("Run Web Server Failed: %s", "Port Number Cannot Exceed 65535")
 	}
 
+	// setup html template renderer
+	if g.HtmlTemplateRenderer != nil {
+		g.setupHtmlTemplateRenderer()
+	}
+
 	// setup auth middleware
 	if g._ginJwtAuth != nil {
 		if err := g._ginJwtAuth.BuildGinJwtMiddleware(g); err != nil {
@@ -323,7 +357,7 @@ func (g *Gin) RunServer() error {
 		err = g._ginEngine.RunTLS(fmt.Sprintf(":%d", g.Port), g.TlsCertPemFile, g.TlsCertKeyFile)
 	} else {
 		log.Println("Web Server Non-Tls Mode")
-		g._ginEngine.Run(fmt.Sprintf(":%d", g.Port))
+		err = g._ginEngine.Run(fmt.Sprintf(":%d", g.Port))
 	}
 
 	if err != nil {
@@ -450,6 +484,8 @@ func (g *Gin) setupRoutes() int {
 			// setup route handlers
 			//
 			for _, h := range v.Routes{
+				log.Println("Setting Up Route Handler: " + h.RelativePath)
+
 				if !h.Method.Valid() || h.Method == ginhttpmethod.UNKNOWN {
 					continue
 				}
@@ -469,77 +505,16 @@ func (g *Gin) setupRoutes() int {
 				// add route
 				switch h.Method {
 				case ginhttpmethod.GET:
-					routeFn().GET(h.RelativePath, func(c *gin.Context) {
-						// bind input
-						if h.Binding != ginbindtype.UNKNOWN {
-							// will perform binding
-							var bindObj struct{}
-							if err := g.bindInput(c, h.Binding, &bindObj); err != nil {
-								// binding error
-								_ = c.AbortWithError(500, fmt.Errorf("GET %s Failed on %s Binding: %s", h.RelativePath, h.Binding.Key(), err.Error()))
-							} else {
-								// continue processing
-								h.Handler(c, bindObj)
-							}
-						} else {
-							// no binding requested
-							h.Handler(c, nil)
-						}
-					})
+					routeFn().GET(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.Handler))
+
 				case ginhttpmethod.POST:
-					routeFn().POST(h.RelativePath, func(c *gin.Context) {
-						// bind input
-						if h.Binding != ginbindtype.UNKNOWN {
-							// will perform binding
-							var bindObj struct{}
-							if err := g.bindInput(c, h.Binding, &bindObj); err != nil {
-								// binding error
-								_ = c.AbortWithError(500, fmt.Errorf("POST %s Failed on %s Binding: %s", h.RelativePath, h.Binding.Key(), err.Error()))
-							} else {
-								// continue processing
-								h.Handler(c, bindObj)
-							}
-						} else {
-							// no binding requested
-							h.Handler(c, nil)
-						}
-					})
+					routeFn().POST(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.Handler))
+
 				case ginhttpmethod.PUT:
-					routeFn().PUT(h.RelativePath, func(c *gin.Context) {
-						// bind input
-						if h.Binding != ginbindtype.UNKNOWN {
-							// will perform binding
-							var bindObj struct{}
-							if err := g.bindInput(c, h.Binding, &bindObj); err != nil {
-								// binding error
-								_ = c.AbortWithError(500, fmt.Errorf("PUT %s Failed on %s Binding: %s", h.RelativePath, h.Binding.Key(), err.Error()))
-							} else {
-								// continue processing
-								h.Handler(c, bindObj)
-							}
-						} else {
-							// no binding requested
-							h.Handler(c, nil)
-						}
-					})
+					routeFn().PUT(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.Handler))
+
 				case ginhttpmethod.DELETE:
-					routeFn().DELETE(h.RelativePath, func(c *gin.Context) {
-						// bind input
-						if h.Binding != ginbindtype.UNKNOWN {
-							// will perform binding
-							var bindObj struct{}
-							if err := g.bindInput(c, h.Binding, &bindObj); err != nil {
-								// binding error
-								_ = c.AbortWithError(500, fmt.Errorf("DELETE %s Failed on %s Binding: %s", h.RelativePath, h.Binding.Key(), err.Error()))
-							} else {
-								// continue processing
-								h.Handler(c, bindObj)
-							}
-						} else {
-							// no binding requested
-							h.Handler(c, nil)
-						}
-					})
+					routeFn().DELETE(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.Handler))
 
 				default:
 					continue
@@ -552,6 +527,30 @@ func (g *Gin) setupRoutes() int {
 	}
 
 	return count
+}
+
+// newRouteFunc returns closure to route handler setup,
+// if we define the route handler within the loop in Route Setup, the handler func were reused (not desired effect),
+// however, using closure ensures each relative path uses its own route func
+func (g *Gin) newRouteFunc(relativePath string, method string, bindingType ginbindtype.GinBindType,
+						   handler func(c *gin.Context, bindingInput interface{})) func(context *gin.Context) {
+	return func(c *gin.Context) {
+		// bind input
+		if bindingType != ginbindtype.UNKNOWN {
+			// will perform binding
+			var bindObj struct{}
+			if err := g.bindInput(c, bindingType, &bindObj); err != nil {
+				// binding error
+				_ = c.AbortWithError(500, fmt.Errorf("%s %s Failed on %s Binding: %s", method, relativePath, bindingType.Key(), err.Error()))
+			} else {
+				// continue processing
+				handler(c, bindObj)
+			}
+		} else {
+			// no binding requested
+			handler(c, nil)
+		}
+	}
 }
 
 // setupCorsMiddleware is a helper to setup gin middleware
@@ -591,6 +590,7 @@ func (g *Gin) setupCorsMiddleware(rg gin.IRoutes, corsConfig *cors.Config) {
 		config.AllowWildcard = corsConfig.AllowWildcard
 
 		rg.Use(cors.New(config))
+
 		log.Println("Using Cors Middleware...")
 	}
 }
@@ -749,6 +749,23 @@ func (g *Gin) setupCsrfMiddleware() {
 
 		g._ginEngine.Use(csrf.Middleware(opt))
 		log.Println("Using Csrf Middleware...")
+	}
+}
+
+// setupHtmlTemplateRenderer sets up html template renderer with gin engine
+func (g *Gin) setupHtmlTemplateRenderer() {
+	if g.HtmlTemplateRenderer != nil {
+		if err := g.HtmlTemplateRenderer.LoadHtmlTemplates(); err != nil {
+			log.Println("Load Html Template Renderer Failed: " + err.Error())
+			return
+		}
+
+		if err := g.HtmlTemplateRenderer.SetHtmlRenderer(g); err != nil {
+			log.Println("Set Html Template Renderer Failed: " + err.Error())
+			return
+		}
+
+		log.Println("Html Template Renderer Set...")
 	}
 }
 
@@ -1108,12 +1125,6 @@ func method_descriptions_only() {
 */
 
 /*
-	*) Templating:
-			https://github.com/michelloworld/ez-gin-template
-			https://github.com/gin-contrib/multitemplate <<<
-
-
-
 	Additional Gin Middleware That Can Be Added via CustomMiddleware Slice:
 
 	*) Request Response Interceptor / Tracer:
@@ -1125,8 +1136,6 @@ func method_descriptions_only() {
 			https://github.com/chenjiandongx/ginprom
 	*) OAuth2:
 			https://github.com/zalando/gin-oauth2
-	*) Recovery Override:
-			https://github.com/ekyoung/gin-nice-recovery
 	*) Static Bin
 			https://github.com/olebedev/staticbin
 			https://github.com/gin-contrib/static

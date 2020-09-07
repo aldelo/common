@@ -23,31 +23,52 @@ import (
 	"path/filepath"
 )
 
-func NewTemplate(templateBaseDir string, templateLayoutPath string, templateIncludePath string) *GinTemplate {
+// NewTemplate creates new html template render worker object
+//
+// templateBaseDir = (required) base directory that contains template files
+// templateLayoutPath = (required) relative page layout folder path, layout defines site theme and common base pages
+//						1) to use page parts, use {{ template "xyz" }}
+//						2) see golang html page template rules for more information
+// templatePagePath = (optional) relative page part folder path, pages define portion of html to be inserted into layout themes
+//						1) to define page part with named template, use {{ define "xyz" }}  {{ end }}
+//						2) see golang html page template rules for more information
+//
+// notes
+//		1) c.HTML name = page html name, such as home.html, if there is no page name, then use layout name
+//		2) if c.HTML name cannot find target in renderer, error 500 will be encountered
+//		3) layout file should not contain page parts may not be rendered in c.HTML call
+//		4) basic info about html templates = https://blog.gopheracademy.com/advent-2017/using-go-templates/
+func NewTemplate(templateBaseDir string, templateLayoutPath string, templatePagePath string) *GinTemplate {
 	return &GinTemplate{
 		TemplateBaseDir: templateBaseDir,
 		Templates: []TemplateDefintion{
 			{
 				LayoutPath: templateLayoutPath,
-				IncludePath: templateIncludePath,
+				PagePath: templatePagePath,
 			},
 		},
 	}
 }
 
+// GinTemplate defines the struct for working with html template renderer
 type GinTemplate struct {
 	TemplateBaseDir string
 	Templates []TemplateDefintion
 
 	_htmlrenderer multitemplate.Renderer
+	_htmlTemplatesCount int
 }
 
+// TemplateDefinition defines an unit of template render target
 type TemplateDefintion struct {
 	LayoutPath string
-	IncludePath string
+	PagePath string
 }
 
+// LoadHtmlTemplates will load html templates and set renderer into struct internal var
 func (t *GinTemplate) LoadHtmlTemplates() error {
+	t._htmlTemplatesCount = 0
+
 	if util.LenTrim(t.TemplateBaseDir) == 0 {
 		return fmt.Errorf("Html Template Base Dir is Required")
 	}
@@ -65,15 +86,15 @@ func (t *GinTemplate) LoadHtmlTemplates() error {
 	for _, td := range t.Templates {
 		if util.LenTrim(td.LayoutPath) > 0 {
 			layout := td.LayoutPath
-			include := td.IncludePath
+			page := td.PagePath
 
 			if util.Left(layout, 1) != "/" {
 				layout = "/" + layout
 			}
 
-			if util.LenTrim(include) > 0 {
-				if util.Left(include, 1) != "/" {
-					include = "/" + include
+			if util.LenTrim(page) > 0 {
+				if util.Left(page, 1) != "/" {
+					page = "/" + page
 				}
 			}
 
@@ -88,38 +109,49 @@ func (t *GinTemplate) LoadHtmlTemplates() error {
 				continue
 			}
 
-			if util.LenTrim(include) == 0 {
+			if util.LenTrim(page) == 0 {
 				// only layout files to add to renderer
 				// template name is not important for 'AddFromFiles' (based on AddFromFiles source)
-				r.AddFromFiles(filepath.Base(layoutFiles[0]), layoutFiles...)
+				if tp := r.AddFromFiles(filepath.Base(layoutFiles[0]), layoutFiles...); tp != nil {
+					t._htmlTemplatesCount = len(layoutFiles)
+				}
 			} else {
-				// has layout and include files to add to renderer
-				includeFiles, err := filepath.Glob(t.TemplateBaseDir + include)
+				// has layout and page files to add to renderer
+				pageFiles, err := filepath.Glob(t.TemplateBaseDir + page)
 
 				if err != nil {
 					continue
 				}
 
-				if len(includeFiles) == 0 {
+				if len(pageFiles) == 0 {
 					continue
 				}
 
-				// layout with include files to add to renderer
+				// layout with page files to add to renderer
 				// template name is not important for 'AddFromFiles' (based on AddFromFiles source)
-				for _, f := range includeFiles {
+				for _, f := range pageFiles {
 					layoutCopy := make([]string, len(layoutFiles))
 					copy(layoutCopy, layoutFiles)
 					files := append(layoutCopy, f)
-					r.AddFromFiles(filepath.Base(f), files...)
+
+					if tp := r.AddFromFiles(filepath.Base(f), files...); tp != nil {
+						t._htmlTemplatesCount++
+					}
 				}
 			}
 		}
 	}
 
-	t._htmlrenderer = r
-	return nil
+	if t._htmlTemplatesCount <= 0 {
+		t._htmlrenderer = nil
+		return fmt.Errorf("No Html Templates Loaded Into Renderer")
+	} else {
+		t._htmlrenderer = r
+		return nil
+	}
 }
 
+// SetHtmlRenderer will set the existing html renderer into gin engine's HTMLRender property
 func (t *GinTemplate) SetHtmlRenderer(g *Gin) error {
 	if t._htmlrenderer == nil {
 		return fmt.Errorf("Html Template Renderer is Required")
@@ -131,6 +163,14 @@ func (t *GinTemplate) SetHtmlRenderer(g *Gin) error {
 
 	if g._ginEngine == nil {
 		return fmt.Errorf(("Gin Engine is Required"))
+	}
+
+	if t._htmlTemplatesCount <= 0 {
+		return fmt.Errorf("No Html Templates Loaded Into Renderer")
+	}
+
+	if t._htmlrenderer == nil {
+		return fmt.Errorf("Html Renderer Must Not Be Nil")
 	}
 
 	g._ginEngine.HTMLRender = t._htmlrenderer

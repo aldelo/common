@@ -21,6 +21,7 @@ import (
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/gin/ginbindtype"
 	"github.com/aldelo/common/wrapper/gin/ginjwtsignalgorithm"
+	"log"
 	"net/http"
 	"time"
 
@@ -85,16 +86,17 @@ func NewGinJwtMiddleware(realm string, identityKey string, signingSecretKey stri
 //
 // *** Authentication Setup ***
 // AuthenticateBindingType = (required) AuthenticateBindingType defines the binding type to use for login form field data
+// LoginRequestDataPtr = (optional) LoginRequestDataPtr contains pointer object that represents login request (used for binding), if not set, default = &UserLogin helper struct
 // LoginRoutePath = (required) LoginRoutePath defines the relative path to the gin jwt middleware's built-in LoginHandler action, sets up as POST
 // LogoutRoutePath = (optional) LogoutRoutePath defines the relative path to the gin jwt middleware's built-in LogoutHandler action, sets up as POST
 // RefreshTokenRoutePath = (optional) RefreshTokenRoutePath defines the relative path to the middleware's built-in RefreshHandler action, sets up as GET
 // AuthenticateHandler = (required) AuthenticateHandler func is called by Authenticator,
-//							 		receives loginFields for authentication use,
-//							 		if authentication succeeds, returns the loggedInCredential object
+//							 		receives loginRequestDataPtr for authentication use,
+//							 		if authentication succeeds, returns the loggedInCredentialPtr object
 //							 		(which typically is a user object containing user information logged in)
 // AddClaimsHandler = (optional) LoggedInMapClaimsHandler func is called during Authenticator action upon success,
 //								 so that this handler when coded can insert jwt additional payload data,
-//								    - loggedInCredential = the returning loggedInCredential from LoginHandler,
+//								    - loggedInCredentialPtr = the returning loggedInCredentialPtr from LoginHandler,
 //								    - identityKeyValue = string value for the named identityKey defined within the struct
 // GetIdentityHandler = (optional) GetIdentityHandler func is called when IdentityHandler is triggered,
 //								   field values from claims will be parsed and returned via object by the implementation code
@@ -105,7 +107,7 @@ func NewGinJwtMiddleware(realm string, identityKey string, signingSecretKey stri
 // *** Authorization Setup ***
 // AuthorizerHandler = (optional) AuthorizerHandler func is called during authorization after authentication,
 //								  to validate if the current credential has access rights to certain parts of the target site,
-//	 							  the loggedInCredential is the object that LoginHandler returns upon successful authentication,
+//	 							  the loggedInCredentialPtr is the object that LoginHandler returns upon successful authentication,
 //								     - return value of true indicates authorization success,
 //								     - return value of false indicates authorization failure
 // UnauthorizedHandler = (optional) UnauthorizedHandler func is called when the authorization is not authorized,
@@ -194,6 +196,9 @@ type GinJwt struct {
 	// AuthenticateBindingType defines the binding type to use for login form field data
 	AuthenticateBindingType ginbindtype.GinBindType
 
+	// LoginRequestDataPtr contains pointer object that represents login request (used for binding), if not set, default = &UserLogin helper struct
+	LoginRequestDataPtr interface{}
+
 	// LoginRoutePath defines the relative path to the middleware's built-in LoginHandler,
 	// this route path is setup as POST with the gin engine
 	LoginRoutePath string
@@ -207,17 +212,17 @@ type GinJwt struct {
 	RefreshTokenRoutePath string
 
 	// AuthenticateHandler func is called by Authenticator,
-	// receives loginFields for authentication use,
-	// if authentication succeeds, returns the loggedInCredential object
+	// receives loginRequestDataPtr for authentication use,
+	// if authentication succeeds, returns the loggedInCredentialPtr object
 	// (which typically is a user object containing user information logged in)
-	AuthenticateHandler func(loginFields interface{}) (loggedInCredential interface{})
+	AuthenticateHandler func(loginRequestDataPtr interface{}) (loggedInCredentialPtr interface{})
 
 	// AddClaimsHandler func is called during Authenticator action upon success,
 	// so that this handler when coded can insert jwt additional payload data
 	//
-	// loggedInCredential = the returning loggedInCredential from LoginHandler
+	// loggedInCredentialPtr = the returning loggedInCredentialPtr from LoginHandler
 	// identityKeyValue = string value for the named identityKey defined within the struct
-	AddClaimsHandler func(loggedInCredential interface{}) (identityKeyValue string, claims map[string]interface{})
+	AddClaimsHandler func(loggedInCredentialPtr interface{}) (identityKeyValue string, claims map[string]interface{})
 
 	// GetIdentityHandler func is called when IdentityHandler is triggered,
 	// field values from claims will be parsed and returned via object by the implementation code
@@ -238,10 +243,10 @@ type GinJwt struct {
 
 	// AuthorizerHandler func is called during authorization after authentication,
 	// to validate if the current credential has access rights to certain parts of the target site,
-	// the loggedInCredential is the object that LoginHandler returns upon successful authentication,
+	// the loggedInCredentialPtr is the object that LoginHandler returns upon successful authentication,
 	// return value of true indicates authorization success,
 	// return value of false indicates authorization failure
-	AuthorizerHandler func(loggedInCredential interface{}, c *gin.Context) bool
+	AuthorizerHandler func(loggedInCredentialPtr interface{}, c *gin.Context) bool
 
 	// UnauthorizedHandler func is called when the authorization is not authorized,
 	// this handler will return the unauthorized message content to caller,
@@ -286,12 +291,24 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 		return fmt.Errorf("Gin Engine is Required")
 	}
 
-	if !j.AuthenticateBindingType.Valid() || j.AuthenticateBindingType == ginbindtype.UNKNOWN {
+	if !j.AuthenticateBindingType.Valid() {
 		return fmt.Errorf("Authenticate Binding Type is Required")
 	}
 
 	if j.AuthenticateHandler == nil {
 		return fmt.Errorf("Authenticate Handler is Required")
+	}
+
+	if j.TokenValidDuration == 0 {
+		j.TokenValidDuration = 15 * time.Minute
+	}
+
+	if j.TokenMaxRefreshDuration == 0 {
+		j.TokenMaxRefreshDuration = 24 * time.Hour
+	}
+
+	if j.LoginRequestDataPtr == nil {
+		j.LoginRequestDataPtr = &UserLogin{}
 	}
 
 	// the jwt middleware
@@ -324,13 +341,14 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 			}
 
 			// loginFields struct represents the login form fields serialized from context input
-			var loginFields struct{}
+			var loginRequestData interface{}
+			loginRequestData = j.LoginRequestDataPtr
 
-			if err := g.bindInput(c, j.AuthenticateBindingType, &loginFields); err != nil {
+			if err := g.bindInput(c, j.AuthenticateBindingType, loginRequestData); err != nil {
 				return nil, jwt.ErrMissingLoginValues
 			}
 
-			if loggedInCredential := j.AuthenticateHandler(loginFields); loggedInCredential != nil {
+			if loggedInCredential := j.AuthenticateHandler(loginRequestData); loggedInCredential != nil {
 				return loggedInCredential, nil
 			} else {
 				return nil, jwt.ErrFailedAuthentication
@@ -510,17 +528,29 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 
 	// setup login route for LoginHandler
 	if util.LenTrim(j.LoginRoutePath) > 0 {
+		log.Println("Jwt Auth Login Set: (Custom) " + j.LoginRoutePath)
 		g._ginEngine.POST(j.LoginRoutePath, authMiddleware.LoginHandler)
+	} else {
+		log.Println("Jwt Auth Login Set: (Default) " + "/login")
+		g._ginEngine.POST("/login", authMiddleware.LoginHandler)
 	}
 
 	// setup logout route for LogoutHandler
 	if util.LenTrim(j.LogoutRoutePath) > 0 {
+		log.Println("Jwt Auth Logout Set: (Custom) " + j.LogoutRoutePath)
 		g._ginEngine.POST(j.LogoutRoutePath, authMiddleware.LogoutHandler)
+	} else {
+		log.Println("Jwt Auth Logout Set: (Default) " + "/logout")
+		g._ginEngine.POST("/logout", authMiddleware.LogoutHandler)
 	}
 
 	// setup refresh token route for RefreshHandler
 	if util.LenTrim(j.RefreshTokenRoutePath) > 0 {
+		log.Println("Jwt Token Refresh Set: (Custom) " + j.RefreshTokenRoutePath)
 		g._ginEngine.GET(j.RefreshTokenRoutePath, authMiddleware.RefreshHandler)
+	} else {
+		log.Println("Jwt Token Refresh Set: (Default) " + "/refreshtoken")
+		g._ginEngine.GET("/refreshtoken", authMiddleware.RefreshHandler)
 	}
 
 	// setup no route handler
@@ -551,6 +581,11 @@ func (j *GinJwt) AuthMiddleware() gin.HandlerFunc {
 	} else {
 		return nil
 	}
+}
+
+// ExtractClaims extracts jwt claims from context and return via map
+func (j *GinJwt) ExtractClaims(c *gin.Context) map[string]interface{} {
+	return jwt.ExtractClaims(c)
 }
 
 // =====================================================================================================================

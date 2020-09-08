@@ -70,6 +70,9 @@ type Gin struct {
 	// define html template renderer
 	HtmlTemplateRenderer *GinTemplate
 
+	// define http status error handler
+	HttpStatusErrorHandler func(status int, trace string, c *gin.Context)
+
 	// web server instance
 	_ginEngine *gin.Engine
 	_ginJwtAuth *GinJwt
@@ -103,6 +106,7 @@ type RouteDefinition struct {
 // RelativePath = (required) route path such as /HelloWorld, this is the path to trigger the route handler
 // Method = (required) GET, POST, PUT, DELETE
 // Binding = (optional) various input data binding to target type option
+// BindingInputPtr = (conditional) binding input object pointer, required if binding type is set
 // Handler = (required) function handler to be executed per method defined (actual logic goes inside handler)
 //		1) gin.Context Value Return Helpers:
 //		      a) c.String(), c.HTML(), c.JSON(), c.JSONP(), c.PureJSON(), c.AsciiJSON(), c.SecureJSON(), c.XML(), c.YAML(),
@@ -117,9 +121,12 @@ type Route struct {
 	// input value binding to be performed
 	Binding ginbindtype.GinBindType
 
+	// binding input object pointer
+	BindingInputPtr interface{}
+
 	// actual handler method to be triggered,
-	// bindingInput if any, is the binding resolved object passed into the handler method
-	Handler func(c *gin.Context, bindingInput interface{})
+	// bindingInputPtr if any, is the binding resolved object passed into the handler method
+	Handler func(c *gin.Context, bindingInputPtr interface{})
 }
 
 // PerClientQps defines options for the PerClientQps based rate limit middleware
@@ -223,11 +230,12 @@ type CsrfConfig struct {
 // NewServer returns a gin-gongic web server wrapper ready for setup
 //
 // customRecovery = indicates if the gin engine default recovery will be replaced, with one that has more custom render
+// customHttpErrorHandler = func to custom handle http error
 //
 // if gin default logger is to be replaced, it must be replaced via zaplogger parameter,
 // zaplogger must be fully setup and passed into NewServer in order for zaplogger replacement to be effective,
 // zaplogger will not be setup after gin object is created
-func NewServer(name string, port uint, releaseMode bool, customRecovery bool, zaplogger ...*GinZap) *Gin {
+func NewServer(name string, port uint, releaseMode bool, customRecovery bool, customHttpErrorHandler func(status int, trace string, c *gin.Context), zaplogger ...*GinZap) *Gin {
 	var z *GinZap
 
 	if len(zaplogger) > 0 {
@@ -242,68 +250,93 @@ func NewServer(name string, port uint, releaseMode bool, customRecovery bool, za
 
 	gin.SetMode(mode)
 
-	var g *gin.Engine
+	gw := &Gin{
+		Name: name,
+		Port: port,
+		HttpStatusErrorHandler: customHttpErrorHandler,
+		_ginEngine: nil,
+		_ginJwtAuth: nil,
+		_limiterCache: cache.New(5*time.Minute, 10*time.Minute),
+	}
 
 	if z != nil && util.LenTrim(z.LogName) > 0 {
 		if err := z.Init(); err == nil {
-			g = gin.New()
-			g.Use(z.NormalLogger())
-			g.Use(z.PanicLogger())
+			gw._ginEngine = gin.New()
+			gw._ginEngine.Use(z.NormalLogger())
+			gw._ginEngine.Use(z.PanicLogger())
 			log.Println("Using Zap Logger...")
 		} else {
 			if customRecovery {
-				g = gin.New()
-				g.Use(gin.Logger())
-				g.Use(NiceRecovery(func(c *gin.Context, err interface{}) {
-					c.String(500, err.(error).Error())
+				gw._ginEngine = gin.New()
+				gw._ginEngine.Use(gin.Logger())
+				gw._ginEngine.Use(NiceRecovery(func(c *gin.Context, err interface{}) {
+					if gw.HttpStatusErrorHandler == nil {
+						c.String(500, err.(error).Error())
+					} else {
+						gw.HttpStatusErrorHandler(500, err.(error).Error(), c)
+					}
 				}))
+
 				log.Println("Using Custom Recovery...")
 			} else {
-				g = gin.Default()
+				gw._ginEngine = gin.Default()
 				log.Println("Using Default Recovery, Logger...")
 			}
 		}
 	} else {
 		if customRecovery {
-			g = gin.New()
-			g.Use(gin.Logger())
-			g.Use(NiceRecovery(func(c *gin.Context, err interface{}) {
-				c.String(500, err.(error).Error())
+			gw._ginEngine = gin.New()
+			gw._ginEngine.Use(gin.Logger())
+			gw._ginEngine.Use(NiceRecovery(func(c *gin.Context, err interface{}) {
+				if gw.HttpStatusErrorHandler == nil {
+					c.String(500, err.(error).Error())
+				} else {
+					gw.HttpStatusErrorHandler(500, err.(error).Error(), c)
+				}
 			}))
 			log.Println("Using Custom Recovery...")
 		} else {
-			g = gin.Default()
+			gw._ginEngine = gin.Default()
 			log.Println("Using Default Recovery, Logger...")
 		}
 	}
 
-	return &Gin{
-		Name: name,
-		Port: port,
-		_ginEngine: g,
-		_ginJwtAuth: nil,
-		_limiterCache: cache.New(5*time.Minute, 10*time.Minute),
-	}
+	return gw
 }
 
 // NewAuthMiddleware will create a new jwt auth middleware with basic info provided,
 // then this new middleware is set into Gin wrapper internal var,
 // this middleware's additional fields and handlers must then be defined by accessing the AuthMiddleware func,
 // once middleware's completely prepared, then call the RunServer which automatically builds the auth middleware for use
-func (g *Gin) NewAuthMiddleware(realm string, identityKey string, signingSecretKey string, authenticateBinding ginbindtype.GinBindType) {
+func (g *Gin) NewAuthMiddleware(realm string, identityKey string, signingSecretKey string, authenticateBinding ginbindtype.GinBindType, setup ...func(j *GinJwt)) bool {
 	g._ginJwtAuth = nil
 
 	if g._ginEngine == nil {
-		return
+		return false
 	}
 
 	g._ginJwtAuth = NewGinJwtMiddleware(realm, identityKey, signingSecretKey, authenticateBinding)
+
+	if len(setup) > 0 {
+		setup[0](g._ginJwtAuth)
+	}
+
+	return true
 }
 
 // AuthMiddleware returns the GinJwt struct object built by NewAuthMiddleware,
 // prepare the necessary field values and handlers via this method's return object access
 func (g *Gin) AuthMiddleware() *GinJwt {
 	return g._ginJwtAuth
+}
+
+// ExtractJwtClaims will extra jwt claims from context and return via map
+func (g *Gin) ExtractJwtClaims(c *gin.Context) map[string]interface{} {
+	if g._ginJwtAuth != nil {
+		return g._ginJwtAuth.ExtractClaims(c)
+	} else {
+		return nil
+	}
 }
 
 // Engine represents the gin engine itself
@@ -369,37 +402,42 @@ func (g *Gin) RunServer() error {
 }
 
 // bindInput will attempt to bind input data to target binding output, for example json string to struct mapped to json elements
-func (g *Gin) bindInput(c *gin.Context, bindType ginbindtype.GinBindType, bindObj *struct{}) (err error) {
+//
+// bindObjPtr = pointer to the target object, cannot be nil
+func (g *Gin) bindInput(c *gin.Context, bindType ginbindtype.GinBindType, bindObjPtr interface{}) (err error) {
 	if c == nil {
 		return fmt.Errorf("Binding Context is Nil")
 	}
 
-	if !bindType.Valid() || bindType == ginbindtype.UNKNOWN {
+	if !bindType.Valid() {
 		return fmt.Errorf("Binding Type Not Valid")
 	}
 
-	if bindObj == nil {
-		return fmt.Errorf("Binding Target Object Not Defined")
+	if bindObjPtr == nil {
+		return fmt.Errorf("Binding Target Object Pointer Not Defined")
 	}
 
 	switch bindType {
 	case ginbindtype.BindHeader:
-		err = c.ShouldBindHeader(bindObj)
+		err = c.ShouldBindHeader(bindObjPtr)
 	case ginbindtype.BindJson:
-		err = c.ShouldBindJSON(bindObj)
+		err = c.ShouldBindJSON(bindObjPtr)
 	case ginbindtype.BindProtoBuf:
-		err = c.ShouldBindWith(bindObj, binding.ProtoBuf)
+		err = c.ShouldBindWith(bindObjPtr, binding.ProtoBuf)
 	case ginbindtype.BindQuery:
-		err = c.ShouldBindQuery(bindObj)
+		err = c.ShouldBindQuery(bindObjPtr)
 	case ginbindtype.BindUri:
-		err = c.ShouldBindUri(bindObj)
+		err = c.ShouldBindUri(bindObjPtr)
 	case ginbindtype.BindXml:
-		err = c.ShouldBindXML(bindObj)
+		err = c.ShouldBindXML(bindObjPtr)
 	case ginbindtype.BindYaml:
-		err = c.ShouldBindYAML(bindObj)
+		err = c.ShouldBindYAML(bindObjPtr)
+	default:
+		err = c.ShouldBind(bindObjPtr)
 	}
 
 	if err != nil {
+		log.Println("Bind Error:", err.Error(), "; Bind Type:", bindType.Key())
 		return err
 	}
 
@@ -418,6 +456,16 @@ func (g *Gin) setupRoutes() int {
 	g._ginEngine.GET("/health", func(c *gin.Context) {
 		c.String(200, "OK")
 	})
+
+	if g.HttpStatusErrorHandler != nil {
+		g._ginEngine.NoRoute(func(context *gin.Context) {
+			g.HttpStatusErrorHandler(404, "NoRoute", context)
+		})
+
+		g._ginEngine.NoMethod(func(context *gin.Context) {
+			g.HttpStatusErrorHandler(404, "NoMethod", context)
+		})
+	}
 
 	// setup session if configured
 	if g.SessionMiddleware != nil {
@@ -505,16 +553,16 @@ func (g *Gin) setupRoutes() int {
 				// add route
 				switch h.Method {
 				case ginhttpmethod.GET:
-					routeFn().GET(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.Handler))
+					routeFn().GET(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
 
 				case ginhttpmethod.POST:
-					routeFn().POST(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.Handler))
+					routeFn().POST(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
 
 				case ginhttpmethod.PUT:
-					routeFn().PUT(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.Handler))
+					routeFn().PUT(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
 
 				case ginhttpmethod.DELETE:
-					routeFn().DELETE(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.Handler))
+					routeFn().DELETE(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
 
 				default:
 					continue
@@ -532,19 +580,17 @@ func (g *Gin) setupRoutes() int {
 // newRouteFunc returns closure to route handler setup,
 // if we define the route handler within the loop in Route Setup, the handler func were reused (not desired effect),
 // however, using closure ensures each relative path uses its own route func
-func (g *Gin) newRouteFunc(relativePath string, method string, bindingType ginbindtype.GinBindType,
-						   handler func(c *gin.Context, bindingInput interface{})) func(context *gin.Context) {
+func (g *Gin) newRouteFunc(relativePath string, method string, bindingType ginbindtype.GinBindType, bindingInputPtr interface{},
+						   handler func(c *gin.Context, bindingInputPtr interface{})) func(context *gin.Context) {
 	return func(c *gin.Context) {
-		// bind input
-		if bindingType != ginbindtype.UNKNOWN {
+		if bindingInputPtr != nil {
 			// will perform binding
-			var bindObj struct{}
-			if err := g.bindInput(c, bindingType, &bindObj); err != nil {
+			if err := g.bindInput(c, bindingType, bindingInputPtr); err != nil {
 				// binding error
 				_ = c.AbortWithError(500, fmt.Errorf("%s %s Failed on %s Binding: %s", method, relativePath, bindingType.Key(), err.Error()))
 			} else {
 				// continue processing
-				handler(c, bindObj)
+				handler(c, bindingInputPtr)
 			}
 		} else {
 			// no binding requested

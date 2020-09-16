@@ -737,27 +737,32 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 	}
 
 	// call rows.Next() first to position the row
-	if rows.Next() {
-		// now struct scan
-		err = rows.StructScan(dest)
+	//if rows.Next() {
+	//	// now struct scan
+	//	err = rows.StructScan(dest)
+	//
+	//	// if err is sql.ErrNoRows then treat as no error
+	//	if err != nil && err == sql.ErrNoRows {
+	//		endOfRows = true
+	//		dest = nil
+	//		err = nil
+	//		return
+	//	}
+	//
+	//	if err != nil {
+	//		// has error
+	//		endOfRows = false	// although error but may not be at end of rows
+	//		dest = nil
+	//		return
+	//	}
+	//
+	//	// struct scan successful, but may not be at end of rows
+	//	return false, nil
+	//}
 
-		// if err is sql.ErrNoRows then treat as no error
-		if err != nil && err == sql.ErrNoRows {
-			endOfRows = true
-			dest = nil
-			err = nil
-			return
-		}
-
-		if err != nil {
-			// has error
-			endOfRows = false	// although error but may not be at end of rows
-			dest = nil
-			return
-		}
-
-		// struct scan successful, but may not be at end of rows
-		return false, nil
+	err = sqlx.StructScan(rows, dest)
+	if err != nil {
+		return false, err
 	}
 
 	// no more rows

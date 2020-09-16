@@ -1,6 +1,10 @@
 package helper
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 /*
  * Copyright 2020 Aldelo, LP
@@ -119,4 +123,146 @@ func GetFirstByteOrDefault(defaultValue byte, paramValue ...byte) byte {
 		// returning default
 		return defaultValue
 	}
+}
+
+// ================================================================================================================
+// slice helpers
+// ================================================================================================================
+
+// IntSliceContains checks if value is contained within the intSlice
+func IntSliceContains(intSlice *[]int, value int) bool {
+	if intSlice == nil {
+		return false
+	} else {
+		for _, v := range *intSlice {
+			if v == value {
+				return true
+			}
+		}
+
+		return false
+	}
+}
+
+// StringSliceContains checks if value is contained within the strSlice
+func StringSliceContains(strSlice *[]string, value string) bool {
+	if strSlice == nil {
+		return false
+	} else {
+		for _, v := range *strSlice {
+			if strings.ToLower(v) == strings.ToLower(value) {
+				return true
+			}
+		}
+
+		return false
+	}
+}
+
+// SliceSeekElement returns the first filterFunc input object's true response
+// note: use SliceObjectToSliceInterface to convert slice of objects to slice of interface before passing to slice parameter
+func SliceSeekElement(slice []interface{}, filterFunc func(input interface{}, filter ...interface{}) bool, filterParam ...interface{}) interface{} {
+	if len(slice) == 0 {
+		return nil
+	}
+
+	if filterFunc == nil {
+		return nil
+	}
+
+	if len(filterParam) == 0 {
+		return nil
+	}
+
+	for _, v := range slice {
+		if filterFunc(v, filterParam...) {
+			// found
+			return v
+		}
+	}
+
+	// not found
+	return nil
+}
+
+// ================================================================================================================
+// console helpers
+// ================================================================================================================
+
+// ConsoleLPromptAndAnswer is a helper to prompt a message and then scan a response in console
+func ConsolePromptAndAnswer(prompt string, replyLowercase bool) string {
+	fmt.Print(prompt)
+
+	answer := ""
+
+	if _, e := fmt.Scanln(&answer); e != nil {
+		fmt.Println("Scan Error: ", e)
+	} else {
+		answer = RightTrimLF(answer)
+
+		if replyLowercase {
+			answer = strings.ToLower(answer)
+		}
+
+		fmt.Println()
+	}
+
+	return answer
+}
+
+// ConsoleLPromptAndAnswerBool is a helper to prompt a message and then scan a response in console
+func ConsolePromptAndAnswerBool(prompt string) bool {
+	fmt.Print(prompt)
+
+	answer := ""
+	result := false
+
+	if _, e := fmt.Scanln(&answer); e != nil {
+		fmt.Println("Scan Error: ", e)
+	} else {
+		answer = RightTrimLF(answer)
+		result, _ = ParseBool(answer)
+
+		fmt.Println()
+	}
+
+	return result
+}
+
+// ConsoleLPromptAndAnswerInt is a helper to prompt a message and then scan a response in console
+func ConsolePromptAndAnswerInt(prompt string) int {
+	fmt.Print(prompt)
+
+	answer := ""
+	result := 0
+
+	if _, e := fmt.Scanln(&answer); e != nil {
+		fmt.Println("Scan Error: ", e)
+	} else {
+		answer = RightTrimLF(answer)
+		result, _ = ParseInt32(answer)
+
+		fmt.Println()
+	}
+
+	return result
+}
+
+// ConsoleLPromptAndAnswerFloat64 is a helper to prompt a message and then scan a response in console
+func ConsolePromptAndAnswerFloat64(prompt string) float64 {
+	fmt.Print(prompt)
+
+	answer := ""
+	result := float64(0)
+
+	if _, e := fmt.Scanln(&answer); e != nil {
+		fmt.Println("Scan Error: ", e)
+	} else {
+		answer = RightTrimLF(answer)
+		result, _ = ParseFloat64(answer)
+
+		fmt.Println()
+	}
+
+	return result
 }

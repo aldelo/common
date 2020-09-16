@@ -59,7 +59,7 @@ type Gin struct {
 
 	// web server routes to handle
 	// string = routeGroup path if defined, otherwise, if * refers to base
-	Routes map[string][]*RouteDefinition
+	Routes map[string]*RouteDefinition
 
 	// define the session middleware for the gin engine
 	SessionMiddleware *SessionConfig
@@ -478,12 +478,12 @@ func (g *Gin) setupRoutes() int {
 	}
 
 	// setup routes for engine and route groups
-	for mk, mv := range g.Routes {
+	for k, v := range g.Routes {
 		var rg *gin.RouterGroup
 
-		if mk != "*" {
+		if k != "*" {
 			// route group
-			rg = g._ginEngine.Group(mk)
+			rg = g._ginEngine.Group(k)
 		}
 
 		routeFn := func() gin.IRoutes{
@@ -494,83 +494,81 @@ func (g *Gin) setupRoutes() int {
 			}
 		}
 
-		for _, v := range mv {
-			if v == nil {
+		if v == nil {
+			continue
+		}
+
+		//
+		// config any middleware first
+		//
+		if v.CorsMiddleware != nil {
+			g.setupCorsMiddleware(routeFn(), v.CorsMiddleware)
+		}
+
+		if v.MaxLimitMiddleware != nil && *v.MaxLimitMiddleware > 0 {
+			g.setupMaxLimitMiddleware(routeFn(), *v.MaxLimitMiddleware)
+		}
+
+		if v.PerClientQpsMiddleware != nil {
+			g.setupPerClientIpQpsMiddleware(routeFn(), v.PerClientQpsMiddleware.Qps, v.PerClientQpsMiddleware.Burst, v.PerClientQpsMiddleware.TTL)
+		}
+
+		if v.GZipMiddleware != nil {
+			g.setupGZipMiddleware(routeFn(), v.GZipMiddleware)
+		}
+
+		if v.UseAuthMiddleware && g._ginJwtAuth != nil && g._ginJwtAuth._ginJwtMiddleware != nil {
+			routeFn().Use(g._ginJwtAuth.AuthMiddleware())
+			log.Println("Using Jwt Auth Middleware...")
+		}
+
+		if len(v.CustomMiddleware) > 0 {
+			routeFn().Use(v.CustomMiddleware...)
+			log.Println("Using Custom Middleware...")
+		}
+
+		//
+		// setup route handlers
+		//
+		for _, h := range v.Routes{
+			log.Println("Setting Up Route Handler: " + h.RelativePath)
+
+			if !h.Method.Valid() || h.Method == ginhttpmethod.UNKNOWN {
 				continue
 			}
 
-			//
-			// config any middleware first
-			//
-			if v.CorsMiddleware != nil {
-				g.setupCorsMiddleware(routeFn(), v.CorsMiddleware)
+			if !h.Binding.Valid() {
+				continue
 			}
 
-			if v.MaxLimitMiddleware != nil && *v.MaxLimitMiddleware > 0 {
-				g.setupMaxLimitMiddleware(routeFn(), *v.MaxLimitMiddleware)
+			if util.LenTrim(h.RelativePath) == 0 {
+				continue
 			}
 
-			if v.PerClientQpsMiddleware != nil {
-				g.setupPerClientIpQpsMiddleware(routeFn(), v.PerClientQpsMiddleware.Qps, v.PerClientQpsMiddleware.Burst, v.PerClientQpsMiddleware.TTL)
+			if h.Handler == nil {
+				continue
 			}
 
-			if v.GZipMiddleware != nil {
-				g.setupGZipMiddleware(routeFn(), v.GZipMiddleware)
+			// add route
+			switch h.Method {
+			case ginhttpmethod.GET:
+				routeFn().GET(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
+
+			case ginhttpmethod.POST:
+				routeFn().POST(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
+
+			case ginhttpmethod.PUT:
+				routeFn().PUT(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
+
+			case ginhttpmethod.DELETE:
+				routeFn().DELETE(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
+
+			default:
+				continue
 			}
 
-			if v.UseAuthMiddleware && g._ginJwtAuth != nil && g._ginJwtAuth._ginJwtMiddleware != nil {
-				routeFn().Use(g._ginJwtAuth.AuthMiddleware())
-				log.Println("Using Jwt Auth Middleware...")
-			}
-
-			if len(v.CustomMiddleware) > 0 {
-				routeFn().Use(v.CustomMiddleware...)
-				log.Println("Using Custom Middleware...")
-			}
-
-			//
-			// setup route handlers
-			//
-			for _, h := range v.Routes{
-				log.Println("Setting Up Route Handler: " + h.RelativePath)
-
-				if !h.Method.Valid() || h.Method == ginhttpmethod.UNKNOWN {
-					continue
-				}
-
-				if !h.Binding.Valid() {
-					continue
-				}
-
-				if util.LenTrim(h.RelativePath) == 0 {
-					continue
-				}
-
-				if h.Handler == nil {
-					continue
-				}
-
-				// add route
-				switch h.Method {
-				case ginhttpmethod.GET:
-					routeFn().GET(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
-
-				case ginhttpmethod.POST:
-					routeFn().POST(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
-
-				case ginhttpmethod.PUT:
-					routeFn().PUT(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
-
-				case ginhttpmethod.DELETE:
-					routeFn().DELETE(h.RelativePath, g.newRouteFunc(h.RelativePath, h.Method.Key(), h.Binding, h.BindingInputPtr, h.Handler))
-
-				default:
-					continue
-				}
-
-				// add handler counter
-				count++
-			}
+			// add handler counter
+			count++
 		}
 	}
 

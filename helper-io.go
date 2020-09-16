@@ -17,11 +17,11 @@ package helper
  */
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path"
-	"fmt"
 )
 
 // FileRead will read all file content of given file in path,
@@ -37,10 +37,33 @@ func FileRead(path string) (string, error) {
 	return string(data), nil
 }
 
+// FileReadBytes will read all file content and return slice of byte
+func FileReadBytes(path string) ([]byte, error) {
+	data, err := ioutil.ReadFile(path)
+
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return data, nil
+}
+
 // FileWrite will write data into file at the given path,
-// if succesful, no error is returned (nil)
+// if successful, no error is returned (nil)
 func FileWrite(path string, data string) error {
 	err := ioutil.WriteFile(path, []byte(data), 0644)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// FileWriteBytes will write byte data into file at the given path,
+// if successful, no error is returned (nil)
+func FileWriteBytes(path string, data []byte) error {
+	err := ioutil.WriteFile(path, data, 0644)
 
 	if err != nil {
 		return err

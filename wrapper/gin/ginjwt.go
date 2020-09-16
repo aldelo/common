@@ -226,7 +226,7 @@ type GinJwt struct {
 
 	// GetIdentityHandler func is called when IdentityHandler is triggered,
 	// field values from claims will be parsed and returned via object by the implementation code
-	GetIdentityHandler func(claims jwt.MapClaims) interface{}
+	GetIdentityHandler func(claims map[string]interface{}) interface{}
 
 	// Callback function to handle custom login response
 	LoginResponseHandler func(c *gin.Context, statusCode int, token string, expires time.Time)
@@ -266,7 +266,7 @@ type GinJwt struct {
 	TimeHandler func() time.Time
 
 	// NoRouteHandler is called when no route situation is encountered
-	NoRouteHandler func(claims jwt.MapClaims, c *gin.Context)
+	NoRouteHandler func(claims map[string]interface{}, c *gin.Context)
 
 	// HTTP Status messages for when something in the JWT middleware fails.
 	// Check error (e) to determine the appropriate error message.

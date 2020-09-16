@@ -557,3 +557,55 @@ func FormatDateToMMYY(t time.Time) string {
 func FormatDateToMMDD(t time.Time) string {
 	return t.Format("0102")
 }
+
+// GetDate returns date based on given year month day,
+// month max day is checked,
+// leap year is checked
+func GetDate(year int, month int, day int) time.Time {
+	if year < 1970 || year > 2199 {
+		return time.Time{}
+	}
+
+	if month < 1 || month > 12 {
+		return time.Time{}
+	}
+
+	if day < 1 || day > 31 {
+		return time.Time{}
+	}
+
+	x := []int{4, 6, 9, 11}
+
+	if IntSliceContains(&x, month) {
+		// 30
+		if day == 31 {
+			return time.Time{}
+		}
+	} else if month == 2 {
+		// either 28 or 29
+		ly := 28
+
+		if IsLeapYear(year) {
+			ly = 29
+		}
+
+		if day > ly {
+			return time.Time{}
+		}
+	}
+
+	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+}
+
+// GetFirstDateOfMonth returns the given date's first date of month,
+// for example, 8/21/2020 => 8/1/2020
+func GetFirstDateOfMonth(t time.Time) time.Time {
+	return GetDate(t.Year(), int(t.Month()), 1)
+}
+
+// GetLastDateOfMonth returns the given date's last day of the month,
+// for example, 8/21/2020 => 8/31/2020
+func GetLastDateOfMonth(t time.Time) time.Time {
+	x := GetFirstDateOfMonth(t).AddDate(0, 1, 0)
+	return GetFirstDateOfMonth(x).AddDate(0, 0, -1)
+}

@@ -23,16 +23,22 @@ package ses
 // =================================================================================================================
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
-	"context"
-	"errors"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ses"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -366,6 +372,135 @@ func (e *Email) GenerateSendEmailInput() (*ses.SendEmailInput, error) {
 	return input, nil
 }
 
+// GenerateSendRawEmailInput will create the SendRawEmailInput object from the struct fields
+//
+// attachmentContentType = See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
+func (e *Email) GenerateSendRawEmailInput(attachmentFileName string, attachmentContentType string, attachmentData []byte) (*ses.SendRawEmailInput, error) {
+	// validate
+	if err := e.validateEmailFields(); err != nil {
+		return nil, err
+	}
+
+	buf := new(bytes.Buffer)
+	writer := multipart.NewWriter(buf)
+
+	// email main header
+	h := make(textproto.MIMEHeader)
+	h.Set("From", e.From)
+	h.Set("To", util.SliceStringToCSVString(e.To, false))
+
+	if len(e.CC) > 0 {
+		h.Set("CC", util.SliceStringToCSVString(e.CC, false))
+	}
+
+	if len(e.BCC) > 0 {
+		h.Set("BCC", util.SliceStringToCSVString(e.BCC, false))
+	}
+
+	if util.LenTrim(e.ReturnPath) > 0 {
+		h.Set("Return-Path", e.ReturnPath)
+	}
+
+	if len(e.ReplyTo) > 0 {
+		h.Set("Reply-To", e.ReplyTo[0])
+	}
+
+	h.Set("Subject", e.Subject)
+	h.Set("Content-Language", "en-US")
+	h.Set("Content-Type", "multipart/mixed; boundary=\"" + writer.Boundary() + "\"")
+	h.Set("MIME-Version", "1.0")
+
+	if _, err := writer.CreatePart(h); err != nil {
+		return nil, err
+	}
+
+	charset := "UTF-8"
+
+	if util.LenTrim(e.Charset) > 0 {
+		charset = e.Charset
+	}
+
+	// email body - plain text
+	if util.LenTrim(e.BodyText) > 0 {
+		h = make(textproto.MIMEHeader)
+		h.Set("Content-Transfer-Encoding", "quoted-printable")
+		h.Set("Content-Type", "text/plain; charset=" + charset)
+		part, err := writer.CreatePart(h)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err = part.Write([]byte(e.BodyText)); err != nil {
+			return nil, err
+		}
+	}
+
+	// email body - html text
+	if util.LenTrim(e.BodyHtml) > 0 {
+		h = make(textproto.MIMEHeader)
+		h.Set("Content-Transfer-Encoding", "quoted-printable")
+		h.Set("Content-Type", "text/html; charset=" + charset)
+		partH, err := writer.CreatePart(h)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err = partH.Write([]byte(e.BodyHtml)); err != nil {
+			return nil, err
+		}
+	}
+
+	// file attachment
+	if util.LenTrim(attachmentFileName) > 0 {
+		fn := filepath.Base(attachmentFileName)
+
+		h = make(textproto.MIMEHeader)
+		// h.Set("Content-Disposition", "attachment; filename="+fn)
+		h.Set("Content-Type", attachmentContentType + "; name=\"" + fn + "\"")
+		h.Set("Content-Description", fn)
+		h.Set("Content-Disposition", "attachment; filename=\"" + fn + "\"; size=" + util.Itoa(len(attachmentData)) + ";")
+		h.Set("Content-Transfer-Encoding", "base64")
+
+		partA, err := writer.CreatePart(h)
+		if err != nil {
+			return nil, err
+		}
+
+		// must base64 encode first before write
+		if _, err = partA.Write([]byte(base64.StdEncoding.EncodeToString(attachmentData))); err != nil {
+			return nil, err
+		}
+	}
+
+	// clean up
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+
+	// strip boundary line before header
+	s := buf.String()
+
+	if strings.Count(s, "\n") < 2 {
+		return nil, fmt.Errorf("Email Content Not Valid")
+	}
+
+	s = strings.SplitN(s, "\n", 2)[1]
+
+	raw := ses.RawMessage{
+		Data: []byte(s),
+	}
+
+	// assemble SendRawEmailInput object
+	input := &ses.SendRawEmailInput{
+		Destinations: aws.StringSlice(e.To),
+		Source: aws.String(e.From),
+		RawMessage: &raw,
+	}
+
+	// return result
+	return input, nil
+}
+
 // ----------------------------------------------------------------------------------------------------------------
 // EmailTarget struct methods
 // ----------------------------------------------------------------------------------------------------------------
@@ -499,6 +634,80 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 		output, err = s.sesClient.SendEmailWithContext(ctx, input)
 	} else {
 		output, err = s.sesClient.SendEmail(input)
+	}
+
+	// evaluate output
+	if err != nil {
+		if err = s.handleSESError(err); err != nil {
+			return "", err
+		}
+	}
+
+	// email sent successfully
+	return aws.StringValue(output.MessageId), nil
+}
+
+// SendRawEmail will send an raw email message out via SES, supporting attachments
+//
+// attachmentContentType = See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
+func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentContentType string,
+						   timeOutDuration ...time.Duration) (messageId string, err error) {
+	// validate
+	if s.sesClient == nil {
+		return "", errors.New("SendRawEmail Failed: " + "SES Client is Required")
+	}
+
+	if email == nil {
+		return "", errors.New("SendRawEmail Failed: " + "Email Object is Required")
+	}
+
+	// load attachment info
+	attachmentData := []byte{}
+
+	if util.LenTrim(attachmentFileName) > 0 {
+		if attachmentData, err = util.FileReadBytes(attachmentFileName); err != nil {
+			return "", fmt.Errorf("SendRawEmail Failed: (Load Attachment File '" + attachmentFileName + "' Error)", err)
+		} else {
+			if len(attachmentData) == 0 {
+				return "", fmt.Errorf("SendRawEmail Failed: ", "Attachment Data From File is Empty")
+			}
+
+			if util.LenTrim(attachmentContentType) == 0 {
+				return "", fmt.Errorf("SendRawEmail Failed: ", "Attachment Content-Type is Required")
+			}
+		}
+	} else {
+		attachmentFileName = ""
+		attachmentContentType = ""
+	}
+
+	// generate email input
+	var input *ses.SendRawEmailInput
+	input, err = email.GenerateSendRawEmailInput(attachmentFileName, attachmentContentType, attachmentData)
+
+	if err != nil {
+		return "", errors.New("SendRawEmail Failed: " + err.Error())
+	}
+
+	if input == nil {
+		return "", errors.New("SendRawEmail Failed: " + "SendRawEmailInput is Nil")
+	}
+
+	// set configurationSetName if applicable
+	if util.LenTrim(s.ConfigurationSetName) > 0 {
+		input.ConfigurationSetName = aws.String(s.ConfigurationSetName)
+	}
+
+	// send out email
+	var output *ses.SendRawEmailOutput
+
+	if len(timeOutDuration) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		defer cancel()
+
+		output, err = s.sesClient.SendRawEmailWithContext(ctx, input)
+	} else {
+		output, err = s.sesClient.SendRawEmail(input)
 	}
 
 	// evaluate output

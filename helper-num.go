@@ -1,6 +1,9 @@
 package helper
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 /*
  * Copyright 2020 Aldelo, LP
@@ -18,9 +21,27 @@ import "strconv"
  * limitations under the License.
  */
 
+// AbsInt returns absolute value of i
+func AbsInt(i int) int {
+	if i < 0 {
+		return i * -1
+	} else {
+		return i
+	}
+}
+
+// AbsFloat64 returns absolute value of f
+func AbsFloat64(f float64) float64 {
+	if f < 0 {
+		return f * -1
+	} else {
+		return f
+	}
+}
+
 // IsInt32 tests if input string is integer (whole numbers 32 bits)
 func IsInt32(s string) bool {
-	if _, err := strconv.Atoi(s); err != nil {
+	if _, err := strconv.Atoi(strings.TrimSpace(s)); err != nil {
 		return false
 	}
 
@@ -29,7 +50,7 @@ func IsInt32(s string) bool {
 
 // IsInt64 tests if input string is big integer (whole number greater 64 bits)
 func IsInt64(s string) bool {
-	if _, err := strconv.ParseInt(s, 10, 64); err != nil {
+	if _, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err != nil {
 		return false
 	}
 
@@ -38,7 +59,7 @@ func IsInt64(s string) bool {
 
 // IsFloat32 tests if input string is float 32 bit (decimal point value)
 func IsFloat32(s string) bool {
-	if _, err := strconv.ParseFloat(s, 32); err != nil {
+	if _, err := strconv.ParseFloat(strings.TrimSpace(s), 32); err != nil {
 		return false
 	}
 
@@ -47,7 +68,7 @@ func IsFloat32(s string) bool {
 
 // IsFloat64 tests if input string is float 64 bit (decimal point value)
 func IsFloat64(s string) bool {
-	if _, err := strconv.ParseFloat(s, 64); err != nil {
+	if _, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err != nil {
 		return false
 	}
 
@@ -56,6 +77,12 @@ func IsFloat64(s string) bool {
 
 // IsBool tests if input string is boolean
 func IsBool(s string) bool {
+	x := []string{"yes", "on", "running", "started"}
+
+	if StringSliceContains(&x, strings.ToLower(s)) {
+		s = "true"
+	}
+
 	if _, err := strconv.ParseBool(s); err != nil {
 		return false
 	}
@@ -68,7 +95,7 @@ func ParseInt32(s string) (int, bool) {
 	var result int
 	var err error
 
-	if result, err = strconv.Atoi(s); err != nil {
+	if result, err = strconv.Atoi(strings.TrimSpace(s)); err != nil {
 		return 0, false
 	}
 
@@ -80,7 +107,7 @@ func ParseInt64(s string) (int64, bool) {
 	var result int64
 	var err error
 
-	if result, err = strconv.ParseInt(s, 10, 64); err != nil {
+	if result, err = strconv.ParseInt(strings.TrimSpace(s), 10, 64); err != nil {
 		return 0, false
 	}
 
@@ -92,7 +119,7 @@ func ParseFloat32(s string) (float32, bool) {
 	var result float64
 	var err error
 
-	if result, err = strconv.ParseFloat(s, 32); err != nil {
+	if result, err = strconv.ParseFloat(strings.TrimSpace(s), 32); err != nil {
 		return 0.00, false
 	}
 
@@ -104,7 +131,7 @@ func ParseFloat64(s string) (float64, bool) {
 	var result float64
 	var err error
 
-	if result, err = strconv.ParseFloat(s, 64); err != nil {
+	if result, err = strconv.ParseFloat(strings.TrimSpace(s), 64); err != nil {
 		return 0.00, false
 	}
 
@@ -117,6 +144,12 @@ func ParseFloat64(s string) (float64, bool) {
 func ParseBool(s string) (bool, bool) {
 	var result bool
 	var err error
+
+	x := []string{"yes", "on", "running", "started"}
+
+	if StringSliceContains(&x, strings.ToLower(s)) {
+		s = "true"
+	}
 
 	if result, err = strconv.ParseBool(s); err != nil {
 		return false, false

@@ -162,6 +162,18 @@ func PadRight(data string, totalSize int) string {
 	return Padding(data, totalSize, true, " ")
 }
 
+// PadZero pads zero to the left by default
+func PadZero(data string, totalSize int, padRight ...bool) string {
+	right := GetFirstBoolOrDefault(false, padRight...)
+	return Padding(data, totalSize, right, "0")
+}
+
+// PadX pads X to the left by default
+func PadX(data string, totalSize int, padRight ...bool) string {
+	right := GetFirstBoolOrDefault(false, padRight...)
+	return Padding(data, totalSize, right, "X")
+}
+
 // SplitString will split the source string using delimiter, and return the element indicated by index,
 // if nothing is found, blank is returned,
 // index = -1 returns last index
@@ -181,6 +193,25 @@ func SplitString(source string, delimiter string, index int) string {
 	}
 
 	return ""
+}
+
+// SliceStringToCSVString unboxes slice of string into comma separated string
+func SliceStringToCSVString(source []string, spaceAfterComma bool) string {
+	output := ""
+
+	for _, v := range source {
+		if LenTrim(output) > 0 {
+			output += ","
+
+			if spaceAfterComma {
+				output += " "
+			}
+		}
+
+		output += v
+	}
+
+	return output
 }
 
 // ParseKeyValue will parse the input string using specified delimiter (= is default),

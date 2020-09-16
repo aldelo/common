@@ -202,6 +202,11 @@ func BoolPtrToBool(b *bool) bool {
 	}
 }
 
+// BoolPtr converts bool to *bool
+func BoolPtr(b bool) *bool {
+	return &b
+}
+
 // DatePtrToString formats pointer time.Time to string date format
 func DatePtrToString(t *time.Time) string {
 	if t == nil {

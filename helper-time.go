@@ -17,6 +17,7 @@ package helper
  */
 
 import (
+	"strings"
 	"time"
 	"fmt"
 )
@@ -54,7 +55,7 @@ func DateTimeFormatString() string {
 // ParseDate will parse a date value in yyyy-mm-dd format into time.Time object,
 // check time.IsZero() to verify if a zero time is returned indicating parser failure
 func ParseDate(s string) time.Time {
-	t, err := time.Parse("2006-01-02", s)
+	t, err := time.Parse("2006-01-02", strings.TrimSpace(s))
 
 	if err != nil {
 		return time.Time{}
@@ -66,7 +67,7 @@ func ParseDate(s string) time.Time {
 // ParseTime will parse a time vaule in hh:mm:ss tt format into time.Time object,
 // check time.IsZero() to verify if a zero time is returned indicating parser failure
 func ParseTime(s string) time.Time {
-	t, err := time.Parse("03:04:05 PM", s)
+	t, err := time.Parse("03:04:05 PM", strings.TrimSpace(s))
 
 	if err != nil {
 		return time.Time{}
@@ -78,7 +79,7 @@ func ParseTime(s string) time.Time {
 // ParseDateTime will parse a date time value in yyyy-mm-dd hh:mm:ss tt format into time.Time object,
 // check time.IsZero() to verify if a zero time is returned indicating parser failure
 func ParseDateTime(s string) time.Time {
-	t, err := time.Parse("2006-01-02 03:04:05 PM", s)
+	t, err := time.Parse("2006-01-02 03:04:05 PM", strings.TrimSpace(s))
 
 	if err != nil {
 		return time.Time{}
@@ -87,10 +88,22 @@ func ParseDateTime(s string) time.Time {
 	return t
 }
 
+// ParseFromExcelDate will handle integer value of excel date to convert to time.Time
+func ParseFromExcelDate(s string, format string) time.Time {
+	i, _ := ParseInt32(s)
+
+	if i > 0 {
+		v := GetDate(1970, 1, 1)
+		return v.AddDate(0, 0, i-70*365-19)
+	} else {
+		return ParseDateTimeCustom(s, format)
+	}
+}
+
 // ParseDateTime24Hr will parse a date time value in yyyy-mm-dd HH:mm:ss format into time.Time object,
 // check time.IsZero() to verify if a zero time is returned indicating parser failure
 func ParseDateTime24Hr(s string) time.Time {
-	t, err := time.Parse("2006-01-02 15:04:05", s)
+	t, err := time.Parse("2006-01-02 15:04:05", strings.TrimSpace(s))
 
 	if err != nil {
 		return time.Time{}
@@ -102,7 +115,7 @@ func ParseDateTime24Hr(s string) time.Time {
 // ParseDateTimeCustom will parse a date time value in s string, based on the f format
 // f format is 2006 01 02 15:04:05 / 03:04:05 PM
 func ParseDateTimeCustom(s string, f string) time.Time {
-	t, err := time.Parse(f, s)
+	t, err := time.Parse(f, strings.TrimSpace(s))
 
 	if err != nil {
 		return time.Time{}
@@ -113,6 +126,8 @@ func ParseDateTimeCustom(s string, f string) time.Time {
 
 // ParseDateTimeFromYYYYMMDDhhmmss from string value
 func ParseDateTimeFromYYYYMMDDhhmmss(s string) time.Time {
+	s = strings.TrimSpace(s)
+
 	if IsNumericIntOnly(s) == false {
 		return time.Time{}
 	}
@@ -131,6 +146,8 @@ func ParseDateTimeFromYYYYMMDDhhmmss(s string) time.Time {
 
 // ParseDateTimeFromMMDDYYYYhhmmss from string value
 func ParseDateTimeFromMMDDYYYYhhmmss(s string) time.Time {
+	s = strings.TrimSpace(s)
+
 	if IsNumericIntOnly(s) == false {
 		return time.Time{}
 	}
@@ -149,6 +166,8 @@ func ParseDateTimeFromMMDDYYYYhhmmss(s string) time.Time {
 
 // ParseDateFromYYYYMMDD from string value
 func ParseDateFromYYYYMMDD(s string) time.Time {
+	s = strings.TrimSpace(s)
+
 	if IsNumericIntOnly(s) == false {
 		return time.Time{}
 	}
@@ -164,6 +183,8 @@ func ParseDateFromYYYYMMDD(s string) time.Time {
 
 // ParseDateFromDDMMYYYY from string value
 func ParseDateFromDDMMYYYY(s string) time.Time {
+	s = strings.TrimSpace(s)
+
 	if IsNumericIntOnly(s) == false {
 		return time.Time{}
 	}
@@ -179,6 +200,8 @@ func ParseDateFromDDMMYYYY(s string) time.Time {
 
 // ParseDateFromYYMMDD from string value
 func ParseDateFromYYMMDD(s string) time.Time {
+	s = strings.TrimSpace(s)
+
 	if IsNumericIntOnly(s) == false {
 		return time.Time{}
 	}
@@ -194,6 +217,8 @@ func ParseDateFromYYMMDD(s string) time.Time {
 
 // ParseDateFromYYMM from string value
 func ParseDateFromYYMM(s string) time.Time {
+	s = strings.TrimSpace(s)
+
 	if IsNumericIntOnly(s) == false {
 		return time.Time{}
 	}
@@ -209,6 +234,8 @@ func ParseDateFromYYMM(s string) time.Time {
 
 // ParseDateFromMMYY from string value
 func ParseDateFromMMYY(s string) time.Time {
+	s = strings.TrimSpace(s)
+
 	if IsNumericIntOnly(s) == false {
 		return time.Time{}
 	}
@@ -241,6 +268,8 @@ func ParseDateToLastDayOfMonth(t time.Time) time.Time {
 
 // ParseDateFromMMDD from string value
 func ParseDateFromMMDD(s string) time.Time {
+	s = strings.TrimSpace(s)
+
 	if IsNumericIntOnly(s) == false {
 		return time.Time{}
 	}

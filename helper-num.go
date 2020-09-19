@@ -41,7 +41,8 @@ func AbsFloat64(f float64) float64 {
 
 // IsInt32 tests if input string is integer (whole numbers 32 bits)
 func IsInt32(s string) bool {
-	if _, err := strconv.Atoi(strings.TrimSpace(s)); err != nil {
+	if _, err := strconv.ParseInt(strings.TrimSpace(s), 10, 32); err != nil {
+
 		return false
 	}
 
@@ -92,6 +93,10 @@ func IsBool(s string) bool {
 
 // ParseInt32 tests and parses if input string is integer (whole numbers 32 bits)
 func ParseInt32(s string) (int, bool) {
+	if strings.Index(s, ".") >= 0 {
+		s = SplitString(s, ".", 0)
+	}
+
 	var result int
 	var err error
 
@@ -104,6 +109,10 @@ func ParseInt32(s string) (int, bool) {
 
 // ParseInt64 tests and parses if input string is big integer (whole number greater 64 bits)
 func ParseInt64(s string) (int64, bool) {
+	if strings.Index(s, ".") >= 0 {
+		s = SplitString(s, ".", 0)
+	}
+
 	var result int64
 	var err error
 
@@ -156,4 +165,14 @@ func ParseBool(s string) (bool, bool) {
 	}
 
 	return result, true
+}
+
+// ExponentialToNumber converts exponential representation of a number into actual number equivalent
+func ExponentialToNumber(exp string) string {
+	if strings.Index(strings.ToLower(exp), "e") >= 0 {
+		v, _ := ParseFloat64(exp)
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	} else {
+		return exp
+	}
 }

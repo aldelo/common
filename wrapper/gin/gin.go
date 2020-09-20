@@ -501,7 +501,7 @@ func (g *Gin) setupRoutes() int {
 		//
 		// config any middleware first
 		//
-		if v.CorsMiddleware != nil {
+		if v.CorsMiddleware != nil && !v.CorsMiddleware.AllowAllOrigins && len(v.CorsMiddleware.AllowOrigins) > 0 {
 			g.setupCorsMiddleware(routeFn(), v.CorsMiddleware)
 		}
 

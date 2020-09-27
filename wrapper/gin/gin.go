@@ -33,6 +33,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/time/rate"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -481,7 +482,7 @@ func (g *Gin) setupRoutes() int {
 	for k, v := range g.Routes {
 		var rg *gin.RouterGroup
 
-		if k != "*" {
+		if k != "*" && k != "base" {
 			// route group
 			rg = g._ginEngine.Group(k)
 		}
@@ -603,19 +604,59 @@ func (g *Gin) setupCorsMiddleware(rg gin.IRoutes, corsConfig *cors.Config) {
 		config := cors.DefaultConfig()
 
 		if len(corsConfig.AllowOrigins) > 0 {
-			config.AllowOrigins = corsConfig.AllowOrigins
+			orig := []string{}
+
+			for _, v := range corsConfig.AllowOrigins {
+				if util.LenTrim(v) > 0 && strings.ToLower(util.Left(v, 4)) == "http" {
+					orig = append(orig, v)
+				}
+			}
+
+			if len(orig) > 0 {
+				config.AllowOrigins = orig
+			}
 		}
 
 		if len(corsConfig.AllowMethods) > 0 {
-			config.AllowMethods = corsConfig.AllowMethods
+			method := []string{}
+
+			for _, v := range corsConfig.AllowMethods {
+				if util.LenTrim(v) > 0 {
+					method = append(method, v)
+				}
+			}
+
+			if len(method) > 0 {
+				config.AllowMethods = method
+			}
 		}
 
 		if len(corsConfig.AllowHeaders) > 0 {
-			config.AllowHeaders = corsConfig.AllowHeaders
+			header := []string{}
+
+			for _, v := range corsConfig.AllowHeaders {
+				if util.LenTrim(v) > 0 {
+					header = append(header, v)
+				}
+			}
+
+			if len(header) > 0 {
+				config.AllowHeaders = header
+			}
 		}
 
 		if len(corsConfig.ExposeHeaders) > 0 {
-			config.ExposeHeaders = corsConfig.ExposeHeaders
+			header := []string{}
+
+			for _, v := range corsConfig.ExposeHeaders {
+				if util.LenTrim(v) > 0 {
+					header = append(header, v)
+				}
+			}
+
+			if len(header) > 0 {
+				config.ExposeHeaders = header
+			}
 		}
 
 		if corsConfig.AllowOriginFunc != nil {
@@ -632,6 +673,12 @@ func (g *Gin) setupCorsMiddleware(rg gin.IRoutes, corsConfig *cors.Config) {
 		config.AllowFiles = corsConfig.AllowFiles
 		config.AllowWebSockets = corsConfig.AllowWebSockets
 		config.AllowWildcard = corsConfig.AllowWildcard
+
+		if !config.AllowAllOrigins {
+			if len(config.AllowOrigins) == 0 {
+				config.AllowAllOrigins = true
+			}
+		}
 
 		rg.Use(cors.New(config))
 

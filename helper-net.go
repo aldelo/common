@@ -17,9 +17,13 @@ package helper
  */
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/aldelo/common/rest"
 	"net"
+	"net/url"
 	"strings"
+	"time"
 )
 
 // GetNetListener triggers the specified port to listen via tcp
@@ -83,5 +87,68 @@ func ParseHostFromURL(url string) string {
 		return parts[0]
 	} else {
 		return ""
+	}
+}
+
+// VerifyGoogleReCAPTCHAv2 will verify recaptcha v2 response data against given secret and obtain a response from google server
+func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, challengeTs time.Time, hostName string, err error) {
+	if LenTrim(response) == 0 {
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Response From CLient is Required")
+	}
+
+	if LenTrim(secret) == 0 {
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Secret Key is Required")
+	}
+
+	u := fmt.Sprintf("https://www.google.com/recaptcha/api/siteverify?secret=%s&response=%s", url.PathEscape(secret), url.PathEscape(response))
+
+	if statusCode, responseBody, e := rest.POST(u, []*rest.HeaderKeyValue{}, ""); e != nil {
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: %s", e)
+	} else {
+		if statusCode != 200 {
+			return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: Status Code %d", statusCode)
+		} else {
+			m := make(map[string]json.RawMessage)
+			if err = json.Unmarshal([]byte(responseBody), &m); err != nil {
+				return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Failed: (Parse Json Response Error) %s", err)
+			} else {
+				if m == nil {
+					return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Failed: %s", "Json Response Map Nil")
+				} else {
+					// response json from google is valid
+					if strings.ToLower(string(m["success"])) == "true" {
+						success = true
+					}
+
+					challengeTs = ParseDateTime(string(m["challenge_ts"]))
+					hostName = string(m["hostname"])
+
+					if !success {
+						errs := string(m["error-codes"])
+						s := []string{}
+
+						if err = json.Unmarshal([]byte(errs), &s); err != nil {
+							err = fmt.Errorf("Parse ReCAPTCHA Verify Errors Failed: %s", err)
+						} else {
+							buf := ""
+
+							for _, v := range s {
+								if LenTrim(v) > 0 {
+									if LenTrim(buf) > 0 {
+										buf += ", "
+									}
+
+									buf += v
+								}
+							}
+
+							err = fmt.Errorf("ReCAPTCHA Verify Errors: %s", buf)
+						}
+					}
+
+					return success, challengeTs, hostName, err
+				}
+			}
+		}
 	}
 }

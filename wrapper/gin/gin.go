@@ -33,6 +33,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/time/rate"
 	"log"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -57,6 +58,9 @@ type Gin struct {
 	// web server tls certificate pem and key file path
 	TlsCertPemFile string
 	TlsCertKeyFile string
+
+	// google recaptcha v2 secret
+	GoogleRecaptchaSecret string
 
 	// web server routes to handle
 	// string = routeGroup path if defined, otherwise, if * refers to base
@@ -402,6 +406,75 @@ func (g *Gin) RunServer() error {
 	}
 }
 
+// BindPostForm will bind the post form data to outputPtr based on given tag names mapping
+func (g *Gin) BindPostForm(outputPtr interface{}, tagName string, c *gin.Context) error {
+	if outputPtr == nil {
+		return fmt.Errorf("BindPostForm Requires Output Variable Pointer")
+	}
+
+	if util.LenTrim(tagName) == 0 {
+		return fmt.Errorf("BindPostForm Requires TagName")
+	}
+
+	if c == nil {
+		return fmt.Errorf("BindPostForm Requires Gin Context")
+	}
+
+	s := reflect.ValueOf(outputPtr).Elem()
+
+	if s.Kind() != reflect.Struct {
+		return fmt.Errorf("BindPostForm Requires Struct")
+	}
+
+	for i := 0; i < s.NumField(); i++ {
+		field := s.Type().Field(i)
+
+		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
+			if tag := field.Tag.Get(tagName); util.LenTrim(tag) > 0 {
+				if v := c.PostForm(tag); util.LenTrim(v) > 0 {
+					switch o.Kind() {
+					case reflect.String:
+						o.SetString(v)
+					case reflect.Bool:
+						o.SetBool(util.IsBool(v))
+					case reflect.Int:
+						fallthrough
+					case reflect.Int32:
+						fallthrough
+					case reflect.Int64:
+						if i64, ok := util.ParseInt64(v); ok {
+							if !o.OverflowInt(i64) {
+								o.SetInt(i64)
+							}
+						}
+					case reflect.Float32:
+						fallthrough
+					case reflect.Float64:
+						if f64, ok := util.ParseFloat64(v); ok {
+							if !o.OverflowFloat(f64) {
+								o.SetFloat(f64)
+							}
+						}
+					case reflect.Uint:
+						fallthrough
+					case reflect.Uint32:
+						fallthrough
+					case reflect.Uint64:
+						ui := uint64(util.StrToUint(v))
+						if !o.OverflowUint(ui) {
+							o.SetUint(ui)
+						}
+					default:
+						return fmt.Errorf("BindPostForm Encountered Unhandled Field Type: %s", o.Kind().String())
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // bindInput will attempt to bind input data to target binding output, for example json string to struct mapped to json elements
 //
 // bindObjPtr = pointer to the target object, cannot be nil
@@ -433,6 +506,8 @@ func (g *Gin) bindInput(c *gin.Context, bindType ginbindtype.GinBindType, bindOb
 		err = c.ShouldBindXML(bindObjPtr)
 	case ginbindtype.BindYaml:
 		err = c.ShouldBindYAML(bindObjPtr)
+	case ginbindtype.BindPostForm:
+		err = g.BindPostForm(bindObjPtr, "json", c)
 	default:
 		err = c.ShouldBind(bindObjPtr)
 	}
@@ -582,6 +657,10 @@ func (g *Gin) setupRoutes() int {
 func (g *Gin) newRouteFunc(relativePath string, method string, bindingType ginbindtype.GinBindType, bindingInputPtr interface{},
 						   handler func(c *gin.Context, bindingInputPtr interface{})) func(context *gin.Context) {
 	return func(c *gin.Context) {
+		if util.LenTrim(g.GoogleRecaptchaSecret) > 0 {
+			c.Set("google_recaptcha_secret", g.GoogleRecaptchaSecret)
+		}
+
 		if bindingInputPtr != nil {
 			// will perform binding
 			if err := g.bindInput(c, bindingType, bindingInputPtr); err != nil {

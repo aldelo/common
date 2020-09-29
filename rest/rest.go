@@ -17,13 +17,13 @@ package rest
  */
 
 import (
-	util "github.com/aldelo/common"
 	"bytes"
 	"errors"
+	"google.golang.org/protobuf/proto"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
-	"google.golang.org/protobuf/proto"
 )
 
 //
@@ -79,7 +79,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	}
 
 	if statusCode != 200 {
-		return statusCode, "", errors.New("[" + util.Itoa(statusCode) + " - Get Resp] " + string(respBytes))
+		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Get Resp] " + string(respBytes))
 	}
 
 	// success
@@ -131,7 +131,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	}
 
 	if statusCode != 200 {
-		return statusCode, "", errors.New("[" + util.Itoa(statusCode) + " - Post Resp] " + string(respBytes))
+		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Post Resp] " + string(respBytes))
 	}
 
 	return statusCode, string(respBytes), nil
@@ -199,7 +199,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 
 	if statusCode != 200 {
 		outResponseProtoBufObjectPtr = nil
-		return statusCode, errors.New("[" + util.Itoa(statusCode) + " - Get ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + util.Itoa(len(respBytes)))
+		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Get ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
 
 	// unmarshal bytes to protobuf object
@@ -293,7 +293,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	}
 
 	if statusCode != 200 {
-		return statusCode, errors.New("[" + util.Itoa(statusCode) + " - Post ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + util.Itoa(len(respBytes)))
+		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Post ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
 
 	// unmarshal response bytes into protobuf object message

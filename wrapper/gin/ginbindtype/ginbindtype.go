@@ -16,7 +16,7 @@ package ginbindtype
  * limitations under the License.
  */
 
-// go:generate gen-enumer -type GinBindType
+//go:generate gen-enumer -type GinBindType
 
 type GinBindType int
 
@@ -29,6 +29,7 @@ const (
 	BindXml      GinBindType = 5
 	BindYaml     GinBindType = 6
 	BindProtoBuf GinBindType = 7
+	BindPostForm GinBindType = 8
 )
 
 const (
@@ -40,6 +41,7 @@ const (
 	_GinBindTypeKey_5 = "BindXml"
 	_GinBindTypeKey_6 = "BindYaml"
 	_GinBindTypeKey_7 = "BindProtoBuf"
+	_GinBindTypeKey_8 = "BindPostForm"
 )
 
 const (
@@ -51,6 +53,7 @@ const (
 	_GinBindTypeCaption_5 = "BindXml"
 	_GinBindTypeCaption_6 = "BindYaml"
 	_GinBindTypeCaption_7 = "BindProtoBuf"
+	_GinBindTypeCaption_8 = "BindPostForm"
 )
 
 const (
@@ -62,4 +65,5 @@ const (
 	_GinBindTypeDescription_5 = "BindXml"
 	_GinBindTypeDescription_6 = "BindYaml"
 	_GinBindTypeDescription_7 = "BindProtoBuf"
+	_GinBindTypeDescription_8 = "BindPostForm"
 )

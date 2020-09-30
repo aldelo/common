@@ -101,10 +101,20 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	}
 
 	// add headers to request if any
+	contentTypeConfigured := false
+
 	if len(headers) > 0 {
 		for _, v := range headers {
 			req.Header.Add(v.Key, v.Value)
+
+			if strings.ToUpper(v.Key) == "CONTENT-TYPE" {
+				contentTypeConfigured = true
+			}
 		}
+	}
+
+	if !contentTypeConfigured {
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	}
 
 	// execute http request and assign response

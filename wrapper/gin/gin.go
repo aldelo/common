@@ -17,6 +17,7 @@ package gin
  */
 
 import (
+	"database/sql"
 	"fmt"
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/gin/ginbindtype"
@@ -437,6 +438,10 @@ func (g *Gin) BindPostForm(outputPtr interface{}, tagName string, c *gin.Context
 						o.SetString(v)
 					case reflect.Bool:
 						o.SetBool(util.IsBool(v))
+					case reflect.Int8:
+						fallthrough
+					case reflect.Int16:
+						fallthrough
 					case reflect.Int:
 						fallthrough
 					case reflect.Int32:
@@ -455,6 +460,10 @@ func (g *Gin) BindPostForm(outputPtr interface{}, tagName string, c *gin.Context
 								o.SetFloat(f64)
 							}
 						}
+					case reflect.Uint8:
+						fallthrough
+					case reflect.Uint16:
+						fallthrough
 					case reflect.Uint:
 						fallthrough
 					case reflect.Uint32:
@@ -465,7 +474,34 @@ func (g *Gin) BindPostForm(outputPtr interface{}, tagName string, c *gin.Context
 							o.SetUint(ui)
 						}
 					default:
-						return fmt.Errorf("BindPostForm Encountered Unhandled Field Type: %s", o.Kind().String())
+						switch f := o.Interface().(type) {
+						case sql.NullString:
+							f = util.ToNullString(v, true)
+							o.Set(reflect.ValueOf(f))
+						case sql.NullBool:
+							f = util.ToNullBool(util.IsBool(v))
+							o.Set(reflect.ValueOf(f))
+						case sql.NullFloat64:
+							f64, _ := util.ParseFloat64(v)
+							f = util.ToNullFloat64(f64, true)
+							o.Set(reflect.ValueOf(f))
+						case sql.NullInt32:
+							i32, _ := util.ParseInt32(v)
+							f = util.ToNullInt(i32, true)
+							o.Set(reflect.ValueOf(f))
+						case sql.NullInt64:
+							i64, _ := util.ParseInt64(v)
+							f = util.ToNullInt64(i64, true)
+							o.Set(reflect.ValueOf(f))
+						case sql.NullTime:
+							f = util.ToNullTime(util.ParseDateTime(v))
+							o.Set(reflect.ValueOf(f))
+						case time.Time:
+							f = util.ParseDateTime(v)
+							o.Set(reflect.ValueOf(f))
+						default:
+							return fmt.Errorf("BindPostForm Encountered Unhandled Field Type: %s", o.Kind().String())
+						}
 					}
 				}
 			}

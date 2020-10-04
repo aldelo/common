@@ -353,12 +353,14 @@ func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName str
 					}
 				}
 
+				buf = strings.Replace(buf, `"`, `\"`, -1)
+				buf = strings.Replace(buf, `'`, `\'`, -1)
+
 				if LenTrim(output) > 0 {
 					output += ", "
 				}
 
-				// TODO: may be need escape json data buf
-				output += fmt.Sprintf(`"%s":"%s"`, tag, buf)
+				output += fmt.Sprintf(`"%s":"%s"`, tag, JsonToEscaped(buf))
 			}
 		}
 	}

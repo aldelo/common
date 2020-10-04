@@ -22,9 +22,10 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"github.com/aldelo/common/ascii"
+	"html"
 	"regexp"
 	"strings"
-	"html"
 )
 
 // LenTrim returns length of space trimmed string s
@@ -264,6 +265,17 @@ func ExtractNumeric(s string) (string, error) {
 // ExtractAlphaNumeric will extract only A-Z, a-z, and 0-9 out of string to be returned
 func ExtractAlphaNumeric(s string) (string, error) {
 	exp, err := regexp.Compile("[^A-Za-z0-9]+")
+
+	if err != nil {
+		return "", err
+	}
+
+	return exp.ReplaceAllString(s, ""), nil
+}
+
+// ExtractAlphaNumericUnderscoreDash will extract only A-Z, a-z, 0-9, _, - out of string to be returned
+func ExtractAlphaNumericUnderscoreDash(s string) (string, error) {
+	exp, err := regexp.Compile("[^A-Za-z0-9_-]+")
 
 	if err != nil {
 		return "", err
@@ -610,6 +622,20 @@ func UnmarshalXML(xmlData string, v interface{}) error {
 // ================================================================================================================
 // ENCODING JSON HELPERS
 // ================================================================================================================
+
+// JsonToEscaped will escape the data whose json special chars are escaped
+func JsonToEscaped(data string) string {
+	var r string
+
+	r = strings.Replace(data, `\`, `\\`, -1)
+	r = strings.Replace(r, string(rune(ascii.BS)), `\b`, -1)
+	r = strings.Replace(r, string(rune(ascii.FF)), `\f`, -1)
+	r = strings.Replace(r, string(rune(ascii.LF)), `\n`, -1)
+	r = strings.Replace(r, string(rune(ascii.CR)), `\r`, -1)
+	r = strings.Replace(r, string(rune(ascii.HT)), `\t`, -1)
+
+	return r
+}
 
 // MarshalJSONCompact will accept an input variable, typically struct with json struct tags, to serialize from object into json string with compact formatting
 //

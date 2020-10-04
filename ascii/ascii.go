@@ -54,3 +54,7 @@ const (
 	SP  = 0x20 //      Space
 	DEL = 0x7F //      Delete
 )
+
+func AsciiToString(i int) string {
+	return string(rune(i))
+}

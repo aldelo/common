@@ -17,13 +17,11 @@ package helper
  */
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"github.com/aldelo/common/rest"
 	"net"
 	"net/url"
-	"reflect"
 	"strings"
 	"time"
 )
@@ -35,6 +33,11 @@ func GetNetListener(port uint) (net.Listener, error) {
 	} else {
 		return l, nil
 	}
+}
+
+// IsHttpsEndpoint returns true if url is https, false if otherwise
+func IsHttpsEndpoint(url string) bool {
+	return strings.ToLower(Left(url, 8)) == "https://"
 }
 
 // GetLocalIP returns the first non loopback ip
@@ -155,245 +158,3 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 	}
 }
 
-// StructToQueryParams marshals a struct pointer's fields to query params string,
-// output query param names are based on values given in tagName,
-// to exclude certain struct fields from being marshaled, include excludeTagName with - as value in struct definition
-func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
-	if inputStructPtr == nil {
-		return "", fmt.Errorf("StructToQueryParams Require Input Struct Variable Pointer")
-	}
-
-	if LenTrim(tagName) == 0 {
-		return "", fmt.Errorf("StructToQueryParams Require TagName (Tag Name defines query parameter name)")
-	}
-
-	s := reflect.ValueOf(inputStructPtr).Elem()
-
-	if s.Kind() != reflect.Struct {
-		return "", fmt.Errorf("StructToQueryParams Require Struct Object")
-	}
-
-	output := ""
-
-	for i := 0; i < s.NumField(); i++ {
-		field := s.Type().Field(i)
-
-		if o := s.FieldByName(field.Name); o.IsValid() {
-			if tag := field.Tag.Get(tagName); LenTrim(tag) > 0 {
-				if LenTrim(excludeTagName) > 0 {
-					if field.Tag.Get(excludeTagName) == "-" {
-						continue
-					}
-				}
-
-				buf := ""
-
-				switch o.Kind() {
-				case reflect.String:
-					buf = o.String()
-				case reflect.Bool:
-					if o.Bool() {
-						buf = "true"
-					} else {
-						buf = "false"
-					}
-				case reflect.Int8:
-					fallthrough
-				case reflect.Int16:
-					fallthrough
-				case reflect.Int:
-					fallthrough
-				case reflect.Int32:
-					fallthrough
-				case reflect.Int64:
-					buf = Int64ToString(o.Int())
-				case reflect.Float32:
-					fallthrough
-				case reflect.Float64:
-					buf = FloatToString(o.Float())
-				case reflect.Uint8:
-					fallthrough
-				case reflect.Uint16:
-					fallthrough
-				case reflect.Uint:
-					fallthrough
-				case reflect.Uint32:
-					fallthrough
-				case reflect.Uint64:
-					buf = UInt64ToString(o.Uint())
-				default:
-					switch f := o.Interface().(type) {
-					case sql.NullString:
-						buf = FromNullString(f)
-					case sql.NullBool:
-						if FromNullBool(f) {
-							buf = "true"
-						} else {
-							buf = "false"
-						}
-					case sql.NullFloat64:
-						buf = FloatToString(FromNullFloat64(f))
-					case sql.NullInt32:
-						buf = Itoa(FromNullInt(f))
-					case sql.NullInt64:
-						buf = Int64ToString(FromNullInt64(f))
-					case sql.NullTime:
-						buf = FromNullTime(f).String()
-					case time.Time:
-						buf = f.String()
-					default:
-						continue
-					}
-				}
-
-				if LenTrim(output) > 0 {
-					output += "&"
-				}
-
-				output += fmt.Sprintf("%s=%s", tag, url.PathEscape(buf))
-			}
-		}
-	}
-
-	if LenTrim(output) == 0 {
-		return "", fmt.Errorf("StructToQueryParameters Yielded Blank Output")
-	} else {
-		return output, nil
-	}
-}
-
-// StructToJson marshals a struct pointer's fields to json string,
-// output json names are based on values given in tagName,
-// to exclude certain struct fields from being marshaled, include excludeTagName with - as value in struct definition
-func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
-	if inputStructPtr == nil {
-		return "", fmt.Errorf("StructToJson Require Input Struct Variable Pointer")
-	}
-
-	if LenTrim(tagName) == 0 {
-		return "", fmt.Errorf("StructToJson Require TagName (Tag Name defines Json name)")
-	}
-
-	s := reflect.ValueOf(inputStructPtr).Elem()
-
-	if s.Kind() != reflect.Struct {
-		return "", fmt.Errorf("StructToJson Require Struct Object")
-	}
-
-	output := ""
-
-	for i := 0; i < s.NumField(); i++ {
-		field := s.Type().Field(i)
-
-		if o := s.FieldByName(field.Name); o.IsValid() {
-			if tag := field.Tag.Get(tagName); LenTrim(tag) > 0 {
-				if LenTrim(excludeTagName) > 0 {
-					if field.Tag.Get(excludeTagName) == "-" {
-						continue
-					}
-				}
-
-				buf := ""
-
-				switch o.Kind() {
-				case reflect.String:
-					buf = o.String()
-				case reflect.Bool:
-					if o.Bool() {
-						buf = "true"
-					} else {
-						buf = "false"
-					}
-				case reflect.Int8:
-					fallthrough
-				case reflect.Int16:
-					fallthrough
-				case reflect.Int:
-					fallthrough
-				case reflect.Int32:
-					fallthrough
-				case reflect.Int64:
-					buf = Int64ToString(o.Int())
-				case reflect.Float32:
-					fallthrough
-				case reflect.Float64:
-					buf = FloatToString(o.Float())
-				case reflect.Uint8:
-					fallthrough
-				case reflect.Uint16:
-					fallthrough
-				case reflect.Uint:
-					fallthrough
-				case reflect.Uint32:
-					fallthrough
-				case reflect.Uint64:
-					buf = UInt64ToString(o.Uint())
-				default:
-					switch f := o.Interface().(type) {
-					case sql.NullString:
-						buf = FromNullString(f)
-					case sql.NullBool:
-						if FromNullBool(f) {
-							buf = "true"
-						} else {
-							buf = "false"
-						}
-					case sql.NullFloat64:
-						buf = FloatToString(FromNullFloat64(f))
-					case sql.NullInt32:
-						buf = Itoa(FromNullInt(f))
-					case sql.NullInt64:
-						buf = Int64ToString(FromNullInt64(f))
-					case sql.NullTime:
-						buf = FromNullTime(f).String()
-					case time.Time:
-						buf = f.String()
-					default:
-						continue
-					}
-				}
-
-				buf = strings.Replace(buf, `"`, `\"`, -1)
-				buf = strings.Replace(buf, `'`, `\'`, -1)
-
-				if LenTrim(output) > 0 {
-					output += ", "
-				}
-
-				output += fmt.Sprintf(`"%s":"%s"`, tag, JsonToEscaped(buf))
-			}
-		}
-	}
-
-	if LenTrim(output) == 0 {
-		return "", fmt.Errorf("StructToJson Yielded Blank Output")
-	} else {
-		return fmt.Sprintf("{%s}", output), nil
-	}
-}
-
-// SliceStructToJson accepts a slice of struct pointer, then using tagName and excludeTagName to marshal to json array
-// To pass in inputSliceStructPtr, convert slice of actual objects at the calling code, using SliceObjectsToSliceInterface()
-func SliceStructToJson(inputSliceStructPtr []interface{}, tagName string, excludeTagName string) (jsonArrayOutput string, err error) {
-	if len(inputSliceStructPtr) == 0 {
-		return "", fmt.Errorf("Input Slice Struct Pointer Nil")
-	}
-
-	for _, v := range inputSliceStructPtr {
-		if s, e := StructToJson(v, tagName, excludeTagName); e != nil {
-			return "", fmt.Errorf("StructToJson Failed: %s", e)
-		} else {
-			if LenTrim(jsonArrayOutput) > 0 {
-				jsonArrayOutput += ", "
-			}
-
-			jsonArrayOutput += s
-		}
-	}
-
-	if LenTrim(jsonArrayOutput) > 0 {
-		return fmt.Sprintf("[%s]", jsonArrayOutput), nil
-	} else {
-		return "", fmt.Errorf("SliceStructToJson Yielded Blank String")
-	}
-}

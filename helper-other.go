@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -183,6 +184,53 @@ func SliceSeekElement(slice []interface{}, filterFunc func(input interface{}, fi
 
 	// not found
 	return nil
+}
+
+// SliceDeleteElement accepts slice (value type or pointer type, primitive or complex struct),
+// removes element by index position removalIndex,
+// and returns the reassembled result slice without the removed element
+//
+// note: this method does not preserve element ordering, this is in order to achieve faster call performance
+//
+// removalIndex = positive number indicates element removal index position (0-based index)
+//				  negative number indicates element removal index from right,
+//					-1 = last element to remove; -2 = second to the last to remove, and so on
+//				  positive / negative number out of bound = returns original slice unchanged
+//
+// if resultSlice is nil, then no slice remain
+func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interface{}) {
+	sliceObj := reflect.ValueOf(slice)
+
+	if sliceObj.Kind() == reflect.Ptr {
+		sliceObj = sliceObj.Elem()
+	}
+
+	if sliceObj.Kind() != reflect.Slice {
+		return nil
+	}
+
+	if removalIndex < 0 {
+		removalIndex = sliceObj.Len() - AbsInt(removalIndex)
+
+		if removalIndex < 0 {
+			return slice
+		}
+	}
+
+	if removalIndex > sliceObj.Len()-1 {
+		return slice
+	}
+
+	rm := sliceObj.Index(removalIndex)
+	last := sliceObj.Index(sliceObj.Len()-1)
+
+	if rm.CanSet() {
+		rm.Set(last)
+	} else {
+		return slice
+	}
+
+	return sliceObj.Slice(0, sliceObj.Len()-1).Interface()
 }
 
 // ================================================================================================================

@@ -128,6 +128,15 @@ func UInt64ToString(n uint64) string {
 	return strconv.FormatUint(n, 10)
 }
 
+// StrToUint64 converts from string to uint64
+func StrToUint64(s string) uint64 {
+	if v, e := strconv.ParseUint(s, 10, 64); e != nil {
+		return 0
+	} else {
+		return uint64(v)
+	}
+}
+
 // Float32Ptr casts float32 to float32 pointer
 func Float32Ptr(f float32) *float32 {
 	return &f
@@ -190,6 +199,15 @@ func BoolToInt(b bool) int {
 		return 1
 	} else {
 		return 0
+	}
+}
+
+// BoolToString converts bool to string value
+func BoolToString(b bool) string {
+	if b {
+		return "true"
+	} else {
+		return "false"
 	}
 }
 

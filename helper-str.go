@@ -262,6 +262,17 @@ func ExtractNumeric(s string) (string, error) {
 	return exp.ReplaceAllString(s, ""), nil
 }
 
+// ExtractAlpha will extract A-Z out of string to be returned
+func ExtractAlpha(s string) (string, error) {
+	exp, err := regexp.Compile("[^A-Za-z]+")
+
+	if err != nil {
+		return "", err
+	}
+
+	return exp.ReplaceAllString(s, ""), nil
+}
+
 // ExtractAlphaNumeric will extract only A-Z, a-z, and 0-9 out of string to be returned
 func ExtractAlphaNumeric(s string) (string, error) {
 	exp, err := regexp.Compile("[^A-Za-z0-9]+")
@@ -276,6 +287,29 @@ func ExtractAlphaNumeric(s string) (string, error) {
 // ExtractAlphaNumericUnderscoreDash will extract only A-Z, a-z, 0-9, _, - out of string to be returned
 func ExtractAlphaNumericUnderscoreDash(s string) (string, error) {
 	exp, err := regexp.Compile("[^A-Za-z0-9_-]+")
+
+	if err != nil {
+		return "", err
+	}
+
+	return exp.ReplaceAllString(s, ""), nil
+}
+
+// ExtractAlphaNumericPrintableSymbols will extra A-Z, a-z, 0-9, and printable symbols
+func ExtractAlphaNumericPrintableSymbols(s string) (string, error) {
+	exp, err := regexp.Compile("[^ -~]+")
+
+	if err != nil {
+		return "", err
+	}
+
+	return exp.ReplaceAllString(s, ""), nil
+}
+
+// ExtractByRegex will extract string based on regex expression,
+// any regex match will be replaced with blank
+func ExtractByRegex(s string, regexStr string) (string, error) {
+	exp, err := regexp.Compile(regexStr)
 
 	if err != nil {
 		return "", err

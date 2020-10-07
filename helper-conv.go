@@ -184,6 +184,11 @@ func FloatToString(f float64) string {
 	return fmt.Sprintf("%f", f)
 }
 
+// Float64ToString is same as FloatToString
+func Float64ToString(f float64) string {
+	return fmt.Sprintf("%f", f)
+}
+
 // Float64PtrToFloat64 returns 0 if nil, otherwise actual float64 value
 func Float64PtrToFloat64(f *float64) float64 {
 	if f == nil {

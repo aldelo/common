@@ -80,7 +80,13 @@ func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagN
 		field := s.Type().Field(i)
 
 		if o := s.FieldByName(field.Name); o.IsValid() {
-			if tag := field.Tag.Get(tagName); LenTrim(tag) > 0 {
+			tag := field.Tag.Get(tagName)
+
+			if LenTrim(tag) == 0 {
+				tag = field.Name
+			}
+
+			if tag != "-" {
 				if LenTrim(excludeTagName) > 0 {
 					if field.Tag.Get(excludeTagName) == "-" {
 						continue
@@ -122,6 +128,34 @@ func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagN
 					fallthrough
 				case reflect.Uint64:
 					buf = UInt64ToString(o.Uint())
+				case reflect.Ptr:
+					o2 := o.Elem()
+					switch f := o2.Interface().(type) {
+					case int8:
+						buf = Itoa(int(f))
+					case int16:
+						buf = Itoa(int(f))
+					case int32:
+						buf = Itoa(int(f))
+					case int64:
+						buf = Int64ToString(f)
+					case int:
+						buf = Itoa(f)
+					case bool:
+						buf = BoolToString(f)
+					case string:
+						buf = f
+					case float32:
+						buf = Float32ToString(f)
+					case float64:
+						buf = Float64ToString(f)
+					case uint:
+						buf = UintToStr(f)
+					case uint64:
+						buf = UInt64ToString(f)
+					case time.Time:
+						buf = FormatDateTime(f)
+					}
 				default:
 					switch f := o.Interface().(type) {
 					case sql.NullString:
@@ -193,7 +227,13 @@ func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName str
 		field := s.Type().Field(i)
 
 		if o := s.FieldByName(field.Name); o.IsValid() {
-			if tag := field.Tag.Get(tagName); LenTrim(tag) > 0 {
+			tag := field.Tag.Get(tagName)
+
+			if LenTrim(tag) == 0 {
+				tag = field.Name
+			}
+
+			if tag != "-" {
 				if LenTrim(excludeTagName) > 0 {
 					if field.Tag.Get(excludeTagName) == "-" {
 						continue
@@ -235,6 +275,34 @@ func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName str
 					fallthrough
 				case reflect.Uint64:
 					buf = UInt64ToString(o.Uint())
+				case reflect.Ptr:
+					o2 := o.Elem()
+					switch f := o2.Interface().(type) {
+					case int8:
+						buf = Itoa(int(f))
+					case int16:
+						buf = Itoa(int(f))
+					case int32:
+						buf = Itoa(int(f))
+					case int64:
+						buf = Int64ToString(f)
+					case int:
+						buf = Itoa(f)
+					case bool:
+						buf = BoolToString(f)
+					case string:
+						buf = f
+					case float32:
+						buf = Float32ToString(f)
+					case float64:
+						buf = Float64ToString(f)
+					case uint:
+						buf = UintToStr(f)
+					case uint64:
+						buf = UInt64ToString(f)
+					case time.Time:
+						buf = FormatDateTime(f)
+					}
 				default:
 					switch f := o.Interface().(type) {
 					case sql.NullString:
@@ -488,7 +556,7 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 // additionally processes struct tag data validation and length / range (if not valid, will set to data type default)
 //
 // Predefined Struct Tags Usable:
-//		1) `pos:"1"`		// oridinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
+//		1) `pos:"1"`		// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
 //		2) `type:"xyz"`		// data type expected:
 //									A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
 //									H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
@@ -725,6 +793,14 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 					if !o2.OverflowFloat(f64) {
 						o2.SetFloat(f64)
 					}
+				case uint:
+					if !o2.OverflowUint(StrToUint64(csvValue)) {
+						o2.SetUint(StrToUint64(csvValue))
+					}
+				case uint64:
+					if !o2.OverflowUint(StrToUint64(csvValue)) {
+						o2.SetUint(StrToUint64(csvValue))
+					}
 				case string:
 					o2.SetString(csvValue)
 				case bool:
@@ -764,6 +840,26 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 	return nil
 }
 
+// MarshalStructToCSV will serialize struct fields defined with strug tags below, to csvPayload string (one line of csv data) using csvDelimiter,
+// the csv payload ordinal position is based on the struct tag pos defined for each struct field,
+// additionally processes struct tag data validation and length / range (if not valid, will set to data type default),
+// this method provides data validation and if fails, will return error (for string if size exceeds max, it will truncate)
+//
+// Predefined Struct Tags Usable:
+//		1) `pos:"1"`		// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
+//		2) `type:"xyz"`		// data type expected:
+//									A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
+//									H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
+//		3) `regex:"xyz"`	// if Type = REGEX, this struct tag contains the regular expression string,
+//										 regex express such as [^A-Za-z0-9_-]+
+//										 method will replace any regex matched string to blank
+//		4) `size:"x..y"`	// data type size rule:
+//									x = Exact size match
+//									x.. = From x and up
+//									..y = From 0 up to y
+//									x..y = From x to y
+//		5) `range:"x..y"`	// data type range value when Type is N, if underlying data type is string, method will convert first before testing
+//		6) `req:"true"`		// indicates data value is required or not, true or false
 func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
@@ -921,6 +1017,10 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 					fv = Float32ToString(f)
 				case float64:
 					fv = FloatToString(f)
+				case uint:
+					fv = UintToStr(f)
+				case uint64:
+					fv = UInt64ToString(f)
 				case string:
 					fv = f
 				case bool:
@@ -1010,7 +1110,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			}
 
 			// store fv into sorted slice
-			csvList[i] = fv
+			csvList[tagPos] = fv
 		}
 	}
 

@@ -1076,31 +1076,31 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			}
 
 			if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" {
-				if sizeMin > 0 {
+				if sizeMin > 0 && len(fv) > 0 {
 					if len(fv) < sizeMin {
 						return "", fmt.Errorf("%s Min Length is %d", field.Name, sizeMin)
 					}
 				}
 
-				if sizeMax > 0 {
-					if len(fv) > sizeMax {
-						fv = Left(fv, sizeMax)
-					}
+				if sizeMax > 0 && len(fv) > sizeMax {
+					fv = Left(fv, sizeMax)
 				}
 			}
 
 			if tagType == "n" {
-				n, _ := ParseInt32(fv)
+				n, ok := ParseInt32(fv)
 
-				if rangeMin > 0 {
-					if n < rangeMin {
-						return "", fmt.Errorf("%s Range Minimum is %d", field.Name, rangeMin)
+				if ok {
+					if rangeMin > 0 {
+						if n < rangeMin {
+							return "", fmt.Errorf("%s Range Minimum is %d", field.Name, rangeMin)
+						}
 					}
-				}
 
-				if rangeMax > 0 {
-					if n > rangeMax {
-						return "", fmt.Errorf("%s Range Maximum is %d", field.Name, rangeMax)
+					if rangeMax > 0 {
+						if n > rangeMax {
+							return "", fmt.Errorf("%s Range Maximum is %d", field.Name, rangeMax)
+						}
 					}
 				}
 			}

@@ -53,6 +53,10 @@ func Fill(src interface{}, dst interface{}) error {
 // StructToQueryParams marshals a struct pointer's fields to query params string,
 // output query param names are based on values given in tagName,
 // to exclude certain struct fields from being marshaled, include excludeTagName with - as value in struct definition
+//
+// special struct tags:
+//		1) `getter:"Key"`			// if field type is custom struct or enum,
+//									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("StructToQueryParams Require Input Struct Variable Pointer")
@@ -93,99 +97,25 @@ func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagN
 					}
 				}
 
-				buf := ""
+				tagGetter := Trim(field.Tag.Get("getter"))
 
-				switch o.Kind() {
-				case reflect.String:
-					buf = o.String()
-				case reflect.Bool:
-					if o.Bool() {
-						buf = "true"
-					} else {
-						buf = "false"
-					}
-				case reflect.Int8:
-					fallthrough
-				case reflect.Int16:
-					fallthrough
-				case reflect.Int:
-					fallthrough
-				case reflect.Int32:
-					fallthrough
-				case reflect.Int64:
-					buf = Int64ToString(o.Int())
-				case reflect.Float32:
-					fallthrough
-				case reflect.Float64:
-					buf = FloatToString(o.Float())
-				case reflect.Uint8:
-					fallthrough
-				case reflect.Uint16:
-					fallthrough
-				case reflect.Uint:
-					fallthrough
-				case reflect.Uint32:
-					fallthrough
-				case reflect.Uint64:
-					buf = UInt64ToString(o.Uint())
-				case reflect.Ptr:
-					o2 := o.Elem()
-					switch f := o2.Interface().(type) {
-					case int8:
-						buf = Itoa(int(f))
-					case int16:
-						buf = Itoa(int(f))
-					case int32:
-						buf = Itoa(int(f))
-					case int64:
-						buf = Int64ToString(f)
-					case int:
-						buf = Itoa(f)
-					case bool:
-						buf = BoolToString(f)
-					case string:
-						buf = f
-					case float32:
-						buf = Float32ToString(f)
-					case float64:
-						buf = Float64ToString(f)
-					case uint:
-						buf = UintToStr(f)
-					case uint64:
-						buf = UInt64ToString(f)
-					case time.Time:
-						buf = FormatDateTime(f)
-					}
-				default:
-					switch f := o.Interface().(type) {
-					case sql.NullString:
-						buf = FromNullString(f)
-					case sql.NullBool:
-						if FromNullBool(f) {
-							buf = "true"
-						} else {
-							buf = "false"
+				if LenTrim(tagGetter) > 0 {
+					if ov, notFound := ReflectCall(o, tagGetter); !notFound {
+						if len(ov) > 0 {
+							o = ov[0]
 						}
-					case sql.NullFloat64:
-						buf = FloatToString(FromNullFloat64(f))
-					case sql.NullInt32:
-						buf = Itoa(FromNullInt(f))
-					case sql.NullInt64:
-						buf = Int64ToString(FromNullInt64(f))
-					case sql.NullTime:
-						buf = FromNullTime(f).String()
-					case time.Time:
-						buf = f.String()
-					default:
-						continue
 					}
 				}
 
-				if LenTrim(output) > 0 {
-					output += "&"
-				}
+				if buf, ok := ReflectFieldValueToString(o); !ok {
+					continue
+				} else {
+					if LenTrim(output) > 0 {
+						output += "&"
+					}
 
-				output += fmt.Sprintf("%s=%s", tag, url.PathEscape(buf))
+					output += fmt.Sprintf("%s=%s", tag, url.PathEscape(buf))
+				}
 			}
 		}
 	}
@@ -200,6 +130,10 @@ func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagN
 // StructToJson marshals a struct pointer's fields to json string,
 // output json names are based on values given in tagName,
 // to exclude certain struct fields from being marshaled, include excludeTagName with - as value in struct definition
+//
+// special struct tags:
+//		1) `getter:"Key"`			// if field type is custom struct or enum,
+//									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("StructToJson Require Input Struct Variable Pointer")
@@ -240,92 +174,20 @@ func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName str
 					}
 				}
 
-				buf := ""
+				tagGetter := Trim(field.Tag.Get("getter"))
 
-				switch o.Kind() {
-				case reflect.String:
-					buf = o.String()
-				case reflect.Bool:
-					if o.Bool() {
-						buf = "true"
-					} else {
-						buf = "false"
-					}
-				case reflect.Int8:
-					fallthrough
-				case reflect.Int16:
-					fallthrough
-				case reflect.Int:
-					fallthrough
-				case reflect.Int32:
-					fallthrough
-				case reflect.Int64:
-					buf = Int64ToString(o.Int())
-				case reflect.Float32:
-					fallthrough
-				case reflect.Float64:
-					buf = FloatToString(o.Float())
-				case reflect.Uint8:
-					fallthrough
-				case reflect.Uint16:
-					fallthrough
-				case reflect.Uint:
-					fallthrough
-				case reflect.Uint32:
-					fallthrough
-				case reflect.Uint64:
-					buf = UInt64ToString(o.Uint())
-				case reflect.Ptr:
-					o2 := o.Elem()
-					switch f := o2.Interface().(type) {
-					case int8:
-						buf = Itoa(int(f))
-					case int16:
-						buf = Itoa(int(f))
-					case int32:
-						buf = Itoa(int(f))
-					case int64:
-						buf = Int64ToString(f)
-					case int:
-						buf = Itoa(f)
-					case bool:
-						buf = BoolToString(f)
-					case string:
-						buf = f
-					case float32:
-						buf = Float32ToString(f)
-					case float64:
-						buf = Float64ToString(f)
-					case uint:
-						buf = UintToStr(f)
-					case uint64:
-						buf = UInt64ToString(f)
-					case time.Time:
-						buf = FormatDateTime(f)
-					}
-				default:
-					switch f := o.Interface().(type) {
-					case sql.NullString:
-						buf = FromNullString(f)
-					case sql.NullBool:
-						if FromNullBool(f) {
-							buf = "true"
-						} else {
-							buf = "false"
+				if LenTrim(tagGetter) > 0 {
+					if ov, notFound := ReflectCall(o, tagGetter); !notFound {
+						if len(ov) > 0 {
+							o = ov[0]
 						}
-					case sql.NullFloat64:
-						buf = FloatToString(FromNullFloat64(f))
-					case sql.NullInt32:
-						buf = Itoa(FromNullInt(f))
-					case sql.NullInt64:
-						buf = Int64ToString(FromNullInt64(f))
-					case sql.NullTime:
-						buf = FromNullTime(f).String()
-					case time.Time:
-						buf = f.String()
-					default:
-						continue
 					}
+				}
+
+				buf, ok := ReflectFieldValueToString(o)
+
+				if !ok {
+					continue
 				}
 
 				buf = strings.Replace(buf, `"`, `\"`, -1)
@@ -556,20 +418,22 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 // additionally processes struct tag data validation and length / range (if not valid, will set to data type default)
 //
 // Predefined Struct Tags Usable:
-//		1) `pos:"1"`		// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
-//		2) `type:"xyz"`		// data type expected:
-//									A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
-//									H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
-//		3) `regex:"xyz"`	// if Type = REGEX, this struct tag contains the regular expression string,
-//										 regex express such as [^A-Za-z0-9_-]+
-//										 method will replace any regex matched string to blank
-//		4) `size:"x..y"`	// data type size rule:
-//									x = Exact size match
-//									x.. = From x and up
-//									..y = From 0 up to y
-//									x..y = From x to y
-//		5) `range:"x..y"`	// data type range value when Type is N, if underlying data type is string, method will convert first before testing
-//		6) `req:"true"`		// indicates data value is required or not, true or false
+//		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
+//		2) `type:"xyz"`				// data type expected:
+//											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
+//											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
+//		3) `regex:"xyz"`			// if Type = REGEX, this struct tag contains the regular expression string,
+//										 	regex express such as [^A-Za-z0-9_-]+
+//										 	method will replace any regex matched string to blank
+//		4) `size:"x..y"`			// data type size rule:
+//											x = Exact size match
+//											x.. = From x and up
+//											..y = From 0 up to y
+//											x..y = From x to y
+//		5) `range:"x..y"`			// data type range value when Type is N, if underlying data type is string, method will convert first before testing
+//		6) `req:"true"`				// indicates data value is required or not, true or false
+//		7) `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+// 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
 func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -716,6 +580,29 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 				}
 			}
 
+			tagSetter := Trim(field.Tag.Get("setter"))
+
+			if LenTrim(tagSetter) > 0 {
+				if ov, notFound := ReflectCall(o, tagSetter, csvValue); !notFound {
+					if len(ov) == 1 {
+						csvValue, _ = ReflectFieldValueToString(ov[0])
+					} else if len(ov) > 1 {
+						getFirstVar := true
+
+						if e, ok := ov[len(ov)-1].Interface().(error); ok {
+							// last var is error, check if error exists
+							if e != nil {
+								getFirstVar = false
+							}
+						}
+
+						if getFirstVar {
+							csvValue, _ = ReflectFieldValueToString(ov[0])
+						}
+					}
+				}
+			}
+
 			// set validated csv value into corresponding struct field
 			switch o.Kind() {
 			case reflect.String:
@@ -846,20 +733,22 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 // this method provides data validation and if fails, will return error (for string if size exceeds max, it will truncate)
 //
 // Predefined Struct Tags Usable:
-//		1) `pos:"1"`		// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
-//		2) `type:"xyz"`		// data type expected:
-//									A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
-//									H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
-//		3) `regex:"xyz"`	// if Type = REGEX, this struct tag contains the regular expression string,
-//										 regex express such as [^A-Za-z0-9_-]+
-//										 method will replace any regex matched string to blank
-//		4) `size:"x..y"`	// data type size rule:
-//									x = Exact size match
-//									x.. = From x and up
-//									..y = From 0 up to y
-//									x..y = From x to y
-//		5) `range:"x..y"`	// data type range value when Type is N, if underlying data type is string, method will convert first before testing
-//		6) `req:"true"`		// indicates data value is required or not, true or false
+//		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
+//		2) `type:"xyz"`				// data type expected:
+//											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
+//											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
+//		3) `regex:"xyz"`			// if Type = REGEX, this struct tag contains the regular expression string,
+//										 	regex express such as [^A-Za-z0-9_-]+
+//										 	method will replace any regex matched string to blank
+//		4) `size:"x..y"`			// data type size rule:
+//											x = Exact size match
+//											x.. = From x and up
+//											..y = From 0 up to y
+//											x..y = From x to y
+//		5) `range:"x..y"`			// data type range value when Type is N, if underlying data type is string, method will convert first before testing
+//		6) `req:"true"`				// indicates data value is required or not, true or false
+//		7) `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+// 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
 func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
@@ -968,87 +857,21 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 				tagReq = ""
 			}
 
-			// get csv value from current struct field
-			fv := ""
+			tagGetter := Trim(field.Tag.Get("getter"))
 
-			switch o.Kind() {
-			case reflect.String:
-				fv = o.String()
-			case reflect.Bool:
-				fv = BoolToString(o.Bool())
-			case reflect.Int8:
-				fallthrough
-			case reflect.Int16:
-				fallthrough
-			case reflect.Int:
-				fallthrough
-			case reflect.Int32:
-				fallthrough
-			case reflect.Int64:
-				 fv = Int64ToString(o.Int())
-			case reflect.Float32:
-				fallthrough
-			case reflect.Float64:
-				fv = FloatToString(o.Float())
-			case reflect.Uint8:
-				fallthrough
-			case reflect.Uint16:
-				fallthrough
-			case reflect.Uint:
-				fallthrough
-			case reflect.Uint32:
-				fallthrough
-			case reflect.Uint64:
-				fv = UInt64ToString(o.Uint())
-			case reflect.Ptr:
-				o2 := o.Elem()
-				switch f := o2.Interface().(type) {
-				case int:
-					fv = Itoa(f)
-				case int8:
-					fv = Itoa(int(f))
-				case int16:
-					fv = Itoa(int(f))
-				case int32:
-					fv = Itoa(int(f))
-				case int64:
-					fv = Int64ToString(f)
-				case float32:
-					fv = Float32ToString(f)
-				case float64:
-					fv = FloatToString(f)
-				case uint:
-					fv = UintToStr(f)
-				case uint64:
-					fv = UInt64ToString(f)
-				case string:
-					fv = f
-				case bool:
-					fv = BoolToString(f)
-				case time.Time:
-					fv = FormatDateTime(f)
-				default:
-					return "", fmt.Errorf(field.Name + " Unhandled")
+			if LenTrim(tagGetter) > 0 {
+				if ov, notFound := ReflectCall(o, tagGetter); !notFound {
+					if len(ov) > 0 {
+						o = ov[0]
+					}
 				}
-			default:
-				switch f := o.Interface().(type) {
-				case sql.NullString:
-					fv = FromNullString(f)
-				case sql.NullBool:
-					fv = BoolToString(FromNullBool(f))
-				case sql.NullFloat64:
-					fv = FloatToString(FromNullFloat64(f))
-				case sql.NullInt32:
-					fv = Itoa(FromNullInt(f))
-				case sql.NullInt64:
-					fv = Int64ToString(FromNullInt64(f))
-				case sql.NullTime:
-					fv = FormatDateTime(FromNullTime(f))
-				case time.Time:
-					fv = FormatDateTime(f)
-				default:
-					return "", fmt.Errorf(field.Name + " Unhandled")
-				}
+			}
+
+			// get csv value from current struct field
+			fv, ok := ReflectFieldValueToString(o)
+
+			if !ok {
+				return "", fmt.Errorf(field.Name + " Unhandled")
 			}
 
 			// validate output csv value

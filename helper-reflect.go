@@ -1,7 +1,9 @@
 package helper
 
 import (
+	"database/sql"
 	"reflect"
+	"time"
 )
 
 /*
@@ -76,4 +78,125 @@ func GetStructTagValueByType(t reflect.Type, structFieldName string, structTagNa
 		// struct field found
 		return false, field.Tag.Get(structTagName)
 	}
+}
+
+// ReflectCall uses reflection to invoke a method by name, and pass in param values if any,
+// result is returned via reflect.Value object slice
+func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) (resultSlice []reflect.Value, notFound bool) {
+	method := o.MethodByName(methodName)
+
+	if !method.IsZero() {
+		var params []reflect.Value
+
+		if len(paramValue) > 0 {
+			for _, p := range paramValue {
+				params = append(params, reflect.ValueOf(p))
+			}
+		}
+
+		resultSlice = method.Call(params)
+
+		if len(resultSlice) == 0 {
+			return nil, false
+		} else {
+			return resultSlice, false
+		}
+	} else {
+		return nil, true
+	}
+}
+
+// ReflectFieldValueToString accepts reflect.Value and returns its underlying field value in string data type
+func ReflectFieldValueToString(o reflect.Value) (string, bool) {
+	buf := ""
+
+	switch o.Kind() {
+	case reflect.String:
+		buf = o.String()
+	case reflect.Bool:
+		if o.Bool() {
+			buf = "true"
+		} else {
+			buf = "false"
+		}
+	case reflect.Int8:
+		fallthrough
+	case reflect.Int16:
+		fallthrough
+	case reflect.Int:
+		fallthrough
+	case reflect.Int32:
+		fallthrough
+	case reflect.Int64:
+		buf = Int64ToString(o.Int())
+	case reflect.Float32:
+		fallthrough
+	case reflect.Float64:
+		buf = FloatToString(o.Float())
+	case reflect.Uint8:
+		fallthrough
+	case reflect.Uint16:
+		fallthrough
+	case reflect.Uint:
+		fallthrough
+	case reflect.Uint32:
+		fallthrough
+	case reflect.Uint64:
+		buf = UInt64ToString(o.Uint())
+	case reflect.Ptr:
+		o2 := o.Elem()
+		switch f := o2.Interface().(type) {
+		case int8:
+			buf = Itoa(int(f))
+		case int16:
+			buf = Itoa(int(f))
+		case int32:
+			buf = Itoa(int(f))
+		case int64:
+			buf = Int64ToString(f)
+		case int:
+			buf = Itoa(f)
+		case bool:
+			buf = BoolToString(f)
+		case string:
+			buf = f
+		case float32:
+			buf = Float32ToString(f)
+		case float64:
+			buf = Float64ToString(f)
+		case uint:
+			buf = UintToStr(f)
+		case uint64:
+			buf = UInt64ToString(f)
+		case time.Time:
+			buf = FormatDateTime(f)
+		default:
+			return "", false
+		}
+	default:
+		switch f := o.Interface().(type) {
+		case sql.NullString:
+			buf = FromNullString(f)
+		case sql.NullBool:
+			if FromNullBool(f) {
+				buf = "true"
+			} else {
+				buf = "false"
+			}
+		case sql.NullFloat64:
+			buf = FloatToString(FromNullFloat64(f))
+		case sql.NullInt32:
+			buf = Itoa(FromNullInt(f))
+		case sql.NullInt64:
+			buf = Int64ToString(FromNullInt64(f))
+		case sql.NullTime:
+			buf = FromNullTime(f).String()
+		case time.Time:
+			buf = f.String()
+		default:
+			return "", false
+		}
+	}
+
+	return buf, true
 }

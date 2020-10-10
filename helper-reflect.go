@@ -107,7 +107,9 @@ func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) 
 }
 
 // ReflectFieldValueToString accepts reflect.Value and returns its underlying field value in string data type
-func ReflectFieldValueToString(o reflect.Value) (string, bool) {
+// boolTrue is the literal value to use for bool true condition, boolFalse is the false condition literal,
+// if boolTrue or boolFalse is not defined, then default 'true' or 'false' is used
+func ReflectFieldValueToString(o reflect.Value, boolTrue string, boolFalse string) (string, bool) {
 	buf := ""
 
 	switch o.Kind() {
@@ -115,9 +117,17 @@ func ReflectFieldValueToString(o reflect.Value) (string, bool) {
 		buf = o.String()
 	case reflect.Bool:
 		if o.Bool() {
-			buf = "true"
+			if LenTrim(boolTrue) == 0 {
+				buf = "true"
+			} else {
+				buf = boolTrue
+			}
 		} else {
-			buf = "false"
+			if LenTrim(boolFalse) == 0 {
+				buf = "false"
+			} else {
+				buf = boolFalse
+			}
 		}
 	case reflect.Int8:
 		fallthrough
@@ -157,7 +167,19 @@ func ReflectFieldValueToString(o reflect.Value) (string, bool) {
 		case int:
 			buf = Itoa(f)
 		case bool:
-			buf = BoolToString(f)
+			if f {
+				if LenTrim(boolTrue) == 0 {
+					buf = "true"
+				} else {
+					buf = boolTrue
+				}
+			} else {
+				if LenTrim(boolFalse) == 0 {
+					buf = "false"
+				} else {
+					buf = boolFalse
+				}
+			}
 		case string:
 			buf = f
 		case float32:
@@ -179,9 +201,17 @@ func ReflectFieldValueToString(o reflect.Value) (string, bool) {
 			buf = FromNullString(f)
 		case sql.NullBool:
 			if FromNullBool(f) {
-				buf = "true"
+				if LenTrim(boolTrue) == 0 {
+					buf = "true"
+				} else {
+					buf = boolTrue
+				}
 			} else {
-				buf = "false"
+				if LenTrim(boolFalse) == 0 {
+					buf = "false"
+				} else {
+					buf = boolFalse
+				}
 			}
 		case sql.NullFloat64:
 			buf = FloatToString(FromNullFloat64(f))

@@ -2,6 +2,7 @@ package helper
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -50,32 +51,35 @@ func Fill(src interface{}, dst interface{}) error {
 	return nil
 }
 
-// StructToQueryParams marshals a struct pointer's fields to query params string,
+// MarshalStructToQueryParams marshals a struct pointer's fields to query params string,
 // output query param names are based on values given in tagName,
-// to exclude certain struct fields from being marshaled, include excludeTagName with - as value in struct definition
+// to exclude certain struct fields from being marshaled, use - as value in struct tag defined by tagName,
+// if there is a need to name the value of tagName, but still need to exclude from output, use the excludeTagName with -, such as `x:"-"`
 //
 // special struct tags:
 //		1) `getter:"Key"`			// if field type is custom struct or enum,
 //									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
-func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
+//		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
+//		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
-		return "", fmt.Errorf("StructToQueryParams Require Input Struct Variable Pointer")
+		return "", fmt.Errorf("MarshalStructToQueryParams Requires Input Struct Variable Pointer")
 	}
 
 	if LenTrim(tagName) == 0 {
-		return "", fmt.Errorf("StructToQueryParams Require TagName (Tag Name defines query parameter name)")
+		return "", fmt.Errorf("MarshalStructToQueryParams Requires TagName (Tag Name defines query parameter name)")
 	}
 
 	s := reflect.ValueOf(inputStructPtr)
 
 	if s.Kind() != reflect.Ptr {
-		return "", fmt.Errorf("StructToQueryParams Expects inputStructPtr To Be a Pointer")
+		return "", fmt.Errorf("MarshalStructToQueryParams Expects inputStructPtr To Be a Pointer")
 	} else {
 		s = s.Elem()
 	}
 
 	if s.Kind() != reflect.Struct {
-		return "", fmt.Errorf("StructToQueryParams Require Struct Object")
+		return "", fmt.Errorf("MarshalStructToQueryParams Requires Struct Object")
 	}
 
 	output := ""
@@ -92,7 +96,7 @@ func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagN
 
 			if tag != "-" {
 				if LenTrim(excludeTagName) > 0 {
-					if field.Tag.Get(excludeTagName) == "-" {
+					if Trim(field.Tag.Get(excludeTagName)) == "-" {
 						continue
 					}
 				}
@@ -107,7 +111,10 @@ func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagN
 					}
 				}
 
-				if buf, ok := ReflectFieldValueToString(o); !ok {
+				boolTrue := Trim(field.Tag.Get("booltrue"))
+				boolFalse := Trim(field.Tag.Get("boolfalse"))
+
+				if buf, ok := ReflectFieldValueToString(o, boolTrue, boolFalse); !ok {
 					continue
 				} else {
 					if LenTrim(output) > 0 {
@@ -121,38 +128,41 @@ func StructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagN
 	}
 
 	if LenTrim(output) == 0 {
-		return "", fmt.Errorf("StructToQueryParameters Yielded Blank Output")
+		return "", fmt.Errorf("MarshalStructToQueryParams Yielded Blank Output")
 	} else {
 		return output, nil
 	}
 }
 
-// StructToJson marshals a struct pointer's fields to json string,
+// MarshalStructToJson marshals a struct pointer's fields to json string,
 // output json names are based on values given in tagName,
-// to exclude certain struct fields from being marshaled, include excludeTagName with - as value in struct definition
+// to exclude certain struct fields from being marshaled, include - as value in struct tag defined by tagName,
+// if there is a need to name the value of tagName, but still need to exclude from output, use the excludeTagName with -, such as `x:"-"`
 //
 // special struct tags:
 //		1) `getter:"Key"`			// if field type is custom struct or enum,
 //									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
-func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
+//		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
+//		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
-		return "", fmt.Errorf("StructToJson Require Input Struct Variable Pointer")
+		return "", fmt.Errorf("MarshalStructToJson Requires Input Struct Variable Pointer")
 	}
 
 	if LenTrim(tagName) == 0 {
-		return "", fmt.Errorf("StructToJson Require TagName (Tag Name defines Json name)")
+		return "", fmt.Errorf("MarshalStructToJson Requires TagName (Tag Name defines Json name)")
 	}
 
 	s := reflect.ValueOf(inputStructPtr)
 
 	if s.Kind() != reflect.Ptr {
-		return "", fmt.Errorf("StructToJson Expects inputStructPtr To Be a Pointer")
+		return "", fmt.Errorf("MarshalStructToJson Expects inputStructPtr To Be a Pointer")
 	} else {
 		s = s.Elem()
 	}
 
 	if s.Kind() != reflect.Struct {
-		return "", fmt.Errorf("StructToJson Require Struct Object")
+		return "", fmt.Errorf("MarshalStructToJson Requires Struct Object")
 	}
 
 	output := ""
@@ -169,7 +179,7 @@ func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName str
 
 			if tag != "-" {
 				if LenTrim(excludeTagName) > 0 {
-					if field.Tag.Get(excludeTagName) == "-" {
+					if Trim(field.Tag.Get(excludeTagName)) == "-" {
 						continue
 					}
 				}
@@ -184,7 +194,10 @@ func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName str
 					}
 				}
 
-				buf, ok := ReflectFieldValueToString(o)
+				boolTrue := Trim(field.Tag.Get("booltrue"))
+				boolFalse := Trim(field.Tag.Get("boolfalse"))
+
+				buf, ok := ReflectFieldValueToString(o, boolTrue, boolFalse)
 
 				if !ok {
 					continue
@@ -203,22 +216,255 @@ func StructToJson(inputStructPtr interface{}, tagName string, excludeTagName str
 	}
 
 	if LenTrim(output) == 0 {
-		return "", fmt.Errorf("StructToJson Yielded Blank Output")
+		return "", fmt.Errorf("MarshalStructToJson Yielded Blank Output")
 	} else {
 		return fmt.Sprintf("{%s}", output), nil
 	}
 }
 
-// SliceStructToJson accepts a slice of struct pointer, then using tagName and excludeTagName to marshal to json array
-// To pass in inputSliceStructPtr, convert slice of actual objects at the calling code, using SliceObjectsToSliceInterface()
-func SliceStructToJson(inputSliceStructPtr []interface{}, tagName string, excludeTagName string) (jsonArrayOutput string, err error) {
+// UnmarshalJsonToStruct will parse jsonPayload string,
+// and set parsed json element value into struct fields based on struct tag named by tagName,
+// any tagName value with - will be ignored, any excludeTagName defined with value of - will also cause parser to ignore the field
+//
+// note: this method expects simple json in key value pairs only, not json containing slices or more complex json structs within existing json field
+//
+// Predefined Struct Tags Usable:
+// 		*) `setter:"ParseByKey`		// if field type is custom struct or enum,
+//									   specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagName string, excludeTagName string) error {
+	if inputStructPtr == nil {
+		return fmt.Errorf("InputStructPtr is Required")
+	}
+
+	if LenTrim(jsonPayload) == 0 {
+		return fmt.Errorf("JsonPayload is Required")
+	}
+
+	if LenTrim(tagName) == 0 {
+		return fmt.Errorf("TagName is Required")
+	}
+
+	s := reflect.ValueOf(inputStructPtr)
+
+	if s.Kind() != reflect.Ptr {
+		return fmt.Errorf("InputStructPtr Must Be Pointer")
+	} else {
+		s = s.Elem()
+	}
+
+	if s.Kind() != reflect.Struct {
+		return fmt.Errorf("InputStructPtr Must Be Struct")
+	}
+
+	// unmarshal json to map
+	jsonMap := make(map[string]json.RawMessage)
+
+	if err := json.Unmarshal([]byte(jsonPayload), &jsonMap); err != nil {
+		return fmt.Errorf("Unmarshal Json Failed: %s", err)
+	}
+
+	if jsonMap == nil {
+		return fmt.Errorf("Unmarshaled Json Map is Nil")
+	}
+
+	if len(jsonMap) == 0 {
+		return fmt.Errorf("Unmarshaled Json Map Has No Elements")
+	}
+
+	StructClearFields(inputStructPtr)
+
+	for i := 0; i < s.NumField(); i++ {
+		field := s.Type().Field(i)
+
+		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
+			// get json field name if defined
+			jName := Trim(field.Tag.Get(tagName))
+
+			if jName == "-" {
+				continue
+			}
+
+			if LenTrim(excludeTagName) > 0 {
+				if Trim(field.Tag.Get(excludeTagName)) == "-" {
+					continue
+				}
+			}
+
+			if LenTrim(jName) == 0 {
+				jName = field.Name
+			}
+
+			// get json field value based on jName from jsonMap
+			jValue := ""
+
+			if jRaw, ok := jsonMap[jName]; !ok {
+				continue
+			} else {
+				jValue = JsonFromEscaped(string(jRaw))
+
+				if len(jValue) > 0 {
+					if tagSetter := Trim(field.Tag.Get("setter")); len(tagSetter) > 0 {
+						if results, notFound := ReflectCall(o, tagSetter, jValue); !notFound && len(results) > 0 {
+							if len(results) == 1 {
+								if jv, ok := ReflectFieldValueToString(results[0], "", ""); ok {
+									jValue = jv
+								}
+							} else if len(results) > 1 {
+								getFirstVar := true
+
+								if e, ok := results[len(results)-1].Interface().(error); ok {
+									// last var is error, check if error exists
+									if e != nil {
+										getFirstVar = false
+									}
+								}
+
+								if getFirstVar {
+									if jv, ok := ReflectFieldValueToString(results[0], "", ""); ok {
+										jValue = jv
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			// set validated csv value into corresponding struct field
+			switch o.Kind() {
+			case reflect.String:
+				o.SetString(jValue)
+			case reflect.Bool:
+				o.SetBool(IsBool(jValue))
+			case reflect.Int8:
+				fallthrough
+			case reflect.Int16:
+				fallthrough
+			case reflect.Int:
+				fallthrough
+			case reflect.Int32:
+				fallthrough
+			case reflect.Int64:
+				i64, _ := ParseInt64(jValue)
+				if !o.OverflowInt(i64) {
+					o.SetInt(i64)
+				}
+			case reflect.Float32:
+				fallthrough
+			case reflect.Float64:
+				f64, _ := ParseFloat64(jValue)
+				if !o.OverflowFloat(f64) {
+					o.SetFloat(f64)
+				}
+			case reflect.Uint8:
+				fallthrough
+			case reflect.Uint16:
+				fallthrough
+			case reflect.Uint:
+				fallthrough
+			case reflect.Uint32:
+				fallthrough
+			case reflect.Uint64:
+				ui64 := StrToUint64(jValue)
+				if !o.OverflowUint(ui64) {
+					o.SetUint(ui64)
+				}
+			case reflect.Ptr:
+				o2 := o.Elem()
+				switch o2.Interface().(type) {
+				case int:
+					i64, _ := ParseInt64(jValue)
+					if !o2.OverflowInt(i64) {
+						o2.SetInt(i64)
+					}
+				case int8:
+					i64, _ := ParseInt64(jValue)
+					if !o2.OverflowInt(i64) {
+						o2.SetInt(i64)
+					}
+				case int16:
+					i64, _ := ParseInt64(jValue)
+					if !o2.OverflowInt(i64) {
+						o2.SetInt(i64)
+					}
+				case int32:
+					i64, _ := ParseInt64(jValue)
+					if !o2.OverflowInt(i64) {
+						o2.SetInt(i64)
+					}
+				case int64:
+					i64, _ := ParseInt64(jValue)
+					if !o2.OverflowInt(i64) {
+						o2.SetInt(i64)
+					}
+				case float32:
+					f64, _ := ParseFloat64(jValue)
+					if !o2.OverflowFloat(f64) {
+						o2.SetFloat(f64)
+					}
+				case float64:
+					f64, _ := ParseFloat64(jValue)
+					if !o2.OverflowFloat(f64) {
+						o2.SetFloat(f64)
+					}
+				case uint:
+					if !o2.OverflowUint(StrToUint64(jValue)) {
+						o2.SetUint(StrToUint64(jValue))
+					}
+				case uint64:
+					if !o2.OverflowUint(StrToUint64(jValue)) {
+						o2.SetUint(StrToUint64(jValue))
+					}
+				case string:
+					o2.SetString(jValue)
+				case bool:
+					o2.SetBool(IsBool(jValue))
+				case time.Time:
+					o2.Set(reflect.ValueOf(ParseDate(jValue)))
+				default:
+					return fmt.Errorf(o2.Type().Name() + " Unhandled")
+				}
+			default:
+				switch o.Interface().(type) {
+				case sql.NullString:
+					o.Set(reflect.ValueOf(sql.NullString{String: jValue, Valid: true}))
+				case sql.NullBool:
+					o.Set(reflect.ValueOf(sql.NullBool{Bool: IsBool(jValue), Valid: true}))
+				case sql.NullFloat64:
+					f64, _ := ParseFloat64(jValue)
+					o.Set(reflect.ValueOf(sql.NullFloat64{Float64: f64, Valid: true}))
+				case sql.NullInt32:
+					i32, _ := ParseInt32(jValue)
+					o.Set(reflect.ValueOf(sql.NullInt32{Int32: int32(i32), Valid: true}))
+				case sql.NullInt64:
+					i64, _ := ParseInt64(jValue)
+					o.Set(reflect.ValueOf(sql.NullInt64{Int64: i64, Valid: true}))
+				case sql.NullTime:
+					tv := ParseDateTime(jValue)
+					o.Set(reflect.ValueOf(sql.NullTime{Time: tv, Valid: true}))
+				case time.Time:
+					o.Set(reflect.ValueOf(ParseDateTime(jValue)))
+				default:
+					return fmt.Errorf(o.Type().Name() + " Unhandled")
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// MarshalSliceStructToJson accepts a slice of struct pointer, then using tagName and excludeTagName to marshal to json array
+// To pass in inputSliceStructPtr, convert slice of actual objects at the calling code, using SliceObjectsToSliceInterface(),
+// if there is a need to name the value of tagName, but still need to exclude from output, use the excludeTagName with -, such as `x:"-"`
+func MarshalSliceStructToJson(inputSliceStructPtr []interface{}, tagName string, excludeTagName string) (jsonArrayOutput string, err error) {
 	if len(inputSliceStructPtr) == 0 {
 		return "", fmt.Errorf("Input Slice Struct Pointer Nil")
 	}
 
 	for _, v := range inputSliceStructPtr {
-		if s, e := StructToJson(v, tagName, excludeTagName); e != nil {
-			return "", fmt.Errorf("StructToJson Failed: %s", e)
+		if s, e := MarshalStructToJson(v, tagName, excludeTagName); e != nil {
+			return "", fmt.Errorf("MarshalSliceStructToJson Failed: %s", e)
 		} else {
 			if LenTrim(jsonArrayOutput) > 0 {
 				jsonArrayOutput += ", "
@@ -231,7 +477,7 @@ func SliceStructToJson(inputSliceStructPtr []interface{}, tagName string, exclud
 	if LenTrim(jsonArrayOutput) > 0 {
 		return fmt.Sprintf("[%s]", jsonArrayOutput), nil
 	} else {
-		return "", fmt.Errorf("SliceStructToJson Yielded Blank String")
+		return "", fmt.Errorf("MarshalSliceStructToJson Yielded Blank String")
 	}
 }
 
@@ -585,7 +831,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			if LenTrim(tagSetter) > 0 {
 				if ov, notFound := ReflectCall(o, tagSetter, csvValue); !notFound {
 					if len(ov) == 1 {
-						csvValue, _ = ReflectFieldValueToString(ov[0])
+						csvValue, _ = ReflectFieldValueToString(ov[0], "", "")
 					} else if len(ov) > 1 {
 						getFirstVar := true
 
@@ -597,7 +843,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 						}
 
 						if getFirstVar {
-							csvValue, _ = ReflectFieldValueToString(ov[0])
+							csvValue, _ = ReflectFieldValueToString(ov[0], "", "")
 						}
 					}
 				}
@@ -749,6 +995,8 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //		6) `req:"true"`				// indicates data value is required or not, true or false
 //		7) `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 // 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+//		9) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
+//		10) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
 func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
@@ -868,7 +1116,10 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			}
 
 			// get csv value from current struct field
-			fv, ok := ReflectFieldValueToString(o)
+			boolTrue := Trim(field.Tag.Get("booltrue"))
+			boolFalse := Trim(field.Tag.Get("boolfalse"))
+
+			fv, ok := ReflectFieldValueToString(o, boolTrue, boolFalse)
 
 			if !ok {
 				return "", fmt.Errorf(field.Name + " Unhandled")

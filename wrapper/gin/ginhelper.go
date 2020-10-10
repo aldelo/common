@@ -130,7 +130,7 @@ func PostDataToHost(c *gin.Context, structPtr interface{}, tagName string, exclu
 				tagName = "json"
 			}
 
-			if qp, e := util.StructToQueryParams(structPtr, tagName, excludeTagName); e != nil {
+			if qp, e := util.MarshalStructToQueryParams(structPtr, tagName, excludeTagName); e != nil {
 				MarshalQueryParametersFailed(c, e.Error())
 			} else {
 				if status, resp, e := rest.POST(postUrl, nil, qp); e != nil {

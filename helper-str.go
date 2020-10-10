@@ -671,6 +671,28 @@ func JsonToEscaped(data string) string {
 	return r
 }
 
+// JsonFromEscaped will unescape the json data that may be special character escaped
+func JsonFromEscaped(data string) string {
+	var r string
+
+	r = strings.Replace(data, `\\`, `\`, -1)
+	r = strings.Replace(r, `\b`, string(rune(ascii.BS)), -1)
+	r = strings.Replace(r, `\f`, string(rune(ascii.FF)), -1)
+	r = strings.Replace(r, `\n`,string(rune(ascii.LF)),  -1)
+	r = strings.Replace(r, `\r`,string(rune(ascii.CR)),  -1)
+	r = strings.Replace(r, `\t`,string(rune(ascii.HT)),  -1)
+
+	if Left(r, 1) == "\"" {
+		r = Right(r, len(r)-1)
+	}
+
+	if Right(r, 1) == "\"" {
+		r = Left(r, len(r)-1)
+	}
+
+	return r
+}
+
 // MarshalJSONCompact will accept an input variable, typically struct with json struct tags, to serialize from object into json string with compact formatting
 //
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***

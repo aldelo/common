@@ -61,6 +61,18 @@ func Fill(src interface{}, dst interface{}) error {
 //									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 //		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
 //		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+// 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal
+//		5) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
+//		6) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
+//		7) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//											2006, 06 = year,
+//											01, 1, Jan, January = month,
+//											02, 2, _2 = day (_2 = width two, right justified)
+//											03, 3, 15 = hour (15 = 24 hour format)
+//											04, 4 = minute
+//											05, 5 = second
+//											PM pm = AM PM
+//		8) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
 func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("MarshalStructToQueryParams Requires Input Struct Variable Pointer")
@@ -83,6 +95,7 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 	}
 
 	output := ""
+	uniqueMap := make(map[string]string)
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -101,9 +114,15 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					}
 				}
 
-				tagGetter := Trim(field.Tag.Get("getter"))
+				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+					if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+						continue
+					} else {
+						uniqueMap[strings.ToLower(tagUniqueId)] = field.Name
+					}
+				}
 
-				if LenTrim(tagGetter) > 0 {
+				if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
 					if ov, notFound := ReflectCall(o, tagGetter); !notFound {
 						if len(ov) > 0 {
 							o = ov[0]
@@ -111,17 +130,28 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					}
 				}
 
-				boolTrue := Trim(field.Tag.Get("booltrue"))
-				boolFalse := Trim(field.Tag.Get("boolfalse"))
+				var boolTrue, boolFalse, timeFormat, outPrefix string
+				var skipBlank, skipZero bool
 
-				if buf, ok := ReflectFieldValueToString(o, boolTrue, boolFalse); !ok {
+				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "outprefix"); len(vs) == 6 {
+					boolTrue = vs[0]
+					boolFalse = vs[1]
+					skipBlank = IsBool(vs[2])
+					skipZero = IsBool(vs[3])
+					timeFormat = vs[4]
+					outPrefix = vs[5]
+				}
+
+				if buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat); err != nil {
+					continue
+				} else if skip {
 					continue
 				} else {
 					if LenTrim(output) > 0 {
 						output += "&"
 					}
 
-					output += fmt.Sprintf("%s=%s", tag, url.PathEscape(buf))
+					output += fmt.Sprintf("%s=%s", tag, url.PathEscape(outPrefix + buf))
 				}
 			}
 		}
@@ -144,6 +174,17 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 //									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 //		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
 //		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+// 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal
+//		5) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
+//		6) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
+//		7) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//											2006, 06 = year,
+//											01, 1, Jan, January = month,
+//											02, 2, _2 = day (_2 = width two, right justified)
+//											03, 3, 15 = hour (15 = 24 hour format)
+//											04, 4 = minute
+//											05, 5 = second
+//											PM pm = AM PM
 func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("MarshalStructToJson Requires Input Struct Variable Pointer")
@@ -166,6 +207,7 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 	}
 
 	output := ""
+	uniqueMap := make(map[string]string)
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -184,9 +226,15 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					}
 				}
 
-				tagGetter := Trim(field.Tag.Get("getter"))
+				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+					if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+						continue
+					} else {
+						uniqueMap[strings.ToLower(tagUniqueId)] = field.Name
+					}
+				}
 
-				if LenTrim(tagGetter) > 0 {
+				if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
 					if ov, notFound := ReflectCall(o, tagGetter); !notFound {
 						if len(ov) > 0 {
 							o = ov[0]
@@ -194,12 +242,20 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					}
 				}
 
-				boolTrue := Trim(field.Tag.Get("booltrue"))
-				boolFalse := Trim(field.Tag.Get("boolfalse"))
+				var boolTrue, boolFalse, timeFormat string
+				var skipBlank, skipZero bool
 
-				buf, ok := ReflectFieldValueToString(o, boolTrue, boolFalse)
+				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat"); len(vs) == 6 {
+					boolTrue = vs[0]
+					boolFalse = vs[1]
+					skipBlank = IsBool(vs[2])
+					skipZero = IsBool(vs[3])
+					timeFormat = vs[4]
+				}
 
-				if !ok {
+				buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat)
+
+				if err != nil || skip {
 					continue
 				}
 
@@ -229,8 +285,9 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 // note: this method expects simple json in key value pairs only, not json containing slices or more complex json structs within existing json field
 //
 // Predefined Struct Tags Usable:
-// 		*) `setter:"ParseByKey`		// if field type is custom struct or enum,
+// 		1) `setter:"ParseByKey`		// if field type is custom struct or enum,
 //									   specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+// 		2) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal
 func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagName string, excludeTagName string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -272,6 +329,7 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 	}
 
 	StructClearFields(inputStructPtr)
+	uniqueMap := make(map[string]string)
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -294,8 +352,17 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 				jName = field.Name
 			}
 
+			if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+				if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+					continue
+				} else {
+					uniqueMap[strings.ToLower(tagUniqueId)] = field.Name
+				}
+			}
+
 			// get json field value based on jName from jsonMap
 			jValue := ""
+			timeFormat := Trim(field.Tag.Get("timeformat"))
 
 			if jRaw, ok := jsonMap[jName]; !ok {
 				continue
@@ -304,149 +371,69 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 
 				if len(jValue) > 0 {
 					if tagSetter := Trim(field.Tag.Get("setter")); len(tagSetter) > 0 {
-						if results, notFound := ReflectCall(o, tagSetter, jValue); !notFound && len(results) > 0 {
-							if len(results) == 1 {
-								if jv, ok := ReflectFieldValueToString(results[0], "", ""); ok {
-									jValue = jv
-								}
-							} else if len(results) > 1 {
-								getFirstVar := true
-
-								if e, ok := results[len(results)-1].Interface().(error); ok {
-									// last var is error, check if error exists
-									if e != nil {
-										getFirstVar = false
-									}
-								}
-
-								if getFirstVar {
-									if jv, ok := ReflectFieldValueToString(results[0], "", ""); ok {
+						if o.Kind() != reflect.Ptr {
+							// o is not ptr
+							if results, notFound := ReflectCall(o, tagSetter, jValue); !notFound && len(results) > 0 {
+								if len(results) == 1 {
+									if jv, _, err := ReflectValueToString(results[0], "", "", false, false, timeFormat); err == nil {
 										jValue = jv
+									}
+								} else if len(results) > 1 {
+									getFirstVar := true
+
+									if e, ok := results[len(results)-1].Interface().(error); ok {
+										// last var is error, check if error exists
+										if e != nil {
+											getFirstVar = false
+										}
+									}
+
+									if getFirstVar {
+										if jv, _, err := ReflectValueToString(results[0], "", "", false, false, timeFormat); err == nil {
+											jValue = jv
+										}
 									}
 								}
 							}
+						} else {
+							// o is ptr
+							// get base type
+							if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
+								// create new struct pointer
+								o.Set(reflect.New(baseType.Type()))
+							}
+
+							if ov, notFound := ReflectCall(o, tagSetter, jValue); !notFound {
+								if len(ov) == 1 {
+									if ov[0].Kind() == reflect.Ptr {
+										o.Set(ov[0])
+									}
+								} else if len(ov) > 1 {
+									getFirstVar := true
+
+									if e := DerefError(ov[len(ov)-1]); e != nil {
+										getFirstVar = false
+									}
+
+									if getFirstVar {
+										if ov[0].Kind() == reflect.Ptr {
+											o.Set(ov[0])
+										}
+									}
+								}
+							}
+
+							// for o as ptr
+							// once complete, continue
+							continue
 						}
 					}
 				}
 			}
 
 			// set validated csv value into corresponding struct field
-			switch o.Kind() {
-			case reflect.String:
-				o.SetString(jValue)
-			case reflect.Bool:
-				o.SetBool(IsBool(jValue))
-			case reflect.Int8:
-				fallthrough
-			case reflect.Int16:
-				fallthrough
-			case reflect.Int:
-				fallthrough
-			case reflect.Int32:
-				fallthrough
-			case reflect.Int64:
-				i64, _ := ParseInt64(jValue)
-				if !o.OverflowInt(i64) {
-					o.SetInt(i64)
-				}
-			case reflect.Float32:
-				fallthrough
-			case reflect.Float64:
-				f64, _ := ParseFloat64(jValue)
-				if !o.OverflowFloat(f64) {
-					o.SetFloat(f64)
-				}
-			case reflect.Uint8:
-				fallthrough
-			case reflect.Uint16:
-				fallthrough
-			case reflect.Uint:
-				fallthrough
-			case reflect.Uint32:
-				fallthrough
-			case reflect.Uint64:
-				ui64 := StrToUint64(jValue)
-				if !o.OverflowUint(ui64) {
-					o.SetUint(ui64)
-				}
-			case reflect.Ptr:
-				o2 := o.Elem()
-				switch o2.Interface().(type) {
-				case int:
-					i64, _ := ParseInt64(jValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case int8:
-					i64, _ := ParseInt64(jValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case int16:
-					i64, _ := ParseInt64(jValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case int32:
-					i64, _ := ParseInt64(jValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case int64:
-					i64, _ := ParseInt64(jValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case float32:
-					f64, _ := ParseFloat64(jValue)
-					if !o2.OverflowFloat(f64) {
-						o2.SetFloat(f64)
-					}
-				case float64:
-					f64, _ := ParseFloat64(jValue)
-					if !o2.OverflowFloat(f64) {
-						o2.SetFloat(f64)
-					}
-				case uint:
-					if !o2.OverflowUint(StrToUint64(jValue)) {
-						o2.SetUint(StrToUint64(jValue))
-					}
-				case uint64:
-					if !o2.OverflowUint(StrToUint64(jValue)) {
-						o2.SetUint(StrToUint64(jValue))
-					}
-				case string:
-					o2.SetString(jValue)
-				case bool:
-					o2.SetBool(IsBool(jValue))
-				case time.Time:
-					o2.Set(reflect.ValueOf(ParseDate(jValue)))
-				default:
-					return fmt.Errorf(o2.Type().Name() + " Unhandled")
-				}
-			default:
-				switch o.Interface().(type) {
-				case sql.NullString:
-					o.Set(reflect.ValueOf(sql.NullString{String: jValue, Valid: true}))
-				case sql.NullBool:
-					o.Set(reflect.ValueOf(sql.NullBool{Bool: IsBool(jValue), Valid: true}))
-				case sql.NullFloat64:
-					f64, _ := ParseFloat64(jValue)
-					o.Set(reflect.ValueOf(sql.NullFloat64{Float64: f64, Valid: true}))
-				case sql.NullInt32:
-					i32, _ := ParseInt32(jValue)
-					o.Set(reflect.ValueOf(sql.NullInt32{Int32: int32(i32), Valid: true}))
-				case sql.NullInt64:
-					i64, _ := ParseInt64(jValue)
-					o.Set(reflect.ValueOf(sql.NullInt64{Int64: i64, Valid: true}))
-				case sql.NullTime:
-					tv := ParseDateTime(jValue)
-					o.Set(reflect.ValueOf(sql.NullTime{Time: tv, Valid: true}))
-				case time.Time:
-					o.Set(reflect.ValueOf(ParseDateTime(jValue)))
-				default:
-					return fmt.Errorf(o.Type().Name() + " Unhandled")
-				}
+			if err := ReflectStringToField(o, jValue, timeFormat); err != nil {
+				return err
 			}
 		}
 	}
@@ -665,6 +652,7 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 //
 // Predefined Struct Tags Usable:
 //		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
+//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
 //		2) `type:"xyz"`				// data type expected:
 //											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
 //											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
@@ -680,6 +668,9 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 //		6) `req:"true"`				// indicates data value is required or not, true or false
 //		7) `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 // 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+// 		9) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal,
+//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
+//		10) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
 func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -715,6 +706,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 	}
 
 	StructClearFields(inputStructPtr)
+	uniqueMap := make(map[string]string)
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -728,6 +720,14 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 				continue
 			} else if tagPos > csvLen-1 {
 				continue
+			}
+
+			if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+				if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+					continue
+				} else {
+					uniqueMap[strings.ToLower(tagUniqueId)] = field.Name
+				}
 			}
 
 			tagType := Trim(strings.ToLower(field.Tag.Get("type")))
@@ -798,173 +798,103 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			// get csv value by ordinal position
 			csvValue := csvElements[tagPos]
 
-			// pre-process csv value with validation
-			switch tagType {
-			case "a":
-				csvValue, _ = ExtractAlpha(csvValue)
-			case "n":
-				csvValue, _ = ExtractNumeric(csvValue)
-			case "an":
-				csvValue, _ = ExtractAlphaNumeric(csvValue)
-			case "ans":
-				csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
-			case "b":
-				if StringSliceContains(&trueList, strings.ToLower(csvValue)) {
-					csvValue = "true"
-				} else {
-					csvValue = "false"
-				}
-			case "regex":
-				csvValue, _ = ExtractByRegex(csvValue, tagRegEx)
-			}
+			// if outPrefix exists, remove from csvValue
+			outPrefix := Trim(field.Tag.Get("outprefix"))
 
-			if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" {
-				if sizeMax > 0 {
-					if len(csvValue) > sizeMax {
-						csvValue = Left(csvValue, sizeMax)
+			if len(outPrefix) > 0 {
+				if strings.ToLower(Left(csvValue, len(outPrefix))) == strings.ToLower(outPrefix) {
+					if len(csvValue)-len(outPrefix) == 0 {
+						csvValue = ""
+					} else {
+						csvValue = Right(csvValue, len(csvValue)-len(outPrefix))
 					}
 				}
 			}
 
+			// pre-process csv value with validation
 			tagSetter := Trim(field.Tag.Get("setter"))
+			timeFormat := Trim(field.Tag.Get("timeformat"))
 
-			if LenTrim(tagSetter) > 0 {
-				if ov, notFound := ReflectCall(o, tagSetter, csvValue); !notFound {
-					if len(ov) == 1 {
-						csvValue, _ = ReflectFieldValueToString(ov[0], "", "")
-					} else if len(ov) > 1 {
-						getFirstVar := true
+			if o.Kind() != reflect.Ptr {
+				switch tagType {
+				case "a":
+					csvValue, _ = ExtractAlpha(csvValue)
+				case "n":
+					csvValue, _ = ExtractNumeric(csvValue)
+				case "an":
+					csvValue, _ = ExtractAlphaNumeric(csvValue)
+				case "ans":
+					csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
+				case "b":
+					if StringSliceContains(&trueList, strings.ToLower(csvValue)) {
+						csvValue = "true"
+					} else {
+						csvValue = "false"
+					}
+				case "regex":
+					csvValue, _ = ExtractByRegex(csvValue, tagRegEx)
+				}
 
-						if e, ok := ov[len(ov)-1].Interface().(error); ok {
-							// last var is error, check if error exists
-							if e != nil {
-								getFirstVar = false
+				if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" {
+					if sizeMax > 0 {
+						if len(csvValue) > sizeMax {
+							csvValue = Left(csvValue, sizeMax)
+						}
+					}
+				}
+
+				if LenTrim(tagSetter) > 0 {
+					if ov, notFound := ReflectCall(o, tagSetter, csvValue); !notFound {
+						if len(ov) == 1 {
+							csvValue, _, _ = ReflectValueToString(ov[0], "", "", false, false, timeFormat)
+						} else if len(ov) > 1 {
+							getFirstVar := true
+
+							if e, ok := ov[len(ov)-1].Interface().(error); ok {
+								// last var is error, check if error exists
+								if e != nil {
+									getFirstVar = false
+								}
+							}
+
+							if getFirstVar {
+								csvValue, _, _ = ReflectValueToString(ov[0], "", "", false, false, timeFormat)
 							}
 						}
+					}
+				}
 
-						if getFirstVar {
-							csvValue, _ = ReflectFieldValueToString(ov[0], "", "")
+				// set validated csv value into corresponding struct field
+				if err := ReflectStringToField(o, csvValue, timeFormat); err != nil {
+					return err
+				}
+			} else {
+				if LenTrim(tagSetter) > 0 {
+					// get base type
+					if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
+						// create new struct pointer
+						o.Set(reflect.New(baseType.Type()))
+					}
+
+					if ov, notFound := ReflectCall(o, tagSetter, csvValue); !notFound {
+						if len(ov) == 1 {
+							if ov[0].Kind() == reflect.Ptr {
+								o.Set(ov[0])
+							}
+						} else if len(ov) > 1 {
+							getFirstVar := true
+
+							if e := DerefError(ov[len(ov)-1]); e != nil {
+								getFirstVar = false
+							}
+
+							if getFirstVar {
+								if ov[0].Kind() == reflect.Ptr {
+									o.Set(ov[0])
+								}
+							}
 						}
 					}
-				}
-			}
-
-			// set validated csv value into corresponding struct field
-			switch o.Kind() {
-			case reflect.String:
-				o.SetString(csvValue)
-			case reflect.Bool:
-				o.SetBool(IsBool(csvValue))
-			case reflect.Int8:
-				fallthrough
-			case reflect.Int16:
-				fallthrough
-			case reflect.Int:
-				fallthrough
-			case reflect.Int32:
-				fallthrough
-			case reflect.Int64:
-				i64, _ := ParseInt64(csvValue)
-				if !o.OverflowInt(i64) {
-					o.SetInt(i64)
-				}
-			case reflect.Float32:
-				fallthrough
-			case reflect.Float64:
-				f64, _ := ParseFloat64(csvValue)
-				if !o.OverflowFloat(f64) {
-					o.SetFloat(f64)
-				}
-			case reflect.Uint8:
-				fallthrough
-			case reflect.Uint16:
-				fallthrough
-			case reflect.Uint:
-				fallthrough
-			case reflect.Uint32:
-				fallthrough
-			case reflect.Uint64:
-				ui64 := StrToUint64(csvValue)
-				if !o.OverflowUint(ui64) {
-					o.SetUint(ui64)
-				}
-			case reflect.Ptr:
-				o2 := o.Elem()
-				switch o2.Interface().(type) {
-				case int:
-					i64, _ := ParseInt64(csvValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case int8:
-					i64, _ := ParseInt64(csvValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case int16:
-					i64, _ := ParseInt64(csvValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case int32:
-					i64, _ := ParseInt64(csvValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case int64:
-					i64, _ := ParseInt64(csvValue)
-					if !o2.OverflowInt(i64) {
-						o2.SetInt(i64)
-					}
-				case float32:
-					f64, _ := ParseFloat64(csvValue)
-					if !o2.OverflowFloat(f64) {
-						o2.SetFloat(f64)
-					}
-				case float64:
-					f64, _ := ParseFloat64(csvValue)
-					if !o2.OverflowFloat(f64) {
-						o2.SetFloat(f64)
-					}
-				case uint:
-					if !o2.OverflowUint(StrToUint64(csvValue)) {
-						o2.SetUint(StrToUint64(csvValue))
-					}
-				case uint64:
-					if !o2.OverflowUint(StrToUint64(csvValue)) {
-						o2.SetUint(StrToUint64(csvValue))
-					}
-				case string:
-					o2.SetString(csvValue)
-				case bool:
-					o2.SetBool(IsBool(csvValue))
-				case time.Time:
-					o2.Set(reflect.ValueOf(ParseDate(csvValue)))
-				default:
-					return fmt.Errorf(o2.Type().Name() + " Unhandled")
-				}
-			default:
-				switch o.Interface().(type) {
-				case sql.NullString:
-					o.Set(reflect.ValueOf(sql.NullString{String: csvValue, Valid: true}))
-				case sql.NullBool:
-					o.Set(reflect.ValueOf(sql.NullBool{Bool: IsBool(csvValue), Valid: true}))
-				case sql.NullFloat64:
-					f64, _ := ParseFloat64(csvValue)
-					o.Set(reflect.ValueOf(sql.NullFloat64{Float64: f64, Valid: true}))
-				case sql.NullInt32:
-					i32, _ := ParseInt32(csvValue)
-					o.Set(reflect.ValueOf(sql.NullInt32{Int32: int32(i32), Valid: true}))
-				case sql.NullInt64:
-					i64, _ := ParseInt64(csvValue)
-					o.Set(reflect.ValueOf(sql.NullInt64{Int64: i64, Valid: true}))
-				case sql.NullTime:
-					tv := ParseDateTime(csvValue)
-					o.Set(reflect.ValueOf(sql.NullTime{Time: tv, Valid: true}))
-				case time.Time:
-					o.Set(reflect.ValueOf(ParseDateTime(csvValue)))
-				default:
-					return fmt.Errorf(o.Type().Name() + " Unhandled")
 				}
 			}
 		}
@@ -980,6 +910,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //
 // Predefined Struct Tags Usable:
 //		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
+//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
 //		2) `type:"xyz"`				// data type expected:
 //											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
 //											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
@@ -997,6 +928,19 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 // 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
 //		9) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
 //		10) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+// 		11) `uniqueid:"xyz"`		// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal,
+//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
+//		12) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
+//		13) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
+//		14) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//											2006, 06 = year,
+//											01, 1, Jan, January = month,
+//											02, 2, _2 = day (_2 = width two, right justified)
+//											03, 3, 15 = hour (15 = 24 hour format)
+//											04, 4 = minute
+//											05, 5 = second
+//											PM pm = AM PM
+//		15) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
 func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
@@ -1031,6 +975,8 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		csvList[i] = "{?}"	// indicates value not set, to be excluded
 	}
 
+	uniqueMap := make(map[string]string)
+
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
 
@@ -1043,6 +989,14 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 				continue
 			} else if tagPos > csvLen-1 {
 				continue
+			}
+
+			if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+				if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+					continue
+				} else {
+					uniqueMap[strings.ToLower(tagUniqueId)] = field.Name
+				}
 			}
 
 			tagType := Trim(strings.ToLower(field.Tag.Get("type")))
@@ -1105,9 +1059,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 				tagReq = ""
 			}
 
-			tagGetter := Trim(field.Tag.Get("getter"))
-
-			if LenTrim(tagGetter) > 0 {
+			if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
 				if ov, notFound := ReflectCall(o, tagGetter); !notFound {
 					if len(ov) > 0 {
 						o = ov[0]
@@ -1116,13 +1068,26 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			}
 
 			// get csv value from current struct field
-			boolTrue := Trim(field.Tag.Get("booltrue"))
-			boolFalse := Trim(field.Tag.Get("boolfalse"))
+			var boolTrue, boolFalse, timeFormat, outPrefix string
+			var skipBlank, skipZero bool
 
-			fv, ok := ReflectFieldValueToString(o, boolTrue, boolFalse)
+			if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "outprefix"); len(vs) == 6 {
+				boolTrue = vs[0]
+				boolFalse = vs[1]
+				skipBlank = IsBool(vs[2])
+				skipZero = IsBool(vs[3])
+				timeFormat = vs[4]
+				outPrefix = vs[5]
+			}
 
-			if !ok {
-				return "", fmt.Errorf(field.Name + " Unhandled")
+			fv, skip, e := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat)
+
+			if e != nil {
+				return "", e
+			}
+
+			if skip {
+				continue
 			}
 
 			// validate output csv value
@@ -1184,7 +1149,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			}
 
 			// store fv into sorted slice
-			csvList[tagPos] = fv
+			csvList[tagPos] = outPrefix + fv
 		}
 	}
 

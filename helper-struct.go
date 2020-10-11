@@ -61,7 +61,7 @@ func Fill(src interface{}, dst interface{}) error {
 //									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 //		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
 //		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
-// 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal
+// 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
 //		5) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
 //		6) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
 //		7) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
@@ -142,9 +142,13 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					outPrefix = vs[5]
 				}
 
-				if buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat); err != nil {
-					continue
-				} else if skip {
+				if buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat); err != nil || skip {
+					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+							delete(uniqueMap, strings.ToLower(tagUniqueId))
+						}
+					}
+
 					continue
 				} else {
 					if LenTrim(output) > 0 {
@@ -174,7 +178,7 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 //									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 //		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
 //		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
-// 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal
+// 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
 //		5) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
 //		6) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
 //		7) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
@@ -245,7 +249,7 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				var boolTrue, boolFalse, timeFormat string
 				var skipBlank, skipZero bool
 
-				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat"); len(vs) == 6 {
+				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat"); len(vs) == 5 {
 					boolTrue = vs[0]
 					boolFalse = vs[1]
 					skipBlank = IsBool(vs[2])
@@ -256,6 +260,12 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat)
 
 				if err != nil || skip {
+					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+							delete(uniqueMap, strings.ToLower(tagUniqueId))
+						}
+					}
+
 					continue
 				}
 
@@ -287,7 +297,6 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 // Predefined Struct Tags Usable:
 // 		1) `setter:"ParseByKey`		// if field type is custom struct or enum,
 //									   specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
-// 		2) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal
 func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagName string, excludeTagName string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -329,7 +338,6 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 	}
 
 	StructClearFields(inputStructPtr)
-	uniqueMap := make(map[string]string)
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -350,14 +358,6 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 
 			if LenTrim(jName) == 0 {
 				jName = field.Name
-			}
-
-			if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-				if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-					continue
-				} else {
-					uniqueMap[strings.ToLower(tagUniqueId)] = field.Name
-				}
 			}
 
 			// get json field value based on jName from jsonMap
@@ -652,7 +652,8 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 //
 // Predefined Struct Tags Usable:
 //		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
-//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
+//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds,
+//											 if multiple fields are in exclusive condition, and skipBlank or skipZero, always include a blank default field as the last of unique field list
 //		2) `type:"xyz"`				// data type expected:
 //											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
 //											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
@@ -668,9 +669,8 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 //		6) `req:"true"`				// indicates data value is required or not, true or false
 //		7) `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 // 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
-// 		9) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal,
-//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
-//		10) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
+//		9) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
+//									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
 func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string, forceNoDelimiter ...bool) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -720,9 +720,6 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		return fmt.Errorf("CSV Payload Contains Zero Elements")
 	}
 
-	StructClearFields(inputStructPtr)
-	uniqueMap := make(map[string]string)
-
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
 
@@ -735,14 +732,6 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 				continue
 			} else if tagPos > csvLen-1 {
 				continue
-			}
-
-			if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-				if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-					continue
-				} else {
-					uniqueMap[strings.ToLower(tagUniqueId)] = field.Name
-				}
 			}
 
 			tagType := Trim(strings.ToLower(field.Tag.Get("type")))
@@ -810,22 +799,34 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			}
 			*/
 
-			// get csv value by ordinal position
-			csvValue := ""
-
-			if csvElements != nil {
-				csvValue = csvElements[tagPos]
-			}
-
 			// if outPrefix exists, remove from csvValue
 			outPrefix := Trim(field.Tag.Get("outprefix"))
 
-			if len(outPrefix) > 0 {
-				if strings.ToLower(Left(csvValue, len(outPrefix))) == strings.ToLower(outPrefix) {
-					if len(csvValue)-len(outPrefix) == 0 {
-						csvValue = ""
+			// get csv value by ordinal position
+			csvValue := ""
+
+			if LenTrim(outPrefix) == 0 {
+				// ordinal based csv parsing
+				if csvElements != nil {
+					if tagPos > csvLen-1 {
+						return fmt.Errorf("Struct Field Tag Position %d Exceeds CSV Elements", tagPos)
 					} else {
-						csvValue = Right(csvValue, len(csvValue)-len(outPrefix))
+						csvValue = csvElements[tagPos]
+					}
+				}
+			} else {
+				// variable element based csv, using outPrefix as the identifying key
+				// instead of getting csv value from element position, acquire from outPrefix
+				for _, v := range csvElements {
+					if strings.ToLower(Left(v, len(outPrefix))) == strings.ToLower(outPrefix) {
+						// match
+						if len(v)-len(outPrefix) == 0 {
+							csvValue = ""
+						} else {
+							csvValue = Right(v, len(v)-len(outPrefix))
+						}
+
+						break
 					}
 				}
 			}
@@ -914,6 +915,11 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 							}
 						}
 					}
+				} else {
+					// set validated csv value into corresponding struct pointer field
+					if err := ReflectStringToField(o, csvValue, timeFormat); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -930,6 +936,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 // Predefined Struct Tags Usable:
 //		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
 //									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
+//											 if multiple fields are in exclusive condition, and skipBlank or skipZero, always include a blank default field as the last of unique field list
 //		2) `type:"xyz"`				// data type expected:
 //											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
 //											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
@@ -947,7 +954,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 // 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
 //		9) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
 //		10) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
-// 		11) `uniqueid:"xyz"`		// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal,
+// 		11) `uniqueid:"xyz"`		// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal,
 //									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
 //		12) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
 //		13) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
@@ -960,6 +967,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //											05, 5 = second
 //											PM pm = AM PM
 //		15) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
+//									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
 func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNoDelimiter ...bool) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
@@ -1108,10 +1116,24 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 			fv, skip, e := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat)
 
 			if e != nil {
+				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+					if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+						// remove uniqueid if skip
+						delete(uniqueMap, strings.ToLower(tagUniqueId))
+					}
+				}
+
 				return "", e
 			}
 
 			if skip {
+				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+					if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+						// remove uniqueid if skip
+						delete(uniqueMap, strings.ToLower(tagUniqueId))
+					}
+				}
+
 				continue
 			}
 

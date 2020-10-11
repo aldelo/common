@@ -81,6 +81,14 @@ func IntPtr(i int) *int {
 	return &i
 }
 
+func IntVal(i *int) int {
+	if i == nil {
+		return 0
+	} else {
+		return *i
+	}
+}
+
 // Int32PtrToInt returns 0 if nil, otherwise actual int value
 func Int32PtrToInt(n *int) int {
 	if n == nil {
@@ -95,6 +103,18 @@ func UintToStr(i uint) string {
 	return fmt.Sprintf("%d", i)
 }
 
+func UintPtr(i uint) *uint {
+	return &i
+}
+
+func UintVal(i *uint) uint {
+	if i == nil {
+		return 0
+	} else {
+		return *i
+	}
+}
+
 // StrToUint converts from string to uint
 func StrToUint(s string) uint {
 	if v, e := strconv.ParseUint(s, 10, 32); e != nil {
@@ -107,6 +127,14 @@ func StrToUint(s string) uint {
 // Int64Ptr casts int64 to int64 pointer
 func Int64Ptr(i int64) *int64 {
 	return &i
+}
+
+func Int64Val(i *int64) int64 {
+	if i == nil {
+		return 0
+	} else {
+		return *i
+	}
 }
 
 // Int64ToString converts int64 into string value
@@ -170,6 +198,14 @@ func Float64Ptr(f float64) *float64 {
 	return &f
 }
 
+func Float64Val(f *float64) float64 {
+	if f == nil {
+		return 0
+	} else {
+		return *f
+	}
+}
+
 // Float64ToInt converts from float64 into int
 func Float64ToInt(f float64) int {
 	if v, b := ParseInt32(FloatToString(f)); !b {
@@ -230,6 +266,14 @@ func BoolPtr(b bool) *bool {
 	return &b
 }
 
+func BoolVal(b *bool) bool {
+	if b == nil {
+		return false
+	} else {
+		return *b
+	}
+}
+
 // DatePtrToString formats pointer time.Time to string date format
 func DatePtrToString(t *time.Time) string {
 	if t == nil {
@@ -262,14 +306,38 @@ func TimePtr(t time.Time) *time.Time {
 	return &t
 }
 
+func TimeVal(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	} else {
+		return *t
+	}
+}
+
 // DurationPtr casts Duration to Duration pointer
 func DurationPtr(d time.Duration) *time.Duration {
 	return &d
 }
 
+func DurationVal(d *time.Duration) time.Duration {
+	if d == nil {
+		return 0
+	} else {
+		return *d
+	}
+}
+
 // StringPtr casts string to string pointer
 func StringPtr(s string) *string {
 	return &s
+}
+
+func StringVal(s *string) string {
+	if s == nil {
+		return ""
+	} else {
+		return *s
+	}
 }
 
 // StringPtrToString gets string value from string pointer

@@ -202,9 +202,13 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			buf = UInt64ToString(o.Uint())
 		}
 	case reflect.Ptr:
+		if o.IsZero() || o.IsNil() {
+			return "", true, nil
+		}
+
 		o2 := o.Elem()
 
-		if o.IsZero() {
+		if o2.IsZero() {
 			return "", true, nil
 		}
 
@@ -430,6 +434,12 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 			o.SetUint(ui64)
 		}
 	case reflect.Ptr:
+		if o.IsZero() || o.IsNil() {
+			// create object
+			baseType, _, _ := DerefPointersZero(o)
+			o.Set(reflect.New(baseType.Type()))
+		}
+
 		o2 := o.Elem()
 
 		if o.IsZero() {

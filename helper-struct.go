@@ -671,7 +671,7 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 // 		9) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal and unmarshal,
 //									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
 //		10) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
-func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string) error {
+func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string, forceNoDelimiter ...bool) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
 	}
@@ -680,7 +680,13 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		return fmt.Errorf("CSV Payload is Required")
 	}
 
-	if LenTrim(csvDelimiter) == 0 {
+	noDelimiter := false
+
+	if len(forceNoDelimiter) > 0 && forceNoDelimiter[0] {
+		noDelimiter = true
+	}
+
+	if len(csvDelimiter) == 0 && !noDelimiter {
 		return fmt.Errorf("CSV Delimiter is Required")
 	}
 
@@ -698,7 +704,16 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 	trueList := []string{"true", "yes", "on", "1", "enabled"}
 
-	csvElements := strings.Split(csvPayload, csvDelimiter)
+	var csvElements []string
+
+	if len(csvDelimiter) > 0 {
+		csvElements = strings.Split(csvPayload, csvDelimiter)
+	} else {
+		for _, c := range csvPayload{
+			csvElements = append(csvElements, string(c))
+		}
+	}
+
 	csvLen := len(csvElements)
 
 	if csvLen == 0 {
@@ -796,7 +811,11 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			*/
 
 			// get csv value by ordinal position
-			csvValue := csvElements[tagPos]
+			csvValue := ""
+
+			if csvElements != nil {
+				csvValue = csvElements[tagPos]
+			}
 
 			// if outPrefix exists, remove from csvValue
 			outPrefix := Trim(field.Tag.Get("outprefix"))
@@ -941,12 +960,18 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //											05, 5 = second
 //											PM pm = AM PM
 //		15) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
-func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPayload string, err error) {
+func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNoDelimiter ...bool) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
 	}
 
-	if LenTrim(csvDelimiter) == 0 {
+	noDelimiter := false
+
+	if len(forceNoDelimiter) > 0 && forceNoDelimiter[0] {
+		noDelimiter = true
+	}
+
+	if len(csvDelimiter) == 0 && !noDelimiter {
 		return "", fmt.Errorf("CSV Delimiter is Required")
 	}
 

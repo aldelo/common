@@ -297,6 +297,15 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 // Predefined Struct Tags Usable:
 // 		1) `setter:"ParseByKey`		// if field type is custom struct or enum,
 //									   specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+//		2) `def:""`					// default value to set into struct field in case unmarshal doesn't set the struct field value
+//		3) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//											2006, 06 = year,
+//											01, 1, Jan, January = month,
+//											02, 2, _2 = day (_2 = width two, right justified)
+//											03, 3, 15 = hour (15 = 24 hour format)
+//											04, 4 = minute
+//											05, 5 = second
+//											PM pm = AM PM
 func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagName string, excludeTagName string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -338,6 +347,7 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 	}
 
 	StructClearFields(inputStructPtr)
+	SetStructFieldDefaultValues(inputStructPtr)
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -565,10 +575,14 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 		field := s.Type().Field(i)
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
+			tagDef := field.Tag.Get("def")
+
 			switch o.Kind() {
 			case reflect.String:
 				if LenTrim(o.String()) > 0 {
-					return true
+					if o.String() != tagDef	{
+						return true
+					}
 				}
 			case reflect.Bool:
 				if o.Bool() {
@@ -584,13 +598,17 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 				fallthrough
 			case reflect.Int64:
 				if o.Int() != 0 {
-					return true
+					if Int64ToString(o.Int()) != tagDef	{
+						return true
+					}
 				}
 			case reflect.Float32:
 				fallthrough
 			case reflect.Float64:
 				if o.Float() != 0 {
-					return true
+					if Float64ToString(o.Float()) != tagDef	{
+						return true
+					}
 				}
 			case reflect.Uint8:
 				fallthrough
@@ -602,7 +620,9 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 				fallthrough
 			case reflect.Uint64:
 				if o.Uint() > 0 {
-					return true
+					if UInt64ToString(o.Uint()) != tagDef {
+						return true
+					}
 				}
 			case reflect.Ptr:
 				if !o.IsNil() {
@@ -612,31 +632,85 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 				switch f := o.Interface().(type) {
 				case sql.NullString:
 					if f.Valid {
-						return true
+						if len(tagDef) == 0 {
+							return true
+						} else {
+							if f.String != tagDef {
+								return true
+							}
+						}
 					}
 				case sql.NullBool:
 					if f.Valid {
-						return true
+						if len(tagDef) == 0 {
+							return true
+						} else {
+							if f.Bool != IsBool(tagDef) {
+								return true
+							}
+						}
 					}
 				case sql.NullFloat64:
 					if f.Valid {
-						return true
+						if len(tagDef) == 0 {
+							return true
+						} else {
+							if Float64ToString(f.Float64) != tagDef {
+								return true
+							}
+						}
 					}
 				case sql.NullInt32:
 					if f.Valid {
-						return true
+						if len(tagDef) == 0 {
+							return true
+						} else {
+							if Itoa(int(f.Int32)) != tagDef {
+								return true
+							}
+						}
 					}
 				case sql.NullInt64:
 					if f.Valid {
-						return true
+						if len(tagDef) == 0 {
+							return true
+						} else {
+							if Int64ToString(f.Int64) != tagDef {
+								return true
+							}
+						}
 					}
 				case sql.NullTime:
 					if f.Valid {
-						return true
+						if len(tagDef) == 0 {
+							return true
+						} else {
+							tagTimeFormat := Trim(field.Tag.Get("timeformat"))
+
+							if LenTrim(tagTimeFormat) == 0 {
+								tagTimeFormat = DateTimeFormatString()
+							}
+
+							if f.Time != ParseDateTimeCustom(tagDef, tagTimeFormat) {
+								return true
+							}
+						}
 					}
 				case time.Time:
 					if !f.IsZero() {
-						return true
+						if len(tagDef) == 0 {
+							return true
+						} else {
+							tagTimeFormat := Trim(field.Tag.Get("timeformat"))
+
+							if LenTrim(tagTimeFormat) == 0 {
+								tagTimeFormat = DateTimeFormatString()
+							}
+
+							if f != ParseDateTimeCustom(tagDef, tagTimeFormat) {
+								return true
+							}
+						}
 					}
 				}
 			}
@@ -644,6 +718,172 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 	}
 
 	return false
+}
+
+// SetStructFieldDefaultValues sets default value defined in struct tag `def:""` into given field,
+// this method is used during unmarshal action only,
+// default value setting is for value types and fields with `setter:""` defined only,
+// timeformat is used if field is datetime, for overriding default format of ISO style
+func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
+	if inputStructPtr == nil {
+		return false
+	}
+
+	s := reflect.ValueOf(inputStructPtr)
+
+	if s.Kind() != reflect.Ptr {
+		return false
+	} else {
+		s = s.Elem()
+	}
+
+	if s.Kind() != reflect.Struct {
+		return false
+	}
+
+	for i := 0; i < s.NumField(); i++ {
+		field := s.Type().Field(i)
+
+		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
+			tagDef := field.Tag.Get("def")
+
+			if len(tagDef) == 0 {
+				continue
+			}
+
+			switch o.Kind() {
+			case reflect.String:
+				if LenTrim(o.String()) == 0 {
+					o.SetString(tagDef)
+				}
+			case reflect.Int8:
+				fallthrough
+			case reflect.Int16:
+				fallthrough
+			case reflect.Int:
+				fallthrough
+			case reflect.Int32:
+				fallthrough
+			case reflect.Int64:
+				if o.Int() == 0 {
+					tagSetter := Trim(field.Tag.Get("setter"))
+
+					if LenTrim(tagSetter) == 0 {
+						if i64, ok := ParseInt64(tagDef); ok && i64 != 0 {
+							if !o.OverflowInt(i64) {
+								o.SetInt(i64)
+							}
+						}
+					} else {
+						if res, notFound := ReflectCall(o, tagSetter, tagDef); !notFound {
+							if len(res) == 1 {
+								if val, skip, err := ReflectValueToString(res[0], "", "", false, false, ""); err == nil && !skip {
+									tagDef = val
+								} else {
+									continue
+								}
+							} else if len(res) > 1 {
+								if err := DerefError(res[len(res)-1:][0]); err == nil {
+									if val, skip, err := ReflectValueToString(res[0], "", "", false, false, ""); err == nil && !skip {
+										tagDef = val
+									} else {
+										continue
+									}
+								}
+							}
+
+							if i64, ok := ParseInt64(tagDef); ok && i64 != 0 {
+								if !o.OverflowInt(i64) {
+									o.SetInt(i64)
+								}
+							}
+						}
+					}
+				}
+			case reflect.Float32:
+				fallthrough
+			case reflect.Float64:
+				if o.Float() == 0 {
+					if f64, ok := ParseFloat64(tagDef); ok && f64 != 0 {
+						if !o.OverflowFloat(f64) {
+							o.SetFloat(f64)
+						}
+					}
+				}
+			case reflect.Uint8:
+				fallthrough
+			case reflect.Uint16:
+				fallthrough
+			case reflect.Uint:
+				fallthrough
+			case reflect.Uint32:
+				fallthrough
+			case reflect.Uint64:
+				if o.Uint() == 0 {
+					if u64 := StrToUint64(tagDef); u64 != 0 {
+						if !o.OverflowUint(u64) {
+							o.SetUint(u64)
+						}
+					}
+				}
+			default:
+				switch f := o.Interface().(type) {
+				case sql.NullString:
+					if !f.Valid {
+						o.Set(reflect.ValueOf(sql.NullString{String: tagDef, Valid: true}))
+					}
+				case sql.NullBool:
+					if !f.Valid {
+						o.Set(reflect.ValueOf(sql.NullBool{Bool: IsBool(tagDef), Valid: true}))
+					}
+				case sql.NullFloat64:
+					if !f.Valid {
+						if f64, ok := ParseFloat64(tagDef); ok && f64 != 0 {
+							o.Set(reflect.ValueOf(sql.NullFloat64{Float64: f64, Valid: true}))
+						}
+					}
+				case sql.NullInt32:
+					if !f.Valid {
+						if i32, ok := ParseInt32(tagDef); ok && i32 != 0 {
+							o.Set(reflect.ValueOf(sql.NullInt32{Int32: int32(i32), Valid: true}))
+						}
+					}
+				case sql.NullInt64:
+					if !f.Valid {
+						if i64, ok := ParseInt64(tagDef); ok && i64 != 0 {
+							o.Set(reflect.ValueOf(sql.NullInt64{Int64: i64, Valid: true}))
+						}
+					}
+				case sql.NullTime:
+					if !f.Valid {
+						tagTimeFormat := Trim(field.Tag.Get("timeformat"))
+
+						if LenTrim(tagTimeFormat) == 0 {
+							tagTimeFormat = DateTimeFormatString()
+						}
+
+						if t := ParseDateTimeCustom(tagDef, tagTimeFormat); !t.IsZero() {
+							o.Set(reflect.ValueOf(sql.NullTime{Time: t, Valid: true}))
+						}
+					}
+				case time.Time:
+					if f.IsZero() {
+						tagTimeFormat := Trim(field.Tag.Get("timeformat"))
+
+						if LenTrim(tagTimeFormat) == 0 {
+							tagTimeFormat = DateTimeFormatString()
+						}
+
+						if t := ParseDateTimeCustom(tagDef, tagTimeFormat); !t.IsZero() {
+							o.Set(reflect.ValueOf(t))
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return true
 }
 
 // UnmarshalCSVToStruct will parse csvPayload string (one line of csv data) using csvDelimiter,
@@ -671,6 +911,15 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 // 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
 //		9) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
 //									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
+//		10) `def:""`				// default value to set into struct field in case unmarshal doesn't set the struct field value
+//		11) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//											2006, 06 = year,
+//											01, 1, Jan, January = month,
+//											02, 2, _2 = day (_2 = width two, right justified)
+//											03, 3, 15 = hour (15 = 24 hour format)
+//											04, 4 = minute
+//											05, 5 = second
+//											PM pm = AM PM
 func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string, forceNoDelimiter ...bool) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -719,6 +968,9 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 	if csvLen == 0 {
 		return fmt.Errorf("CSV Payload Contains Zero Elements")
 	}
+
+	StructClearFields(inputStructPtr)
+	SetStructFieldDefaultValues(inputStructPtr)
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -1179,7 +1431,9 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 				if ok {
 					if rangeMin > 0 {
 						if n < rangeMin {
-							return "", fmt.Errorf("%s Range Minimum is %d", field.Name, rangeMin)
+							if !(n == 0 && tagReq != "true") {
+								return "", fmt.Errorf("%s Range Minimum is %d", field.Name, rangeMin)
+							}
 						}
 					}
 

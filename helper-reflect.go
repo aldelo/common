@@ -203,13 +203,21 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 		}
 	case reflect.Ptr:
 		if o.IsZero() || o.IsNil() {
-			return "", true, nil
+			if skipZero || skipBlank {
+				return "", true, nil
+			} else {
+				return "", false, nil
+			}
 		}
 
 		o2 := o.Elem()
 
 		if o2.IsZero() {
-			return "", true, nil
+			if skipZero || skipBlank {
+				return "", true, nil
+			} else {
+				return "", false, nil
+			}
 		}
 
 		switch f := o2.Interface().(type) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"reflect"
 	"strings"
@@ -381,7 +382,7 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 
 				if len(jValue) > 0 {
 					if tagSetter := Trim(field.Tag.Get("setter")); len(tagSetter) > 0 {
-						if o.Kind() != reflect.Ptr {
+						if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct {
 							// o is not ptr
 							if results, notFound := ReflectCall(o, tagSetter, jValue); !notFound && len(results) > 0 {
 								if len(results) == 1 {
@@ -411,6 +412,16 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 							if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
 								// create new struct pointer
 								o.Set(reflect.New(baseType.Type()))
+							} else {
+								if o.Kind() == reflect.Interface && o.Interface() == nil {
+									customType := ReflectTypeRegistryGet(o.Type().String())
+
+									if customType == nil {
+										return fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
+									} else {
+										o.Set(reflect.New(customType))
+									}
+								}
 							}
 
 							if ov, notFound := ReflectCall(o, tagSetter, jValue); !notFound {
@@ -971,6 +982,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 	StructClearFields(inputStructPtr)
 	SetStructFieldDefaultValues(inputStructPtr)
+	prefixProcessedMap := make(map[string]string)
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -981,8 +993,6 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			if !ok {
 				continue
 			} else if tagPos < 0 {
-				continue
-			} else if tagPos > csvLen-1 {
 				continue
 			}
 
@@ -1069,17 +1079,28 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			} else {
 				// variable element based csv, using outPrefix as the identifying key
 				// instead of getting csv value from element position, acquire from outPrefix
+				notFound := true
+
 				for _, v := range csvElements {
 					if strings.ToLower(Left(v, len(outPrefix))) == strings.ToLower(outPrefix) {
 						// match
-						if len(v)-len(outPrefix) == 0 {
-							csvValue = ""
-						} else {
-							csvValue = Right(v, len(v)-len(outPrefix))
-						}
+						if _, ok := prefixProcessedMap[strings.ToLower(outPrefix)]; !ok {
+							prefixProcessedMap[strings.ToLower(outPrefix)] = Itoa(tagPos)
 
-						break
+							if len(v)-len(outPrefix) == 0 {
+								csvValue = ""
+							} else {
+								csvValue = Right(v, len(v)-len(outPrefix))
+							}
+
+							notFound = false
+							break
+						}
 					}
+				}
+
+				if notFound {
+					continue
 				}
 			}
 
@@ -1087,7 +1108,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			tagSetter := Trim(field.Tag.Get("setter"))
 			timeFormat := Trim(field.Tag.Get("timeformat"))
 
-			if o.Kind() != reflect.Ptr {
+			if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct {
 				switch tagType {
 				case "a":
 					csvValue, _ = ExtractAlpha(csvValue)
@@ -1146,6 +1167,16 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 					if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
 						// create new struct pointer
 						o.Set(reflect.New(baseType.Type()))
+					} else {
+						if o.Kind() == reflect.Interface && o.Interface() == nil {
+							customType := ReflectTypeRegistryGet(o.Type().String())
+
+							if customType == nil {
+								return fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
+							} else {
+								o.Set(reflect.New(customType))
+							}
+						}
 					}
 
 					if ov, notFound := ReflectCall(o, tagSetter, csvValue); !notFound {
@@ -1349,6 +1380,8 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 					if len(ov) > 0 {
 						o = ov[0]
 					}
+				} else {
+					log.Println("!!! ", o.Type(), tagGetter)
 				}
 			}
 

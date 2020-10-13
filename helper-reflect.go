@@ -3,6 +3,7 @@ package helper
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"reflect"
 	"time"
 )
@@ -22,6 +23,82 @@ import (
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+// ================================================================================================================
+// Custom Type Registry
+// ================================================================================================================
+var customTypeRegistry map[string]reflect.Type
+
+// ReflectTypeRegistryAdd will accept a custom struct object, and add its type into custom type registry,
+// if customFullTypeName is not specified, the type name is inferred from the type itself,
+// custom type registry is used by reflect unmarshal helpers to construct custom type for undefined interface targets
+func ReflectTypeRegistryAdd(customStructObj interface{}, customFullTypeName ...string) bool {
+	if customStructObj == nil {
+		return false
+	}
+
+	o := reflect.TypeOf(customStructObj)
+
+	if o.Kind() == reflect.Ptr {
+		o = o.Elem()
+	}
+
+	if o.Kind() != reflect.Struct {
+		return false
+	}
+
+	typeName := o.Name()
+	log.Println(typeName)
+
+	if len(customFullTypeName) > 0 {
+		if LenTrim(customFullTypeName[0]) > 0 {
+			typeName = Trim(customFullTypeName[0])
+		}
+	}
+
+	if customTypeRegistry == nil {
+		customTypeRegistry = make(map[string]reflect.Type)
+	}
+
+	customTypeRegistry[typeName] = o
+	return true
+}
+
+// ReflectTypeRegistryRemove will remove a pre-registered custom type from type registry for the given type name
+func ReflectTypeRegistryRemove(customFullTypeName string) {
+	if customTypeRegistry != nil {
+		delete(customTypeRegistry, customFullTypeName)
+	}
+}
+
+// ReflectTypeRegistryRemoveAll will clear all previously registered custom types from type registry
+func ReflectTypeRegistryRemoveAll() {
+	if customTypeRegistry != nil {
+		customTypeRegistry = make(map[string]reflect.Type)
+	}
+}
+
+// ReflectTypeRegistryCount returns count of custom types registered in the type registry
+func ReflectTypeRegistryCount() int {
+	if customTypeRegistry != nil {
+		return len(customTypeRegistry)
+	} else {
+		return 0
+	}
+}
+
+// ReflectTypeRegistryGet returns a previously registered custom type in the type registry, based on the given type name string
+func ReflectTypeRegistryGet(customFullTypeName string) reflect.Type {
+	if customTypeRegistry != nil {
+		if t, ok := customTypeRegistry[customFullTypeName]; ok {
+			return t
+		} else {
+			return nil
+		}
+	} else {
+		return nil
+	}
+}
 
 // ================================================================================================================
 // Custom Struct Tag Reflect Helpers
@@ -90,16 +167,17 @@ func GetStructTagsValueSlice(field reflect.StructField, tagName ...string) (tagV
 	return
 }
 
+// ================================================================================================================
+// Reflection Helpers
+// ================================================================================================================
+
 // ReflectCall uses reflection to invoke a method by name, and pass in param values if any,
 // result is returned via reflect.Value object slice
 func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) (resultSlice []reflect.Value, notFound bool) {
-	if o.IsZero() {
-		return nil, true
-	}
-
 	method := o.MethodByName(methodName)
 
 	if method.Kind() == reflect.Invalid {
+		log.Println("!!! Invalid: ", methodName, o.Type())
 		return nil, true
 	}
 
@@ -310,7 +388,7 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 				}
 			}
 		default:
-			return "", false, fmt.Errorf("%s Unhandled", o2.Type().Name())
+			return "", false, fmt.Errorf("%s Unhandled [1]", o2.Type().Name())
 		}
 	default:
 		switch f := o.Interface().(type) {
@@ -384,8 +462,14 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 					buf = f.Format(timeFormat)
 				}
 			}
+		case nil:
+			if skipZero || skipBlank {
+				return "", true, nil
+			} else {
+				buf = ""
+			}
 		default:
-			return "", false, fmt.Errorf("%s Unhandled", o.Type().Name())
+			return "", false, fmt.Errorf("%s Unhandled [2]", o.Type().Name())
 		}
 	}
 
@@ -509,7 +593,7 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 				o2.Set(reflect.ValueOf(ParseDateTimeCustom(v, timeFormat)))
 			}
 		default:
-			return fmt.Errorf(o2.Type().Name() + " Unhandled")
+			return fmt.Errorf(o2.Type().Name() + " Unhandled [1]")
 		}
 	default:
 		switch o.Interface().(type) {
@@ -542,8 +626,10 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 			} else {
 				o.Set(reflect.ValueOf(ParseDateTimeCustom(v, timeFormat)))
 			}
+		case nil:
+			return nil
 		default:
-			return fmt.Errorf(o.Type().Name() + " Unhandled")
+			return fmt.Errorf(o.Type().Name() + " Unhandled [2]")
 		}
 	}
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"reflect"
 	"strings"
@@ -60,6 +59,8 @@ func Fill(src interface{}, dst interface{}) error {
 // special struct tags:
 //		1) `getter:"Key"`			// if field type is custom struct or enum,
 //									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
 //		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
 //		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
 // 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
@@ -74,6 +75,7 @@ func Fill(src interface{}, dst interface{}) error {
 //											05, 5 = second
 //											PM pm = AM PM
 //		8) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
+// 		9) `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
 func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("MarshalStructToQueryParams Requires Input Struct Variable Pointer")
@@ -123,27 +125,62 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					}
 				}
 
+				var boolTrue, boolFalse, timeFormat, outPrefix string
+				var skipBlank, skipZero, zeroblank bool
+
+				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "outprefix", "zeroblank"); len(vs) == 7 {
+					boolTrue = vs[0]
+					boolFalse = vs[1]
+					skipBlank, _ = ParseBool(vs[2])
+					skipZero, _ = ParseBool(vs[3])
+					timeFormat = vs[4]
+					outPrefix = vs[5]
+					zeroblank, _ = ParseBool(vs[6])
+				}
+
+				oldVal := o
+
 				if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
-					if ov, notFound := ReflectCall(o, tagGetter); !notFound {
+					isBase := false
+					useParam := false
+					paramVal := ""
+
+					if strings.ToLower(Left(tagGetter, 5)) == "base." {
+						isBase = true
+						tagGetter = Right(tagGetter, len(tagGetter)-5)
+					}
+
+					if strings.ToLower(Right(tagGetter, 3)) == "(x)" {
+						useParam = true
+						paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroblank)
+						tagGetter = Left(tagGetter, len(tagGetter)-3)
+					}
+
+					var ov []reflect.Value
+					var notFound bool
+
+					if isBase {
+						if useParam {
+							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+						} else {
+							ov, notFound = ReflectCall(s.Addr(), tagGetter)
+						}
+					} else {
+						if useParam {
+							ov, notFound = ReflectCall(o, tagGetter, paramVal)
+						} else {
+							ov, notFound = ReflectCall(o, tagGetter)
+						}
+					}
+
+					if !notFound {
 						if len(ov) > 0 {
 							o = ov[0]
 						}
 					}
 				}
 
-				var boolTrue, boolFalse, timeFormat, outPrefix string
-				var skipBlank, skipZero bool
-
-				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "outprefix"); len(vs) == 6 {
-					boolTrue = vs[0]
-					boolFalse = vs[1]
-					skipBlank = IsBool(vs[2])
-					skipZero = IsBool(vs[3])
-					timeFormat = vs[4]
-					outPrefix = vs[5]
-				}
-
-				if buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat); err != nil || skip {
+				if buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroblank); err != nil || skip {
 					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
 						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
 							delete(uniqueMap, strings.ToLower(tagUniqueId))
@@ -152,6 +189,20 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 
 					continue
 				} else {
+					if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
+						// unknown enum value will be serialized as blank
+						buf = ""
+
+						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+							if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+								// remove uniqueid if skip
+								delete(uniqueMap, strings.ToLower(tagUniqueId))
+								continue
+							}
+						}
+					}
+
+
 					if LenTrim(output) > 0 {
 						output += "&"
 					}
@@ -177,6 +228,8 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 // special struct tags:
 //		1) `getter:"Key"`			// if field type is custom struct or enum,
 //									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
 //		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
 //		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
 // 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
@@ -190,6 +243,7 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 //											04, 4 = minute
 //											05, 5 = second
 //											PM pm = AM PM
+// 		8) `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
 func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("MarshalStructToJson Requires Input Struct Variable Pointer")
@@ -239,26 +293,61 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					}
 				}
 
+				var boolTrue, boolFalse, timeFormat string
+				var skipBlank, skipZero, zeroBlank bool
+
+				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "zeroblank"); len(vs) == 6 {
+					boolTrue = vs[0]
+					boolFalse = vs[1]
+					skipBlank, _ = ParseBool(vs[2])
+					skipZero, _ = ParseBool(vs[3])
+					timeFormat = vs[4]
+					zeroBlank, _ = ParseBool(vs[5])
+				}
+
+				oldVal := o
+
 				if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
-					if ov, notFound := ReflectCall(o, tagGetter); !notFound {
+					isBase := false
+					useParam := false
+					paramVal := ""
+
+					if strings.ToLower(Left(tagGetter, 5)) == "base." {
+						isBase = true
+						tagGetter = Right(tagGetter, len(tagGetter)-5)
+					}
+
+					if strings.ToLower(Right(tagGetter, 3)) == "(x)" {
+						useParam = true
+						paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+						tagGetter = Left(tagGetter, len(tagGetter)-3)
+					}
+
+					var ov []reflect.Value
+					var notFound bool
+
+					if isBase {
+						if useParam {
+							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+						} else {
+							ov, notFound = ReflectCall(s.Addr(), tagGetter)
+						}
+					} else {
+						if useParam {
+							ov, notFound = ReflectCall(o, tagGetter, paramVal)
+						} else {
+							ov, notFound = ReflectCall(o, tagGetter)
+						}
+					}
+
+					if !notFound {
 						if len(ov) > 0 {
 							o = ov[0]
 						}
 					}
 				}
 
-				var boolTrue, boolFalse, timeFormat string
-				var skipBlank, skipZero bool
-
-				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat"); len(vs) == 5 {
-					boolTrue = vs[0]
-					boolFalse = vs[1]
-					skipBlank = IsBool(vs[2])
-					skipZero = IsBool(vs[3])
-					timeFormat = vs[4]
-				}
-
-				buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat)
+				buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
 
 				if err != nil || skip {
 					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
@@ -268,6 +357,19 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					}
 
 					continue
+				}
+
+				if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
+					// unknown enum value will be serialized as blank
+					buf = ""
+
+					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+							// remove uniqueid if skip
+							delete(uniqueMap, strings.ToLower(tagUniqueId))
+							continue
+						}
+					}
 				}
 
 				buf = strings.Replace(buf, `"`, `\"`, -1)
@@ -298,6 +400,8 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 // Predefined Struct Tags Usable:
 // 		1) `setter:"ParseByKey`		// if field type is custom struct or enum,
 //									   specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//									   NOTE: setter method always intake a string parameter
 //		2) `def:""`					// default value to set into struct field in case unmarshal doesn't set the struct field value
 //		3) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
 //											2006, 06 = year,
@@ -382,11 +486,27 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 
 				if len(jValue) > 0 {
 					if tagSetter := Trim(field.Tag.Get("setter")); len(tagSetter) > 0 {
+						isBase := false
+
+						if strings.ToLower(Left(tagSetter, 5)) == "base." {
+							isBase = true
+							tagSetter = Right(tagSetter, len(tagSetter)-5)
+						}
+
 						if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct {
-							// o is not ptr
-							if results, notFound := ReflectCall(o, tagSetter, jValue); !notFound && len(results) > 0 {
+							// o is not ptr, interface, struct
+							var results []reflect.Value
+							var notFound bool
+
+							if isBase {
+								results, notFound = ReflectCall(s.Addr(), tagSetter, jValue)
+							} else {
+								results, notFound = ReflectCall(o, tagSetter, jValue)
+							}
+
+							if !notFound && len(results) > 0 {
 								if len(results) == 1 {
-									if jv, _, err := ReflectValueToString(results[0], "", "", false, false, timeFormat); err == nil {
+									if jv, _, err := ReflectValueToString(results[0], "", "", false, false, timeFormat, false); err == nil {
 										jValue = jv
 									}
 								} else if len(results) > 1 {
@@ -400,14 +520,14 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 									}
 
 									if getFirstVar {
-										if jv, _, err := ReflectValueToString(results[0], "", "", false, false, timeFormat); err == nil {
+										if jv, _, err := ReflectValueToString(results[0], "", "", false, false, timeFormat, false); err == nil {
 											jValue = jv
 										}
 									}
 								}
 							}
 						} else {
-							// o is ptr
+							// o is ptr, interface, struct
 							// get base type
 							if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
 								// create new struct pointer
@@ -424,7 +544,16 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 								}
 							}
 
-							if ov, notFound := ReflectCall(o, tagSetter, jValue); !notFound {
+							var ov []reflect.Value
+							var notFound bool
+
+							if isBase {
+								ov, notFound = ReflectCall(s.Addr(), tagSetter, jValue)
+							} else {
+								ov, notFound = ReflectCall(o, tagSetter, jValue)
+							}
+
+							if !notFound {
 								if len(ov) == 1 {
 									if ov[0].Kind() == reflect.Ptr {
 										o.Set(ov[0])
@@ -558,6 +687,8 @@ func StructClearFields(inputStructPtr interface{}) {
 					o.Set(reflect.ValueOf(sql.NullTime{}))
 				case time.Time:
 					o.Set(reflect.ValueOf(time.Time{}))
+				default:
+					o.Set(reflect.Zero(o.Type()))
 				}
 			}
 		}
@@ -656,7 +787,7 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 						if len(tagDef) == 0 {
 							return true
 						} else {
-							if f.Bool != IsBool(tagDef) {
+							if f.Bool, _ = ParseBool(tagDef); f.Bool {
 								return true
 							}
 						}
@@ -723,6 +854,10 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 							}
 						}
 					}
+				default:
+					if o.Kind() == reflect.Interface && o.Interface() != nil {
+						return true
+					}
 				}
 			}
 		}
@@ -788,14 +923,14 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 					} else {
 						if res, notFound := ReflectCall(o, tagSetter, tagDef); !notFound {
 							if len(res) == 1 {
-								if val, skip, err := ReflectValueToString(res[0], "", "", false, false, ""); err == nil && !skip {
+								if val, skip, err := ReflectValueToString(res[0], "", "", false, false, "", false); err == nil && !skip {
 									tagDef = val
 								} else {
 									continue
 								}
 							} else if len(res) > 1 {
 								if err := DerefError(res[len(res)-1:][0]); err == nil {
-									if val, skip, err := ReflectValueToString(res[0], "", "", false, false, ""); err == nil && !skip {
+									if val, skip, err := ReflectValueToString(res[0], "", "", false, false, "", false); err == nil && !skip {
 										tagDef = val
 									} else {
 										continue
@@ -845,7 +980,8 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 					}
 				case sql.NullBool:
 					if !f.Valid {
-						o.Set(reflect.ValueOf(sql.NullBool{Bool: IsBool(tagDef), Valid: true}))
+						b, _ := ParseBool(tagDef)
+						o.Set(reflect.ValueOf(sql.NullBool{Bool: b, Valid: true}))
 					}
 				case sql.NullFloat64:
 					if !f.Valid {
@@ -916,10 +1052,15 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 //											x.. = From x and up
 //											..y = From 0 up to y
 //											x..y = From x to y
+//											+%z = Append to x, x.., ..y, x..y; adds additional constraint that the result size must equate to 0 from modulo of z
 //		5) `range:"x..y"`			// data type range value when Type is N, if underlying data type is string, method will convert first before testing
 //		6) `req:"true"`				// indicates data value is required or not, true or false
 //		7) `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
 // 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//									   NOTE: setter method always intake a string parameter value
 //		9) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
 //									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
 //		10) `def:""`				// default value to set into struct field in case unmarshal doesn't set the struct field value
@@ -1029,6 +1170,14 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 			// unmarshal only validates max
 			tagSize := Trim(strings.ToLower(field.Tag.Get("size")))
+			arModulo := strings.Split(tagSize, "+%")
+			tagModulo := 0
+			if len(arModulo) == 2 {
+				tagSize = arModulo[0]
+				if tagModulo, _ = ParseInt32(arModulo[1]); tagModulo < 0 {
+					tagModulo = 0
+				}
+			}
 			arSize := strings.Split(tagSize, "..")
 			sizeMin := 0
 			sizeMax := 0
@@ -1106,6 +1255,15 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 			// pre-process csv value with validation
 			tagSetter := Trim(field.Tag.Get("setter"))
+
+			isBase := false
+			if LenTrim(tagSetter) > 0 {
+				if strings.ToLower(Left(tagSetter, 5)) == "base." {
+					isBase = true
+					tagSetter = Right(tagSetter, len(tagSetter)-5)
+				}
+			}
+
 			timeFormat := Trim(field.Tag.Get("timeformat"))
 
 			if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct {
@@ -1134,12 +1292,27 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 							csvValue = Left(csvValue, sizeMax)
 						}
 					}
+
+					if tagModulo > 0 {
+						if len(csvValue) % tagModulo != 0 {
+							return fmt.Errorf("Struct Field %s Expects Value In Blocks of %d Characters", field.Name, tagModulo)
+						}
+					}
 				}
 
 				if LenTrim(tagSetter) > 0 {
-					if ov, notFound := ReflectCall(o, tagSetter, csvValue); !notFound {
+					var ov []reflect.Value
+					var notFound bool
+
+					if isBase {
+						ov, notFound = ReflectCall(s.Addr(), tagSetter, csvValue)
+					} else {
+						ov, notFound = ReflectCall(o, tagSetter, csvValue)
+					}
+
+					if !notFound {
 						if len(ov) == 1 {
-							csvValue, _, _ = ReflectValueToString(ov[0], "", "", false, false, timeFormat)
+							csvValue, _, _ = ReflectValueToString(ov[0], "", "", false, false, timeFormat, false)
 						} else if len(ov) > 1 {
 							getFirstVar := true
 
@@ -1151,7 +1324,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 							}
 
 							if getFirstVar {
-								csvValue, _, _ = ReflectValueToString(ov[0], "", "", false, false, timeFormat)
+								csvValue, _, _ = ReflectValueToString(ov[0], "", "", false, false, timeFormat, false)
 							}
 						}
 					}
@@ -1179,7 +1352,16 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 						}
 					}
 
-					if ov, notFound := ReflectCall(o, tagSetter, csvValue); !notFound {
+					var ov []reflect.Value
+					var notFound bool
+
+					if isBase {
+						ov, notFound = ReflectCall(s.Addr(), tagSetter, csvValue)
+					} else {
+						ov, notFound = ReflectCall(o, tagSetter, csvValue)
+					}
+
+					if !notFound {
 						if len(ov) == 1 {
 							if ov[0].Kind() == reflect.Ptr {
 								o.Set(ov[0])
@@ -1231,10 +1413,15 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //											x.. = From x and up
 //											..y = From 0 up to y
 //											x..y = From x to y
+//											+%z = Append to x, x.., ..y, x..y; adds additional constraint that the result size must equate to 0 from modulo of z
 //		5) `range:"x..y"`			// data type range value when Type is N, if underlying data type is string, method will convert first before testing
 //		6) `req:"true"`				// indicates data value is required or not, true or false
 //		7) `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
 // 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//									   NOTE: setter method always intake a string parameter value
 //		9) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
 //		10) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
 // 		11) `uniqueid:"xyz"`		// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal,
@@ -1251,6 +1438,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //											PM pm = AM PM
 //		15) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
 //									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
+// 		16) `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
 func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNoDelimiter ...bool) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
@@ -1347,6 +1535,14 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 			}
 
 			tagSize := Trim(strings.ToLower(field.Tag.Get("size")))
+			arModulo := strings.Split(tagSize, "+%")
+			tagModulo := 0
+			if len(arModulo) == 2 {
+				tagSize = arModulo[0]
+				if tagModulo, _ = ParseInt32(arModulo[1]); tagModulo < 0 {
+					tagModulo = 0
+				}
+			}
 			arSize := strings.Split(tagSize, "..")
 			sizeMin := 0
 			sizeMax := 0
@@ -1375,30 +1571,64 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 				tagReq = ""
 			}
 
+			// get csv value from current struct field
+			var boolTrue, boolFalse, timeFormat, outPrefix string
+			var skipBlank, skipZero, zeroBlank bool
+
+			if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "outprefix", "zeroblank"); len(vs) == 7 {
+				boolTrue = vs[0]
+				boolFalse = vs[1]
+				skipBlank, _ = ParseBool(vs[2])
+				skipZero, _ = ParseBool(vs[3])
+				timeFormat = vs[4]
+				outPrefix = vs[5]
+				zeroBlank, _ = ParseBool(vs[6])
+			}
+
+			// cache old value prior to getter invoke
+			oldVal := o
+
 			if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
-				if ov, notFound := ReflectCall(o, tagGetter); !notFound {
+				isBase := false
+				useParam := false
+				paramVal := ""
+
+				if strings.ToLower(Left(tagGetter, 5)) == "base." {
+					isBase = true
+					tagGetter = Right(tagGetter, len(tagGetter)-5)
+				}
+
+				if strings.ToLower(Right(tagGetter, 3)) == "(x)" {
+					useParam = true
+					paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+					tagGetter = Left(tagGetter, len(tagGetter)-3)
+				}
+
+				var ov []reflect.Value
+				var notFound bool
+
+				if isBase {
+					if useParam {
+						ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+					} else {
+						ov, notFound = ReflectCall(s.Addr(), tagGetter)
+					}
+				} else {
+					if useParam {
+						ov, notFound = ReflectCall(o, tagGetter, paramVal)
+					} else {
+						ov, notFound = ReflectCall(o, tagGetter)
+					}
+				}
+
+				if !notFound {
 					if len(ov) > 0 {
 						o = ov[0]
 					}
-				} else {
-					log.Println("!!! ", o.Type(), tagGetter)
 				}
 			}
 
-			// get csv value from current struct field
-			var boolTrue, boolFalse, timeFormat, outPrefix string
-			var skipBlank, skipZero bool
-
-			if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "outprefix"); len(vs) == 6 {
-				boolTrue = vs[0]
-				boolFalse = vs[1]
-				skipBlank = IsBool(vs[2])
-				skipZero = IsBool(vs[3])
-				timeFormat = vs[4]
-				outPrefix = vs[5]
-			}
-
-			fv, skip, e := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat)
+			fv, skip, e := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
 
 			if e != nil {
 				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
@@ -1420,6 +1650,19 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 				}
 
 				continue
+			}
+
+			if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(fv) == "unknown" {
+				// unknown enum value will be serialized as blank
+				fv = ""
+
+				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+					if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+						// remove uniqueid if skip
+						delete(uniqueMap, strings.ToLower(tagUniqueId))
+						continue
+					}
+				}
 			}
 
 			// validate output csv value
@@ -1455,6 +1698,12 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 
 				if sizeMax > 0 && len(fv) > sizeMax {
 					fv = Left(fv, sizeMax)
+				}
+
+				if tagModulo > 0 {
+					if len(fv) % tagModulo != 0 {
+						return "", fmt.Errorf("Struct Field %s Expects Value In Blocks of %d Characters", field.Name, tagModulo)
+					}
 				}
 			}
 

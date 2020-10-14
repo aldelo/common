@@ -177,7 +177,7 @@ func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) 
 	method := o.MethodByName(methodName)
 
 	if method.Kind() == reflect.Invalid {
-		log.Println("!!! Invalid: ", methodName, o.Type())
+		log.Println("!!! ReflectCall, method.Kind() is Invalid: ", methodName, o.Type())
 		return nil, true
 	}
 
@@ -205,7 +205,8 @@ func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) 
 // ReflectValueToString accepts reflect.Value and returns its underlying field value in string data type
 // boolTrue is the literal value to use for bool true condition, boolFalse is the false condition literal,
 // if boolTrue or boolFalse is not defined, then default 'true' or 'false' is used,
-// skipBlank and skipZero if true indicates if field value is blank (string) or Zero (int, float, time, pointer, bool) then skip render
+// skipBlank and skipZero if true indicates if field value is blank (string) or Zero (int, float, time, pointer, bool) then skip render,
+// zeroBlank = will blank the value if it is 0, 0.00, or time.IsZero
 //
 // timeFormat:
 // 		2006, 06 = year,
@@ -215,7 +216,7 @@ func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) 
 //		04, 4 = minute
 //		05, 5 = second
 //		PM pm = AM PM
-func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, skipBlank bool, skipZero bool, timeFormat string) (valueStr string, skip bool, err error) {
+func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, skipBlank bool, skipZero bool, timeFormat string, zeroBlank bool) (valueStr string, skip bool, err error) {
 	buf := ""
 
 	switch o.Kind() {
@@ -255,7 +256,11 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 		if skipZero && o.Int() == 0 {
 			return "", true, nil
 		} else {
-			buf = Int64ToString(o.Int())
+			if zeroBlank && o.Int() == 0 {
+				buf = ""
+			} else {
+				buf = Int64ToString(o.Int())
+			}
 		}
 	case reflect.Float32:
 		fallthrough
@@ -263,7 +268,11 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 		if skipZero && o.Float() == 0.00 {
 			return "", true, nil
 		} else {
-			buf = FloatToString(o.Float())
+			if zeroBlank && o.Float() == 0.00 {
+				buf = ""
+			} else {
+				buf = FloatToString(o.Float())
+			}
 		}
 	case reflect.Uint8:
 		fallthrough
@@ -277,7 +286,11 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 		if skipZero && o.Uint() == 0 {
 			return "", true, nil
 		} else {
-			buf = UInt64ToString(o.Uint())
+			if zeroBlank && o.Uint() == 0 {
+				buf = ""
+			} else {
+				buf = UInt64ToString(o.Uint())
+			}
 		}
 	case reflect.Ptr:
 		if o.IsZero() || o.IsNil() {
@@ -303,31 +316,51 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			if skipZero && f == 0 {
 				return "", true, nil
 			} else {
-				buf = Itoa(int(f))
+				if zeroBlank && f == 0 {
+					buf = ""
+				} else {
+					buf = Itoa(int(f))
+				}
 			}
 		case int16:
 			if skipZero && f == 0 {
 				return "", true, nil
 			} else {
-				buf = Itoa(int(f))
+				if zeroBlank && f == 0 {
+					buf = ""
+				} else {
+					buf = Itoa(int(f))
+				}
 			}
 		case int32:
 			if skipZero && f == 0 {
 				return "", true, nil
 			} else {
-				buf = Itoa(int(f))
+				if zeroBlank && f == 0 {
+					buf = ""
+				} else {
+					buf = Itoa(int(f))
+				}
 			}
 		case int64:
 			if skipZero && f == 0 {
 				return "", true, nil
 			} else {
-				buf = Int64ToString(f)
+				if zeroBlank && f == 0 {
+					buf = ""
+				} else {
+					buf = Int64ToString(f)
+				}
 			}
 		case int:
 			if skipZero && f == 0 {
 				return "", true, nil
 			} else {
-				buf = Itoa(f)
+				if zeroBlank && f == 0 {
+					buf = ""
+				} else {
+					buf = Itoa(f)
+				}
 			}
 		case bool:
 			if f {
@@ -357,34 +390,58 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			if skipZero && f == 0.00 {
 				return "", true, nil
 			} else {
-				buf = Float32ToString(f)
+				if zeroBlank && f == 0.00 {
+					buf = ""
+				} else {
+					buf = Float32ToString(f)
+				}
 			}
 		case float64:
 			if skipZero && f == 0.00 {
 				return "", true, nil
 			} else {
-				buf = Float64ToString(f)
+				if zeroBlank && f == 0.00 {
+					buf = ""
+				} else {
+					buf = Float64ToString(f)
+				}
 			}
 		case uint:
 			if skipZero && f == 0 {
 				return "", true, nil
 			} else {
-				buf = UintToStr(f)
+				if zeroBlank && f == 0.00 {
+					buf = ""
+				} else {
+					buf = UintToStr(f)
+				}
 			}
 		case uint64:
 			if skipZero && f == 0 {
 				return "", true, nil
 			} else {
-				buf = UInt64ToString(f)
+				if zeroBlank && f == 0.00 {
+					buf = ""
+				} else {
+					buf = UInt64ToString(f)
+				}
 			}
 		case time.Time:
 			if skipZero && f.IsZero() {
 				return "", true, nil
 			} else {
 				if LenTrim(timeFormat) == 0 {
-					buf = FormatDateTime(f)
+					if zeroBlank && f.IsZero() {
+						buf = ""
+					} else {
+						buf = FormatDateTime(f)
+					}
 				} else {
-					buf = f.Format(timeFormat)
+					if zeroBlank && f.IsZero() {
+						buf = ""
+					} else {
+						buf = f.Format(timeFormat)
+					}
 				}
 			}
 		default:
@@ -422,7 +479,11 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			if skipZero && f64 == 0.00 {
 				return "", true, nil
 			} else {
-				buf = FloatToString(f64)
+				if zeroBlank && f64 == 0.00 {
+					buf = ""
+				} else {
+					buf = FloatToString(f64)
+				}
 			}
 		case sql.NullInt32:
 			i32 := FromNullInt(f)
@@ -430,7 +491,11 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			if skipZero && i32 == 0 {
 				return "", true, nil
 			} else {
-				buf = Itoa(i32)
+				if zeroBlank && i32 == 0 {
+					buf = ""
+				} else {
+					buf = Itoa(i32)
+				}
 			}
 		case sql.NullInt64:
 			i64 := FromNullInt64(f)
@@ -438,7 +503,11 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			if skipZero && i64 == 0 {
 				return "", true, nil
 			} else {
-				buf = Int64ToString(i64)
+				if zeroBlank && i64 == 0 {
+					buf = ""
+				} else {
+					buf = Int64ToString(i64)
+				}
 			}
 		case sql.NullTime:
 			t := FromNullTime(f)
@@ -449,7 +518,11 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 				if LenTrim(timeFormat) == 0 {
 					buf = FormatDateTime(t)
 				} else {
-					buf = t.Format(timeFormat)
+					if zeroBlank && t.IsZero() {
+						buf = ""
+					} else {
+						buf = t.Format(timeFormat)
+					}
 				}
 			}
 		case time.Time:
@@ -457,9 +530,17 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 				return "", true, nil
 			} else {
 				if LenTrim(timeFormat) == 0 {
-					buf = FormatDateTime(f)
+					if zeroBlank && f.IsZero() {
+						buf = ""
+					} else {
+						buf = FormatDateTime(f)
+					}
 				} else {
-					buf = f.Format(timeFormat)
+					if zeroBlank && f.IsZero() {
+						buf = ""
+					} else {
+						buf = f.Format(timeFormat)
+					}
 				}
 			}
 		case nil:
@@ -491,7 +572,8 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 	case reflect.String:
 		o.SetString(v)
 	case reflect.Bool:
-		o.SetBool(IsBool(v))
+		b, _ := ParseBool(v)
+		o.SetBool(b)
 	case reflect.Int8:
 		fallthrough
 	case reflect.Int16:
@@ -585,7 +667,8 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 		case string:
 			o2.SetString(v)
 		case bool:
-			o2.SetBool(IsBool(v))
+			b, _ := ParseBool(v)
+			o2.SetBool(b)
 		case time.Time:
 			if LenTrim(timeFormat) == 0 {
 				o2.Set(reflect.ValueOf(ParseDate(v)))
@@ -600,7 +683,8 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 		case sql.NullString:
 			o.Set(reflect.ValueOf(sql.NullString{String: v, Valid: true}))
 		case sql.NullBool:
-			o.Set(reflect.ValueOf(sql.NullBool{Bool: IsBool(v), Valid: true}))
+			b, _ := ParseBool(v)
+			o.Set(reflect.ValueOf(sql.NullBool{Bool: b, Valid: true}))
 		case sql.NullFloat64:
 			f64, _ := ParseFloat64(v)
 			o.Set(reflect.ValueOf(sql.NullFloat64{Float64: f64, Valid: true}))

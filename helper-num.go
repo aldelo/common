@@ -77,7 +77,7 @@ func IsFloat64(s string) bool {
 }
 
 // IsBool tests if input string is boolean
-func IsBool(s string) bool {
+func IsBoolType(s string) bool {
 	x := []string{"yes", "on", "running", "started"}
 
 	if StringSliceContains(&x, strings.ToLower(s)) {

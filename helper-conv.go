@@ -364,4 +364,15 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 	}
 }
 
+// IntToHex returns HEX string representation of i, in 2 digit blocks
+func IntToHex(i int) string {
+	buf := StringToHex(Itoa(i))
+
+	if len(buf) % 2 != 0 {
+		buf = "0" + buf
+	}
+
+	return buf
+}
+
 

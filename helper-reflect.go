@@ -161,7 +161,7 @@ func GetStructTagValueByType(t reflect.Type, structFieldName string, structTagNa
 // GetStructTagsValueSlice returns named struct tag values from field, in the order queried
 func GetStructTagsValueSlice(field reflect.StructField, tagName ...string) (tagValues []string) {
 	for _, t := range tagName {
-		tagValues = append(tagValues, Trim(field.Tag.Get(t)))
+		tagValues = append(tagValues, field.Tag.Get(t))
 	}
 
 	return
@@ -228,19 +228,23 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 		}
 	case reflect.Bool:
 		if o.Bool() {
-			if LenTrim(boolTrue) == 0 {
+			if len(boolTrue) == 0 {
 				buf = "true"
 			} else {
-				buf = boolTrue
+				buf = Trim(boolTrue)
 			}
 		} else {
 			if skipZero {
 				return "", true, nil
 			} else {
-				if LenTrim(boolFalse) == 0 {
+				if len(boolFalse) == 0 {
 					buf = "false"
 				} else {
-					buf = boolFalse
+					if Trim(boolTrue) == Trim(boolFalse) {
+						buf = "false"
+					} else {
+						buf = Trim(boolFalse)
+					}
 				}
 			}
 		}
@@ -297,7 +301,19 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			if skipZero || skipBlank {
 				return "", true, nil
 			} else {
-				return "", false, nil
+				if rt, _, _ := DerefPointersZero(o); rt.Kind() == reflect.Bool {
+					if Trim(boolTrue) == Trim(boolFalse) {
+						return "false", false, nil
+					} else {
+						if LenTrim(boolFalse) > 0 {
+							return boolFalse, false, nil
+						} else {
+							return "", false, nil
+						}
+					}
+				} else {
+					return "", false, nil
+				}
 			}
 		}
 
@@ -306,8 +322,6 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 		if o2.IsZero() {
 			if skipZero || skipBlank {
 				return "", true, nil
-			} else {
-				return "", false, nil
 			}
 		}
 
@@ -364,19 +378,23 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			}
 		case bool:
 			if f {
-				if LenTrim(boolTrue) == 0 {
+				if len(boolTrue) == 0 {
 					buf = "true"
 				} else {
-					buf = boolTrue
+					buf = Trim(boolTrue)
 				}
 			} else {
 				if skipZero {
 					return "", true, nil
 				} else {
-					if LenTrim(boolFalse) == 0 {
+					if len(boolFalse) == 0 {
 						buf = "false"
 					} else {
-						buf = boolFalse
+						if Trim(boolTrue) == Trim(boolFalse) {
+							buf = "false"
+						} else {
+							buf = Trim(boolFalse)
+						}
 					}
 				}
 			}
@@ -457,19 +475,23 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			}
 		case sql.NullBool:
 			if FromNullBool(f) {
-				if LenTrim(boolTrue) == 0 {
+				if len(boolTrue) == 0 {
 					buf = "true"
 				} else {
-					buf = boolTrue
+					buf = Trim(boolTrue)
 				}
 			} else {
 				if skipZero {
 					return "", true, nil
 				} else {
-					if LenTrim(boolFalse) == 0 {
+					if len(boolFalse) == 0 {
 						buf = "false"
 					} else {
-						buf = boolFalse
+						if Trim(boolTrue) == Trim(boolFalse) {
+							buf = "false"
+						} else {
+							buf = Trim(boolFalse)
+						}
 					}
 				}
 			}

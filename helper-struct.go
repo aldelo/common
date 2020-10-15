@@ -61,8 +61,10 @@ func Fill(src interface{}, dst interface{}) error {
 //									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
 //									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
 //									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
-//		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
+//		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 //		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 // 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
 //		5) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
 //		6) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
@@ -202,12 +204,18 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 						}
 					}
 
+					if boolFalse == " " && len(outPrefix) > 0 && buf == "false" {
+						buf = ""
+					} else {
+						buf = outPrefix + buf
+					}
+
 
 					if LenTrim(output) > 0 {
 						output += "&"
 					}
 
-					output += fmt.Sprintf("%s=%s", tag, url.PathEscape(outPrefix + buf))
+					output += fmt.Sprintf("%s=%s", tag, url.PathEscape(buf))
 				}
 			}
 		}
@@ -231,7 +239,9 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 //									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
 //									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
 //		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 //		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 // 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
 //		5) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
 //		6) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
@@ -372,6 +382,13 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					}
 				}
 
+				outPrefix := field.Tag.Get("outprefix")
+				if boolTrue == " " && len(buf) == 0 && len(outPrefix) > 0 {
+					buf = outPrefix
+				} else if boolFalse == " " && buf == "false" && len(outPrefix) > 0 {
+					buf = ""
+				}
+
 				buf = strings.Replace(buf, `"`, `\"`, -1)
 				buf = strings.Replace(buf, `'`, `\'`, -1)
 
@@ -411,6 +428,10 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 //											04, 4 = minute
 //											05, 5 = second
 //											PM pm = AM PM
+//		4) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//		5) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagName string, excludeTagName string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -582,6 +603,11 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 			}
 
 			// set validated csv value into corresponding struct field
+			outPrefix := field.Tag.Get("outprefix")
+			if field.Tag.Get("booltrue") == " " && len(outPrefix) > 0 && jValue == outPrefix {
+				jValue = "true"
+			}
+
 			if err := ReflectStringToField(o, jValue, timeFormat); err != nil {
 				return err
 			}
@@ -1072,6 +1098,10 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 //											04, 4 = minute
 //											05, 5 = second
 //											PM pm = AM PM
+//		12) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//		13) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string, forceNoDelimiter ...bool) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -1238,6 +1268,11 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 							if len(v)-len(outPrefix) == 0 {
 								csvValue = ""
+
+								if field.Tag.Get("booltrue") == " " {
+									// prefix found, since data is blank, and boolTrue is space, treat this as true
+									csvValue = "true"
+								}
 							} else {
 								csvValue = Right(v, len(v)-len(outPrefix))
 							}
@@ -1422,8 +1457,10 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 // 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
 //									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
 //									   NOTE: setter method always intake a string parameter value
-//		9) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
+//		9) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 //		10) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 // 		11) `uniqueid:"xyz"`		// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal,
 //									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
 //		12) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
@@ -1676,10 +1713,20 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 			case "ans":
 				fv, _ = ExtractAlphaNumericPrintableSymbols(fv)
 			case "b":
-				if StringSliceContains(&trueList, strings.ToLower(fv)) {
-					fv = "true"
+				if len(boolTrue) == 0 && len(boolFalse) == 0 {
+					if StringSliceContains(&trueList, strings.ToLower(fv)) {
+						fv = "true"
+					} else {
+						fv = "false"
+					}
 				} else {
-					fv = "false"
+					if Trim(boolTrue) == Trim(boolFalse) {
+						if fv == "false" {
+							fv = ""
+							csvList[tagPos] = fv
+							continue
+						}
+					}
 				}
 			case "regex":
 				fv, _ = ExtractByRegex(fv, tagRegEx)
@@ -1687,6 +1734,13 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 				// not validated
 			case "b64":
 				// not validated
+			}
+
+			if boolFalse == " " && fv == "false" && len(outPrefix) > 0 {
+				// just in case fv is not defined type type b
+				fv = ""
+				csvList[tagPos] = fv
+				continue
 			}
 
 			if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" {

@@ -604,8 +604,23 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 
 			// set validated csv value into corresponding struct field
 			outPrefix := field.Tag.Get("outprefix")
-			if field.Tag.Get("booltrue") == " " && len(outPrefix) > 0 && jValue == outPrefix {
+			boolTrue := field.Tag.Get("booltrue")
+			boolFalse := field.Tag.Get("boolfalse")
+
+			if boolTrue == " " && len(outPrefix) > 0 && jValue == outPrefix {
 				jValue = "true"
+			} else {
+				evalOk := false
+				if LenTrim(boolTrue) > 0 && len(jValue) > 0 && boolTrue == jValue {
+					jValue = "true"
+					evalOk = true
+				}
+
+				if !evalOk {
+					if LenTrim(boolFalse) > 0 && len(jValue) > 0 && boolFalse == jValue {
+						jValue = "false"
+					}
+				}
 			}
 
 			if err := ReflectStringToField(o, jValue, timeFormat); err != nil {
@@ -1253,6 +1268,22 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 						return fmt.Errorf("Struct Field Tag Position %d Exceeds CSV Elements", tagPos)
 					} else {
 						csvValue = csvElements[tagPos]
+
+						evalOk := false
+						if boolTrue := Trim(field.Tag.Get("booltrue")); len(boolTrue) > 0 {
+							if boolTrue == csvValue {
+								csvValue = "true"
+								evalOk = true
+							}
+						}
+
+						if !evalOk {
+							if boolFalse := Trim(field.Tag.Get("boolfalse")); len(boolFalse) > 0 {
+								if boolFalse == csvValue {
+									csvValue = "false"
+								}
+							}
+						}
 					}
 				}
 			} else {
@@ -1275,6 +1306,22 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 								}
 							} else {
 								csvValue = Right(v, len(v)-len(outPrefix))
+
+								evalOk := false
+								if boolTrue := Trim(field.Tag.Get("booltrue")); len(boolTrue) > 0 {
+									if boolTrue == csvValue {
+										csvValue = "true"
+										evalOk = true
+									}
+								}
+
+								if !evalOk {
+									if boolFalse := Trim(field.Tag.Get("boolfalse")); len(boolFalse) > 0 {
+										if boolFalse == csvValue {
+											csvValue = "false"
+										}
+									}
+								}
 							}
 
 							notFound = false
@@ -1703,6 +1750,8 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 			}
 
 			// validate output csv value
+			origFv := fv
+
 			switch tagType {
 			case "a":
 				fv, _ = ExtractAlpha(fv)
@@ -1736,7 +1785,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 				// not validated
 			}
 
-			if boolFalse == " " && fv == "false" && len(outPrefix) > 0 {
+			if boolFalse == " " && origFv == "false" && len(outPrefix) > 0 {
 				// just in case fv is not defined type type b
 				fv = ""
 				csvList[tagPos] = fv

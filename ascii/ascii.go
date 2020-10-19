@@ -300,3 +300,79 @@ func ControlCharToWord(data string) string {
 
 	return data
 }
+
+// EscapeNonPrintable converts non printable \x00 - \x1f to pseudo escaped format
+func EscapeNonPrintable(data string) string {
+	data = strings.Replace(data, AsciiToString(NUL), "[NUL_00]", -1)
+	data = strings.Replace(data, AsciiToString(SOH), "[SOH_01]", -1)
+	data = strings.Replace(data, AsciiToString(STX), "[STX_02]", -1)
+	data = strings.Replace(data, AsciiToString(ETX), "[ETX_03]", -1)
+	data = strings.Replace(data, AsciiToString(EOT), "[EOT_04]", -1)
+	data = strings.Replace(data, AsciiToString(ENQ), "[ENQ_05]", -1)
+	data = strings.Replace(data, AsciiToString(ACK), "[ACK_06]", -1)
+	data = strings.Replace(data, AsciiToString(BEL), "[BEL_07]", -1)
+	data = strings.Replace(data, AsciiToString(BS), "[BS_08]", -1)
+	data = strings.Replace(data, AsciiToString(HT), "[HT_09]", -1)
+	data = strings.Replace(data, AsciiToString(LF), "[LF_0A]", -1)
+	data = strings.Replace(data, AsciiToString(VT), "[VT_0B]", -1)
+	data = strings.Replace(data, AsciiToString(FF), "[FF_0C]", -1)
+	data = strings.Replace(data, AsciiToString(CR), "[CR_0D]", -1)
+	data = strings.Replace(data, AsciiToString(SO), "[SO_0E]", -1)
+	data = strings.Replace(data, AsciiToString(SI), "[SI_0F]", -1)
+	data = strings.Replace(data, AsciiToString(DLE), "[DLE_10]", -1)
+	data = strings.Replace(data, AsciiToString(DC1), "[DC1_11]", -1)
+	data = strings.Replace(data, AsciiToString(DC2), "[DC2_12]", -1)
+	data = strings.Replace(data, AsciiToString(DC3), "[DC3_13]", -1)
+	data = strings.Replace(data, AsciiToString(DC4), "[DC4_14]", -1)
+	data = strings.Replace(data, AsciiToString(NAK), "[NAK_15]", -1)
+	data = strings.Replace(data, AsciiToString(SYN), "[SYN_16]", -1)
+	data = strings.Replace(data, AsciiToString(ETB), "[ETB_17]", -1)
+	data = strings.Replace(data, AsciiToString(CAN), "[CAN_18]", -1)
+	data = strings.Replace(data, AsciiToString(EM), "[EM_19]", -1)
+	data = strings.Replace(data, AsciiToString(SUB), "[SUB_1A]", -1)
+	data = strings.Replace(data, AsciiToString(ESC), "[ESC_1B]", -1)
+	data = strings.Replace(data, AsciiToString(CR), "[CR_1C]", -1)
+	data = strings.Replace(data, AsciiToString(FS), "[FS_1D]", -1)
+	data = strings.Replace(data, AsciiToString(RS), "[RS_1E]", -1)
+	data = strings.Replace(data, AsciiToString(US), "[US_1F]", -1)
+
+	return data
+}
+
+// UnescapeNonPrintable converts pseudo escaped back to non printable form
+func UnescapeNonPrintable(data string) string {
+	data = strings.Replace(data, "[NUL_00]", AsciiToString(NUL), -1)
+	data = strings.Replace(data,  "[SOH_01]", AsciiToString(SOH),-1)
+	data = strings.Replace(data,  "[STX_02]", AsciiToString(STX),-1)
+	data = strings.Replace(data,  "[ETX_03]", AsciiToString(ETX),-1)
+	data = strings.Replace(data,  "[EOT_04]", AsciiToString(EOT),-1)
+	data = strings.Replace(data,  "[ENQ_05]", AsciiToString(ENQ),-1)
+	data = strings.Replace(data,  "[ACK_06]", AsciiToString(ACK),-1)
+	data = strings.Replace(data,  "[BEL_07]", AsciiToString(BEL),-1)
+	data = strings.Replace(data,  "[BS_08]", AsciiToString(BS),-1)
+	data = strings.Replace(data,  "[HT_09]", AsciiToString(HT),-1)
+	data = strings.Replace(data,  "[LF_0A]", AsciiToString(LF),-1)
+	data = strings.Replace(data,  "[VT_0B]", AsciiToString(VT),-1)
+	data = strings.Replace(data,  "[FF_0C]", AsciiToString(FF),-1)
+	data = strings.Replace(data,  "[CR_0D]", AsciiToString(CR),-1)
+	data = strings.Replace(data,  "[SO_0E]", AsciiToString(SO),-1)
+	data = strings.Replace(data,  "[SI_0F]", AsciiToString(SI),-1)
+	data = strings.Replace(data,  "[DLE_10]", AsciiToString(DLE),-1)
+	data = strings.Replace(data,  "[DC1_11]", AsciiToString(DC1),-1)
+	data = strings.Replace(data,  "[DC2_12]", AsciiToString(DC2),-1)
+	data = strings.Replace(data,  "[DC3_13]", AsciiToString(DC3),-1)
+	data = strings.Replace(data,  "[DC4_14]", AsciiToString(DC4),-1)
+	data = strings.Replace(data,  "[NAK_15]", AsciiToString(NAK),-1)
+	data = strings.Replace(data,  "[SYN_16]", AsciiToString(SYN),-1)
+	data = strings.Replace(data,  "[ETB_17]", AsciiToString(ETB),-1)
+	data = strings.Replace(data,  "[CAN_18]", AsciiToString(CAN),-1)
+	data = strings.Replace(data,  "[EM_19]", AsciiToString(EM),-1)
+	data = strings.Replace(data,  "[SUB_1A]", AsciiToString(SUB),-1)
+	data = strings.Replace(data,  "[ESC_1B]", AsciiToString(ESC),-1)
+	data = strings.Replace(data,  "[CR_1C]", AsciiToString(CR),-1)
+	data = strings.Replace(data,  "[FS_1D]", AsciiToString(FS),-1)
+	data = strings.Replace(data,  "[RS_1E]", AsciiToString(RS),-1)
+	data = strings.Replace(data,  "[US_1F]", AsciiToString(US),-1)
+
+	return data
+}

@@ -284,6 +284,17 @@ func ExtractAlphaNumeric(s string) (string, error) {
 	return exp.ReplaceAllString(s, ""), nil
 }
 
+// ExtractHex will extract only A-F, a-f, and 0-9 out of string to be returned
+func ExtractHex(s string) (string, error) {
+	exp, err := regexp.Compile("[^A-Fa-f0-9]+")
+
+	if err != nil {
+		return "", err
+	}
+
+	return exp.ReplaceAllString(s, ""), nil
+}
+
 // ExtractAlphaNumericUnderscoreDash will extract only A-Z, a-z, 0-9, _, - out of string to be returned
 func ExtractAlphaNumericUnderscoreDash(s string) (string, error) {
 	exp, err := regexp.Compile("[^A-Za-z0-9_-]+")
@@ -662,11 +673,7 @@ func JsonToEscaped(data string) string {
 	var r string
 
 	r = strings.Replace(data, `\`, `\\`, -1)
-	r = strings.Replace(r, string(rune(ascii.BS)), `\b`, -1)
-	r = strings.Replace(r, string(rune(ascii.FF)), `\f`, -1)
-	r = strings.Replace(r, string(rune(ascii.LF)), `\n`, -1)
-	r = strings.Replace(r, string(rune(ascii.CR)), `\r`, -1)
-	r = strings.Replace(r, string(rune(ascii.HT)), `\t`, -1)
+	r = ascii.EscapeNonPrintable(r)
 
 	return r
 }
@@ -676,11 +683,7 @@ func JsonFromEscaped(data string) string {
 	var r string
 
 	r = strings.Replace(data, `\\`, `\`, -1)
-	r = strings.Replace(r, `\b`, string(rune(ascii.BS)), -1)
-	r = strings.Replace(r, `\f`, string(rune(ascii.FF)), -1)
-	r = strings.Replace(r, `\n`,string(rune(ascii.LF)),  -1)
-	r = strings.Replace(r, `\r`,string(rune(ascii.CR)),  -1)
-	r = strings.Replace(r, `\t`,string(rune(ascii.HT)),  -1)
+	r = ascii.UnescapeNonPrintable(r)
 
 	if Left(r, 1) == "\"" {
 		r = Right(r, len(r)-1)

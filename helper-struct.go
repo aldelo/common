@@ -146,6 +146,7 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					isBase := false
 					useParam := false
 					paramVal := ""
+					var paramSlice interface{}
 
 					if strings.ToLower(Left(tagGetter, 5)) == "base." {
 						isBase = true
@@ -154,7 +155,15 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 
 					if strings.ToLower(Right(tagGetter, 3)) == "(x)" {
 						useParam = true
-						paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroblank)
+
+						if o.Kind() != reflect.Slice {
+							paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroblank)
+						} else {
+							if o.Len() > 0 {
+								paramSlice = o.Slice(0, o.Len()).Interface()
+							}
+						}
+
 						tagGetter = Left(tagGetter, len(tagGetter)-3)
 					}
 
@@ -163,13 +172,21 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 
 					if isBase {
 						if useParam {
-							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+							if paramSlice == nil {
+								ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+							} else {
+								ov, notFound = ReflectCall(s.Addr(), tagGetter, paramSlice)
+							}
 						} else {
 							ov, notFound = ReflectCall(s.Addr(), tagGetter)
 						}
 					} else {
 						if useParam {
-							ov, notFound = ReflectCall(o, tagGetter, paramVal)
+							if paramSlice == nil {
+								ov, notFound = ReflectCall(o, tagGetter, paramVal)
+							} else {
+								ov, notFound = ReflectCall(o, tagGetter, paramSlice)
+							}
 						} else {
 							ov, notFound = ReflectCall(o, tagGetter)
 						}
@@ -321,6 +338,7 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					isBase := false
 					useParam := false
 					paramVal := ""
+					var paramSlice interface{}
 
 					if strings.ToLower(Left(tagGetter, 5)) == "base." {
 						isBase = true
@@ -329,7 +347,15 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 					if strings.ToLower(Right(tagGetter, 3)) == "(x)" {
 						useParam = true
-						paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+
+						if o.Kind() != reflect.Slice {
+							paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+						} else {
+							if o.Len() > 0 {
+								paramSlice = o.Slice(0, o.Len()).Interface()
+							}
+						}
+
 						tagGetter = Left(tagGetter, len(tagGetter)-3)
 					}
 
@@ -338,13 +364,21 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 					if isBase {
 						if useParam {
-							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+							if paramSlice == nil {
+								ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+							} else {
+								ov, notFound = ReflectCall(s.Addr(), tagGetter, paramSlice)
+							}
 						} else {
 							ov, notFound = ReflectCall(s.Addr(), tagGetter)
 						}
 					} else {
 						if useParam {
-							ov, notFound = ReflectCall(o, tagGetter, paramVal)
+							if paramSlice == nil {
+								ov, notFound = ReflectCall(o, tagGetter, paramVal)
+							} else {
+								ov, notFound = ReflectCall(o, tagGetter, paramSlice)
+							}
 						} else {
 							ov, notFound = ReflectCall(o, tagGetter)
 						}
@@ -514,7 +548,7 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 							tagSetter = Right(tagSetter, len(tagSetter)-5)
 						}
 
-						if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct {
+						if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct && o.Kind() != reflect.Slice {
 							// o is not ptr, interface, struct
 							var results []reflect.Value
 							var notFound bool
@@ -550,17 +584,19 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 						} else {
 							// o is ptr, interface, struct
 							// get base type
-							if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
-								// create new struct pointer
-								o.Set(reflect.New(baseType.Type()))
-							} else {
-								if o.Kind() == reflect.Interface && o.Interface() == nil {
-									customType := ReflectTypeRegistryGet(o.Type().String())
+							if o.Kind() != reflect.Slice {
+								if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
+									// create new struct pointer
+									o.Set(reflect.New(baseType.Type()))
+								} else {
+									if o.Kind() == reflect.Interface && o.Interface() == nil {
+										customType := ReflectTypeRegistryGet(o.Type().String())
 
-									if customType == nil {
-										return fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
-									} else {
-										o.Set(reflect.New(customType))
+										if customType == nil {
+											return fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
+										} else {
+											o.Set(reflect.New(customType))
+										}
 									}
 								}
 							}
@@ -576,7 +612,7 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 
 							if !notFound {
 								if len(ov) == 1 {
-									if ov[0].Kind() == reflect.Ptr {
+									if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
 										o.Set(ov[0])
 									}
 								} else if len(ov) > 1 {
@@ -587,7 +623,7 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 									}
 
 									if getFirstVar {
-										if ov[0].Kind() == reflect.Ptr {
+										if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
 											o.Set(ov[0])
 										}
 									}
@@ -712,6 +748,8 @@ func StructClearFields(inputStructPtr interface{}) {
 				o.SetUint(0)
 			case reflect.Ptr:
 				o.Set(reflect.Zero(o.Type()))
+			case reflect.Slice:
+				o.Set(reflect.Zero(o.Type()))
 			default:
 				switch o.Interface().(type) {
 				case sql.NullString:
@@ -809,6 +847,10 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 				}
 			case reflect.Ptr:
 				if !o.IsNil() {
+					return true
+				}
+			case reflect.Slice:
+				if o.Len() > 0 {
 					return true
 				}
 			default:
@@ -1074,7 +1116,7 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 	return true
 }
 
-// UnmarshalCSVToStruct will parse csvPayload string (one line of csv data) using csvDelimiter,
+// UnmarshalCSVToStruct will parse csvPayload string (one line of csv data) using csvDelimiter, (if csvDelimiter = "", then customDelimiterParserFunc is required)
 // and set parsed csv element value into struct fields based on Ordinal Position defined via struct tag,
 // additionally processes struct tag data validation and length / range (if not valid, will set to data type default)
 //
@@ -1117,7 +1159,7 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 //									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 //		13) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
 //									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string, forceNoDelimiter ...bool) error {
+func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string, customDelimiterParserFunc func(string) []string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
 	}
@@ -1126,14 +1168,8 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		return fmt.Errorf("CSV Payload is Required")
 	}
 
-	noDelimiter := false
-
-	if len(forceNoDelimiter) > 0 && forceNoDelimiter[0] {
-		noDelimiter = true
-	}
-
-	if len(csvDelimiter) == 0 && !noDelimiter {
-		return fmt.Errorf("CSV Delimiter is Required")
+	if len(csvDelimiter) == 0 && customDelimiterParserFunc == nil {
+		return fmt.Errorf("CSV Delimiter or Custom Delimiter Func is Required")
 	}
 
 	s := reflect.ValueOf(inputStructPtr)
@@ -1155,9 +1191,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 	if len(csvDelimiter) > 0 {
 		csvElements = strings.Split(csvPayload, csvDelimiter)
 	} else {
-		for _, c := range csvPayload{
-			csvElements = append(csvElements, string(c))
-		}
+		csvElements = customDelimiterParserFunc(csvPayload)
 	}
 
 	csvLen := len(csvElements)
@@ -1265,7 +1299,8 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 				// ordinal based csv parsing
 				if csvElements != nil {
 					if tagPos > csvLen-1 {
-						return fmt.Errorf("Struct Field Tag Position %d Exceeds CSV Elements", tagPos)
+						// no more elements to unmarshal, rest of fields using default values
+						return nil
 					} else {
 						csvValue = csvElements[tagPos]
 
@@ -1348,7 +1383,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 			timeFormat := Trim(field.Tag.Get("timeformat"))
 
-			if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct {
+			if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct && o.Kind() != reflect.Slice {
 				switch tagType {
 				case "a":
 					csvValue, _ = ExtractAlpha(csvValue)
@@ -1366,9 +1401,13 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 					}
 				case "regex":
 					csvValue, _ = ExtractByRegex(csvValue, tagRegEx)
+				case "h":
+					csvValue, _ = ExtractHex(csvValue)
+				case "b64":
+					csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
 				}
 
-				if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" {
+				if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" || tagType == "h" || tagType == "b64" {
 					if sizeMax > 0 {
 						if len(csvValue) > sizeMax {
 							csvValue = Left(csvValue, sizeMax)
@@ -1418,18 +1457,20 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 				}
 			} else {
 				if LenTrim(tagSetter) > 0 {
-					// get base type
-					if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
-						// create new struct pointer
-						o.Set(reflect.New(baseType.Type()))
-					} else {
-						if o.Kind() == reflect.Interface && o.Interface() == nil {
-							customType := ReflectTypeRegistryGet(o.Type().String())
+					if o.Kind() != reflect.Slice {
+						// get base type
+						if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
+							// create new struct pointer
+							o.Set(reflect.New(baseType.Type()))
+						} else {
+							if o.Kind() == reflect.Interface && o.Interface() == nil {
+								customType := ReflectTypeRegistryGet(o.Type().String())
 
-							if customType == nil {
-								return fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
-							} else {
-								o.Set(reflect.New(customType))
+								if customType == nil {
+									return fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
+								} else {
+									o.Set(reflect.New(customType))
+								}
 							}
 						}
 					}
@@ -1445,7 +1486,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 					if !notFound {
 						if len(ov) == 1 {
-							if ov[0].Kind() == reflect.Ptr {
+							if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
 								o.Set(ov[0])
 							}
 						} else if len(ov) > 1 {
@@ -1456,7 +1497,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 							}
 
 							if getFirstVar {
-								if ov[0].Kind() == reflect.Ptr {
+								if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
 									o.Set(ov[0])
 								}
 							}
@@ -1523,19 +1564,9 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //		15) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
 //									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
 // 		16) `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
-func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNoDelimiter ...bool) (csvPayload string, err error) {
+func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
-	}
-
-	noDelimiter := false
-
-	if len(forceNoDelimiter) > 0 && forceNoDelimiter[0] {
-		noDelimiter = true
-	}
-
-	if len(csvDelimiter) == 0 && !noDelimiter {
-		return "", fmt.Errorf("CSV Delimiter is Required")
 	}
 
 	s := reflect.ValueOf(inputStructPtr)
@@ -1569,6 +1600,8 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 		field := s.Type().Field(i)
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
+
+
 			// extract struct tag values
 			tagPos, ok := ParseInt32(field.Tag.Get("pos"))
 			if !ok {
@@ -1676,6 +1709,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 				isBase := false
 				useParam := false
 				paramVal := ""
+				var paramSlice interface{}
 
 				if strings.ToLower(Left(tagGetter, 5)) == "base." {
 					isBase = true
@@ -1684,7 +1718,15 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 
 				if strings.ToLower(Right(tagGetter, 3)) == "(x)" {
 					useParam = true
-					paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+
+					if o.Kind() != reflect.Slice {
+						paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+					} else {
+						if o.Len() > 0 {
+							paramSlice = o.Slice(0, o.Len()).Interface()
+						}
+					}
+
 					tagGetter = Left(tagGetter, len(tagGetter)-3)
 				}
 
@@ -1693,13 +1735,21 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 
 				if isBase {
 					if useParam {
-						ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+						if paramSlice == nil {
+							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+						} else {
+							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramSlice)
+						}
 					} else {
 						ov, notFound = ReflectCall(s.Addr(), tagGetter)
 					}
 				} else {
 					if useParam {
-						ov, notFound = ReflectCall(o, tagGetter, paramVal)
+						if paramSlice == nil {
+							ov, notFound = ReflectCall(o, tagGetter, paramVal)
+						} else {
+							ov, notFound = ReflectCall(o, tagGetter, paramSlice)
+						}
 					} else {
 						ov, notFound = ReflectCall(o, tagGetter)
 					}
@@ -1750,88 +1800,90 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string, forceNo
 			}
 
 			// validate output csv value
-			origFv := fv
+			if oldVal.Kind() != reflect.Slice {
+				origFv := fv
 
-			switch tagType {
-			case "a":
-				fv, _ = ExtractAlpha(fv)
-			case "n":
-				fv, _ = ExtractNumeric(fv)
-			case "an":
-				fv, _ = ExtractAlphaNumeric(fv)
-			case "ans":
-				fv, _ = ExtractAlphaNumericPrintableSymbols(fv)
-			case "b":
-				if len(boolTrue) == 0 && len(boolFalse) == 0 {
-					if StringSliceContains(&trueList, strings.ToLower(fv)) {
-						fv = "true"
-					} else {
-						fv = "false"
-					}
-				} else {
-					if Trim(boolTrue) == Trim(boolFalse) {
-						if fv == "false" {
-							fv = ""
-							csvList[tagPos] = fv
-							continue
+				switch tagType {
+				case "a":
+					fv, _ = ExtractAlpha(fv)
+				case "n":
+					fv, _ = ExtractNumeric(fv)
+				case "an":
+					fv, _ = ExtractAlphaNumeric(fv)
+				case "ans":
+					fv, _ = ExtractAlphaNumericPrintableSymbols(fv)
+				case "b":
+					if len(boolTrue) == 0 && len(boolFalse) == 0 {
+						if StringSliceContains(&trueList, strings.ToLower(fv)) {
+							fv = "true"
+						} else {
+							fv = "false"
 						}
-					}
-				}
-			case "regex":
-				fv, _ = ExtractByRegex(fv, tagRegEx)
-			case "h":
-				// not validated
-			case "b64":
-				// not validated
-			}
-
-			if boolFalse == " " && origFv == "false" && len(outPrefix) > 0 {
-				// just in case fv is not defined type type b
-				fv = ""
-				csvList[tagPos] = fv
-				continue
-			}
-
-			if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" {
-				if sizeMin > 0 && len(fv) > 0 {
-					if len(fv) < sizeMin {
-						return "", fmt.Errorf("%s Min Length is %d", field.Name, sizeMin)
-					}
-				}
-
-				if sizeMax > 0 && len(fv) > sizeMax {
-					fv = Left(fv, sizeMax)
-				}
-
-				if tagModulo > 0 {
-					if len(fv) % tagModulo != 0 {
-						return "", fmt.Errorf("Struct Field %s Expects Value In Blocks of %d Characters", field.Name, tagModulo)
-					}
-				}
-			}
-
-			if tagType == "n" {
-				n, ok := ParseInt32(fv)
-
-				if ok {
-					if rangeMin > 0 {
-						if n < rangeMin {
-							if !(n == 0 && tagReq != "true") {
-								return "", fmt.Errorf("%s Range Minimum is %d", field.Name, rangeMin)
+					} else {
+						if Trim(boolTrue) == Trim(boolFalse) {
+							if fv == "false" {
+								fv = ""
+								csvList[tagPos] = fv
+								continue
 							}
 						}
 					}
+				case "regex":
+					fv, _ = ExtractByRegex(fv, tagRegEx)
+				case "h":
+					fv, _ = ExtractHex(fv)
+				case "b64":
+					fv, _ = ExtractAlphaNumericPrintableSymbols(fv)
+				}
 
-					if rangeMax > 0 {
-						if n > rangeMax {
-							return "", fmt.Errorf("%s Range Maximum is %d", field.Name, rangeMax)
+				if boolFalse == " " && origFv == "false" && len(outPrefix) > 0 {
+					// just in case fv is not defined type type b
+					fv = ""
+					csvList[tagPos] = fv
+					continue
+				}
+
+				if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" || tagType == "h" || tagType == "b64" {
+					if sizeMin > 0 && len(fv) > 0 {
+						if len(fv) < sizeMin {
+							return "", fmt.Errorf("%s Min Length is %d", field.Name, sizeMin)
+						}
+					}
+
+					if sizeMax > 0 && len(fv) > sizeMax {
+						fv = Left(fv, sizeMax)
+					}
+
+					if tagModulo > 0 {
+						if len(fv)%tagModulo != 0 {
+							return "", fmt.Errorf("Struct Field %s Expects Value In Blocks of %d Characters", field.Name, tagModulo)
 						}
 					}
 				}
-			}
 
-			if tagReq == "true" && len(fv) == 0 {
-				return "", fmt.Errorf("%s is a Required Field", field.Name)
+				if tagType == "n" {
+					n, ok := ParseInt32(fv)
+
+					if ok {
+						if rangeMin > 0 {
+							if n < rangeMin {
+								if !(n == 0 && tagReq != "true") {
+									return "", fmt.Errorf("%s Range Minimum is %d", field.Name, rangeMin)
+								}
+							}
+						}
+
+						if rangeMax > 0 {
+							if n > rangeMax {
+								return "", fmt.Errorf("%s Range Maximum is %d", field.Name, rangeMax)
+							}
+						}
+					}
+				}
+
+				if tagReq == "true" && len(fv) == 0 {
+					return "", fmt.Errorf("%s is a Required Field", field.Name)
+				}
 			}
 
 			// store fv into sorted slice

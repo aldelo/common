@@ -1177,6 +1177,10 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 //									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 //		13) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
 //									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//		14) `validate:"==x"`		// if field has to match a specific value or the entire method call will fail, match data format as:
+//									   		==xyz !=xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
+//											>=xyz >>xyz <<xyz <=xyz (greater equal, greater, less than, less equal; xyz must be int or float)
+//									   note: expected source data type for validate to be effective is string, int, float64; if field is blank and req = false, then validate will be skipped
 func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string, customDelimiterParserFunc func(string) []string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -1299,13 +1303,13 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 				rangeMin, _ = ParseInt32(tagRange)
 				rangeMax = rangeMin
 			}
+			*/
 
 			// tagReq not used in unmarshal
 			tagReq := Trim(strings.ToLower(field.Tag.Get("req")))
 			if tagReq != "true" && tagReq != "false" {
 				tagReq = ""
 			}
-			*/
 
 			// if outPrefix exists, remove from csvValue
 			outPrefix := Trim(field.Tag.Get("outprefix"))
@@ -1469,6 +1473,65 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 					}
 				}
 
+				// validate if applicable
+				if valData := Trim(field.Tag.Get("validate")); len(valData) >= 3 {
+					valComp := Left(valData, 2)
+					valData = Right(valData, len(valData)-2)
+
+					switch valComp {
+					case "==":
+						if strings.ToLower(csvValue) != strings.ToLower(valData) {
+							if len(csvValue) > 0 || tagReq == "true" {
+								StructClearFields(inputStructPtr)
+								return fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", field.Name, valData, csvValue)
+							}
+						}
+					case "!=":
+						if strings.ToLower(csvValue) == strings.ToLower(valData) {
+							if len(csvValue) > 0 || tagReq == "true" {
+								StructClearFields(inputStructPtr)
+								return fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", field.Name, valData, csvValue)
+							}
+						}
+					case "<=":
+						if valNum, valOk := ParseFloat64(valData); valOk {
+							if srcNum, _ := ParseFloat64(csvValue); srcNum > valNum {
+								if len(csvValue) > 0 || tagReq == "true" {
+									StructClearFields(inputStructPtr)
+									return fmt.Errorf("%s Validation Failed: Expected To Be Less or Equal To '%s', But Received '%s'", field.Name, valData, csvValue)
+								}
+							}
+						}
+					case "<<":
+						if valNum, valOk := ParseFloat64(valData); valOk {
+							if srcNum, _ := ParseFloat64(csvValue); srcNum >= valNum {
+								if len(csvValue) > 0 || tagReq == "true" {
+									StructClearFields(inputStructPtr)
+									return fmt.Errorf("%s Validation Failed: Expected To Be Less Than '%s', But Received '%s'", field.Name, valData, csvValue)
+								}
+							}
+						}
+					case ">=":
+						if valNum, valOk := ParseFloat64(valData); valOk {
+							if srcNum, _ := ParseFloat64(csvValue); srcNum < valNum {
+								if len(csvValue) > 0 || tagReq == "true" {
+									StructClearFields(inputStructPtr)
+									return fmt.Errorf("%s Validation Failed: Expected To Be Greater or Equal To '%s', But Received '%s'", field.Name, valData, csvValue)
+								}
+							}
+						}
+					case ">>":
+						if valNum, valOk := ParseFloat64(valData); valOk {
+							if srcNum, _ := ParseFloat64(csvValue); srcNum <= valNum {
+								if len(csvValue) > 0 || tagReq == "true" {
+									StructClearFields(inputStructPtr)
+									return fmt.Errorf("%s Validation Failed: Expected To Be Greater Than '%s', But Received '%s'", field.Name, valData, csvValue)
+								}
+							}
+						}
+					}
+				}
+
 				// set validated csv value into corresponding struct field
 				if err := ReflectStringToField(o, csvValue, timeFormat); err != nil {
 					return err
@@ -1582,6 +1645,10 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //		15) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
 //									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
 // 		16) `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
+//		17) `validate:"==x"`		// if field has to match a specific value or the entire method call will fail, match data format as:
+//									   		==xyz !=xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
+//											>=xyz >>xyz <<xyz <=xyz (greater equal, greater, less than, less equal; xyz must be int or float)
+//									   note: expected source data type for validate to be effective is string, int, float64; if field is blank and req = false, then validate will be skipped
 func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
@@ -1618,8 +1685,6 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		field := s.Type().Field(i)
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
-
-
 			// extract struct tag values
 			tagPos, ok := ParseInt32(field.Tag.Get("pos"))
 			if !ok {
@@ -1911,6 +1976,59 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 
 				if tagReq == "true" && len(fv) == 0 {
 					return "", fmt.Errorf("%s is a Required Field", field.Name)
+				}
+			}
+
+			// validate if applicable
+			if valData := Trim(field.Tag.Get("validate")); len(valData) >= 3 {
+				valComp := Left(valData, 2)
+				valData = Right(valData, len(valData)-2)
+
+				switch valComp {
+				case "==":
+					if strings.ToLower(fv) != strings.ToLower(valData) {
+						if len(fv) > 0 || tagReq == "true" {
+							return "", fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", field.Name, valData, fv)
+						}
+					}
+				case "!=":
+					if strings.ToLower(fv) == strings.ToLower(valData) {
+						if len(fv) > 0 || tagReq == "true" {
+							return "", fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", field.Name, valData, fv)
+						}
+					}
+				case "<=":
+					if valNum, valOk := ParseFloat64(valData); valOk {
+						if srcNum, _ := ParseFloat64(fv); srcNum > valNum {
+							if len(fv) > 0 || tagReq == "true" {
+								return "", fmt.Errorf("%s Validation Failed: Expected To Be Less or Equal To '%s', But Received '%s'", field.Name, valData, fv)
+							}
+						}
+					}
+				case "<<":
+					if valNum, valOk := ParseFloat64(valData); valOk {
+						if srcNum, _ := ParseFloat64(fv); srcNum >= valNum {
+							if len(fv) > 0 || tagReq == "true" {
+								return "", fmt.Errorf("%s Validation Failed: Expected To Be Less Than '%s', But Received '%s'", field.Name, valData, fv)
+							}
+						}
+					}
+				case ">=":
+					if valNum, valOk := ParseFloat64(valData); valOk {
+						if srcNum, _ := ParseFloat64(fv); srcNum < valNum {
+							if len(fv) > 0 || tagReq == "true" {
+								return "", fmt.Errorf("%s Validation Failed: Expected To Be Greater or Equal To '%s', But Received '%s'", field.Name, valData, fv)
+							}
+						}
+					}
+				case ">>":
+					if valNum, valOk := ParseFloat64(valData); valOk {
+						if srcNum, _ := ParseFloat64(fv); srcNum <= valNum {
+							if len(fv) > 0 || tagReq == "true" {
+								return "", fmt.Errorf("%s Validation Failed: Expected To Be Greater Than '%s', But Received '%s'", field.Name, valData, fv)
+							}
+						}
+					}
 				}
 			}
 

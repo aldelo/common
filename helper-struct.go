@@ -208,15 +208,21 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 
 					continue
 				} else {
+					defVal := field.Tag.Get("def")
+
 					if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
 						// unknown enum value will be serialized as blank
 						buf = ""
 
-						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-							if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-								// remove uniqueid if skip
-								delete(uniqueMap, strings.ToLower(tagUniqueId))
-								continue
+						if len(defVal) > 0 {
+							buf = defVal
+						} else {
+							if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+								if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+									// remove uniqueid if skip
+									delete(uniqueMap, strings.ToLower(tagUniqueId))
+									continue
+								}
 							}
 						}
 					}
@@ -224,9 +230,12 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					if boolFalse == " " && len(outPrefix) > 0 && buf == "false" {
 						buf = ""
 					} else {
+						if len(buf) == 0 && len(defVal) > 0  {
+							buf = defVal
+						}
+
 						buf = outPrefix + buf
 					}
-
 
 					if LenTrim(output) > 0 {
 						output += "&"
@@ -403,24 +412,33 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					continue
 				}
 
+				defVal := field.Tag.Get("def")
+
 				if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
 					// unknown enum value will be serialized as blank
 					buf = ""
 
-					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-							// remove uniqueid if skip
-							delete(uniqueMap, strings.ToLower(tagUniqueId))
-							continue
+					if len(defVal) > 0 {
+						buf = defVal
+					} else {
+						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+							if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+								// remove uniqueid if skip
+								delete(uniqueMap, strings.ToLower(tagUniqueId))
+								continue
+							}
 						}
 					}
 				}
 
 				outPrefix := field.Tag.Get("outprefix")
+
 				if boolTrue == " " && len(buf) == 0 && len(outPrefix) > 0 {
-					buf = outPrefix
+					buf = outPrefix + defVal
 				} else if boolFalse == " " && buf == "false" && len(outPrefix) > 0 {
 					buf = ""
+				} else if len(defVal) > 0 && len(buf) == 0 {
+					buf = outPrefix + defVal
 				}
 
 				buf = strings.Replace(buf, `"`, `\"`, -1)
@@ -1786,15 +1804,21 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 				continue
 			}
 
+			defVal := field.Tag.Get("def")
+
 			if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(fv) == "unknown" {
 				// unknown enum value will be serialized as blank
 				fv = ""
 
-				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-					if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-						// remove uniqueid if skip
-						delete(uniqueMap, strings.ToLower(tagUniqueId))
-						continue
+				if len(defVal) > 0 {
+					fv = defVal
+				} else {
+					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+							// remove uniqueid if skip
+							delete(uniqueMap, strings.ToLower(tagUniqueId))
+							continue
+						}
 					}
 				}
 			}
@@ -1841,6 +1865,10 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 					fv = ""
 					csvList[tagPos] = fv
 					continue
+				}
+
+				if len(fv) == 0 && len(defVal) > 0 {
+					fv = defVal
 				}
 
 				if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" || tagType == "h" || tagType == "b64" {

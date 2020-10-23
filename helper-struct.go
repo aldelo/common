@@ -1142,6 +1142,7 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 //		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
 //									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds,
 //											 if multiple fields are in exclusive condition, and skipBlank or skipZero, always include a blank default field as the last of unique field list
+//										     if value is '-', this means position value is calculated from other fields and set via `setter:"base.Xyz"` during unmarshal csv, there is no marshal to csv for this field
 //		2) `type:"xyz"`				// data type expected:
 //											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
 //											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
@@ -1178,8 +1179,12 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 //		13) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
 //									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 //		14) `validate:"==x"`		// if field has to match a specific value or the entire method call will fail, match data format as:
-//									   		==xyz !=xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
+//									   		==xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
+//												[if == validate against one or more values, use ||]
+//									   		!=xyz (!= refers to not equal)
+//												[if != validate against one or more values, use &&]
 //											>=xyz >>xyz <<xyz <=xyz (greater equal, greater, less than, less equal; xyz must be int or float)
+//											:=Xyz where Xyz is a parameterless function defined at struct level, that performs validation, returns bool or error where true or nil indicates validation success
 //									   note: expected source data type for validate to be effective is string, int, float64; if field is blank and req = false, then validate will be skipped
 func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string, customDelimiterParserFunc func(string) []string) error {
 	if inputStructPtr == nil {
@@ -1231,9 +1236,12 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
 			// extract struct tag values
-			tagPos, ok := ParseInt32(field.Tag.Get("pos"))
+			tagPosBuf := field.Tag.Get("pos")
+			tagPos, ok := ParseInt32(tagPosBuf)
 			if !ok {
-				continue
+				if tagPosBuf != "-" || LenTrim(field.Tag.Get("setter")) == 0 {
+					continue
+				}
 			} else if tagPos < 0 {
 				continue
 			}
@@ -1317,78 +1325,80 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			// get csv value by ordinal position
 			csvValue := ""
 
-			if LenTrim(outPrefix) == 0 {
-				// ordinal based csv parsing
-				if csvElements != nil {
-					if tagPos > csvLen-1 {
-						// no more elements to unmarshal, rest of fields using default values
-						return nil
-					} else {
-						csvValue = csvElements[tagPos]
+			if tagPosBuf != "-" {
+				if LenTrim(outPrefix) == 0 {
+					// ordinal based csv parsing
+					if csvElements != nil {
+						if tagPos > csvLen-1 {
+							// no more elements to unmarshal, rest of fields using default values
+							return nil
+						} else {
+							csvValue = csvElements[tagPos]
 
-						evalOk := false
-						if boolTrue := Trim(field.Tag.Get("booltrue")); len(boolTrue) > 0 {
-							if boolTrue == csvValue {
-								csvValue = "true"
-								evalOk = true
+							evalOk := false
+							if boolTrue := Trim(field.Tag.Get("booltrue")); len(boolTrue) > 0 {
+								if boolTrue == csvValue {
+									csvValue = "true"
+									evalOk = true
+								}
 							}
-						}
 
-						if !evalOk {
-							if boolFalse := Trim(field.Tag.Get("boolfalse")); len(boolFalse) > 0 {
-								if boolFalse == csvValue {
-									csvValue = "false"
+							if !evalOk {
+								if boolFalse := Trim(field.Tag.Get("boolfalse")); len(boolFalse) > 0 {
+									if boolFalse == csvValue {
+										csvValue = "false"
+									}
 								}
 							}
 						}
 					}
-				}
-			} else {
-				// variable element based csv, using outPrefix as the identifying key
-				// instead of getting csv value from element position, acquire from outPrefix
-				notFound := true
+				} else {
+					// variable element based csv, using outPrefix as the identifying key
+					// instead of getting csv value from element position, acquire from outPrefix
+					notFound := true
 
-				for _, v := range csvElements {
-					if strings.ToLower(Left(v, len(outPrefix))) == strings.ToLower(outPrefix) {
-						// match
-						if _, ok := prefixProcessedMap[strings.ToLower(outPrefix)]; !ok {
-							prefixProcessedMap[strings.ToLower(outPrefix)] = Itoa(tagPos)
+					for _, v := range csvElements {
+						if strings.ToLower(Left(v, len(outPrefix))) == strings.ToLower(outPrefix) {
+							// match
+							if _, ok := prefixProcessedMap[strings.ToLower(outPrefix)]; !ok {
+								prefixProcessedMap[strings.ToLower(outPrefix)] = Itoa(tagPos)
 
-							if len(v)-len(outPrefix) == 0 {
-								csvValue = ""
+								if len(v)-len(outPrefix) == 0 {
+									csvValue = ""
 
-								if field.Tag.Get("booltrue") == " " {
-									// prefix found, since data is blank, and boolTrue is space, treat this as true
-									csvValue = "true"
-								}
-							} else {
-								csvValue = Right(v, len(v)-len(outPrefix))
-
-								evalOk := false
-								if boolTrue := Trim(field.Tag.Get("booltrue")); len(boolTrue) > 0 {
-									if boolTrue == csvValue {
+									if field.Tag.Get("booltrue") == " " {
+										// prefix found, since data is blank, and boolTrue is space, treat this as true
 										csvValue = "true"
-										evalOk = true
 									}
-								}
+								} else {
+									csvValue = Right(v, len(v)-len(outPrefix))
 
-								if !evalOk {
-									if boolFalse := Trim(field.Tag.Get("boolfalse")); len(boolFalse) > 0 {
-										if boolFalse == csvValue {
-											csvValue = "false"
+									evalOk := false
+									if boolTrue := Trim(field.Tag.Get("booltrue")); len(boolTrue) > 0 {
+										if boolTrue == csvValue {
+											csvValue = "true"
+											evalOk = true
+										}
+									}
+
+									if !evalOk {
+										if boolFalse := Trim(field.Tag.Get("boolfalse")); len(boolFalse) > 0 {
+											if boolFalse == csvValue {
+												csvValue = "false"
+											}
 										}
 									}
 								}
-							}
 
-							notFound = false
-							break
+								notFound = false
+								break
+							}
 						}
 					}
-				}
 
-				if notFound {
-					continue
+					if notFound {
+						continue
+					}
 				}
 			}
 
@@ -1406,39 +1416,41 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			timeFormat := Trim(field.Tag.Get("timeformat"))
 
 			if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct && o.Kind() != reflect.Slice {
-				switch tagType {
-				case "a":
-					csvValue, _ = ExtractAlpha(csvValue)
-				case "n":
-					csvValue, _ = ExtractNumeric(csvValue)
-				case "an":
-					csvValue, _ = ExtractAlphaNumeric(csvValue)
-				case "ans":
-					csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
-				case "b":
-					if StringSliceContains(&trueList, strings.ToLower(csvValue)) {
-						csvValue = "true"
-					} else {
-						csvValue = "false"
-					}
-				case "regex":
-					csvValue, _ = ExtractByRegex(csvValue, tagRegEx)
-				case "h":
-					csvValue, _ = ExtractHex(csvValue)
-				case "b64":
-					csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
-				}
-
-				if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" || tagType == "h" || tagType == "b64" {
-					if sizeMax > 0 {
-						if len(csvValue) > sizeMax {
-							csvValue = Left(csvValue, sizeMax)
+				if tagPosBuf != "-" {
+					switch tagType {
+					case "a":
+						csvValue, _ = ExtractAlpha(csvValue)
+					case "n":
+						csvValue, _ = ExtractNumeric(csvValue)
+					case "an":
+						csvValue, _ = ExtractAlphaNumeric(csvValue)
+					case "ans":
+						csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
+					case "b":
+						if StringSliceContains(&trueList, strings.ToLower(csvValue)) {
+							csvValue = "true"
+						} else {
+							csvValue = "false"
 						}
+					case "regex":
+						csvValue, _ = ExtractByRegex(csvValue, tagRegEx)
+					case "h":
+						csvValue, _ = ExtractHex(csvValue)
+					case "b64":
+						csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
 					}
 
-					if tagModulo > 0 {
-						if len(csvValue) % tagModulo != 0 {
-							return fmt.Errorf("Struct Field %s Expects Value In Blocks of %d Characters", field.Name, tagModulo)
+					if tagType == "a" || tagType == "an" || tagType == "ans" || tagType == "n" || tagType == "regex" || tagType == "h" || tagType == "b64" {
+						if sizeMax > 0 {
+							if len(csvValue) > sizeMax {
+								csvValue = Left(csvValue, sizeMax)
+							}
+						}
+
+						if tagModulo > 0 {
+							if len(csvValue)%tagModulo != 0 {
+								return fmt.Errorf("Struct Field %s Expects Value In Blocks of %d Characters", field.Name, tagModulo)
+							}
 						}
 					}
 				}
@@ -1474,23 +1486,59 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 				}
 
 				// validate if applicable
+				skipFieldSet := false
+
 				if valData := Trim(field.Tag.Get("validate")); len(valData) >= 3 {
 					valComp := Left(valData, 2)
 					valData = Right(valData, len(valData)-2)
 
 					switch valComp {
 					case "==":
-						if strings.ToLower(csvValue) != strings.ToLower(valData) {
-							if len(csvValue) > 0 || tagReq == "true" {
-								StructClearFields(inputStructPtr)
-								return fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", field.Name, valData, csvValue)
+						valAr := strings.Split(valData, "||")
+
+						if len(valAr) <= 1 {
+							if strings.ToLower(csvValue) != strings.ToLower(valData) {
+								if len(csvValue) > 0 || tagReq == "true" {
+									StructClearFields(inputStructPtr)
+									return fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", field.Name, valData, csvValue)
+								}
+							}
+						} else {
+							found := false
+
+							for _, va := range valAr {
+								if strings.ToLower(csvValue) == strings.ToLower(va) {
+									found = true
+									break
+								}
+							}
+
+							if !found && (len(csvValue) > 0 || tagReq == "true") {
+								return fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", field.Name, strings.ReplaceAll(valData, "||", " or "), csvValue)
 							}
 						}
 					case "!=":
-						if strings.ToLower(csvValue) == strings.ToLower(valData) {
-							if len(csvValue) > 0 || tagReq == "true" {
-								StructClearFields(inputStructPtr)
-								return fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", field.Name, valData, csvValue)
+						valAr := strings.Split(valData, "&&")
+
+						if len(valAr) <= 1 {
+							if strings.ToLower(csvValue) == strings.ToLower(valData) {
+								if len(csvValue) > 0 || tagReq == "true" {
+									StructClearFields(inputStructPtr)
+									return fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", field.Name, valData, csvValue)
+								}
+							}
+						} else {
+							found := false
+
+							for _, va := range valAr {
+								if strings.ToLower(csvValue) == strings.ToLower(va) {
+									found = true
+									break
+								}
+							}
+
+							if found && (len(csvValue) > 0 || tagReq == "true") {
+								return fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", field.Name, strings.ReplaceAll(valData, "&&", " and "), csvValue)
 							}
 						}
 					case "<=":
@@ -1529,12 +1577,36 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 								}
 							}
 						}
+					case ":=":
+						if len(valData) > 0 {
+							skipFieldSet = true
+
+							if err := ReflectStringToField(o, csvValue, timeFormat); err != nil {
+								return err
+							}
+
+							if retV, nf := ReflectCall(s.Addr(), valData); !nf {
+								if len(retV) > 0 {
+									if retV[0].Kind() == reflect.Bool && !retV[0].Bool() {
+										// validation failed with bool false
+										StructClearFields(inputStructPtr)
+										return fmt.Errorf("%s Validation Failed: %s() Returned Result is False", field.Name, valData)
+									} else if retErr := DerefError(retV[0]); retErr != nil {
+										// validation failed with error
+										StructClearFields(inputStructPtr)
+										return fmt.Errorf("%s Validation On %s() Failed: %s", field.Name, valData, retErr.Error())
+									}
+								}
+							}
+						}
 					}
 				}
 
 				// set validated csv value into corresponding struct field
-				if err := ReflectStringToField(o, csvValue, timeFormat); err != nil {
-					return err
+				if !skipFieldSet {
+					if err := ReflectStringToField(o, csvValue, timeFormat); err != nil {
+						return err
+					}
 				}
 			} else {
 				if LenTrim(tagSetter) > 0 {
@@ -1606,6 +1678,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
 //									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
 //											 if multiple fields are in exclusive condition, and skipBlank or skipZero, always include a blank default field as the last of unique field list
+//										     if value is '-', this means position value is calculated from other fields and set via `setter:"base.Xyz"` during unmarshal csv, there is no marshal to csv for this field
 //		2) `type:"xyz"`				// data type expected:
 //											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
 //											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
@@ -1646,8 +1719,12 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 //									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
 // 		16) `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
 //		17) `validate:"==x"`		// if field has to match a specific value or the entire method call will fail, match data format as:
-//									   		==xyz !=xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
+//									   		==xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
+//												[if == validate against one or more values, use ||]
+//									   		!=xyz (!= refers to not equal)
+//												[if != validate against one or more values, use &&]
 //											>=xyz >>xyz <<xyz <=xyz (greater equal, greater, less than, less equal; xyz must be int or float)
+//											:=Xyz where Xyz is a parameterless function defined at struct level, that performs validation, returns bool or error where true or nil indicates validation success
 //									   note: expected source data type for validate to be effective is string, int, float64; if field is blank and req = false, then validate will be skipped
 func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPayload string, err error) {
 	if inputStructPtr == nil {
@@ -1986,15 +2063,49 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 
 				switch valComp {
 				case "==":
-					if strings.ToLower(fv) != strings.ToLower(valData) {
-						if len(fv) > 0 || tagReq == "true" {
-							return "", fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", field.Name, valData, fv)
+					valAr := strings.Split(valData, "||")
+
+					if len(valAr) <= 1 {
+						if strings.ToLower(fv) != strings.ToLower(valData) {
+							if len(fv) > 0 || tagReq == "true" {
+								return "", fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", field.Name, valData, fv)
+							}
+						}
+					} else {
+						found := false
+
+						for _, va := range valAr {
+							if strings.ToLower(fv) == strings.ToLower(va) {
+								found = true
+								break
+							}
+						}
+
+						if !found && (len(fv) > 0 || tagReq == "true") {
+							return "", fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", field.Name, strings.ReplaceAll(valData, "||", " or "), fv)
 						}
 					}
 				case "!=":
-					if strings.ToLower(fv) == strings.ToLower(valData) {
-						if len(fv) > 0 || tagReq == "true" {
-							return "", fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", field.Name, valData, fv)
+					valAr := strings.Split(valData, "&&")
+
+					if len(valAr) <= 1 {
+						if strings.ToLower(fv) == strings.ToLower(valData) {
+							if len(fv) > 0 || tagReq == "true" {
+								return "", fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", field.Name, valData, fv)
+							}
+						}
+					} else {
+						found := false
+
+						for _, va := range valAr {
+							if strings.ToLower(fv) == strings.ToLower(va) {
+								found = true
+								break
+							}
+						}
+
+						if found && (len(fv) > 0 || tagReq == "true") {
+							return "", fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", field.Name, strings.ReplaceAll(valData, "&&", " and "), fv)
 						}
 					}
 				case "<=":
@@ -2026,6 +2137,20 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 						if srcNum, _ := ParseFloat64(fv); srcNum <= valNum {
 							if len(fv) > 0 || tagReq == "true" {
 								return "", fmt.Errorf("%s Validation Failed: Expected To Be Greater Than '%s', But Received '%s'", field.Name, valData, fv)
+							}
+						}
+					}
+				case ":=":
+					if len(valData) > 0 {
+						if retV, nf := ReflectCall(s.Addr(), valData); !nf {
+							if len(retV) > 0 {
+								if retV[0].Kind() == reflect.Bool && !retV[0].Bool() {
+									// validation failed with bool false
+									return "", fmt.Errorf("%s Validation Failed: %s() Returned Result is False", field.Name, valData)
+								} else if retErr := DerefError(retV[0]); retErr != nil {
+									// validation failed with error
+									return "", fmt.Errorf("%s Validation On %s() Failed: %s", field.Name, valData, retErr.Error())
+								}
 							}
 						}
 					}

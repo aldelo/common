@@ -177,7 +177,6 @@ func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) 
 	method := o.MethodByName(methodName)
 
 	if method.Kind() == reflect.Invalid {
-		log.Println("!!! ReflectCall, method.Kind() is Invalid: ", methodName, o.Type())
 		return nil, true
 	}
 

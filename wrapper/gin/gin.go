@@ -437,7 +437,8 @@ func (g *Gin) BindPostForm(outputPtr interface{}, tagName string, c *gin.Context
 					case reflect.String:
 						o.SetString(v)
 					case reflect.Bool:
-						o.SetBool(util.IsBool(v))
+						b, _ := util.ParseBool(v)
+						o.SetBool(b)
 					case reflect.Int8:
 						fallthrough
 					case reflect.Int16:
@@ -479,7 +480,8 @@ func (g *Gin) BindPostForm(outputPtr interface{}, tagName string, c *gin.Context
 							f = util.ToNullString(v, true)
 							o.Set(reflect.ValueOf(f))
 						case sql.NullBool:
-							f = util.ToNullBool(util.IsBool(v))
+							b, _ := util.ParseBool(v)
+							f = util.ToNullBool(b)
 							o.Set(reflect.ValueOf(f))
 						case sql.NullFloat64:
 							f64, _ := util.ParseFloat64(v)

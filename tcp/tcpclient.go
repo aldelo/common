@@ -17,6 +17,7 @@ package tcp
  */
 
 import (
+	"bytes"
 	util "github.com/aldelo/common"
 	"fmt"
 	"net"
@@ -148,7 +149,7 @@ func (c *TCPClient) Read() (data []byte, timeout bool, err error) {
 			return nil, false, fmt.Errorf("Read Data From TCP Server Failed: %s", err)
 		}
 	} else {
-		return data, false, nil
+		return bytes.Trim(data, "\x00"), false, nil
 	}
 }
 

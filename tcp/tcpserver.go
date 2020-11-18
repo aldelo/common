@@ -17,6 +17,7 @@ package tcp
  */
 
 import (
+	"bytes"
 	"fmt"
 	util "github.com/aldelo/common"
 	"log"
@@ -315,7 +316,7 @@ func (s *TCPServer) handleClientConnection(conn net.Conn) {
 				// read ok
 				if s.ClientReceiveHandler != nil {
 					// send client data received to client handler for processing
-					s.ClientReceiveHandler(conn.RemoteAddr().String(), readBytes, s.WriteToClient)
+					s.ClientReceiveHandler(conn.RemoteAddr().String(), bytes.Trim(readBytes, "\x00"), s.WriteToClient)
 				} else {
 					// if client receive handler is not defined, end the client handler service
 					_ = conn.Close()

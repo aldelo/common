@@ -301,6 +301,49 @@ func ControlCharToWord(data string) string {
 	return data
 }
 
+// ControlCharToASCII converts non-printable control char represented in word to ascii non-printable form
+func ControlCharToASCII(data string) string {
+	data = strings.ReplaceAll(data, "[STX]", AsciiToString(STX))
+	data = strings.ReplaceAll(data, "[ETX]", AsciiToString(ETX))
+	data = strings.ReplaceAll(data, "[ETB]", AsciiToString(ETB))
+	data = strings.ReplaceAll(data, "[ACK]", AsciiToString(ACK))
+	data = strings.ReplaceAll(data, "[NAK]", AsciiToString(NAK))
+	data = strings.ReplaceAll(data, "[ENQ]", AsciiToString(ENQ))
+	data = strings.ReplaceAll(data, "[DLE]", AsciiToString(DLE))
+	data = strings.ReplaceAll(data, "[DC1]", AsciiToString(DC1))
+	data = strings.ReplaceAll(data, "[DC2]", AsciiToString(DC2))
+	data = strings.ReplaceAll(data, "[DC3]", AsciiToString(DC3))
+	data = strings.ReplaceAll(data, "[DC4]", AsciiToString(DC4))
+	data = strings.ReplaceAll(data, "[FS]", AsciiToString(FS))
+	data = strings.ReplaceAll(data, "[US]", AsciiToString(US))
+	data = strings.ReplaceAll(data, "[GS]", AsciiToString(GS))
+	data = strings.ReplaceAll(data, "[RS]", AsciiToString(RS))
+	data = strings.ReplaceAll(data, "[BS]", AsciiToString(BS))
+	data = strings.ReplaceAll(data, "[BEL]", AsciiToString(BEL))
+	data = strings.ReplaceAll(data, "[DEL]", AsciiToString(DEL))
+	data = strings.ReplaceAll(data, "[EOT]", AsciiToString(EOT))
+	data = strings.ReplaceAll(data, "[COMMA]", AsciiToString(COMMA))
+	data = strings.ReplaceAll(data, "[COLON]", AsciiToString(COLON))
+	data = strings.ReplaceAll(data, "[PIPE]", AsciiToString(PIPE))
+	data = strings.ReplaceAll(data, "[NULL]", AsciiToString(NUL))
+	data = strings.ReplaceAll(data, "[SOH]", AsciiToString(SOH))
+	data = strings.ReplaceAll(data, "[HT]", AsciiToString(HT))
+	data = strings.ReplaceAll(data, "[LF]", AsciiToString(LF))
+	data = strings.ReplaceAll(data, "[VT]", AsciiToString(VT))
+	data = strings.ReplaceAll(data, "[FF]", AsciiToString(FF))
+	data = strings.ReplaceAll(data, "[CR]", AsciiToString(CR))
+	data = strings.ReplaceAll(data, "[SO]", AsciiToString(SO))
+	data = strings.ReplaceAll(data, "[SI]", AsciiToString(SI))
+	data = strings.ReplaceAll(data, "[SP]", AsciiToString(SP))
+	data = strings.ReplaceAll(data, "[SYN]", AsciiToString(SYN))
+	data = strings.ReplaceAll(data, "[CAN]", AsciiToString(CAN))
+	data = strings.ReplaceAll(data, "[EM]", AsciiToString(EM))
+	data = strings.ReplaceAll(data, "[SUB]", AsciiToString(SUB))
+	data = strings.ReplaceAll(data, "[ESC]", AsciiToString(ESC))
+
+	return data
+}
+
 // EscapeNonPrintable converts non printable \x00 - \x1f to pseudo escaped format
 func EscapeNonPrintable(data string) string {
 	data = strings.Replace(data, AsciiToString(NUL), "[NUL_00]", -1)

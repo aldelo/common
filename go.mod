@@ -34,5 +34,5 @@ require (
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/net v0.0.0-20200813134508-3edf25e44fcc
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
-	google.golang.org/protobuf v1.23.0
+	google.golang.org/protobuf v1.25.0
 )

@@ -29,6 +29,15 @@ func Itoa(i int) string {
 	return strconv.Itoa(i)
 }
 
+// ItoaZeroBlank converts integer into string, if integer is zero, blank is returned
+func ItoaZeroBlank(i int) string {
+	if i == 0 {
+		return ""
+	} else {
+		return strconv.Itoa(i)
+	}
+}
+
 // Atoi converts string to integer
 func Atoi(s string) int {
 	i, err := strconv.Atoi(s)
@@ -184,6 +193,11 @@ func Float32ToStringCents(f float32) string {
 	}
 }
 
+// Float64ToIntCents converts float64 into int, representing cent values
+func Float64ToIntCents(f float64) int {
+	return int(f * 100)
+}
+
 // Float32PtrToFloat32 returns 0 if nil, otherwise actual float32 value
 func Float32PtrToFloat32(f *float32) float32 {
 	if f == nil {
@@ -213,6 +227,11 @@ func Float64ToInt(f float64) int {
 	} else {
 		return v
 	}
+}
+
+// IntToFloat64 converts i int (cents) into float64 two decimal value
+func IntToFloat64(i int) float64 {
+	return float64(i) * 0.01
 }
 
 // FloatToString converts float64 into string value

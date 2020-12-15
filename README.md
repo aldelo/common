@@ -44,5 +44,21 @@ This package will continue to be updated with more reusable code as well.
   - for logging and config
   - for circuit breaker and rate limit
   - etc.
+  
+# build and deploy automation
+- Create a file such as 'build.sh' within project
+- Edit file content as:
+```
+    #!/bin/zsh
 
+    GOOS=linux GOARC=amd64 go build
+    scp -i ~/.ssh/YourKey.pem YourBinary hostUserName@hostIP:/home/hostUserName/targetFolder
+```
+- Descriptions:
+  - YourKey.pem = the Linux Host SSH Certificate Key
+  - YourBinary = the Binary Build by go build to Upload
+  - hostUserName = the Linux Host Login Username
+  - hostIP = the Linux Host IP Address
+  - hostUserName = the Linux Host Login Username
+  - targetFolder = the Linux Host Folder Where SCP Will Upload YourBinary To
  

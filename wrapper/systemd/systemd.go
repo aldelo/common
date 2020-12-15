@@ -39,6 +39,7 @@ import (
 	[Service]
 	Type=simple
 	ExecStart=/home/ubuntu/xyzFolder/xyzAppName -svc -port=8080
+	WorkingDirectory=/home/ubuntu/xyzFolder
 	User=ubuntu
 	StandardOutput=console
 	Restart=always
@@ -49,8 +50,20 @@ import (
 	Alias=xyzAppName.service
 
 	2) place 'xyz.service' file at home directory
-
 	3) note: port 80 seems to be restricted on ubuntu, so we use port 8080 rather than having to reconfigure the os
+	4) note: -svc -port=8080 are optional based on the xyzAppName flags
+
+	5) place the xyz.service file to '/etc/systemd/system'
+			$> sudo cp xyz.service /etc/systemd/system
+
+	6) to enable and load service
+			$> sudo systemctl enable xyz.service
+	7) to start service
+			$> sudo systemctl start xyz.service
+	8) to stop service
+			$> sudo systemctl stop xyz.service
+	9) to disable service
+			$> sudo systemctl disable xyz.service
 */
 
 // =====================================================================================================================

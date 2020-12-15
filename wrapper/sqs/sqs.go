@@ -20,6 +20,23 @@ package sqs
 // AWS CREDENTIAL:
 //		use $> aws configure (to set aws access key and secret to target machine)
 //		Store AWS Access ID and Secret Key into Default Profile Using '$ aws configure' cli
+//
+// To Install & Setup AWS CLI on Host:
+//		1) https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2-linux.html
+//				On Ubuntu, if host does not have zip and unzip:
+//					$> sudo apt install zip
+//					$> sudo apt install unzip
+//				On Ubuntu, to install AWS CLI v2:
+//					$> curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+//					$> unzip awscliv2.zip
+//					$> sudo ./aws/install
+//		2) $> aws configure set region awsRegionName --profile default
+// 		3) $> aws configure
+//				follow prompts to enter Access ID and Secret Key
+//
+// AWS Region Name Reference:
+//		us-west-2, us-east-1, ap-northeast-1, etc
+//		See: https://docs.aws.amazon.com/general/latest/gr/rande.html
 // =================================================================================================================
 
 import (

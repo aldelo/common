@@ -128,6 +128,8 @@ func (w *WAF2) Connect() error {
 // ipsetId = exact id from WAF2 IP Set already created
 // scope = 'REGIONAL' or other scope per aws WAF2 doc (defaults to REGIONAL if blank)
 // newAddr = addresses to add to ip set
+//
+// note: aws limit is 10000 ip per ip set
 func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAddr []string) error {
 	if util.LenTrim(ipsetName) == 0 {
 		return fmt.Errorf("UpdateIPSet Failed: ipsetName is Required")
@@ -159,6 +161,10 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		lockToken = getOutput.LockToken
 		addrList = aws.StringValueSlice(getOutput.IPSet.Addresses)
 		addrList = append(addrList, newAddr...)
+
+		if len(addrList) > 10000 {
+			addrList = addrList[len(addrList)-10000:]
+		}
 	}
 
 	if _, err := w.waf2Obj.UpdateIPSet(&wafv2.UpdateIPSetInput{
@@ -170,6 +176,91 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	}); err != nil {
 		// error encountered
 		return fmt.Errorf("Update IP Set Failed: %s", err.Error())
+	} else {
+		// update completed
+		return nil
+	}
+}
+
+// UpdateRegexPatternSet will update an existing RegexPatternSet with new regex patterns specified
+// regexPatternSetName = exact name from WAF2 Regex Pattern Set already created
+// regexPatternSetId = exact id from WAF2 Regex Pattern Set already created
+// scope = 'REGIONAL' or other scope per aws WAF2 doc (defaults to REGIONAL if blank)
+// newRegexPatterns = regex patterns to add to regex pattern set
+//
+// NOTE = AWS limits to 10 regex expressions per regex set, and max of 10 regex sets
+//        this method will take the newest regex pattern to replace the older patterns
+func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSetId string, scope string, newRegexPatterns []string) error {
+	if util.LenTrim(regexPatternSetName) == 0 {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: regexPatternSetName is Required")
+	}
+
+	if util.LenTrim(regexPatternSetId) == 0 {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: regexPatternSetId is Required")
+	}
+
+	if util.LenTrim(scope) == 0 {
+		scope = "REGIONAL"
+	}
+
+	if len(newRegexPatterns) == 0 {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: New Regex Pattern to Add is Required")
+	}
+
+	var lockToken *string
+	var patternsList []*wafv2.Regex
+
+	if getOutput, err := w.waf2Obj.GetRegexPatternSet(&wafv2.GetRegexPatternSetInput{
+		Name: aws.String(regexPatternSetName),
+		Id: aws.String(regexPatternSetId),
+		Scope: aws.String(scope),
+	}); err != nil {
+		// error
+		return fmt.Errorf("Get Regex Pattern Set Failed: %s", err.Error())
+	} else {
+		lockToken = getOutput.LockToken
+
+		var oldList []string
+
+		patternsList = getOutput.RegexPatternSet.RegularExpressionList
+		newAddedCount := 0
+
+		if len(patternsList) > 0 {
+			for _, v := range patternsList {
+				oldList	= append(oldList, aws.StringValue(v.RegexString))
+			}
+		}
+
+		for _, v := range newRegexPatterns {
+			if !util.StringSliceContains(&oldList, v) {
+				patternsList = append(patternsList, &wafv2.Regex{
+					RegexString: aws.String(v),
+				})
+
+				oldList = append(oldList, v)
+				newAddedCount++
+			}
+		}
+
+		if newAddedCount == 0 {
+			return nil
+		}
+
+		// take the last 10
+		if len(patternsList) > 10 {
+			patternsList = patternsList[len(patternsList)-10:]
+		}
+	}
+
+	if _, err := w.waf2Obj.UpdateRegexPatternSet(&wafv2.UpdateRegexPatternSetInput{
+		Name: aws.String(regexPatternSetName),
+		Id: aws.String(regexPatternSetId),
+		Scope: aws.String(scope),
+		RegularExpressionList: patternsList,
+		LockToken: lockToken,
+	}); err != nil {
+		// error encountered
+		return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
 	} else {
 		// update completed
 		return nil

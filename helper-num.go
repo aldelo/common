@@ -3,6 +3,7 @@ package helper
 import (
 	"strconv"
 	"strings"
+	"time"
 )
 
 /*
@@ -27,6 +28,24 @@ func AbsInt(i int) int {
 		return i * -1
 	} else {
 		return i
+	}
+}
+
+// AbsInt64 returns absolute value of i
+func AbsInt64(i int64) int64 {
+	if i < 0 {
+		return i * -1
+	} else {
+		return i
+	}
+}
+
+// AbsDuration returns absolute value of d
+func AbsDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return d * -1
+	} else {
+		return d
 	}
 }
 

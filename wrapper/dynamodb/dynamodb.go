@@ -40,6 +40,10 @@ package dynamodb
 // =================================================================================================================
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aws/aws-dax-go/dax"
@@ -49,11 +53,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
+	"log"
 	"net/http"
-
-	util "github.com/aldelo/common"
-	"context"
-	"errors"
+	"reflect"
 	"time"
 )
 
@@ -121,6 +123,7 @@ type DynamoDBTableKeys struct {
 	SK string
 
 	ResultItemPtr interface{}		`dynamodbav:"-"`
+	ResultError error				`dynamodbav:"-"`
 
 	resultProcessed bool
 }
@@ -902,7 +905,15 @@ func (d *DynamoDB) do_TransactGetItems(input *dynamodb.TransactGetItemsInput, ct
 	}
 }
 
-// PutItem will add a new item into dynamodb table
+func (d *DynamoDB) TimeOutDuration(timeOutSeconds uint) *time.Duration {
+	if timeOutSeconds == 0 {
+		return nil
+	} else {
+		return util.DurationPtr(time.Duration(timeOutSeconds)*time.Second)
+	}
+}
+
+// PutItem will add or update a new item into dynamodb table
 //
 // parameters:
 //		item = required, must be a struct object; ALWAYS SINGLE STRUCT OBJECT, NEVER SLICE
@@ -957,6 +968,68 @@ func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration) *Dy
 
 	// put item was successful
 	return nil
+}
+
+// PutItemWithRetry add or updates, and handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDuration *time.Duration) *DynamoDBError {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 5*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 5*time.Second {
+		timeout = 5*time.Second
+	} else if timeout > 15*time.Second {
+		timeout = 15*time.Second
+	}
+
+	if err := d.PutItem(item, util.DurationPtr(timeout)); err != nil {
+		// has error
+		if maxRetries > 0 {
+			if err.AllowRetry {
+				if err.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("PutItemWithRetry Failed: " + err.ErrorMessage)
+				return d.PutItemWithRetry(maxRetries-1, item, util.DurationPtr(timeout))
+			} else {
+				if err.SuppressError {
+					log.Println("PutItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return nil
+				} else {
+					return &DynamoDBError{
+						ErrorMessage: "PutItemWithRetry Failed: " + err.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if err.SuppressError {
+				log.Println("PutItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return nil
+			} else {
+				return &DynamoDBError{
+					ErrorMessage: "PutItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return nil
+	}
 }
 
 // UpdateItem will update dynamodb item in given table using primary key (PK, SK), and set specific attributes with new value and persists
@@ -1117,6 +1190,74 @@ func (d *DynamoDB) UpdateItem(pkValue string, skValue string,
 	return nil
 }
 
+// UpdateItemWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
+									   pkValue string, skValue string,
+									   updateExpression string,
+									   conditionExpression string,
+									   expressionAttributeNames map[string]*string,
+									   expressionAttributeValues map[string]*dynamodb.AttributeValue,
+									   timeOutDuration *time.Duration) *DynamoDBError {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 10*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 10*time.Second {
+		timeout = 10*time.Second
+	} else if timeout > 30*time.Second {
+		timeout = 30*time.Second
+	}
+
+	if err := d.UpdateItem(pkValue, skValue, updateExpression, conditionExpression, expressionAttributeNames, expressionAttributeValues, util.DurationPtr(timeout)); err != nil {
+		// has error
+		if maxRetries > 0 {
+			if err.AllowRetry {
+				if err.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("UpdateItemWithRetry Failed: " + err.ErrorMessage)
+				return d.UpdateItemWithRetry(maxRetries-1, pkValue, skValue, updateExpression, conditionExpression, expressionAttributeNames, expressionAttributeValues, util.DurationPtr(timeout))
+			} else {
+				if err.SuppressError {
+					log.Println("UpdateItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return nil
+				} else {
+					return &DynamoDBError{
+						ErrorMessage: "UpdateItemWithRetry Failed: " + err.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if err.SuppressError {
+				log.Println("UpdateItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return nil
+			} else {
+				return &DynamoDBError{
+					ErrorMessage: "UpdateItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return nil
+	}
+}
+
 // DeleteItem will delete an existing item from dynamodb table, using primary key values (PK and SK)
 //
 // important
@@ -1182,6 +1323,68 @@ func (d *DynamoDB) DeleteItem(pkValue string, skValue string,
 
 	// delete item was successful
 	return nil
+}
+
+// DeleteItemWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue string, timeOutDuration *time.Duration) *DynamoDBError {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 5*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 5*time.Second {
+		timeout = 5*time.Second
+	} else if timeout > 15*time.Second {
+		timeout = 15*time.Second
+	}
+
+	if err := d.DeleteItem(pkValue, skValue, util.DurationPtr(timeout)); err != nil {
+		// has error
+		if maxRetries > 0 {
+			if err.AllowRetry {
+				if err.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("DeleteItemWithRetry Failed: " + err.ErrorMessage)
+				return d.DeleteItemWithRetry(maxRetries-1, pkValue, skValue, util.DurationPtr(timeout))
+			} else {
+				if err.SuppressError {
+					log.Println("DeleteItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return nil
+				} else {
+					return &DynamoDBError{
+						ErrorMessage: "DeleteItemWithRetry Failed: " + err.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if err.SuppressError {
+				log.Println("DeleteItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return nil
+			} else {
+				return &DynamoDBError{
+					ErrorMessage: "DeleteItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return nil
+	}
 }
 
 // GetItem will find an existing item from dynamodb table
@@ -1333,18 +1536,82 @@ func (d *DynamoDB) GetItem(resultItemPtr interface{},
 	return nil
 }
 
+// GetItemWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
+									resultItemPtr interface{}, pkValue string, skValue string,
+									timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) *DynamoDBError {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 5*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 5*time.Second {
+		timeout = 5*time.Second
+	} else if timeout > 15*time.Second {
+		timeout = 15*time.Second
+	}
+
+	if err := d.GetItem(resultItemPtr, pkValue, skValue, util.DurationPtr(timeout), consistentRead, projectedAttributes...); err != nil {
+		// has error
+		if maxRetries > 0 {
+			if err.AllowRetry {
+				if err.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("GetItemWithRetry Failed: " + err.ErrorMessage)
+				return d.GetItemWithRetry(maxRetries-1, resultItemPtr, pkValue, skValue, util.DurationPtr(timeout), consistentRead, projectedAttributes...)
+			} else {
+				if err.SuppressError {
+					log.Println("GetItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return nil
+				} else {
+					return &DynamoDBError{
+						ErrorMessage: "GetItemWithRetry Failed: " + err.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if err.SuppressError {
+				log.Println("GetItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return nil
+			} else {
+				return &DynamoDBError{
+					ErrorMessage: "GetItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return nil
+	}
+}
+
 // QueryItems will query dynamodb items in given table using primary key (PK, SK for example), or one of Global/Local Secondary Keys (indexName must be defined if using GSI)
 // To query against non-key attributes, use Scan (bad for performance however)
 // QueryItems requires using Key attributes, and limited to TWO key attributes in condition maximum;
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//		if dynamodb table is defined as PK and SK together, then to search without GSI/LSI, MUST use PK and SK together or error will trigger
 //
 // parameters:
 //		resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
 //		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
 //		consistentRead = optional, scan uses consistent read or eventual consistent read, default is eventual consistent read
-//		indexName = optional, global secondary index or local secondary index name to help in scan operation
+//		indexName = optional, global secondary index or local secondary index name to help in query operation
 //		pageLimit = optional, scan page limit if set, this limits number of items examined per page during scan operation, allowing scan to work better for RCU
 //		pagedQuery = optional, indicates if query is page based or not; if true, query will be performed via pages, this helps overcome 1 MB limit of each query result
 //		pagedQueryPageCountLimit = optional, indicates how many pages to query during paged query action
@@ -1397,6 +1664,7 @@ func (d *DynamoDB) GetItem(resultItemPtr interface{},
 //
 // Return Values:
 //		prevEvalKey = if paged query, the last evaluate key returned, to be used in subsequent query via exclusiveStartKey; otherwise always nil is returned
+//					  prevEvalkey map is set into exclusiveStartKey field if more data to load
 //
 // notes:
 //		item struct tags
@@ -1568,6 +1836,10 @@ func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
 		return nil, d.handleError(err, "DynamoDB QueryItems Failed: (QueryItems)")
 	}
 
+	if result == nil {
+		return nil, nil
+	}
+
 	// unmarshal result items to target object map
 	if err = dynamodbattribute.UnmarshalListOfMaps(result.Items, resultItemsPtr); err != nil {
 		return nil, d.handleError(err, "Dynamo QueryItems Failed: (Unmarshal Result Items)")
@@ -1575,6 +1847,232 @@ func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
 
 	// query items successful
 	return result.LastEvaluatedKey, nil
+}
+
+// QueryItemsWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
+									   resultItemsPtr interface{},
+									   timeOutDuration *time.Duration,
+									   consistentRead *bool,
+									   indexName *string,
+									   pageLimit *int64,
+									   pagedQuery bool,
+									   pagedQueryPageCountLimit *int64,
+									   exclusiveStartKey map[string]*dynamodb.AttributeValue,
+									   keyConditionExpression string,
+									   expressionAttributeNames map[string]*string,
+									   expressionAttributeValues map[string]*dynamodb.AttributeValue,
+									   filterConditionExpression *expression.ConditionBuilder,
+									   projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 5*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 5*time.Second {
+		timeout = 5*time.Second
+	} else if timeout > 15*time.Second {
+		timeout = 15*time.Second
+	}
+
+	if prevEvalKey, ddbErr = d.QueryItems(resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
+						   pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, keyConditionExpression,
+						   expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...); ddbErr != nil {
+		// has error
+		if maxRetries > 0 {
+			if ddbErr.AllowRetry {
+				if ddbErr.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("QueryItemsWithRetry Failed: " + ddbErr.ErrorMessage)
+				return d.QueryItemsWithRetry(maxRetries-1,
+											 resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
+											 pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, keyConditionExpression,
+											 expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
+			} else {
+				if ddbErr.SuppressError {
+					log.Println("QueryItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return nil, nil
+				} else {
+					return nil, &DynamoDBError{
+						ErrorMessage: "QueryItemsWithRetry Failed: " + ddbErr.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if ddbErr.SuppressError {
+				log.Println("QueryItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return nil, nil
+			} else {
+				return nil, &DynamoDBError{
+					ErrorMessage: "QueryItemsWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return prevEvalKey, nil
+	}
+}
+
+// QueryPagedItemsWithRetry will query dynamodb items in given table using primary key (PK, SK for example),
+// or one of Global/Local Secondary Keys (indexName must be defined if using GSI)
+//
+// To query against non-key attributes, use Scan (bad for performance however)
+// QueryItems requires using Key attributes, and limited to TWO key attributes in condition maximum;
+//
+// important
+//		if dynamodb table is defined as PK and SK together, then to search without GSI/LSI, MUST use PK and SK together or error will trigger
+//
+// parameters:
+// 		pagedSlicePtr = required, identifies the actual slice pointer for use during paged query
+//						(this parameter is not the output of result, actual result is returned via return variable returnItemsList)
+//		resultSlicePtr = required, pointer to working items list struct to contain queried result;
+//						 i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted;
+//						 (this parameter is not the output of result, actual result is returned via return variable returnItemsList)
+//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//		consistentRead = (always set to false for paged query internally)
+//		indexName = optional, global secondary index or local secondary index name to help in query operation
+//		pageLimit = (always set to 100 internally)
+//		pagedQuery = (always set to true internally)
+//		pagedQueryPageCountLimit = (always set to 25 internally)
+//		exclusiveStartKey = (set internally by the paged query loop if any exists)
+//		keyConditionExpression = required, ATTRIBUTES ARE CASE SENSITIVE; either the primary key (PK SK for example) or global secondary index (SK Data for example) or another secondary index (secondary index must be named)
+//			Usage Syntax:
+//				1) Max 2 Attribute Fields
+//				2) First Field must be Partition Key (Must Evaluate to True or False)
+//					a) = ONLY
+//				3) Second Field is Sort Key (May Evaluate to True or False or Range)
+//					a) =, <, <=, >, >=, BETWEEN, begins_with()
+//				4) Combine Two Fields with AND
+//				5) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
+//					a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
+//				6) Example
+//					a) partitionKeyName = :partitionKeyVal
+//					b) partitionKeyName = :partitionKeyVal AND sortKeyName = :sortKeyVal
+//					c) #yr = :year
+//				7) If Using GSI / Local Index
+//					a) When Using, Must Specify the IndexName
+//					b) First Field is the GSI's Partition Key, such as SK (Evals to True/False), While Second Field is the GSI's SortKey (Range)
+//		expressionAttributeNames = (always nil internally, not used in paged query)
+//		expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
+//			Usage Syntax:
+//				1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
+//					a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
+//				2) Add to Map
+//					a) m := make(map[string]*dynamodb.AttributeValue)
+//					b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
+//				3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
+//					a) av, err := dynamodbattribute.MarshalList(xyzSlice)
+//					b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
+//		filterConditionExpression = optional; ATTRIBUTES ARE CASE SENSITIVE; once query on key conditions returned, this filter condition further restricts return data before output to caller;
+//			Usage Syntax:
+//				1) &expression.Name(xyz).Equals(expression.Value(abc))
+//				2) &expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//		projectedAttributes = (always nil internally for paged query)
+//
+// Return Values:
+//		returnItemsList = interface{} of return slice, use assert to cast to target type
+//		err = error info if error is encountered
+//
+// notes:
+//		item struct tags
+//			use `json:"" dynamodbav:""`
+//				json = sets the name used in json
+//				dynamodbav = sets the name used in dynamodb
+//			reference child element
+//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
+											pagedSlicePtr interface{},
+											resultSlicePtr interface{},
+											timeOutDuration *time.Duration,
+											indexName string,
+											keyConditionExpression string,
+											expressionAttributeValues map[string]*dynamodb.AttributeValue,
+											filterConditionExpression *expression.ConditionBuilder) (returnItemsList interface{}, err error) {
+
+	if pagedSlicePtr == nil {
+		return nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Query and is Required")
+	} else {
+		if valPaged := reflect.ValueOf(pagedSlicePtr); valPaged.Kind() != reflect.Ptr {
+			return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Ptr)")
+		} else if valPaged.Elem().Kind() != reflect.Slice {
+			return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Slice)")
+		}
+	}
+
+	if resultSlicePtr == nil {
+		return nil, fmt.Errorf("ResultSlicePtr Contains Query Result in Slice Pointer and is Required")
+	} else {
+		if valResult := reflect.ValueOf(resultSlicePtr); valResult.Kind() != reflect.Ptr {
+			return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Ptr)")
+		} else if valResult.Elem().Kind() != reflect.Slice {
+			return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Slice)")
+		}
+	}
+
+	var prevEvalKey map[string]*dynamodb.AttributeValue
+	prevEvalKey = nil
+
+	var e *DynamoDBError
+
+	pageLimit := int64(100)
+	pagedQueryPageCountLimit := int64(25)
+
+	var indexNamePtr *string
+
+	if util.LenTrim(indexName) > 0 {
+		indexNamePtr = aws.String(indexName)
+	} else {
+		indexNamePtr = nil
+	}
+
+	for {
+		if prevEvalKey, e = d.QueryItemsWithRetry(maxRetries, pagedSlicePtr, timeOutDuration, nil, indexNamePtr,
+												 	aws.Int64(pageLimit), true, aws.Int64(pagedQueryPageCountLimit), prevEvalKey,
+												 	keyConditionExpression, nil, expressionAttributeValues,
+												 	filterConditionExpression); e != nil {
+			// error
+			return nil, fmt.Errorf("QueryPagedItemsWithRetry Failed: %s", e)
+		} else {
+			// success
+			var valTarget reflect.Value
+
+			if reflect.TypeOf(resultSlicePtr).Kind() == reflect.Ptr {
+				valTarget = reflect.ValueOf(resultSlicePtr).Elem()
+			} else {
+				valTarget = reflect.ValueOf(resultSlicePtr)
+			}
+
+			val := reflect.AppendSlice(valTarget, reflect.ValueOf(pagedSlicePtr).Elem())
+			resultSlicePtr = val.Interface()
+
+			if prevEvalKey == nil {
+				break
+			}
+
+			if len(prevEvalKey) == 0 {
+				break
+			}
+		}
+	}
+
+	return resultSlicePtr, nil
 }
 
 // ScanItems will scan dynamodb items in given table, project results, using filter expression
@@ -1592,8 +2090,9 @@ func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
 //
 //		filterConditionExpression = required; ATTRIBUTES ARE CASE SENSITIVE; sets the scan filter condition;
 //			Usage Syntax:
-//				1) &expression.Name(xyz).Equals(expression.Value(abc))
-//				2) &expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//				1) expFilter := expression.Name(xyz).Equals(expression.Value(abc))
+//				2) expFilter := expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//				3) Assign expFilter into filterConditionExpression
 //
 //		projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
 //						      attribute names must match struct field name or struct tag's json / dynamodbav tag values
@@ -1728,13 +2227,202 @@ func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
 		return nil, d.handleError(err, "DynamoDB ScanItems Failed: (ScanItems)")
 	}
 
+	if result == nil {
+		return nil, nil
+	}
+
 	// unmarshal result items to target object map
 	if err = dynamodbattribute.UnmarshalListOfMaps(result.Items, resultItemsPtr); err != nil {
-		return nil, d.handleError(err, "Dynamo ScanItems Failed: (Unmarshal Result Items)")
+		return nil, d.handleError(err, "DynamoDB ScanItems Failed: (Unmarshal Result Items)")
 	}
 
 	// scan items successful
 	return result.LastEvaluatedKey, nil
+}
+
+// ScanItemsWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
+									  resultItemsPtr interface{},
+									  timeOutDuration *time.Duration,
+									  consistentRead *bool,
+									  indexName *string,
+									  pageLimit *int64,
+									  pagedQuery bool,
+									  pagedQueryPageCountLimit *int64,
+									  exclusiveStartKey map[string]*dynamodb.AttributeValue,
+									  filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 10*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 10*time.Second {
+		timeout = 10*time.Second
+	} else if timeout > 30*time.Second {
+		timeout = 30*time.Second
+	}
+
+	if prevEvalKey, ddbErr = d.ScanItems(resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
+										 pagedQuery, pagedQueryPageCountLimit,
+										 exclusiveStartKey, filterConditionExpression, projectedAttributes...); ddbErr != nil {
+		// has error
+		if maxRetries > 0 {
+			if ddbErr.AllowRetry {
+				if ddbErr.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("ScanItemsWithRetry Failed: " + ddbErr.ErrorMessage)
+				return d.ScanItemsWithRetry(maxRetries-1,
+										    resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
+										    pagedQuery, pagedQueryPageCountLimit,
+											exclusiveStartKey, filterConditionExpression, projectedAttributes...)
+			} else {
+				if ddbErr.SuppressError {
+					log.Println("ScanItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return nil, nil
+				} else {
+					return nil, &DynamoDBError{
+						ErrorMessage: "ScanItemsWithRetry Failed: " + ddbErr.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if ddbErr.SuppressError {
+				log.Println("ScanItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return nil, nil
+			} else {
+				return nil, &DynamoDBError{
+					ErrorMessage: "ScanItemsWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return prevEvalKey, nil
+	}
+}
+
+// ScanPagedItemsWithRetry will scan dynamodb items in given table using paged mode with retry, project results, using filter expression
+// >>> DO NOT USE SCAN IF POSSIBLE - SCAN IS NOT EFFICIENT ON RCU <<<
+//
+// parameters:
+//		maxRetries = required, max number of auto retries per paged query
+//		pagedSlicePtr = required, working variable to store paged query (actual return items list is via return variable)
+//		resultSlicePtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
+//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//		consistentRead = (always false)
+//		indexName = optional, global secondary index or local secondary index name to help in scan operation
+//		pageLimit = (always 100)
+//		pagedQuery = (always true)
+//		pagedQueryPageCountLimit = (always 25)
+//		exclusiveStartKey = (always internally controlled during paged query)
+//
+//		filterConditionExpression = required; ATTRIBUTES ARE CASE SENSITIVE; sets the scan filter condition;
+//			Usage Syntax:
+//				1) expFilter := expression.Name(xyz).Equals(expression.Value(abc))
+//				2) expFilter := expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//				3) Assign expFilter into filterConditionExpression
+//
+//		projectedAttributes = (always project all attributes)
+//
+// Return Values:
+//		returnItemsList = interface of slice returned, representing the items found during scan
+//		err = error if encountered
+//
+// notes:
+//		item struct tags
+//			use `json:"" dynamodbav:""`
+//				json = sets the name used in json
+//				dynamodbav = sets the name used in dynamodb
+//			reference child element
+//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
+										   pagedSlicePtr interface{},
+										   resultSlicePtr interface{},
+										   timeOutDuration *time.Duration,
+										   indexName string,
+										   filterConditionExpression expression.ConditionBuilder) (returnItemsList interface{}, err error) {
+
+	if pagedSlicePtr == nil {
+		return nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Scan and is Required")
+	} else {
+		if valPaged := reflect.ValueOf(pagedSlicePtr); valPaged.Kind() != reflect.Ptr {
+			return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Ptr)")
+		} else if valPaged.Elem().Kind() != reflect.Slice {
+			return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Slice)")
+		}
+	}
+
+	if resultSlicePtr == nil {
+		return nil, fmt.Errorf("ResultSlicePtr Contains Scan Result in Slice Pointer and is Required")
+	} else {
+		if valResult := reflect.ValueOf(resultSlicePtr); valResult.Kind() != reflect.Ptr {
+			return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Ptr)")
+		} else if valResult.Elem().Kind() != reflect.Slice {
+			return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Slice)")
+		}
+	}
+
+	var prevEvalKey map[string]*dynamodb.AttributeValue
+	prevEvalKey = nil
+
+	var e *DynamoDBError
+
+	pageLimit := int64(100)
+	pagedQueryPageCountLimit := int64(25)
+
+	var indexNamePtr *string
+
+	if util.LenTrim(indexName) > 0 {
+		indexNamePtr = aws.String(indexName)
+	} else {
+		indexNamePtr = nil
+	}
+
+	for {
+		if prevEvalKey, e = d.ScanItemsWithRetry(maxRetries, pagedSlicePtr, timeOutDuration, nil, indexNamePtr,
+			aws.Int64(pageLimit), true, aws.Int64(pagedQueryPageCountLimit), prevEvalKey, filterConditionExpression); e != nil {
+			// error
+			return nil, fmt.Errorf("ScanPagedItemsWithRetry Failed: %s", e)
+		} else {
+			// success
+			var valTarget reflect.Value
+
+			if reflect.TypeOf(resultSlicePtr).Kind() == reflect.Ptr {
+				valTarget = reflect.ValueOf(resultSlicePtr).Elem()
+			} else {
+				valTarget = reflect.ValueOf(resultSlicePtr)
+			}
+
+			val := reflect.AppendSlice(valTarget, reflect.ValueOf(pagedSlicePtr).Elem())
+			resultSlicePtr = val.Interface()
+
+			if prevEvalKey == nil {
+				break
+			}
+
+			if len(prevEvalKey) == 0 {
+				break
+			}
+		}
+	}
+
+	return resultSlicePtr, nil
 }
 
 // BatchWriteItems will group up to 25 put and delete items in a single batch, and perform actions in parallel against dynamodb for better write efficiency，
@@ -1918,6 +2606,70 @@ func (d *DynamoDB) BatchWriteItems(putItems interface{},
 	return deleteCount+putCount, nil, nil
 }
 
+// BatchWriteItemsWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
+											putItems interface{}, deleteKeys []DynamoDBTableKeys,
+											timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 10*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 10*time.Second {
+		timeout = 10*time.Second
+	} else if timeout > 30*time.Second {
+		timeout = 30*time.Second
+	}
+
+	if successCount, unprocessedItems, err = d.BatchWriteItems(putItems, deleteKeys, util.DurationPtr(timeout)); err != nil {
+		// has error
+		if maxRetries > 0 {
+			if err.AllowRetry {
+				if err.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("BatchWriteItemsWithRetry Failed: " + err.ErrorMessage)
+				return d.BatchWriteItemsWithRetry(maxRetries-1, putItems, deleteKeys, util.DurationPtr(timeout))
+			} else {
+				if err.SuppressError {
+					log.Println("BatchWriteItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return 0, nil, nil
+				} else {
+					return 0, nil, &DynamoDBError{
+						ErrorMessage: "BatchWriteItemsWithRetry Failed: " + err.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if err.SuppressError {
+				log.Println("BatchWriteItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return 0, nil, nil
+			} else {
+				return 0, nil, &DynamoDBError{
+					ErrorMessage: "BatchWriteItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return successCount, unprocessedItems, nil
+	}
+}
+
 // BatchGetItems accepts a slice of search keys (of DynamoDBSearchKeys struct object), optionally define attribute projections, and return found result items;
 //
 // important
@@ -2087,6 +2839,124 @@ func (d *DynamoDB) BatchGetItems(resultItemsPtr interface{},
 	}
 }
 
+// BatchGetItemsWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint,
+										  resultItemsPtr interface{},
+										  searchKeys []DynamoDBTableKeys,
+										  timeOutDuration *time.Duration,
+										  consistentRead *bool,
+										  projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 5*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 5*time.Second {
+		timeout = 5*time.Second
+	} else if timeout > 15*time.Second {
+		timeout = 15*time.Second
+	}
+
+	if notFound, err = d.BatchGetItems(resultItemsPtr, searchKeys, util.DurationPtr(timeout), consistentRead, projectedAttributes...); err != nil {
+		// has error
+		if maxRetries > 0 {
+			if err.AllowRetry {
+				if err.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("BatchGetItemsWithRetry Failed: " + err.ErrorMessage)
+				return d.BatchGetItemsWithRetry(maxRetries-1, resultItemsPtr, searchKeys, util.DurationPtr(timeout), consistentRead, projectedAttributes...)
+			} else {
+				if err.SuppressError {
+					log.Println("BatchGetItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return true, nil
+				} else {
+					return true, &DynamoDBError{
+						ErrorMessage: "BatchGetItemsWithRetry Failed: " + err.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if err.SuppressError {
+				log.Println("BatchGetItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return true, nil
+			} else {
+				return true, &DynamoDBError{
+					ErrorMessage: "BatchGetItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return notFound, nil
+	}
+}
+
+// BatchDeleteItemsWithRetry will attempt to delete one or more table records by on deleteKeys input,
+// will auto retry delete if temporarily failed,
+// if there are deleteFailKeys, its returned, if all succeeded, nil is returned
+func (d *DynamoDB) BatchDeleteItemsWithRetry(maxRetries uint,
+											 timeOutDuration *time.Duration,
+											 deleteKeys ...*DynamoDBTableKeys) (deleteFailKeys []*DynamoDBTableKeys, err error) {
+	if len(deleteKeys) == 0 {
+		return []*DynamoDBTableKeys{}, fmt.Errorf("BatchDeleteItemsWithRetry Failed: %s", err)
+	}
+
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 5*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 5*time.Second {
+		timeout = 5*time.Second
+	} else if timeout > 15*time.Second {
+		timeout = 15*time.Second
+	}
+
+	for _, key := range deleteKeys {
+		if key != nil && util.LenTrim(key.PK) > 0 {
+			retries := maxRetries
+
+			if e := d.DeleteItemWithRetry(retries, key.PK, key.SK, util.DurationPtr(timeout)); e != nil {
+				key.ResultError = e
+				deleteFailKeys = append(deleteFailKeys, key)
+			}
+		}
+	}
+
+	if len(deleteFailKeys) == len(deleteKeys) {
+		// all failed
+		return deleteFailKeys, fmt.Errorf("BatchDeleteItemsWithRetry Failed: All Delete Actions Failed")
+
+	} else if len(deleteFailKeys) == 0 {
+		// all success
+		return []*DynamoDBTableKeys{}, nil
+
+	} else {
+		// some failed
+		return deleteFailKeys, fmt.Errorf("BatchDeleteItemsWithRetry Partial Failure: Some Delete Actions Failed")
+	}
+}
+
 // TransactionWriteItems performs a transaction write action for one or more DynamoDBTransactionWrites struct objects,
 // Either all success or all fail,
 // Total Items Count in a Single Transaction for All transItems combined (inner elements) cannot exceed 25
@@ -2247,6 +3117,70 @@ func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranIte
 
 	// success
 	return true, nil
+}
+
+// TransactionWriteItemsWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
+												  timeOutDuration *time.Duration,
+												  tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 10*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 10*time.Second {
+		timeout = 10*time.Second
+	} else if timeout > 30*time.Second {
+		timeout = 30*time.Second
+	}
+
+	if success, err = d.TransactionWriteItems(util.DurationPtr(timeout), tranItems...); err != nil {
+		// has error
+		if maxRetries > 0 {
+			if err.AllowRetry {
+				if err.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("TransactionWriteItemsWithRetry Failed: " + err.ErrorMessage)
+				return d.TransactionWriteItemsWithRetry(maxRetries-1, util.DurationPtr(timeout), tranItems...)
+			} else {
+				if err.SuppressError {
+					log.Println("TransactionWriteItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return false,nil
+				} else {
+					return false, &DynamoDBError{
+						ErrorMessage: "TransactionWriteItemsWithRetry Failed: " + err.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if err.SuppressError {
+				log.Println("TransactionWriteItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return false, nil
+			} else {
+				return false, &DynamoDBError{
+					ErrorMessage: "TransactionWriteItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return success, nil
+	}
 }
 
 // TransactionGetItems receives parameters via tranKeys variadic objects of type DynamoDBTransactionReads; each object has TableName override in case querying against other tables
@@ -2426,4 +3360,68 @@ func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, tranKeys 
 
 	// nothing found or something found, both returns nil for error
 	return successCount, nil
+}
+
+// TransactionGetItemsWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
+											    timeOutDuration *time.Duration,
+											    tranKeys ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 5*time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 5*time.Second {
+		timeout = 5*time.Second
+	} else if timeout > 15*time.Second {
+		timeout = 15*time.Second
+	}
+
+	if successCount, err = d.TransactionGetItems(util.DurationPtr(timeout), tranKeys...); err != nil {
+		// has error
+		if maxRetries > 0 {
+			if err.AllowRetry {
+				if err.RetryNeedsBackOff {
+					time.Sleep(500*time.Millisecond)
+				} else {
+					time.Sleep(100*time.Millisecond)
+				}
+
+				log.Println("TransactionGetItemsWithRetry Failed: " + err.ErrorMessage)
+				return d.TransactionGetItemsWithRetry(maxRetries-1, util.DurationPtr(timeout), tranKeys...)
+			} else {
+				if err.SuppressError {
+					log.Println("TransactionGetItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return 0, nil
+				} else {
+					return 0, &DynamoDBError{
+						ErrorMessage: "TransactionGetItemsWithRetry Failed: " + err.ErrorMessage,
+						SuppressError: false,
+						AllowRetry: false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if err.SuppressError {
+				log.Println("TransactionGetItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return 0, nil
+			} else {
+				return 0, &DynamoDBError{
+					ErrorMessage: "TransactionGetItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError: false,
+					AllowRetry: false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return successCount, nil
+	}
 }

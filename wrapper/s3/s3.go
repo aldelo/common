@@ -1,7 +1,7 @@
 package s3
 
 /*
- * Copyright 2020 Aldelo, LP
+ * Copyright 2020-2021 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,10 +46,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/aldelo/common/wrapper/xray"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 	"net/http"
 	"os"
 	"time"
@@ -81,6 +83,8 @@ type S3 struct {
 
 	// store downloader object to share across session
 	downloader *s3manager.Downloader
+
+	_parentSegment *xray.XRayParentSegment
 }
 
 // ================================================================================================================
@@ -92,7 +96,37 @@ type S3 struct {
 // ----------------------------------------------------------------------------------------------------------------
 
 // Connect will establish a connection to the s3 service
-func (s *S3) Connect() error {
+func (s *S3) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if xray.XRayServiceOn() {
+		if len(parentSegment) > 0 {
+			s._parentSegment = parentSegment[0]
+		}
+
+		seg := xray.NewSegment("S3-Connect", s._parentSegment)
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("S3-AWS-Region", s.AwsRegion)
+			_ = seg.Seg.AddMetadata("S3-Bucket-Name", s.BucketName)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+
+		err = s.connectInternal()
+
+		if err == nil {
+			awsxray.AWS(s.s3Obj.Client)
+		}
+
+		return err
+	} else {
+		return s.connectInternal()
+	}
+}
+
+// Connect will establish a connection to the s3 service
+func (s *S3) connectInternal() error {
 	// clean up prior session reference
 	s.sess = nil
 
@@ -161,6 +195,11 @@ func (s *S3) Disconnect() {
 	s.sess = nil
 }
 
+// UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
+func (s *S3) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	s._parentSegment = parentSegment
+}
+
 // UploadFile will upload the specified file to S3 in the bucket name defined within S3 struct
 //
 // Parameters:
@@ -173,25 +212,52 @@ func (s *S3) Disconnect() {
 // 		location = value indicating the location where upload was persisted to on s3 bucket
 //		err = error encountered while attempting to upload
 func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, targetKey string, targetFolder ...string) (location string, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("S3-UploadFile [TargetKey: " + targetKey + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("S3-UploadFile-SourceFilePath", sourceFilePath)
+			_ = seg.Seg.AddMetadata("S3-UploadFile-TargetKey", targetKey)
+			_ = seg.Seg.AddMetadata("S3-UploadFile-TargetFolder", targetFolder)
+			_ = seg.Seg.AddMetadata("S3-UploadFile-Result-Location", location)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.uploader == nil {
-		return "", errors.New("S3 UploadFile Failed: " + "Uploader is Required")
+		err = errors.New("S3 UploadFile Failed: " + "Uploader is Required")
+		return "", err
 	}
 
 	if util.LenTrim(s.BucketName) <= 0 {
-		return "", errors.New("S3 UploadFile Failed: " + "Bucket Name is Required")
+		err = errors.New("S3 UploadFile Failed: " + "Bucket Name is Required")
+		return "", err
 	}
 
 	if util.LenTrim(sourceFilePath) <= 0 {
-		return "", errors.New("S3 UploadFile Failed: " + "Source File Path is Required")
+		err = errors.New("S3 UploadFile Failed: " + "Source File Path is Required")
+		return "", err
 	}
 
 	if util.LenTrim(targetKey) <= 0 {
-		return "", errors.New("S3 UploadFile Failed: " + "Target Key is Required")
+		err = errors.New("S3 UploadFile Failed: " + "Target Key is Required")
+		return "", err
 	}
 
 	if !util.FileExists(sourceFilePath) {
-		return "", errors.New("S3 UploadFile Failed: " + "Source File Does Not Exist at Path")
+		err = errors.New("S3 UploadFile Failed: " + "Source File Does Not Exist at Path")
+		return "", err
 	}
 
 	// define key
@@ -210,7 +276,8 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 	// open file to prepare for upload
 	if f, err := os.Open(sourceFilePath); err != nil {
 		// open file failed
-		return "", errors.New("S3 UploadFile Failed: (Open Source File) " + err.Error())
+		err = errors.New("S3 UploadFile Failed: (Open Source File) " + err.Error())
+		return "", err
 	} else {
 		// open file successful
 		defer f.Close()
@@ -219,7 +286,7 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 		var output *s3manager.UploadOutput
 
 		if timeOutDuration != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
+			ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
 			defer cancel()
 
 			output, err = s.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
@@ -228,20 +295,31 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 				Body: f,
 			})
 		} else {
-			output, err = s.uploader.Upload(&s3manager.UploadInput{
-				Bucket: aws.String(s.BucketName),
-				Key: aws.String(key),
-				Body: f,
-			})
+			if segCtxSet {
+				output, err = s.uploader.UploadWithContext(segCtx,
+					&s3manager.UploadInput{
+						Bucket: aws.String(s.BucketName),
+						Key: aws.String(key),
+						Body: f,
+				})
+			} else {
+				output, err = s.uploader.Upload(&s3manager.UploadInput{
+					Bucket: aws.String(s.BucketName),
+					Key: aws.String(key),
+					Body: f,
+				})
+			}
 		}
 
 		// evaluate result
 		if err != nil {
 			// upload error
-			return "", errors.New("S3 UploadFile Failed: (Upload Source File) " + err.Error())
+			err = errors.New("S3 UploadFile Failed: (Upload Source File) " + err.Error())
+			return "", err
 		} else {
 			// upload success
-			return output.Location, nil
+			location = output.Location
+			return location, nil
 		}
 	}
 }
@@ -258,25 +336,51 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 // 		location = value indicating the location where upload was persisted to on s3 bucket
 //		err = error encountered while attempting to upload
 func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey string, targetFolder ...string) (location string, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("S3-Upload [TargetKey: " + targetKey + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("S3-Upload-TargetKey", targetKey)
+			_ = seg.Seg.AddMetadata("S3-Upload-TargetFolder", targetFolder)
+			_ = seg.Seg.AddMetadata("S3-Upload-Result-Location", location)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.uploader == nil {
-		return "", errors.New("S3 Upload Failed: " + "Uploader is Required")
+		err = errors.New("S3 Upload Failed: " + "Uploader is Required")
+		return "", err
 	}
 
 	if util.LenTrim(s.BucketName) <= 0 {
-		return "", errors.New("S3 Upload Failed: " + "Bucket Name is Required")
+		err = errors.New("S3 Upload Failed: " + "Bucket Name is Required")
+		return "", err
 	}
 
 	if data == nil {
-		return "", errors.New("S3 Upload Failed: " + "Data To Upload is Required (Slice=Nil)")
+		err = errors.New("S3 Upload Failed: " + "Data To Upload is Required (Slice=Nil)")
+		return "", err
 	}
 
 	if len(data) <= 0 {
-		return "", errors.New("S3 Upload Failed: " + "Data To Upload is Required (Len=0)")
+		err = errors.New("S3 Upload Failed: " + "Data To Upload is Required (Len=0)")
+		return "", err
 	}
 
 	if util.LenTrim(targetKey) <= 0 {
-		return "", errors.New("S3 Upload Failed: " + "Target Key is Required")
+		err = errors.New("S3 Upload Failed: " + "Target Key is Required")
+		return "", err
 	}
 
 	// generate io.Reader from byte slice
@@ -299,7 +403,7 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 	var output *s3manager.UploadOutput
 
 	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
+		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
 		defer cancel()
 
 		output, err = s.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
@@ -308,20 +412,31 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 			Body: r,
 		})
 	} else {
-		output, err = s.uploader.Upload(&s3manager.UploadInput{
-			Bucket: aws.String(s.BucketName),
-			Key: aws.String(key),
-			Body: r,
-		})
+		if segCtxSet {
+			output, err = s.uploader.UploadWithContext(segCtx,
+				&s3manager.UploadInput{
+					Bucket: aws.String(s.BucketName),
+					Key: aws.String(key),
+					Body: r,
+			})
+		} else {
+			output, err = s.uploader.Upload(&s3manager.UploadInput{
+				Bucket: aws.String(s.BucketName),
+				Key: aws.String(key),
+				Body: r,
+			})
+		}
 	}
 
 	// evaluate result
 	if err != nil {
 		// upload error
-		return "", errors.New("S3 Upload Failed: (Upload Bytes) " + err.Error())
+		err = errors.New("S3 Upload Failed: (Upload Bytes) " + err.Error())
+		return "", err
 	} else {
 		// upload success
-		return output.Location, nil
+		location = output.Location
+		return location, nil
 	}
 }
 
@@ -338,28 +453,56 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 // 		notFound = key was not found in s3 bucket
 //		err = error encountered while attempting to download
 func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string, targetKey string, targetFolder ...string) (location string, notFound bool, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("S3-DownloadFile [TargetKey: " + targetKey + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("S3-DownloadFile-TargetKey", targetKey)
+			_ = seg.Seg.AddMetadata("S3-DownloadFile-TargetFolder", targetFolder)
+			_ = seg.Seg.AddMetadata("S3-DownloadFile-WriteToFilePath", writeToFilePath)
+			_ = seg.Seg.AddMetadata("S3-DownloadFile-Result-NotFound", notFound)
+			_ = seg.Seg.AddMetadata("S3-DownloadFile-Result-Location", location)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.downloader == nil {
-		return "", false, errors.New("S3 DownloadFile Failed: " + "Downloader is Required")
+		err = errors.New("S3 DownloadFile Failed: " + "Downloader is Required")
+		return "", false, err
 	}
 
 	if util.LenTrim(s.BucketName) <= 0 {
-		return "", false, errors.New("S3 DownloadFile Failed: " + "Bucket Name is Required")
+		err = errors.New("S3 DownloadFile Failed: " + "Bucket Name is Required")
+		return "", false, err
 	}
 
 	if util.LenTrim(writeToFilePath) <= 0 {
-		return "", false, errors.New("S3 DownloadFile Failed: " + "Write To File Path is Required")
+		err = errors.New("S3 DownloadFile Failed: " + "Write To File Path is Required")
+		return "", false, err
 	}
 
 	if util.LenTrim(targetKey) <= 0 {
-		return "", false, errors.New("S3 DownloadFile Failed: " + "Target Key is Required")
+		err = errors.New("S3 DownloadFile Failed: " + "Target Key is Required")
+		return "", false, err
 	}
 
 	// create write buffer to store s3 download content
 	f, e := os.Create(writeToFilePath)
 
 	if e != nil {
-		return "", false, errors.New("S3 DownloadFile Failed: " + "Create File for Write To File Path Failed")
+		err = errors.New("S3 DownloadFile Failed: " + "Create File for Write To File Path Failed")
+		return "", false, err
 	}
 
 	defer f.Close()
@@ -381,7 +524,7 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 	var bytesCount int64
 
 	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
+		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
 		defer cancel()
 
 		bytesCount, err = s.downloader.DownloadWithContext(ctx, f, &s3.GetObjectInput{
@@ -389,24 +532,34 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 			Key: aws.String(key),
 		})
 	} else {
-		bytesCount, err = s.downloader.Download(f, &s3.GetObjectInput{
-			Bucket: aws.String(s.BucketName),
-			Key: aws.String(key),
-		})
+		if segCtxSet {
+			bytesCount, err = s.downloader.DownloadWithContext(segCtx, f, &s3.GetObjectInput{
+				Bucket: aws.String(s.BucketName),
+				Key: aws.String(key),
+			})
+		} else {
+			bytesCount, err = s.downloader.Download(f, &s3.GetObjectInput{
+				Bucket: aws.String(s.BucketName),
+				Key: aws.String(key),
+			})
+		}
 	}
 
 	// evaluate result
 	if err != nil {
 		// download error
-		return "", false, errors.New("S3 DownloadFile Failed: (Download File) " + err.Error())
+		err = errors.New("S3 DownloadFile Failed: (Download File) " + err.Error())
+		return "", false, err
 	} else {
 		// download successful
 		if bytesCount <= 0 {
 			// not found
-			return "", true, nil
+			notFound = true
+			return "", notFound, nil
 		} else {
 			// found
-			return writeToFilePath, false, nil
+			location = writeToFilePath
+			return location, false, nil
 		}
 	}
 }
@@ -423,17 +576,41 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 // 		notFound = key was not found in s3 bucket
 //		err = error encountered while attempting to download
 func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFolder ...string) (data []byte, notFound bool, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("S3-Download [TargetKey: " + targetKey + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("S3-Download-TargetKey", targetKey)
+			_ = seg.Seg.AddMetadata("S3-Download-TargetFolder", targetFolder)
+			_ = seg.Seg.AddMetadata("S3-Download-Result-NotFound", notFound)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.downloader == nil {
-		return nil, false, errors.New("S3 Download Failed: " + "Downloader is Required")
+		err = errors.New("S3 Download Failed: " + "Downloader is Required")
+		return nil, false, err
 	}
 
 	if util.LenTrim(s.BucketName) <= 0 {
-		return nil, false, errors.New("S3 Download Failed: " + "Bucket Name is Required")
+		err = errors.New("S3 Download Failed: " + "Bucket Name is Required")
+		return nil, false, err
 	}
 
 	if util.LenTrim(targetKey) <= 0 {
-		return nil, false, errors.New("S3 Download Failed: " + "Target Key is Required")
+		err = errors.New("S3 Download Failed: " + "Target Key is Required")
+		return nil, false, err
 	}
 
 	// create write buffer to store s3 download content
@@ -456,7 +633,7 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 	var bytesCount int64
 
 	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
+		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
 		defer cancel()
 
 		bytesCount, err = s.downloader.DownloadWithContext(ctx, buf, &s3.GetObjectInput{
@@ -464,24 +641,34 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 			Key: aws.String(key),
 		})
 	} else {
-		bytesCount, err = s.downloader.Download(buf, &s3.GetObjectInput{
-			Bucket: aws.String(s.BucketName),
-			Key: aws.String(key),
-		})
+		if segCtxSet {
+			bytesCount, err = s.downloader.DownloadWithContext(segCtx, buf, &s3.GetObjectInput{
+				Bucket: aws.String(s.BucketName),
+				Key: aws.String(key),
+			})
+		} else {
+			bytesCount, err = s.downloader.Download(buf, &s3.GetObjectInput{
+				Bucket: aws.String(s.BucketName),
+				Key: aws.String(key),
+			})
+		}
 	}
 
 	// evaluate result
 	if err != nil {
 		// download error
-		return nil, false, errors.New("S3 Download Failed: (Download Bytes) " + err.Error())
+		err = errors.New("S3 Download Failed: (Download Bytes) " + err.Error())
+		return nil, false, err
 	} else {
 		// download successful
 		if bytesCount <= 0 {
 			// not found
-			return nil, true, nil
+			notFound = true
+			return nil, notFound, nil
 		} else {
 			// found
-			return buf.Bytes(), false, nil
+			data = buf.Bytes()
+			return data, false, nil
 		}
 	}
 }
@@ -497,17 +684,41 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 //		deleteSuccess = true if delete was successfully completed; false if delete failed to perform, check error if any
 //		err = error encountered while attempting to download
 func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFolder ...string) (deleteSuccess bool, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("S3-Delete [TargetKey: " + targetKey + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("S3-Delete-TargetKey", targetKey)
+			_ = seg.Seg.AddMetadata("S3-Delete-TargetFolder", targetFolder)
+			_ = seg.Seg.AddMetadata("S3-Delete-Result-Success", deleteSuccess)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.s3Obj == nil {
-		return false, errors.New("S3 Delete Failed: " + "S3 Object is Required")
+		err = errors.New("S3 Delete Failed: " + "S3 Object is Required")
+		return false, err
 	}
 
 	if util.LenTrim(s.BucketName) <= 0 {
-		return false, errors.New("S3 Delete Failed: " + "Bucket Name is Required")
+		err = errors.New("S3 Delete Failed: " + "Bucket Name is Required")
+		return false, err
 	}
 
 	if util.LenTrim(targetKey) <= 0 {
-		return false, errors.New("S3 Delete Failed: " + "Target Key is Required")
+		err = errors.New("S3 Delete Failed: " + "Target Key is Required")
+		return false, err
 	}
 
 	// define key
@@ -525,7 +736,7 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 
 	// delete object from s3 bucket
 	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
+		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
 		defer cancel()
 
 		_, err = s.s3Obj.DeleteObjectWithContext(ctx, &s3.DeleteObjectInput{
@@ -533,19 +744,28 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 			Key: aws.String(key),
 		})
 	} else {
-		_, err = s.s3Obj.DeleteObject(&s3.DeleteObjectInput{
-			Bucket: aws.String(s.BucketName),
-			Key: aws.String(key),
-		})
+		if segCtxSet {
+			_, err = s.s3Obj.DeleteObjectWithContext(segCtx, &s3.DeleteObjectInput{
+				Bucket: aws.String(s.BucketName),
+				Key: aws.String(key),
+			})
+		} else {
+			_, err = s.s3Obj.DeleteObject(&s3.DeleteObjectInput{
+				Bucket: aws.String(s.BucketName),
+				Key: aws.String(key),
+			})
+		}
 	}
 
 	// evaluate result
 	if err != nil {
 		// delete error
-		return false, errors.New("S3 Delete Failed: (Delete Object) " + err.Error())
+		err = errors.New("S3 Delete Failed: (Delete Object) " + err.Error())
+		return false, err
 	} else {
 		// delete successful
-		return true, nil
+		deleteSuccess = true
+		return deleteSuccess, nil
 	}
 }
 

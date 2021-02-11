@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020 Aldelo, LP
+ * Copyright 2020-2021 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import (
 	"github.com/aldelo/common/wrapper/gin/ginbindtype"
 	"github.com/aldelo/common/wrapper/gin/gingzipcompression"
 	"github.com/aldelo/common/wrapper/gin/ginhttpmethod"
+	"github.com/aldelo/common/wrapper/xray"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-contrib/sessions"
@@ -49,6 +50,11 @@ import (
 //					   key = * indicates base gin engine routes, otherwise key refers to routeGroup to be created
 // SessionMiddleware = (optional) defines the cookie or redis session middleware to setup for the gin engine
 // CsrfMiddleware = (optional) defines the csrf middleware to setup for the gin engine (requires SessionMiddleware setup)
+//
+// AWS-XRay Tracing = Passing Parent SegmentID and TraceID to Handler via Gin Context
+//		Using Headers:
+//			"X-Amzn-Seg-Id" = Parent XRay Segment ID to pass into Headers
+//			"X-Amzn-Tr-Id" = Parent XRay Trace ID to pass into Headers
 type Gin struct {
 	// web server descriptive name (used for display and logging only)
 	Name string
@@ -579,6 +585,11 @@ func (g *Gin) setupRoutes() int {
 		g._ginEngine.NoMethod(func(context *gin.Context) {
 			g.HttpStatusErrorHandler(404, "NoMethod", context)
 		})
+	}
+
+	// setup xray trace middleware
+	if xray.XRayServiceOn() {
+		g._ginEngine.Use(XRayMiddleware())
 	}
 
 	// setup session if configured

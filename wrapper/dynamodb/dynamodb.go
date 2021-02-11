@@ -1,7 +1,7 @@
 package dynamodb
 
 /*
- * Copyright 2020 Aldelo, LP
+ * Copyright 2020-2021 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,6 +46,7 @@ import (
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
+	"github.com/aldelo/common/wrapper/xray"
 	"github.com/aws/aws-dax-go/dax"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -53,6 +54,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
+	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 	"log"
 	"net/http"
 	"reflect"
@@ -96,6 +98,8 @@ type DynamoDB struct {
 
 	// last execute param string
 	LastExecuteParamsPayload string
+
+	_parentSegment *xray.XRayParentSegment
 }
 
 // DynamoDBError struct contains special status info including error and retry advise
@@ -417,7 +421,37 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 }
 
 // Connect will establish a connection to the dynamodb service
-func (d *DynamoDB) Connect() error {
+func (d *DynamoDB) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if xray.XRayServiceOn() {
+		if len(parentSegment) > 0 {
+			d._parentSegment = parentSegment[0]
+		}
+
+		seg := xray.NewSegment("DynamoDB-Connect", d._parentSegment)
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("DynamoDB-AWS-Region", d.AwsRegion)
+			_ = seg.Seg.AddMetadata("DynamoDB-Table-Name", d.TableName)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+
+		err = d.connectInternal()
+
+		if err == nil {
+			awsxray.AWS(d.cn.Client)
+		}
+
+		return err
+	} else {
+		return d.connectInternal()
+	}
+}
+
+// Connect will establish a connection to the dynamodb service
+func (d *DynamoDB) connectInternal() error {
 	// clean up prior cn reference
 	d.cn = nil
 	d.SkipDax = false
@@ -465,7 +499,29 @@ func (d *DynamoDB) Connect() error {
 }
 
 // EnableDax will enable dax service for this dynamodb session
-func (d *DynamoDB) EnableDax() error {
+func (d *DynamoDB) EnableDax() (err error) {
+	// get new xray segment for tracing
+	seg := xray.NewSegmentNullable("DynamoDB-EnableDax", d._parentSegment)
+
+	if seg != nil {
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("DynamoDB-Dax-Endpoint", d.DaxEndpoint)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+
+		err = d.enableDaxInternal()
+		return err
+	} else {
+		return d.enableDaxInternal()
+	}
+}
+
+// EnableDax will enable dax service for this dynamodb session
+func (d *DynamoDB) enableDaxInternal() error {
 	if d.cn == nil {
 		return errors.New("Enable Dax Failed: " + "DynamoDB Not Yet Connected")
 	}
@@ -497,6 +553,11 @@ func (d *DynamoDB) DisableDax() {
 		d.cnDax = nil
 		d.SkipDax = false
 	}
+}
+
+// UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
+func (d *DynamoDB) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	d._parentSegment = parentSegment
 }
 
 // do_PutItem is a helper that calls either dax or dynamodb based on dax availability
@@ -928,7 +989,82 @@ func (d *DynamoDB) TimeOutDuration(timeOutSeconds uint) *time.Duration {
 //			reference child element
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
-func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration) *DynamoDBError {
+func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.putItemWithTrace(item, timeOutDuration)
+	} else {
+		return d.putItemNormal(item, timeOutDuration)
+	}
+}
+
+func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-PutItem [Table: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if ddbErr != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(ddbErr.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return ddbErr
+	}
+
+	if item == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB PutItem Failed: " + "Input Item Object is Nil"))
+		return ddbErr
+	}
+
+	trace.Capture("PutItem", func() error {
+		if av, err := dynamodbattribute.MarshalMap(item); err != nil {
+			ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (MarshalMap)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		} else {
+			input := &dynamodb.PutItemInput{
+				Item: av,
+				TableName: aws.String(d.TableName),
+			}
+
+			// record params payload
+			d.LastExecuteParamsPayload = "PutItem = " + input.String()
+
+			subTrace := trace.NewSubSegment("PutItem_Do")
+			defer subTrace.Close()
+
+			// save into dynamodb table
+			if timeOutDuration != nil {
+				ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+				defer cancel()
+				_, err = d.do_PutItem(input, ctx)
+			} else {
+				_, err = d.do_PutItem(input, subTrace.Ctx)
+			}
+
+			if err != nil {
+				ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (PutItem)")
+				return fmt.Errorf(ddbErr.ErrorMessage)
+			} else {
+				return nil
+			}
+		}
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"ItemInfo": item,
+		},
+	})
+
+	// put item was successful
+	return ddbErr
+}
+
+func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
 	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -942,7 +1078,7 @@ func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration) *Dy
 	}
 
 	if av, err := dynamodbattribute.MarshalMap(item); err != nil {
-		return d.handleError(err, "DynamoDB PutItem Failed: (MarshalMap)")
+		ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (MarshalMap)")
 	} else {
 		input := &dynamodb.PutItemInput{
 			Item: av,
@@ -962,12 +1098,14 @@ func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration) *Dy
 		}
 
 		if err != nil {
-			return d.handleError(err, "DynamoDB PutItem Failed: (PutItem)")
+			ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (PutItem)")
+		} else {
+			ddbErr = nil
 		}
 	}
 
 	// put item was successful
-	return nil
+	return ddbErr
 }
 
 // PutItemWithRetry add or updates, and handles dynamodb retries in case action temporarily fails
@@ -1105,11 +1243,146 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) UpdateItem(pkValue string, skValue string,
+	updateExpression string,
+	conditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+
+	if xray.XRayServiceOn() {
+		return d.updateItemWithTrace(pkValue, skValue, updateExpression, conditionExpression, expressionAttributeNames, expressionAttributeValues, timeOutDuration)
+	} else {
+		return d.updateItemNormal(pkValue, skValue, updateExpression, conditionExpression, expressionAttributeNames, expressionAttributeValues, timeOutDuration)
+	}
+}
+
+func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 							  updateExpression string,
 							  conditionExpression string,
 							  expressionAttributeNames map[string]*string,
 							  expressionAttributeValues map[string]*dynamodb.AttributeValue,
-							  timeOutDuration *time.Duration) *DynamoDBError {
+							  timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+
+	trace := xray.NewSegment("DynamoDB-UpdateItem [TableName: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if ddbErr != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(ddbErr.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return ddbErr
+	}
+
+	// validate input parameters
+	if util.LenTrim(d.PKName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB UpdateItem Failed: " + "PK Name is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(pkValue) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB UpdateItem Failed: " + "PK Value is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(skValue) > 0 {
+		if util.LenTrim(d.SKName) <= 0 {
+			ddbErr = d.handleError(errors.New("DynamoDB UpdateItem Failed: " + "SK Name is Required"))
+			return ddbErr
+		}
+	}
+
+	if util.LenTrim(updateExpression) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB UpdateItem Failed: " + "UpdateExpression is Required"))
+		return ddbErr
+	}
+
+	if expressionAttributeValues == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB UpdateItem Failed: " + "ExpressionAttributeValues is Required"))
+		return ddbErr
+	}
+
+	trace.Capture("UpdateItem", func() error {
+		// define key
+		m := make(map[string]*dynamodb.AttributeValue)
+
+		m[d.PKName] = &dynamodb.AttributeValue{S: aws.String(pkValue)}
+
+		if util.LenTrim(skValue) > 0 {
+			m[d.SKName] = &dynamodb.AttributeValue{S: aws.String(skValue)}
+		}
+
+		// build update item input params
+		params := &dynamodb.UpdateItemInput{
+			TableName:                 aws.String(d.TableName),
+			Key:                       m,
+			UpdateExpression:          aws.String(updateExpression),
+			ExpressionAttributeValues: expressionAttributeValues,
+			ReturnValues:              aws.String(dynamodb.ReturnValueAllNew),
+		}
+
+		if util.LenTrim(conditionExpression) > 0 {
+			params.ConditionExpression = aws.String(conditionExpression)
+		}
+
+		if expressionAttributeNames != nil {
+			params.ExpressionAttributeNames = expressionAttributeNames
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "UpdateItem = " + params.String()
+
+		// execute dynamodb service
+		var err error
+
+		subTrace := trace.NewSubSegment("UpdateItem_Do")
+		defer subTrace.Close()
+
+		// create timeout context
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			_, err = d.do_UpdateItem(params, ctx)
+		} else {
+			_, err = d.do_UpdateItem(params, subTrace.Ctx)
+		}
+
+		if err != nil {
+			ddbErr = d.handleError(err, "DynamoDB UpdateItem Failed: (UpdateItem)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		} else {
+			return nil
+		}
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"PK": pkValue,
+			"SK": skValue,
+			"UpdateExpression": updateExpression,
+			"ConditionExpress": conditionExpression,
+			"ExpressionAttributeNames": expressionAttributeNames,
+			"ExpressionAttributeValues": expressionAttributeValues,
+		},
+	})
+
+	// update item successful
+	return ddbErr
+}
+
+func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
+	updateExpression string,
+	conditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+
 	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -1183,11 +1456,13 @@ func (d *DynamoDB) UpdateItem(pkValue string, skValue string,
 	}
 
 	if err != nil {
-		return d.handleError(err, "DynamoDB UpdateItem Failed: (UpdateItem)")
+		ddbErr = d.handleError(err, "DynamoDB UpdateItem Failed: (UpdateItem)")
+	} else {
+		ddbErr = nil
 	}
 
 	// update item successful
-	return nil
+	return ddbErr
 }
 
 // UpdateItemWithRetry handles dynamodb retries in case action temporarily fails
@@ -1267,8 +1542,99 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 //		pkValue = required, value of partition key to seek
 //		skValue = optional, value of sort key to seek; set to blank if value not provided
 //		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
-func (d *DynamoDB) DeleteItem(pkValue string, skValue string,
-							  timeOutDuration *time.Duration) *DynamoDBError {
+func (d *DynamoDB) DeleteItem(pkValue string, skValue string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.deleteItemWithTrace(pkValue, skValue, timeOutDuration)
+	} else {
+		return d.deleteItemNormal(pkValue, skValue, timeOutDuration)
+	}
+}
+
+func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-DeleteItem [TableName: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if ddbErr != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(ddbErr.ErrorMessage))
+		}
+	}()
+
+	if d.cn	== nil {
+		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(d.PKName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB DeleteItem Failed: " + "PK Name is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(pkValue) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB DeleteItem Failed: " + "PK Value is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(skValue) > 0 {
+		if util.LenTrim(d.SKName) <= 0 {
+			ddbErr = d.handleError(errors.New("DynamoDB DeleteItem Failed: " + "SK Name is Required"))
+			return ddbErr
+		}
+	}
+
+	trace.Capture("DeleteItem", func() error {
+		m := make(map[string]*dynamodb.AttributeValue)
+
+		m[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(pkValue) }
+
+		if util.LenTrim(skValue) > 0 {
+			m[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(skValue) }
+		}
+
+		params := &dynamodb.DeleteItemInput{
+			TableName: aws.String(d.TableName),
+			Key: m,
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "DeleteItem = " + params.String()
+
+		var err error
+
+		subTrace := trace.NewSubSegment("DeleteItem_Do")
+		defer subTrace.Close()
+
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			_, err = d.do_DeleteItem(params, ctx)
+		} else {
+			_, err = d.do_DeleteItem(params, subTrace.Ctx)
+		}
+
+		if err != nil {
+			ddbErr = d.handleError(err, "DynamoDB DeleteItem Failed: (DeleteItem)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		} else {
+			return nil
+		}
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"PK": pkValue,
+			"SK": skValue,
+		},
+	})
+
+	// delete item was successful
+	return ddbErr
+}
+
+func (d *DynamoDB) deleteItemNormal(pkValue string, skValue string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
 	if d.cn	== nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -1318,11 +1684,13 @@ func (d *DynamoDB) DeleteItem(pkValue string, skValue string,
 	}
 
 	if err != nil {
-		return d.handleError(err, "DynamoDB DeleteItem Failed: (DeleteItem)")
+		ddbErr = d.handleError(err, "DynamoDB DeleteItem Failed: (DeleteItem)")
+	} else {
+		ddbErr = nil
 	}
 
 	// delete item was successful
-	return nil
+	return ddbErr
 }
 
 // DeleteItemWithRetry handles dynamodb retries in case action temporarily fails
@@ -1412,7 +1780,174 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) GetItem(resultItemPtr interface{},
 						   pkValue string, skValue string,
-						   timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) *DynamoDBError {
+						   timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.getItemWithTrace(resultItemPtr, pkValue, skValue, timeOutDuration, consistentRead, projectedAttributes...)
+	} else {
+		return d.getItemNormal(resultItemPtr, pkValue, skValue, timeOutDuration, consistentRead, projectedAttributes...)
+	}
+}
+
+func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
+						   pkValue string, skValue string,
+						   timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-GetItem [TableName: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if ddbErr != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(ddbErr.ErrorMessage))
+		}
+	}()
+
+	if d.cn	== nil {
+		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return ddbErr
+	}
+
+	// validate input parameters
+	if resultItemPtr == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB GetItem Failed: " + "ResultItemPtr Must Initialize First"))
+		return ddbErr
+	}
+
+	if util.LenTrim(d.PKName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB GetItem Failed: " + "PK Name is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(pkValue) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB GetItem Failed: " + "PK Value is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(skValue) > 0 {
+		if util.LenTrim(d.SKName) <= 0 {
+			ddbErr = d.handleError(errors.New("DynamoDB GetItem Failed: " + "SK Name is Required"))
+			return ddbErr
+		}
+	}
+
+	trace.Capture("GetItem", func() error {
+		// define key filter
+		m := make(map[string]*dynamodb.AttributeValue)
+
+		m[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(pkValue) }
+
+		if util.LenTrim(skValue) > 0 {
+			m[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(skValue) }
+		}
+
+		// define projected attributes
+		var proj expression.ProjectionBuilder
+		projSet := false
+
+		if len(projectedAttributes) > 0 {
+			// compose projected attributes if specified
+			firstProjectedAttribute := expression.Name(projectedAttributes[0])
+			moreProjectedAttributes := []expression.NameBuilder{}
+
+			if len(projectedAttributes) > 1 {
+				firstAttribute := true
+
+				for _, v := range projectedAttributes {
+					if !firstAttribute {
+						moreProjectedAttributes = append(moreProjectedAttributes, expression.Name(v))
+					} else {
+						firstAttribute = false
+					}
+				}
+			}
+
+			if len(moreProjectedAttributes) > 0 {
+				proj = expression.NamesList(firstProjectedAttribute, moreProjectedAttributes...)
+			} else {
+				proj = expression.NamesList(firstProjectedAttribute)
+			}
+
+			projSet = true
+		}
+
+		// compose filter expression and projection if applicable
+		var expr expression.Expression
+		var err error
+
+		if projSet {
+			if expr, err = expression.NewBuilder().WithProjection(proj).Build(); err != nil {
+				ddbErr = d.handleError(err, "DynamoDB GetItem Failed: (GetItem)")
+				return fmt.Errorf(ddbErr.ErrorMessage)
+			}
+		}
+
+		// set params
+		params := &dynamodb.GetItemInput{
+			TableName: aws.String(d.TableName),
+			Key: m,
+		}
+
+		if projSet {
+			params.ProjectionExpression = expr.Projection()
+		}
+
+		if consistentRead != nil {
+			if *consistentRead {
+				params.ConsistentRead = consistentRead
+			}
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "GetItem = " + params.String()
+
+		// execute get item action
+		var result *dynamodb.GetItemOutput
+
+		subTrace := trace.NewSubSegment("GetItem_Do")
+		defer subTrace.Close()
+
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			result, err = d.do_GetItem(params, ctx)
+		} else {
+			result, err = d.do_GetItem(params, subTrace.Ctx)
+		}
+
+		// evaluate result
+		if err != nil {
+			ddbErr = d.handleError(err, "DynamoDB GetItem Failed: (GetItem)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		}
+
+		if result == nil {
+			ddbErr = d.handleError(errors.New("DynamoDB GetItem Failed: " + "Result Object Nil"))
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		}
+
+		if err = dynamodbattribute.UnmarshalMap(result.Item, resultItemPtr); err != nil {
+			ddbErr = d.handleError(err, "DynamoDB GetItem Failed: (Unmarshal)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		} else {
+			return nil
+		}
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"PK": pkValue,
+			"SK": skValue,
+		},
+	})
+
+	// get item was successful
+	return ddbErr
+}
+
+func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
+								 pkValue string, skValue string,
+								 timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
 	if d.cn	== nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -1529,11 +2064,13 @@ func (d *DynamoDB) GetItem(resultItemPtr interface{},
 	}
 
 	if err = dynamodbattribute.UnmarshalMap(result.Item, resultItemPtr); err != nil {
-		return d.handleError(err, "DynamoDB GetItem Failed: (Unmarshal)")
+		ddbErr = d.handleError(err, "DynamoDB GetItem Failed: (Unmarshal)")
+	} else {
+		ddbErr = nil
 	}
 
 	// get item was successful
-	return nil
+	return ddbErr
 }
 
 // GetItemWithRetry handles dynamodb retries in case action temporarily fails
@@ -1687,6 +2224,239 @@ func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
 							  expressionAttributeValues map[string]*dynamodb.AttributeValue,
 							  filterConditionExpression *expression.ConditionBuilder,
 							  projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.queryItemsWithTrace(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey,
+									 keyConditionExpression, expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
+	} else {
+		return d.queryItemsNormal(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey,
+								  keyConditionExpression, expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
+	}
+}
+
+func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
+									   timeOutDuration *time.Duration,
+									   consistentRead *bool,
+									   indexName *string,
+									   pageLimit *int64,
+									   pagedQuery bool,
+									   pagedQueryPageCountLimit *int64,
+									   exclusiveStartKey map[string]*dynamodb.AttributeValue,
+									   keyConditionExpression string,
+									   expressionAttributeNames map[string]*string,
+									   expressionAttributeValues map[string]*dynamodb.AttributeValue,
+									   filterConditionExpression *expression.ConditionBuilder,
+									   projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-QueryItems [TableName: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if ddbErr != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(ddbErr.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return nil, ddbErr
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return nil, ddbErr
+	}
+
+	// result items pointer must be set
+	if resultItemsPtr == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB QueryItems Failed: " + "ResultItems is Nil"))
+		return nil, ddbErr
+	}
+
+	// validate additional input parameters
+	if util.LenTrim(keyConditionExpression) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB QueryItems Failed: " + "KeyConditionExpress is Required"))
+		return nil, ddbErr
+	}
+
+	if expressionAttributeValues == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB QueryItems Failed: " + "ExpressionAttributeValues is Required"))
+		return nil, ddbErr
+	}
+
+	// execute dynamodb service
+	var result *dynamodb.QueryOutput
+
+	trace.Capture("QueryItems", func() error {
+		// gather projection attributes
+		var proj expression.ProjectionBuilder
+		projSet := false
+
+		if len(projectedAttributes) > 0 {
+			// compose projected attributes if specified
+			firstProjectedAttribute := expression.Name(projectedAttributes[0])
+			moreProjectedAttributes := []expression.NameBuilder{}
+
+			if len(projectedAttributes) > 1 {
+				firstAttribute := true
+
+				for _, v := range projectedAttributes {
+					if !firstAttribute {
+						moreProjectedAttributes = append(moreProjectedAttributes, expression.Name(v))
+					} else {
+						firstAttribute = false
+					}
+				}
+			}
+
+			if len(moreProjectedAttributes) > 0 {
+				proj = expression.NamesList(firstProjectedAttribute, moreProjectedAttributes...)
+			} else {
+				proj = expression.NamesList(firstProjectedAttribute)
+			}
+
+			projSet = true
+		}
+
+		// compose filter expression and projection if applicable
+		var expr expression.Expression
+		var err error
+
+		filterSet := false
+
+		if filterConditionExpression != nil && projSet {
+			expr, err = expression.NewBuilder().WithFilter(*filterConditionExpression).WithProjection(proj).Build()
+			filterSet = true
+			projSet = true
+		} else if filterConditionExpression != nil {
+			expr, err = expression.NewBuilder().WithFilter(*filterConditionExpression).Build()
+			filterSet = true
+			projSet	 = false
+		} else if projSet {
+			expr, err = expression.NewBuilder().WithProjection(proj).Build()
+			filterSet = false
+			projSet	 = true
+		}
+
+		if err != nil {
+			ddbErr = d.handleError(err, "DynamoDB QueryItems Failed (Filter/Projection Expression Build)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		}
+
+		// build query input params
+		params := &dynamodb.QueryInput{
+			TableName: aws.String(d.TableName),
+			KeyConditionExpression: aws.String(keyConditionExpression),
+			ExpressionAttributeValues: expressionAttributeValues,
+		}
+
+		if expressionAttributeNames != nil {
+			params.ExpressionAttributeNames = expressionAttributeNames
+		}
+
+		if filterSet {
+			params.FilterExpression = expr.Filter()
+
+			if params.ExpressionAttributeNames == nil {
+				params.ExpressionAttributeNames = make(map[string]*string)
+			}
+
+			for k, v := range expr.Names() {
+				params.ExpressionAttributeNames[k] = v
+			}
+
+			for k, v := range expr.Values() {
+				params.ExpressionAttributeValues[k] = v
+			}
+		}
+
+		if projSet {
+			params.ProjectionExpression = expr.Projection()
+		}
+
+		if consistentRead != nil {
+			if *consistentRead {
+				if len(*indexName) > 0 {
+					// gsi not valid for consistent read, turn off consistent read
+					*consistentRead = false
+				}
+			}
+
+			params.ConsistentRead = consistentRead
+		}
+
+		if indexName != nil {
+			params.IndexName = indexName
+		}
+
+		if pageLimit != nil {
+			params.Limit = pageLimit
+		}
+
+		if exclusiveStartKey != nil {
+			params.ExclusiveStartKey = exclusiveStartKey
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "QueryItems = " + params.String()
+
+		subTrace := trace.NewSubSegment("QueryItems_Do")
+		defer subTrace.Close()
+
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			result, err = d.do_Query(params, pagedQuery, pagedQueryPageCountLimit, ctx)
+		} else {
+			result, err = d.do_Query(params, pagedQuery, pagedQueryPageCountLimit, subTrace.Ctx)
+		}
+
+		if err != nil {
+			ddbErr = d.handleError(err, "DynamoDB QueryItems Failed: (QueryItems)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		}
+
+		if result == nil {
+			return nil
+		}
+
+		// unmarshal result items to target object map
+		if err = dynamodbattribute.UnmarshalListOfMaps(result.Items, resultItemsPtr); err != nil {
+			ddbErr = d.handleError(err, "Dynamo QueryItems Failed: (Unmarshal Result Items)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		} else {
+			return nil
+		}
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"IndexName": aws.StringValue(indexName),
+			"ExclusiveStartKey": exclusiveStartKey,
+			"KeyConditionExpression": keyConditionExpression,
+			"ExpressionAttributeNames": expressionAttributeNames,
+			"ExpressionAttributeValues": expressionAttributeValues,
+			"FilterConditionExpression": filterConditionExpression,
+		},
+	})
+
+	// query items successful
+	if result != nil {
+		return result.LastEvaluatedKey, ddbErr
+	} else {
+		return nil, ddbErr
+	}
+}
+
+func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
+									timeOutDuration *time.Duration,
+									consistentRead *bool,
+									indexName *string,
+									pageLimit *int64,
+									pagedQuery bool,
+									pagedQueryPageCountLimit *int64,
+									exclusiveStartKey map[string]*dynamodb.AttributeValue,
+									keyConditionExpression string,
+									expressionAttributeNames map[string]*string,
+									expressionAttributeValues map[string]*dynamodb.AttributeValue,
+									filterConditionExpression *expression.ConditionBuilder,
+									projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	if d.cn == nil {
 		return nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -1708,6 +2478,9 @@ func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
 	if expressionAttributeValues == nil {
 		return nil, d.handleError(errors.New("DynamoDB QueryItems Failed: " + "ExpressionAttributeValues is Required"))
 	}
+
+	// execute dynamodb service
+	var result *dynamodb.QueryOutput
 
 	// gather projection attributes
 	var proj expression.ProjectionBuilder
@@ -1820,10 +2593,6 @@ func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
 	// record params payload
 	d.LastExecuteParamsPayload = "QueryItems = " + params.String()
 
-	// execute dynamodb service
-	var result *dynamodb.QueryOutput
-
-	// create timeout context
 	if timeOutDuration != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
 		defer cancel()
@@ -1837,16 +2606,18 @@ func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
 	}
 
 	if result == nil {
-		return nil, nil
+		return nil, d.handleError(err, "DynamoDB QueryItems Failed: (QueryItems)")
 	}
 
 	// unmarshal result items to target object map
 	if err = dynamodbattribute.UnmarshalListOfMaps(result.Items, resultItemsPtr); err != nil {
-		return nil, d.handleError(err, "Dynamo QueryItems Failed: (Unmarshal Result Items)")
+		ddbErr = d.handleError(err, "Dynamo QueryItems Failed: (Unmarshal Result Items)")
+	} else {
+		ddbErr = nil
 	}
 
 	// query items successful
-	return result.LastEvaluatedKey, nil
+	return result.LastEvaluatedKey, ddbErr
 }
 
 // QueryItemsWithRetry handles dynamodb retries in case action temporarily fails
@@ -2117,6 +2888,186 @@ func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
 							 pagedQueryPageCountLimit *int64,
 							 exclusiveStartKey map[string]*dynamodb.AttributeValue,
 							 filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.scanItemsWithTrace(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, filterConditionExpression, projectedAttributes...)
+	} else {
+		return d.scanItemsNormal(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, filterConditionExpression, projectedAttributes...)
+	}
+}
+
+func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
+									  timeOutDuration *time.Duration,
+									  consistentRead *bool,
+									  indexName *string,
+									  pageLimit *int64,
+									  pagedQuery bool,
+									  pagedQueryPageCountLimit *int64,
+									  exclusiveStartKey map[string]*dynamodb.AttributeValue,
+									  filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-ScanItems [TableName: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if ddbErr != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(ddbErr.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return nil, ddbErr
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return nil, ddbErr
+	}
+
+	// result items pointer must be set
+	if resultItemsPtr == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB ScanItems Failed: " + "ResultItems is Nil"))
+		return nil, ddbErr
+	}
+
+	// execute dynamodb service
+	var result *dynamodb.ScanOutput
+
+	trace.Capture("ScanItems", func() error {
+		// create projected attributes
+		var proj expression.ProjectionBuilder
+		projSet := false
+
+		if len(projectedAttributes) > 0 {
+			firstProjectedAttribute := expression.Name(projectedAttributes[0])
+			moreProjectedAttributes := []expression.NameBuilder{}
+
+			if len(projectedAttributes) > 1 {
+				firstAttribute := true
+
+				for _, v := range projectedAttributes {
+					if !firstAttribute {
+						moreProjectedAttributes = append(moreProjectedAttributes, expression.Name(v))
+					} else {
+						firstAttribute = false
+					}
+				}
+			}
+
+			if len(moreProjectedAttributes) > 0 {
+				proj = expression.NamesList(firstProjectedAttribute, moreProjectedAttributes...)
+			} else {
+				proj = expression.NamesList(firstProjectedAttribute)
+			}
+
+			projSet	= true
+		}
+
+		// build expression
+		var expr expression.Expression
+		var err error
+
+		if projSet {
+			expr, err = expression.NewBuilder().WithFilter(filterConditionExpression).WithProjection(proj).Build()
+		} else {
+			expr, err = expression.NewBuilder().WithFilter(filterConditionExpression).Build()
+		}
+
+		if err != nil {
+			ddbErr = d.handleError(err, "DynamoDB ScanItems Failed: (Expression NewBuilder)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		}
+
+		// build query input params
+		params := &dynamodb.ScanInput{
+			TableName:                 aws.String(d.TableName),
+			FilterExpression:          expr.Filter(),
+			ExpressionAttributeNames:  expr.Names(),
+			ExpressionAttributeValues: expr.Values(),
+		}
+
+		if projSet {
+			params.ProjectionExpression = expr.Projection()
+		}
+
+		if consistentRead != nil {
+			if *consistentRead {
+				if len(*indexName) > 0 {
+					// gsi not valid for consistent read, turn off consistent read
+					*consistentRead = false
+				}
+			}
+
+			params.ConsistentRead = consistentRead
+		}
+
+		if indexName != nil {
+			params.IndexName = indexName
+		}
+
+		if pageLimit != nil {
+			params.Limit = pageLimit
+		}
+
+		if exclusiveStartKey != nil {
+			params.ExclusiveStartKey = exclusiveStartKey
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "ScanItems = " + params.String()
+
+		subTrace := trace.NewSubSegment("ScanItems_Do")
+		defer subTrace.Close()
+
+		// create timeout context
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			result, err = d.do_Scan(params, pagedQuery, pagedQueryPageCountLimit, ctx)
+		} else {
+			result, err = d.do_Scan(params, pagedQuery, pagedQueryPageCountLimit, subTrace.Ctx)
+		}
+
+		if err != nil {
+			ddbErr = d.handleError(err, "DynamoDB ScanItems Failed: (ScanItems)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		}
+
+		if result == nil {
+			return nil
+		}
+
+		// unmarshal result items to target object map
+		if err = dynamodbattribute.UnmarshalListOfMaps(result.Items, resultItemsPtr); err != nil {
+			ddbErr = d.handleError(err, "DynamoDB ScanItems Failed: (Unmarshal Result Items)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		} else {
+			return nil
+		}
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"IndexName": aws.StringValue(indexName),
+			"ExclusiveStartKey": exclusiveStartKey,
+			"FilterConditionExpression": filterConditionExpression,
+		},
+	})
+
+	// scan items successful
+	if result != nil {
+		return result.LastEvaluatedKey, ddbErr
+	} else {
+		return nil, ddbErr
+	}
+}
+
+func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
+								   timeOutDuration *time.Duration,
+								   consistentRead *bool,
+								   indexName *string,
+								   pageLimit *int64,
+								   pagedQuery bool,
+								   pagedQueryPageCountLimit *int64,
+								   exclusiveStartKey map[string]*dynamodb.AttributeValue,
+								   filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	if d.cn == nil {
 		return nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -2129,6 +3080,9 @@ func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
 	if resultItemsPtr == nil {
 		return nil, d.handleError(errors.New("DynamoDB ScanItems Failed: " + "ResultItems is Nil"))
 	}
+
+	// execute dynamodb service
+	var result *dynamodb.ScanOutput
 
 	// create projected attributes
 	var proj expression.ProjectionBuilder
@@ -2211,9 +3165,6 @@ func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
 	// record params payload
 	d.LastExecuteParamsPayload = "ScanItems = " + params.String()
 
-	// execute dynamodb service
-	var result *dynamodb.ScanOutput
-
 	// create timeout context
 	if timeOutDuration != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
@@ -2228,16 +3179,18 @@ func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
 	}
 
 	if result == nil {
-		return nil, nil
+		return nil, d.handleError(err, "DynamoDB ScanItems Failed: (ScanItems)")
 	}
 
 	// unmarshal result items to target object map
 	if err = dynamodbattribute.UnmarshalListOfMaps(result.Items, resultItemsPtr); err != nil {
-		return nil, d.handleError(err, "DynamoDB ScanItems Failed: (Unmarshal Result Items)")
+		ddbErr = d.handleError(err, "DynamoDB ScanItems Failed: (Unmarshal Result Items)")
+	} else {
+		ddbErr = nil
 	}
 
 	// scan items successful
-	return result.LastEvaluatedKey, nil
+	return result.LastEvaluatedKey, ddbErr
 }
 
 // ScanItemsWithRetry handles dynamodb retries in case action temporarily fails
@@ -2457,6 +3410,216 @@ func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
 func (d *DynamoDB) BatchWriteItems(putItems interface{},
 								   deleteKeys []DynamoDBTableKeys,
 								   timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.batchWriteItemsWithTrace(putItems, deleteKeys, timeOutDuration)
+	} else {
+		return d.batchWriteItemsNormal(putItems, deleteKeys, timeOutDuration)
+	}
+}
+
+func (d *DynamoDB) batchWriteItemsWithTrace(putItems interface{},
+								   			deleteKeys []DynamoDBTableKeys,
+								   			timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-BatchWriteItems [TableName: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if err != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(err.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		err = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return 0, nil, err
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		err = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return 0, nil, err
+	}
+
+	// validate input parameters
+	if putItems == nil && deleteKeys == nil {
+		err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Both Cannot Be Nil"))
+		return 0, nil, err
+	}
+
+	trace.Capture("BatchWriteItems", func() error {
+		// marshal put and delete objects
+		var putItemsAv []map[string]*dynamodb.AttributeValue
+		var deleteKeysAv []map[string]*dynamodb.AttributeValue
+
+		if putItems != nil {
+			// putItems is in interface
+			// need to reflect into slice of interface{}
+			putItemsIf := util.SliceObjectsToSliceInterface(putItems)
+
+			if putItemsIf != nil && len(putItemsIf) > 0 {
+				for _, v := range putItemsIf {
+					if m, e := dynamodbattribute.MarshalMap(v); e != nil {
+						successCount = 0
+						unprocessedItems = nil
+						err = d.handleError(e, "DynamoDB BatchWriteItems Failed: (PutItems MarshalMap)")
+						return fmt.Errorf(err.ErrorMessage)
+					} else {
+						if m != nil {
+							putItemsAv = append(putItemsAv, m)
+						} else {
+							successCount = 0
+							unprocessedItems = nil
+							err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: (PutItems MarshalMap) " + "PutItem Marshal Result Object Nil"))
+							return fmt.Errorf(err.ErrorMessage)
+						}
+					}
+				}
+			}
+		}
+
+		if deleteKeys != nil {
+			if len(deleteKeys) > 0 {
+				for _, v := range deleteKeys {
+					if m, e := dynamodbattribute.MarshalMap(v); e != nil {
+						successCount = 0
+						unprocessedItems = nil
+						err = d.handleError(e, "DynamoDB BatchWriteItems Failed: (DeleteKeys MarshalMap)")
+						return fmt.Errorf(err.ErrorMessage)
+					} else {
+						if m != nil {
+							deleteKeysAv = append(deleteKeysAv, m)
+						} else {
+							successCount = 0
+							unprocessedItems = nil
+							err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: (DeleteKeys MarshalMap) " + "DeleteKey Marshal Result Object Nil"))
+							return fmt.Errorf(err.ErrorMessage)
+						}
+					}
+				}
+			}
+		}
+
+		putCount := 0
+		deleteCount := 0
+
+		if putItemsAv != nil {
+			putCount = len(putItemsAv)
+		}
+
+		if deleteKeysAv != nil {
+			deleteCount = len(deleteKeysAv)
+		}
+
+		if (putCount+deleteCount) <= 0 || (putCount+deleteCount) > 25 {
+			successCount = 0
+			unprocessedItems = nil
+			err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Count Must Be 1 to 25 Only"))
+			return fmt.Errorf(err.ErrorMessage)
+		}
+
+		// holder of delete and put item write requests
+		var writeRequests []*dynamodb.WriteRequest
+
+		// define requestItems wrapper
+		if deleteCount > 0 {
+			for _, v := range deleteKeysAv {
+				writeRequests = append(writeRequests, &dynamodb.WriteRequest{
+					DeleteRequest: &dynamodb.DeleteRequest{
+						Key: v,
+					},
+				})
+			}
+		}
+
+		if putCount > 0 {
+			for _, v := range putItemsAv {
+				writeRequests = append(writeRequests, &dynamodb.WriteRequest{
+					PutRequest: &dynamodb.PutRequest{
+						Item: v,
+					},
+				})
+			}
+		}
+
+		// compose batch write params
+		params := &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]*dynamodb.WriteRequest{
+				d.TableName: writeRequests,
+			},
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "BatchWriteItems = " + params.String()
+
+		// execute batch write action
+		var result *dynamodb.BatchWriteItemOutput
+		var err1 error
+
+		subTrace := trace.NewSubSegment("BatchWriteItems_Do")
+		defer subTrace.Close()
+
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			result, err1 = d.do_BatchWriteItem(params, ctx)
+		} else {
+			result, err1 = d.do_BatchWriteItem(params, subTrace.Ctx)
+		}
+
+		if err1 != nil {
+			successCount = 0
+			unprocessedItems = nil
+			err = d.handleError(err1, "DynamoDB BatchWriteItems Failed: (BatchWriteItem)")
+			return fmt.Errorf(err.ErrorMessage)
+		}
+
+		// evaluate results
+		unprocessed := result.UnprocessedItems
+
+		if unprocessed != nil {
+			list := unprocessed[d.TableName]
+
+			if list != nil && len(list) > 0 {
+				outList := new(DynamoDBUnprocessedItemsAndKeys)
+
+				for _, v := range list {
+					if v.PutRequest != nil && v.PutRequest.Item != nil {
+						outList.PutItems = append(outList.PutItems, v.PutRequest.Item)
+					}
+
+					if v.DeleteRequest != nil && v.DeleteRequest.Key != nil {
+						var o DynamoDBTableKeys
+
+						if e := dynamodbattribute.UnmarshalMap(v.DeleteRequest.Key, &o); e == nil {
+							outList.DeleteKeys = append(outList.DeleteKeys, &o)
+						}
+					}
+				}
+
+				successCount = deleteCount+putCount-len(list)
+				unprocessedItems = outList
+				err = nil
+				return nil
+			}
+		}
+
+		successCount = deleteCount+putCount
+		unprocessedItems = nil
+		err = nil
+		return nil
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"PutItems": putItems,
+			"DeleteKeys": deleteKeys,
+		},
+	})
+
+	// batch put and delete items successful
+	return successCount, unprocessedItems, err
+}
+
+func (d *DynamoDB) batchWriteItemsNormal(putItems interface{},
+										 deleteKeys []DynamoDBTableKeys,
+										 timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
 	if d.cn == nil {
 		return 0, nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -2482,12 +3645,18 @@ func (d *DynamoDB) BatchWriteItems(putItems interface{},
 		if putItemsIf != nil && len(putItemsIf) > 0 {
 			for _, v := range putItemsIf {
 				if m, e := dynamodbattribute.MarshalMap(v); e != nil {
-					return 0, nil, d.handleError(e, "DynamoDB BatchWriteItems Failed: (PutItems MarshalMap)")
+					successCount = 0
+					unprocessedItems = nil
+					err = d.handleError(e, "DynamoDB BatchWriteItems Failed: (PutItems MarshalMap)")
+					return successCount, unprocessedItems, err
 				} else {
 					if m != nil {
 						putItemsAv = append(putItemsAv, m)
 					} else {
-						return 0, nil, d.handleError(errors.New("DynamoDB BatchWriteItems Failed: (PutItems MarshalMap) " + "PutItem Marshal Result Object Nil"))
+						successCount = 0
+						unprocessedItems = nil
+						err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: (PutItems MarshalMap) " + "PutItem Marshal Result Object Nil"))
+						return successCount, unprocessedItems, err
 					}
 				}
 			}
@@ -2498,12 +3667,18 @@ func (d *DynamoDB) BatchWriteItems(putItems interface{},
 		if len(deleteKeys) > 0 {
 			for _, v := range deleteKeys {
 				if m, e := dynamodbattribute.MarshalMap(v); e != nil {
-					return 0, nil, d.handleError(e, "DynamoDB BatchWriteItems Failed: (DeleteKeys MarshalMap)")
+					successCount = 0
+					unprocessedItems = nil
+					err = d.handleError(e, "DynamoDB BatchWriteItems Failed: (DeleteKeys MarshalMap)")
+					return successCount, unprocessedItems, err
 				} else {
 					if m != nil {
 						deleteKeysAv = append(deleteKeysAv, m)
 					} else {
-						return 0, nil, d.handleError(errors.New("DynamoDB BatchWriteItems Failed: (DeleteKeys MarshalMap) " + "DeleteKey Marshal Result Object Nil"))
+						successCount = 0
+						unprocessedItems = nil
+						err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: (DeleteKeys MarshalMap) " + "DeleteKey Marshal Result Object Nil"))
+						return successCount, unprocessedItems, err
 					}
 				}
 			}
@@ -2522,7 +3697,10 @@ func (d *DynamoDB) BatchWriteItems(putItems interface{},
 	}
 
 	if (putCount+deleteCount) <= 0 || (putCount+deleteCount) > 25 {
-		return 0,nil, d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Count Must Be 1 to 25 Only"))
+		successCount = 0
+		unprocessedItems = nil
+		err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Count Must Be 1 to 25 Only"))
+		return successCount, unprocessedItems, err
 	}
 
 	// holder of delete and put item write requests
@@ -2572,7 +3750,10 @@ func (d *DynamoDB) BatchWriteItems(putItems interface{},
 	}
 
 	if err1 != nil {
-		return 0,nil, d.handleError(err1, "DynamoDB BatchWriteItems Failed: (BatchWriteItem)")
+		successCount = 0
+		unprocessedItems = nil
+		err = d.handleError(err1, "DynamoDB BatchWriteItems Failed: (BatchWriteItem)")
+		return successCount, unprocessedItems, err
 	}
 
 	// evaluate results
@@ -2598,12 +3779,19 @@ func (d *DynamoDB) BatchWriteItems(putItems interface{},
 				}
 			}
 
-			return deleteCount+putCount-len(list), outList, nil
+			successCount = deleteCount+putCount-len(list)
+			unprocessedItems = outList
+			err = nil
+			return successCount, unprocessedItems, err
 		}
 	}
 
+	successCount = deleteCount+putCount
+	unprocessedItems = nil
+	err = nil
+
 	// batch put and delete items successful
-	return deleteCount+putCount, nil, nil
+	return successCount, unprocessedItems, err
 }
 
 // BatchWriteItemsWithRetry handles dynamodb retries in case action temporarily fails
@@ -2696,10 +3884,208 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) BatchGetItems(resultItemsPtr interface{},
-								 searchKeys []DynamoDBTableKeys,
+ 								 searchKeys []DynamoDBTableKeys,
 								 timeOutDuration *time.Duration,
 								 consistentRead *bool,
 								 projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.batchGetItemsWithTrace(resultItemsPtr, searchKeys, timeOutDuration, consistentRead, projectedAttributes...)
+	} else {
+		return d.batchGetItemsNormal(resultItemsPtr, searchKeys, timeOutDuration, consistentRead, projectedAttributes...)
+	}
+}
+
+func (d *DynamoDB) batchGetItemsWithTrace(resultItemsPtr interface{},
+										  searchKeys []DynamoDBTableKeys,
+										  timeOutDuration *time.Duration,
+										  consistentRead *bool,
+										  projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-BatchGetItems [TableName: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if err != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(err.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		err = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return false, err
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		err = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return false, err
+	}
+
+	// validate input parameters
+	if resultItemsPtr == nil {
+		err = d.handleError(errors.New("DynamoDB BatchGetItems Failed: " + "ResultItems is Nil"))
+		return false, err
+	}
+
+	if searchKeys == nil {
+		err = d.handleError(errors.New("DynamoDB BatchGetItems Failed: " + "SearchKeys Cannot Be Nil"))
+		return false, err
+	}
+
+	if len(searchKeys) <= 0 {
+		err = d.handleError(errors.New("DynamoDB BatchGetItems Failed: " + "SearchKeys Required"))
+		return false, err
+	}
+
+	if len(searchKeys) > 100 {
+		err = d.handleError(errors.New("DynamoDB BatchGetItems Failed: " + "SearchKeys Maximum is 100"))
+		return false, err
+	}
+
+	trace.Capture("BatchGetItems", func() error {
+		// marshal search keys into slice of map of dynamodb attribute values
+		var keysAv []map[string]*dynamodb.AttributeValue
+
+		for _, v := range searchKeys {
+			if m, e := dynamodbattribute.MarshalMap(v); e != nil {
+				notFound = false
+				err = d.handleError(e, "DynamoDB BatchGetItems Failed: (SearchKey Marshal)")
+				return fmt.Errorf(err.ErrorMessage)
+			} else {
+				if m != nil {
+					keysAv = append(keysAv, m)
+				} else {
+					notFound = false
+					err = d.handleError(errors.New("DynamoDB BatchGetItems Failed: (SearchKey Marshal) " + "Marshaled Result Nil"))
+					return fmt.Errorf(err.ErrorMessage)
+				}
+			}
+		}
+
+		// define projected fields
+		// define projected attributes
+		var proj expression.ProjectionBuilder
+		projSet := false
+
+		if len(projectedAttributes) > 0 {
+			// compose projected attributes if specified
+			firstProjectedAttribute := expression.Name(projectedAttributes[0])
+			moreProjectedAttributes := []expression.NameBuilder{}
+
+			if len(projectedAttributes) > 1 {
+				firstAttribute := true
+
+				for _, v := range projectedAttributes {
+					if !firstAttribute {
+						moreProjectedAttributes = append(moreProjectedAttributes, expression.Name(v))
+					} else {
+						firstAttribute = false
+					}
+				}
+			}
+
+			if len(moreProjectedAttributes) > 0 {
+				proj = expression.NamesList(firstProjectedAttribute, moreProjectedAttributes...)
+			} else {
+				proj = expression.NamesList(firstProjectedAttribute)
+			}
+
+			projSet = true
+		}
+
+		var expr expression.Expression
+		var err1 error
+
+		if projSet {
+			if expr, err1 = expression.NewBuilder().WithProjection(proj).Build(); err1 != nil {
+				notFound = false
+				err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (Projecting Attributes)")
+				return fmt.Errorf(err.ErrorMessage)
+			}
+		}
+
+		// define params
+		params := &dynamodb.BatchGetItemInput{
+			RequestItems: map[string]*dynamodb.KeysAndAttributes{
+				d.TableName: {
+					Keys: keysAv,
+				},
+			},
+		}
+
+		if projSet {
+			params.RequestItems[d.TableName].ProjectionExpression = expr.Projection()
+		}
+
+		if consistentRead != nil {
+			if *consistentRead {
+				params.RequestItems[d.TableName].ConsistentRead = consistentRead
+			}
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "BatchGetItems = " + params.String()
+
+		// execute batch
+		var result *dynamodb.BatchGetItemOutput
+
+		subTrace := trace.NewSubSegment("BatchGetItems_Do")
+		defer subTrace.Close()
+
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			result, err1 = d.do_BatchGetItem(params, ctx)
+		} else {
+			result, err1 = d.do_BatchGetItem(params, subTrace.Ctx)
+		}
+
+		// evaluate batch execute result
+		if err1 != nil {
+			notFound = false
+			err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
+			return fmt.Errorf(err.ErrorMessage)
+		}
+
+		if result.Responses == nil {
+			// not found
+			notFound = true
+			err = nil
+			return nil
+		} else {
+			// retrieve items found for the given table name
+			x := result.Responses[d.TableName]
+
+			if x == nil {
+				notFound = true
+				err = nil
+				return nil
+			} else {
+				// unmarshal results
+				if err1 = dynamodbattribute.UnmarshalListOfMaps(x, resultItemsPtr); err1 != nil {
+					notFound = false
+					err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (Unmarshal ResultItems)")
+					return fmt.Errorf(err.ErrorMessage)
+				} else {
+					// unmarshal successful
+					notFound = false
+					err = nil
+					return nil
+				}
+			}
+		}
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"SearchKeys": searchKeys,
+		},
+	})
+
+	return notFound, err
+}
+
+func (d *DynamoDB) batchGetItemsNormal(resultItemsPtr interface{},
+									   searchKeys []DynamoDBTableKeys,
+									   timeOutDuration *time.Duration,
+									   consistentRead *bool,
+									   projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
 	if d.cn == nil {
 		return false, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -2730,12 +4116,16 @@ func (d *DynamoDB) BatchGetItems(resultItemsPtr interface{},
 
 	for _, v := range searchKeys {
 		if m, e := dynamodbattribute.MarshalMap(v); e != nil {
-			return false, d.handleError(e, "DynamoDB BatchGetItems Failed: (SearchKey Marshal)")
+			notFound = false
+			err = d.handleError(e, "DynamoDB BatchGetItems Failed: (SearchKey Marshal)")
+			return notFound, err
 		} else {
 			if m != nil {
 				keysAv = append(keysAv, m)
 			} else {
-				return false, d.handleError(errors.New("DynamoDB BatchGetItems Failed: (SearchKey Marshal) " + "Marshaled Result Nil"))
+				notFound = false
+				err = d.handleError(errors.New("DynamoDB BatchGetItems Failed: (SearchKey Marshal) " + "Marshaled Result Nil"))
+				return notFound, err
 			}
 		}
 	}
@@ -2776,7 +4166,9 @@ func (d *DynamoDB) BatchGetItems(resultItemsPtr interface{},
 
 	if projSet {
 		if expr, err1 = expression.NewBuilder().WithProjection(proj).Build(); err1 != nil {
-			return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (Projecting Attributes)")
+			notFound = false
+			err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (Projecting Attributes)")
+			return notFound, err
 		}
 	}
 
@@ -2815,7 +4207,9 @@ func (d *DynamoDB) BatchGetItems(resultItemsPtr interface{},
 
 	// evaluate batch execute result
 	if err1 != nil {
-		return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
+		notFound = false
+		err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
+		return notFound, err
 	}
 
 	if result.Responses == nil {
@@ -2830,7 +4224,9 @@ func (d *DynamoDB) BatchGetItems(resultItemsPtr interface{},
 		} else {
 			// unmarshal results
 			if err1 = dynamodbattribute.UnmarshalListOfMaps(x, resultItemsPtr); err1 != nil {
-				return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (Unmarshal ResultItems)")
+				notFound = false
+				err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (Unmarshal ResultItems)")
+				return notFound, err
 			} else {
 				// unmarshal successful
 				return false, nil
@@ -2964,6 +4360,208 @@ func (d *DynamoDB) BatchDeleteItemsWithRetry(maxRetries uint,
 // important
 //		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.transactionWriteItemsWithTrace(timeOutDuration, tranItems...)
+	} else {
+		return d.transactionWriteItemsNormal(timeOutDuration, tranItems...)
+	}
+}
+
+func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration, tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-TransactionWriteItems [TableName: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if err != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(err.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		err = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return false, err
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		err = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return false, err
+	}
+
+	if util.LenTrim(d.PKName) <= 0 {
+		err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: " + "PK Name is Required"))
+		return false, err
+	}
+
+	if len(tranItems) == 0 {
+		err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: " + "Minimum of 1 TranItems is Required"))
+		return false, err
+	}
+
+	trace.Capture("TransactionWriteItems", func() error {
+		// create working data
+		var items []*dynamodb.TransactWriteItem
+
+		// loop through all tranItems slice to pre-populate transaction write items slice
+		skOK := false
+
+		for _, t := range tranItems {
+			tableName := t.TableNameOverride
+
+			if util.LenTrim(tableName) <= 0 {
+				tableName = d.TableName
+			}
+
+			if t.DeleteItems != nil && len(t.DeleteItems) > 0 {
+				for _, v := range t.DeleteItems {
+					m := new(dynamodb.TransactWriteItem)
+
+					md := make(map[string]*dynamodb.AttributeValue)
+					md[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(v.PK) }
+
+					if util.LenTrim(v.SK) > 0 {
+						if !skOK {
+							if util.LenTrim(d.SKName) <= 0 {
+								success = false
+								err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+								return fmt.Errorf(err.ErrorMessage)
+							} else {
+								skOK = true
+							}
+						}
+
+						md[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(v.SK) }
+					}
+
+					m.Delete = &dynamodb.Delete{
+						TableName: aws.String(tableName),
+						Key: md,
+					}
+
+					items = append(items, m)
+				}
+			}
+
+			if t.PutItems != nil {
+				if md, e := t.MarshalPutItems(); e != nil {
+					success = false
+					err = d.handleError(e, "DynamoDB TransactionWriteItems Failed: (Marshal PutItems)")
+					return fmt.Errorf(err.ErrorMessage)
+				} else {
+					for _, v := range md {
+						m := new(dynamodb.TransactWriteItem)
+
+						m.Put = &dynamodb.Put{
+							TableName: aws.String(tableName),
+							Item: v,
+						}
+
+						items = append(items, m)
+					}
+				}
+			}
+
+			if t.UpdateItems != nil && len(t.UpdateItems) > 0 {
+				for _, v := range t.UpdateItems {
+					m := new(dynamodb.TransactWriteItem)
+
+					mk := make(map[string]*dynamodb.AttributeValue)
+					mk[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(v.PK) }
+
+					if util.LenTrim(v.SK) > 0 {
+						if !skOK {
+							if util.LenTrim(d.SKName) <= 0 {
+								success = false
+								err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+								return fmt.Errorf(err.ErrorMessage)
+							} else {
+								skOK = true
+							}
+						}
+
+						mk[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(v.SK) }
+					}
+
+					m.Update = &dynamodb.Update{
+						TableName: aws.String(tableName),
+						Key: mk,
+					}
+
+					if util.LenTrim(v.ConditionExpression) > 0 {
+						m.Update.ConditionExpression = aws.String(v.ConditionExpression)
+					}
+
+					if util.LenTrim(v.UpdateExpression) > 0 {
+						m.Update.UpdateExpression = aws.String(v.UpdateExpression)
+					}
+
+					if v.ExpressionAttributeNames != nil && len(v.ExpressionAttributeNames) > 0 {
+						m.Update.ExpressionAttributeNames = v.ExpressionAttributeNames
+					}
+
+					if v.ExpressionAttributeValues != nil && len(v.ExpressionAttributeValues) > 0 {
+						m.Update.ExpressionAttributeValues = v.ExpressionAttributeValues
+					}
+
+					items = append(items, m)
+				}
+			}
+		}
+
+		// items must not exceed 25
+		if len(items) > 25 {
+			success = false
+			err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "Transaction Items May Not Exceed 25"))
+			return fmt.Errorf(err.ErrorMessage)
+		}
+
+		if len(items) <= 0 {
+			success = false
+			err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "Transaction Items Minimum of 1 is Required"))
+			return fmt.Errorf(err.ErrorMessage)
+		}
+
+		// compose transaction write items input var
+		params := &dynamodb.TransactWriteItemsInput{
+			TransactItems: items,
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "TransactionWriteItems = " + params.String()
+
+		// execute transaction write operation
+		var err1 error
+
+		subTrace := trace.NewSubSegment("TransactionWriteItems_Do")
+		defer subTrace.Close()
+
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			_, err1 = d.do_TransactWriteItems(params, ctx)
+		} else {
+			_, err1 = d.do_TransactWriteItems(params, subTrace.Ctx)
+		}
+
+		if err1 != nil {
+			success = false
+			err = d.handleError(err1, "DynamoDB TransactionWriteItems Failed: (Transaction Canceled)")
+			return fmt.Errorf(err.ErrorMessage)
+		} else {
+			success = true
+			err = nil
+			return nil
+		}
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"Items": tranItems,
+		},
+	})
+
+	// success
+	return success, err
+}
+
+func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
 	if d.cn == nil {
 		return false, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -3003,7 +4601,9 @@ func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranIte
 				if util.LenTrim(v.SK) > 0 {
 					if !skOK {
 						if util.LenTrim(d.SKName) <= 0 {
-							return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+							success = false
+							err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+							return success, err
 						} else {
 							skOK = true
 						}
@@ -3023,7 +4623,9 @@ func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranIte
 
 		if t.PutItems != nil {
 			if md, e := t.MarshalPutItems(); e != nil {
-				return false, d.handleError(e, "DynamoDB TransactionWriteItems Failed: (Marshal PutItems)")
+				success = false
+				err = d.handleError(e, "DynamoDB TransactionWriteItems Failed: (Marshal PutItems)")
+				return success, err
 			} else {
 				for _, v := range md {
 					m := new(dynamodb.TransactWriteItem)
@@ -3048,7 +4650,9 @@ func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranIte
 				if util.LenTrim(v.SK) > 0 {
 					if !skOK {
 						if util.LenTrim(d.SKName) <= 0 {
-							return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+							success = false
+							err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+							return success, err
 						} else {
 							skOK = true
 						}
@@ -3085,11 +4689,15 @@ func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranIte
 
 	// items must not exceed 25
 	if len(items) > 25 {
-		return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "Transaction Items May Not Exceed 25"))
+		success = false
+		err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "Transaction Items May Not Exceed 25"))
+		return success, err
 	}
 
 	if len(items) <= 0 {
-		return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "Transaction Items Minimum of 1 is Required"))
+		success = false
+		err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "Transaction Items Minimum of 1 is Required"))
+		return success, err
 	}
 
 	// compose transaction write items input var
@@ -3112,11 +4720,12 @@ func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranIte
 	}
 
 	if err1 != nil {
-		return false, d.handleError(err1, "DynamoDB TransactionWriteItems Failed: (Transaction Canceled)")
+		success = false
+		err = d.handleError(err1, "DynamoDB TransactionWriteItems Failed: (Transaction Canceled)")
+		return success, err
+	} else {
+		return true, nil
 	}
-
-	// success
-	return true, nil
 }
 
 // TransactionWriteItemsWithRetry handles dynamodb retries in case action temporarily fails
@@ -3206,6 +4815,208 @@ func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 //		3) no more than total of 25 search keys allowed across all variadic objects
 //		4) the ResultItemPtr in all DynamoDBTableKeys objects within all variadic objects MUST BE SET
 func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, tranKeys ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.transactionGetItemsWithTrace(timeOutDuration, tranKeys...)
+	} else {
+		return d.transactionGetItemsNormal(timeOutDuration, tranKeys...)
+	}
+}
+
+func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, tranKeys ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-TransactionGetItems [TableName: " + d.TableName + "]", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if err != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(err.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		err = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return 0, err
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		err = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return 0, err
+	}
+
+	if util.LenTrim(d.PKName) <= 0 {
+		err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "PK Name is Required"))
+		return 0, err
+	}
+
+	if len(tranKeys) == 0 {
+		err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "Minimum of 1 TranKeys is Required"))
+		return 0, err
+	}
+
+	trace.Capture("TransactionGetItems", func() error {
+		// create working data
+		var keys []*dynamodb.TransactGetItem
+		var output []*DynamoDBTableKeys
+
+		// loop through all tranKeys slice to pre-populate transaction get items key slice
+		skOK := false
+
+		for _, k := range tranKeys {
+			tableName := k.TableNameOverride
+
+			if util.LenTrim(tableName) <= 0 {
+				tableName = d.TableName
+			}
+
+			if k.Keys != nil && len(k.Keys) > 0 {
+				for _, v := range k.Keys {
+					if v.ResultItemPtr == nil {
+						successCount = 0
+						err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "All SearchKeys Must Define Unmarshal Target Object"))
+						return fmt.Errorf(err.ErrorMessage)
+					} else {
+						// add to output
+						output = append(output, v)
+					}
+
+					m := new(dynamodb.TransactGetItem)
+
+					md := make(map[string]*dynamodb.AttributeValue)
+					md[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(v.PK) }
+
+					if util.LenTrim(v.SK) > 0 {
+						if !skOK {
+							if util.LenTrim(d.SKName) <= 0 {
+								successCount = 0
+								err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "SK Name is Required"))
+								return fmt.Errorf(err.ErrorMessage)
+							} else {
+								skOK = true
+							}
+						}
+
+						md[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(v.SK) }
+					}
+
+					m.Get = &dynamodb.Get{
+						TableName: aws.String(tableName),
+						Key: md,
+					}
+
+					keys = append(keys, m)
+				}
+			}
+		}
+
+		// keys must not exceed 25
+		if len(keys) > 25 {
+			successCount = 0
+			err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Payload Validate) " + "Search Keys May Not Exceed 25"))
+			return fmt.Errorf(err.ErrorMessage)
+		}
+
+		if len(keys) <= 0 {
+			successCount = 0
+			err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Payload Validate) " + "Search Keys Minimum of 1 is Required"))
+			return fmt.Errorf(err.ErrorMessage)
+		}
+
+		// compose transaction get items input var
+		params := &dynamodb.TransactGetItemsInput{
+			TransactItems: keys,
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "TransactionGetItems = " + params.String()
+
+		// execute transaction get operation
+		var result *dynamodb.TransactGetItemsOutput
+		var err1 error
+
+		subTrace := trace.NewSubSegment("TransactionGetItems_Do")
+		defer subTrace.Close()
+
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			result, err1 = d.do_TransactGetItems(params, ctx)
+		} else {
+			result, err1 = d.do_TransactGetItems(params, subTrace.Ctx)
+		}
+
+		if err1 != nil {
+			successCount = 0
+			err = d.handleError(err1, "DynamoDB TransactionGetItems Failed: (Transaction Reads)")
+			return fmt.Errorf(err.ErrorMessage)
+		}
+
+		// evaluate response
+		successCount = 0
+
+		if result.Responses != nil && len(result.Responses) > 0 {
+			hasSK := util.LenTrim(d.SKName) > 0
+
+			for _, v := range result.Responses {
+				itemAv := v.Item
+
+				if itemAv != nil {
+					pk := util.Trim(aws.StringValue(itemAv[d.PKName].S))
+					sk := ""
+
+					if hasSK {
+						sk = util.Trim(aws.StringValue(itemAv[d.SKName].S))
+					}
+
+					if len(pk) > 0 {
+						// loop through output slice to match and unmarshal
+						for _, o := range output {
+							if !o.resultProcessed {
+								found := false
+
+								if len(sk) > 0 {
+									// must match pk and sk
+									if o.PK == pk && o.SK == sk && o.ResultItemPtr != nil {
+										found = true
+									}
+								} else {
+									// must match pk only
+									if o.PK == pk && o.ResultItemPtr != nil {
+										found = true
+									}
+								}
+
+								if found {
+									o.resultProcessed = true
+
+									// unmarshal to object
+									if e := dynamodbattribute.UnmarshalMap(itemAv, o.ResultItemPtr); e != nil {
+										successCount = 0
+										err = d.handleError(e, "DynamoDB TransactionGetItems Failed: (Unmarshal Result)")
+										return fmt.Errorf(err.ErrorMessage)
+									} else {
+										// unmarshal successful
+										successCount++
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		err = nil
+		return nil
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName": d.TableName,
+			"Keys": tranKeys,
+		},
+	})
+
+	// nothing found or something found, both returns nil for error
+	return successCount, err
+}
+
+func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, tranKeys ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
 	if d.cn == nil {
 		return 0, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -3239,7 +5050,9 @@ func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, tranKeys 
 		if k.Keys != nil && len(k.Keys) > 0 {
 			for _, v := range k.Keys {
 				if v.ResultItemPtr == nil {
-					return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "All SearchKeys Must Define Unmarshal Target Object"))
+					successCount = 0
+					err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "All SearchKeys Must Define Unmarshal Target Object"))
+					return successCount, err
 				} else {
 					// add to output
 					output = append(output, v)
@@ -3253,7 +5066,9 @@ func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, tranKeys 
 				if util.LenTrim(v.SK) > 0 {
 					if !skOK {
 						if util.LenTrim(d.SKName) <= 0 {
-							return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "SK Name is Required"))
+							successCount = 0
+							err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "SK Name is Required"))
+							return successCount, err
 						} else {
 							skOK = true
 						}
@@ -3274,11 +5089,15 @@ func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, tranKeys 
 
 	// keys must not exceed 25
 	if len(keys) > 25 {
-		return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Payload Validate) " + "Search Keys May Not Exceed 25"))
+		successCount = 0
+		err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Payload Validate) " + "Search Keys May Not Exceed 25"))
+		return successCount, err
 	}
 
 	if len(keys) <= 0 {
-		return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Payload Validate) " + "Search Keys Minimum of 1 is Required"))
+		successCount = 0
+		err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Payload Validate) " + "Search Keys Minimum of 1 is Required"))
+		return successCount, err
 	}
 
 	// compose transaction get items input var
@@ -3302,7 +5121,9 @@ func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, tranKeys 
 	}
 
 	if err1 != nil {
-		return 0, d.handleError(err1, "DynamoDB TransactionGetItems Failed: (Transaction Reads)")
+		successCount = 0
+		err = d.handleError(err1, "DynamoDB TransactionGetItems Failed: (Transaction Reads)")
+		return successCount, err
 	}
 
 	// evaluate response
@@ -3345,7 +5166,9 @@ func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, tranKeys 
 
 								// unmarshal to object
 								if e := dynamodbattribute.UnmarshalMap(itemAv, o.ResultItemPtr); e != nil {
-									return 0, d.handleError(e, "DynamoDB TransactionGetItems Failed: (Unmarshal Result)")
+									successCount = 0
+									err = d.handleError(e, "DynamoDB TransactionGetItems Failed: (Unmarshal Result)")
+									return successCount, err
 								} else {
 									// unmarshal successful
 									successCount++

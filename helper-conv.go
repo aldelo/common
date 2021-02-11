@@ -1,7 +1,49 @@
+// common project provides commonly used helper utility functions, custom utility types, and third party package wrappers.
+// common project helps code reuse, and faster composition of logic without having to delve into commonly recurring code logic and related testings.
+// common project source directories and brief description:
+// + /ascii = helper types and/or functions related to ascii manipulations.
+// + /crypto = helper types and/or functions related to encryption, decryption, hashing, such as rsa, aes, sha, tls etc.
+// + /csv = helper types and/or functions related to csv file manipulations.
+// + /rest = helper types and/or functions related to http rest api GET, POST, PUT, DELETE actions invoked from client side.
+// + /tcp = helper types providing wrapped tcp client and tcp server logic.
+// - /wrapper = wrappers provides a simpler usage path to third party packages, as well as adding additional enhancements.
+//	 	+ /aws = contains aws sdk helper types and functions.
+//		+ /cloudmap = wrapper for aws cloudmap service discovery.
+//		+ /dynamodb = wrapper for aws dynamodb data access and manipulations.
+//		+ /gin = wrapper for gin-gonic web server, and important middleware, into a ready to use solution.
+//		+ /hystrixgo = wrapper for circuit breaker logic.
+//		+ /kms = wrapper for aws key management services.
+//		+ /mysql = wrapper for mysql + sqlx data access and manipulation.
+//		+ /ratelimit = wrapper for ratelimit logic.
+//		+ /redis = wrapper for redis data access and manipulation, using go-redis.
+//		+ /s3 = wrapper for aws s3 data access and manipulation.
+//		+ /ses = wrapper for aws simple email services.
+//		+ /sns = wrapper for aws simple notification services.
+//		+ /sqlite = wrapper for sqlite + sqlx data access and manipulation.
+//		+ /sqlserver = wrapper for sqlserver + sqlx data access and manipulation.
+//		+ /sqs = wrapper for aws simple queue services.
+//		+ /systemd = wrapper for kardianos service to support systemd, windows, launchd service creations.
+//		+ /viper = wrapper for viper config.
+//		+ /waf2 = wrapper for aws waf2 (web application firewall v2).
+//		+ /xray = wrapper for aws xray distributed tracing.
+//		+ /zap = wrapper for zap logging.
+// /helper-conv.go = helpers for data conversion operations.
+// /helper-db.go = helpers for database data type operations.
+// /helper-emv.go = helpers for emv chip card related operations.
+// /helper-io.go = helpers for io related operations.
+// /helper-net.go = helpers for network related operations.
+// /helper-num.go = helpers for numeric related operations.
+// /helper-other.go = helpers for misc. uncategorized operations.
+// /helper-reflect.go = helpers for reflection based operations.
+// /helper-regex.go = helpers for regular express related operations.
+// /helper-str.go = helpers for string operations.
+// /helper-struct.go = helpers for struct related operations.
+// /helper-time.go = helpers for time related operations.
+// /helper-uuid.go = helpers for generating globally unique ids.
 package helper
 
 /*
- * Copyright 2020 Aldelo, LP
+ * Copyright 2020-2021 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,12 +66,12 @@ import (
 	"fmt"
 )
 
-// Itoa converts integer into string
+// Itoa converts integer into string.
 func Itoa(i int) string {
 	return strconv.Itoa(i)
 }
 
-// ItoaZeroBlank converts integer into string, if integer is zero, blank is returned
+// ItoaZeroBlank converts integer into string, if integer is zero, blank is returned.
 func ItoaZeroBlank(i int) string {
 	if i == 0 {
 		return ""
@@ -38,7 +80,7 @@ func ItoaZeroBlank(i int) string {
 	}
 }
 
-// Atoi converts string to integer
+// Atoi converts string to integer.
 func Atoi(s string) int {
 	i, err := strconv.Atoi(s)
 
@@ -49,7 +91,7 @@ func Atoi(s string) int {
 	return i
 }
 
-// Btoa converts bool to string
+// Btoa converts bool to string, true = "true", false = "false".
 func Btoa(b bool) string {
 	if b == true {
 		return "true"
@@ -58,7 +100,8 @@ func Btoa(b bool) string {
 	return "false"
 }
 
-// Atob converts string to bool
+// Atob converts string to bool.
+// string values with first char lower cased "t", "y", "1" treated as true, otherwise false.
 func Atob(s string) bool {
 	if LenTrim(s) == 0 {
 		return false
@@ -85,11 +128,13 @@ func Atob(s string) bool {
 	return b
 }
 
-// IntPtr casts int to int pointer
+// IntPtr int pointer from int value.
 func IntPtr(i int) *int {
 	return &i
 }
 
+// IntVal gets int value from int pointer.
+// if pointer is nil, zero is returned.
 func IntVal(i *int) int {
 	if i == nil {
 		return 0
@@ -98,7 +143,7 @@ func IntVal(i *int) int {
 	}
 }
 
-// Int32PtrToInt returns 0 if nil, otherwise actual int value
+// Int32PtrToInt returns 0 if nil, otherwise actual int value.
 func Int32PtrToInt(n *int) int {
 	if n == nil {
 		return 0
@@ -107,15 +152,17 @@ func Int32PtrToInt(n *int) int {
 	}
 }
 
-// UintToStr converts from uint to string
+// UintToStr converts from uint to string.
 func UintToStr(i uint) string {
 	return fmt.Sprintf("%d", i)
 }
 
+// UintPtr gets uint pointer from uint value.
 func UintPtr(i uint) *uint {
 	return &i
 }
 
+// UintVal gets uint value from uint pointer, if uint pointer is nil, 0 is returned.
 func UintVal(i *uint) uint {
 	if i == nil {
 		return 0
@@ -124,7 +171,7 @@ func UintVal(i *uint) uint {
 	}
 }
 
-// StrToUint converts from string to uint
+// StrToUint converts from string to uint, if string is not a valid uint, 0 is returned.
 func StrToUint(s string) uint {
 	if v, e := strconv.ParseUint(s, 10, 32); e != nil {
 		return 0
@@ -133,11 +180,12 @@ func StrToUint(s string) uint {
 	}
 }
 
-// Int64Ptr casts int64 to int64 pointer
+// Int64Ptr gets int64 pointer from int64 value.
 func Int64Ptr(i int64) *int64 {
 	return &i
 }
 
+// Int64Val gets int64 value from int64 pointer, if pointer is nil, 0 is returned.
 func Int64Val(i *int64) int64 {
 	if i == nil {
 		return 0
@@ -146,12 +194,12 @@ func Int64Val(i *int64) int64 {
 	}
 }
 
-// Int64ToString converts int64 into string value
+// Int64ToString converts int64 into string value.
 func Int64ToString(n int64) string {
 	return strconv.FormatInt(n, 10)
 }
 
-// Int64PtrToInt64 returns 0 if nil, otherwise actual int64 value
+// Int64PtrToInt64 returns 0 if pointer is nil, otherwise actual int64 value.
 func Int64PtrToInt64(n *int64) int64 {
 	if n == nil {
 		return 0
@@ -160,12 +208,12 @@ func Int64PtrToInt64(n *int64) int64 {
 	}
 }
 
-// UInt64ToString converts uint64 into string value
+// UInt64ToString converts uint64 value to string.
 func UInt64ToString(n uint64) string {
 	return strconv.FormatUint(n, 10)
 }
 
-// StrToUint64 converts from string to uint64
+// StrToUint64 converts from string to uint64, if string is not a valid uint64, 0 is returned.
 func StrToUint64(s string) uint64 {
 	if v, e := strconv.ParseUint(s, 10, 64); e != nil {
 		return 0
@@ -174,17 +222,17 @@ func StrToUint64(s string) uint64 {
 	}
 }
 
-// Float32Ptr casts float32 to float32 pointer
+// Float32Ptr gets float32 pointer from float32 value.
 func Float32Ptr(f float32) *float32 {
 	return &f
 }
 
-// Float32ToString converts float32 into string value
+// Float32ToString converts float32 value to string.
 func Float32ToString(f float32) string {
 	return fmt.Sprintf("%f", f)
 }
 
-// Float32ToStringCents converts float32 into string representing cent values
+// Float32ToStringCents converts float32 value into string representing cent values, 2.12 returned as "212".
 func Float32ToStringCents(f float32) string {
 	if f >= 0.00 {
 		return strings.ReplaceAll(PadLeft(Itoa(int(f * 100)), 3), " ", "0")
@@ -193,12 +241,12 @@ func Float32ToStringCents(f float32) string {
 	}
 }
 
-// Float64ToIntCents converts float64 into int, representing cent values
+// Float64ToIntCents converts float64 value into int, representing cent values, 2.12 returned as 212.
 func Float64ToIntCents(f float64) int {
 	return int(f * 100)
 }
 
-// Float32PtrToFloat32 returns 0 if nil, otherwise actual float32 value
+// Float32PtrToFloat32 returns 0 if pointer is nil, otherwise actual float32 value.
 func Float32PtrToFloat32(f *float32) float32 {
 	if f == nil {
 		return 0.00
@@ -207,11 +255,12 @@ func Float32PtrToFloat32(f *float32) float32 {
 	}
 }
 
-// Float64Ptr casts float64 to float64 pointer
+// Float64Ptr gets float64 pointer from float64 value.
 func Float64Ptr(f float64) *float64 {
 	return &f
 }
 
+// Float64Val gets float64 value from float64 pointer, if pointer is nil, 0 is returned.
 func Float64Val(f *float64) float64 {
 	if f == nil {
 		return 0
@@ -220,7 +269,7 @@ func Float64Val(f *float64) float64 {
 	}
 }
 
-// Float64ToInt converts from float64 into int
+// Float64ToInt converts from float64 into int, if conversion fails, 0 is returned.
 func Float64ToInt(f float64) int {
 	if v, b := ParseInt32(FloatToString(f)); !b {
 		return 0
@@ -229,22 +278,22 @@ func Float64ToInt(f float64) int {
 	}
 }
 
-// IntToFloat64 converts i int (cents) into float64 two decimal value
-func IntToFloat64(i int) float64 {
+// CentsToFloat64 converts int (cents) into float64 value with two decimal value.
+func CentsToFloat64(i int) float64 {
 	return float64(i) * 0.01
 }
 
-// FloatToString converts float64 into string value
+// FloatToString converts float64 value into string value.
 func FloatToString(f float64) string {
 	return fmt.Sprintf("%f", f)
 }
 
-// Float64ToString is same as FloatToString
+// Float64ToString converts float64 value into string value.
 func Float64ToString(f float64) string {
 	return fmt.Sprintf("%f", f)
 }
 
-// Float64PtrToFloat64 returns 0 if nil, otherwise actual float64 value
+// Float64PtrToFloat64 returns 0 if nil, otherwise actual float64 value.
 func Float64PtrToFloat64(f *float64) float64 {
 	if f == nil {
 		return 0.00
@@ -253,7 +302,7 @@ func Float64PtrToFloat64(f *float64) float64 {
 	}
 }
 
-// BoolToInt converts bool to int value
+// BoolToInt converts bool to int value, true = 1, false = 0.
 func BoolToInt(b bool) int {
 	if b {
 		return 1
@@ -262,7 +311,7 @@ func BoolToInt(b bool) int {
 	}
 }
 
-// BoolToString converts bool to string value
+// BoolToString converts bool to string value, true = "true", false = "false".
 func BoolToString(b bool) string {
 	if b {
 		return "true"
@@ -271,7 +320,7 @@ func BoolToString(b bool) string {
 	}
 }
 
-// BoolPtrToBool converts bool pointer to bool value
+// BoolPtrToBool converts bool pointer to bool value.
 func BoolPtrToBool(b *bool) bool {
 	if b == nil {
 		return false
@@ -280,11 +329,12 @@ func BoolPtrToBool(b *bool) bool {
 	}
 }
 
-// BoolPtr converts bool to *bool
+// BoolPtr converts bool value to bool pointer.
 func BoolPtr(b bool) *bool {
 	return &b
 }
 
+// BoolVal gets bool value from bool pointer, if pointer is nil, false is returned.
 func BoolVal(b *bool) bool {
 	if b == nil {
 		return false
@@ -293,7 +343,7 @@ func BoolVal(b *bool) bool {
 	}
 }
 
-// DatePtrToString formats pointer time.Time to string date format
+// DatePtrToString formats pointer time.Time to string date format yyyy-mm-dd.
 func DatePtrToString(t *time.Time) string {
 	if t == nil {
 		return ""
@@ -302,7 +352,7 @@ func DatePtrToString(t *time.Time) string {
 	return FormatDate(*t)
 }
 
-// DateTimePtrToString formats pointer time.Time to string date time format
+// DateTimePtrToString formats pointer time.Time to string date time format yyyy-mm-dd hh:mm:ss AM/PM.
 func DateTimePtrToString(t *time.Time) string {
 	if t == nil {
 		return ""
@@ -311,7 +361,7 @@ func DateTimePtrToString(t *time.Time) string {
 	return FormatDateTime(*t)
 }
 
-// DateTimePtrToDateTime formats pointer time.Time to time.Time struct
+// DateTimePtrToDateTime formats pointer time.Time to time.Time struct.
 func DateTimePtrToDateTime(t *time.Time) time.Time {
 	if t == nil {
 		return time.Time{}
@@ -320,11 +370,12 @@ func DateTimePtrToDateTime(t *time.Time) time.Time {
 	}
 }
 
-// TimePtr casts Time to Time pointer
+// TimePtr casts Time struct to Time pointer.
 func TimePtr(t time.Time) *time.Time {
 	return &t
 }
 
+// TimeVal gets Time struct from Time pointer, if pointer is nil, a time.Time{} is returned.
 func TimeVal(t *time.Time) time.Time {
 	if t == nil {
 		return time.Time{}
@@ -333,11 +384,12 @@ func TimeVal(t *time.Time) time.Time {
 	}
 }
 
-// DurationPtr casts Duration to Duration pointer
+// DurationPtr casts Duration to Duration pointer.
 func DurationPtr(d time.Duration) *time.Duration {
 	return &d
 }
 
+// DurationVal gets Duration value from Duration pointer, if pointer is nil, 0 is returned.
 func DurationVal(d *time.Duration) time.Duration {
 	if d == nil {
 		return 0
@@ -346,11 +398,12 @@ func DurationVal(d *time.Duration) time.Duration {
 	}
 }
 
-// StringPtr casts string to string pointer
+// StringPtr gets string pointer from string value.
 func StringPtr(s string) *string {
 	return &s
 }
 
+// StringVal gets string value from string pointer, if pointer is nil, blank string is returned.
 func StringVal(s *string) string {
 	if s == nil {
 		return ""
@@ -359,7 +412,7 @@ func StringVal(s *string) string {
 	}
 }
 
-// StringPtrToString gets string value from string pointer
+// StringPtrToString gets string value from string pointer, if pointer is nil, blank string is returned.
 func StringPtrToString(s *string) string {
 	if s == nil {
 		return ""
@@ -368,7 +421,10 @@ func StringPtrToString(s *string) string {
 	}
 }
 
-// SliceObjectsToSliceInterfaces will convert slice of objects into slice of interfaces
+// SliceObjectsToSliceInterfaces converts slice of objects into slice of interfaces.
+// objectsSlice is received via interface parameter, and is expected to be a Slice,
+// the slice is enumerated to convert each object within the slice to interface{},
+// the final converted slice of interface is returned, if operation failed, nil is returned.
 func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{}) {
 	if reflect.TypeOf(objectsSlice).Kind() == reflect.Slice {
 		s := reflect.ValueOf(objectsSlice)
@@ -383,7 +439,7 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 	}
 }
 
-// IntToHex returns HEX string representation of i, in 2 digit blocks
+// IntToHex returns HEX string representation of i, in 2 digit blocks.
 func IntToHex(i int) string {
 	buf := StringToHex(Itoa(i))
 

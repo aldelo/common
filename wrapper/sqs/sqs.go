@@ -1,7 +1,7 @@
 package sqs
 
 /*
- * Copyright 2020 Aldelo, LP
+ * Copyright 2020-2021 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,9 +49,11 @@ import (
 	"github.com/aldelo/common/wrapper/sqs/sqsgetqueueattribute"
 	"github.com/aldelo/common/wrapper/sqs/sqssetqueueattribute"
 	"github.com/aldelo/common/wrapper/sqs/sqssystemattribute"
+	"github.com/aldelo/common/wrapper/xray"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	awssqs "github.com/aws/aws-sdk-go/service/sqs"
+	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 	"net/http"
 	"time"
 )
@@ -70,6 +72,8 @@ type SQS struct {
 
 	// store SQS client object
 	sqsClient *awssqs.SQS
+
+	_parentSegment *xray.XRayParentSegment
 }
 
 // SQSMessageResult struct contains the message result via Send... operations
@@ -160,7 +164,36 @@ type SQSDeleteMessageRequest struct {
 // ----------------------------------------------------------------------------------------------------------------
 
 // Connect will establish a connection to the SQS service
-func (s *SQS) Connect() error {
+func (s *SQS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if xray.XRayServiceOn() {
+		if len(parentSegment) > 0 {
+			s._parentSegment = parentSegment[0]
+		}
+
+		seg := xray.NewSegment("SQS-Connect", s._parentSegment)
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-AWS-Region", s.AwsRegion)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+
+		err = s.connectInternal()
+
+		if err == nil {
+			awsxray.AWS(s.sqsClient.Client)
+		}
+
+		return err
+	} else {
+		return s.connectInternal()
+	}
+}
+
+// Connect will establish a connection to the SQS service
+func (s *SQS) connectInternal() error {
 	// clean up prior sqs client reference
 	s.sqsClient = nil
 
@@ -209,6 +242,11 @@ func (s *SQS) Connect() error {
 // Disconnect will clear sqs client
 func (s *SQS) Disconnect() {
 	s.sqsClient = nil
+}
+
+// UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
+func (s *SQS) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	s._parentSegment = parentSegment
 }
 
 // ----------------------------------------------------------------------------------------------------------------
@@ -392,7 +430,21 @@ func (s *SQS) fromAwsSystemAttributes(attributes map[string]*string) (newMap map
 // ----------------------------------------------------------------------------------------------------------------
 
 // GetQueueArnFromQueueUrl encodes arn from url data
-func (s *SQS) GetQueueArnFromQueue(queueUrl string, timeoutDuration ...time.Duration) (string, error) {
+func (s *SQS) GetQueueArnFromQueue(queueUrl string, timeoutDuration ...time.Duration) (arn string, err error) {
+	seg := xray.NewSegmentNullable("SQS-GetQueueArnFromQueue [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-GetQueueArnFromQueue-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-GetQueueArnFromQueue-Result-ARN", arn)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	if attr, err := s.GetQueueAttributes(queueUrl, []sqsgetqueueattribute.SQSGetQueueAttribute{
 		sqsgetqueueattribute.QueueArn,
 	}, timeoutDuration...); err != nil {
@@ -400,7 +452,8 @@ func (s *SQS) GetQueueArnFromQueue(queueUrl string, timeoutDuration ...time.Dura
 		return "", err
 	} else {
 		// found attribute
-		return attr[sqsgetqueueattribute.QueueArn], nil
+		arn = attr[sqsgetqueueattribute.QueueArn]
+		return arn, nil
 	}
 }
 
@@ -496,13 +549,36 @@ func (s *SQS) GetQueueArnFromQueue(queueUrl string, timeoutDuration ...time.Dura
 func (s *SQS) CreateQueue(queueName string,
 						  attributes map[sqscreatequeueattribute.SQSCreateQueueAttribute]string,
 						  timeOutDuration ...time.Duration) (queueUrl string, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-CreateQueue [QueueName: " + queueName + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-CreateQueue-QueueName", queueName)
+			_ = seg.Seg.AddMetadata("SQS-CreateQueue-Attributes", attributes)
+			_ = seg.Seg.AddMetadata("SQS-CreateQueue-Result-QueueURL", queueUrl)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return "", errors.New("CreateQueue Failed: " + "SQS Client is Required")
+		err = errors.New("CreateQueue Failed: " + "SQS Client is Required")
+		return "", err
 	}
 
 	if util.LenTrim(queueName) <= 0 {
-		return "", errors.New("CreateQueue Failed: " + "Queue Name is Required")
+		err = errors.New("CreateQueue Failed: " + "Queue Name is Required")
+		return "", err
 	}
 
 	// create input object
@@ -518,19 +594,25 @@ func (s *SQS) CreateQueue(queueName string,
 	var output *awssqs.CreateQueueOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.CreateQueueWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.CreateQueue(input)
+		if segCtxSet {
+			output, err = s.sqsClient.CreateQueueWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.CreateQueue(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return "", errors.New("CreateQueue Failed: (Create Action) " + err.Error())
+		err = errors.New("CreateQueue Failed: (Create Action) " + err.Error())
+		return "", err
 	} else {
-		return aws.StringValue(output.QueueUrl), nil
+		queueUrl = aws.StringValue(output.QueueUrl)
+		return queueUrl, nil
 	}
 }
 
@@ -538,13 +620,38 @@ func (s *SQS) CreateQueue(queueName string,
 //
 // queueName = required, case-sensitive
 func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (queueUrl string, notFound bool, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-GetQueueUrl [QueueName: " + queueName + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-GetQueueUrl-QueueName", queueName)
+			_ = seg.Seg.AddMetadata("SQS-GetQueueUrl-Result-Not-Found", notFound)
+			_ = seg.Seg.AddMetadata("SQS-GetQueueUrl-Result-QueueURL", queueUrl)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return "", true, errors.New("GetQueueUrl Failed: " + "SQS Client is Required")
+		notFound = true
+		err = errors.New("GetQueueUrl Failed: " + "SQS Client is Required")
+		return "", notFound, err
 	}
 
 	if util.LenTrim(queueName) <= 0 {
-		return "", true, errors.New("GetQueueUrl Failed: " + "Queue Name is Required")
+		notFound = true
+		err = errors.New("GetQueueUrl Failed: " + "Queue Name is Required")
+		return "", notFound, err
 	}
 
 	// create input object
@@ -556,25 +663,33 @@ func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (q
 	var output *awssqs.GetQueueUrlOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.GetQueueUrlWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.GetQueueUrl(input)
+		if segCtxSet {
+			output, err = s.sqsClient.GetQueueUrlWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.GetQueueUrl(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
 		if awshttp2.ToAwsError(err).Code() == awssqs.ErrCodeQueueDoesNotExist {
 			// queue does not exist
-			return "", true, nil
+			notFound = true
+			return "", notFound, nil
 		} else {
 			// error
-			return "", true, errors.New("GetQueueUrl Failed: (Get Action) " + err.Error())
+			notFound = true
+			err = errors.New("GetQueueUrl Failed: (Get Action) " + err.Error())
+			return "", notFound, err
 		}
 	} else {
-		return aws.StringValue(output.QueueUrl), false,nil
+		queueUrl = aws.StringValue(output.QueueUrl)
+		return queueUrl, false, nil
 	}
 }
 
@@ -583,14 +698,35 @@ func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (q
 // it is advisable to wait 60 seconds before attempting to use the queue again (to ensure purge completion)
 //
 // queueUrl = required, case-sensitive
-func (s *SQS) PurgeQueue(queueUrl string, timeOutDuration ...time.Duration) error {
+func (s *SQS) PurgeQueue(queueUrl string, timeOutDuration ...time.Duration) (err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-PurgeQueue [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-PurgeQueue-QueueURL", queueUrl)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return errors.New("PurgeQueue Failed: " + "SQS Client is Required")
+		err = errors.New("PurgeQueue Failed: " + "SQS Client is Required")
+		return err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return errors.New("PurgeQueue Failed: " + "Queue Url is Required")
+		err = errors.New("PurgeQueue Failed: " + "Queue Url is Required")
+		return err
 	}
 
 	// create input object
@@ -599,20 +735,23 @@ func (s *SQS) PurgeQueue(queueUrl string, timeOutDuration ...time.Duration) erro
 	}
 
 	// perform action
-	var err error
-
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		_, err = s.sqsClient.PurgeQueueWithContext(ctx, input)
 	} else {
-		_, err = s.sqsClient.PurgeQueue(input)
+		if segCtxSet {
+			_, err = s.sqsClient.PurgeQueueWithContext(segCtx, input)
+		} else {
+			_, err = s.sqsClient.PurgeQueue(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return errors.New("PurgeQueue Failed: (Purge Action) " + err.Error())
+		err = errors.New("PurgeQueue Failed: (Purge Action) " + err.Error())
+		return err
 	} else {
 		return nil
 	}
@@ -623,14 +762,35 @@ func (s *SQS) PurgeQueue(queueUrl string, timeOutDuration ...time.Duration) erro
 // do not send more messages to the queue within the 60 second deletion window of time
 //
 // queueUrl = required, case-sensitive
-func (s *SQS) DeleteQueue(queueUrl string, timeOutDuration ...time.Duration) error {
+func (s *SQS) DeleteQueue(queueUrl string, timeOutDuration ...time.Duration) (err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-DeleteQueue [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-DeleteQueue-QueueURL", queueUrl)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return errors.New("DeleteQueue Failed: " + "SQS Client is Required")
+		err = errors.New("DeleteQueue Failed: " + "SQS Client is Required")
+		return err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return errors.New("DeleteQueue Failed: " + "Queue Url is Required")
+		err = errors.New("DeleteQueue Failed: " + "Queue Url is Required")
+		return err
 	}
 
 	// create input object
@@ -639,20 +799,23 @@ func (s *SQS) DeleteQueue(queueUrl string, timeOutDuration ...time.Duration) err
 	}
 
 	// perform action
-	var err error
-
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		_, err = s.sqsClient.DeleteQueueWithContext(ctx, input)
 	} else {
-		_, err = s.sqsClient.DeleteQueue(input)
+		if segCtxSet {
+			_, err = s.sqsClient.DeleteQueueWithContext(segCtx, input)
+		} else {
+			_, err = s.sqsClient.DeleteQueue(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return errors.New("DeleteQueue Failed: (Delete Action) " + err.Error())
+		err = errors.New("DeleteQueue Failed: (Delete Action) " + err.Error())
+		return err
 	} else {
 		return nil
 	}
@@ -674,9 +837,33 @@ func (s *SQS) ListQueues(queueNamePrefix string,
 						 nextToken string,
 						 maxResults int64,
 						 timeOutDuration ...time.Duration) (queueUrlsList []string, moreQueueUrlsNextToken string, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-ListQueues [QueueNamePrefix: " + queueNamePrefix + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-ListQueues-QueueNamePrefix", queueNamePrefix)
+			_ = seg.Seg.AddMetadata("SQS-ListQueues-NextToken", nextToken)
+			_ = seg.Seg.AddMetadata("SQS-ListQueues-MaxResults", maxResults)
+			_ = seg.Seg.AddMetadata("SQS-ListQueues-Result-QueueUrlsList", queueUrlsList)
+			_ = seg.Seg.AddMetadata("SQS-ListQueues-Result-NextToken", moreQueueUrlsNextToken)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, "", errors.New("ListQueues Failed: " + "SQS Client is Required")
+		err = errors.New("ListQueues Failed: " + "SQS Client is Required")
+		return nil, "", err
 	}
 
 	// create input object
@@ -698,20 +885,26 @@ func (s *SQS) ListQueues(queueNamePrefix string,
 	var output *awssqs.ListQueuesOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.ListQueuesWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.ListQueues(input)
+		if segCtxSet {
+			output, err = s.sqsClient.ListQueuesWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.ListQueues(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, "", errors.New("ListQueues Failed: (List Action) " + err.Error())
+		err = errors.New("ListQueues Failed: (List Action) " + err.Error())
+		return nil, "", err
 	} else {
+		queueUrlsList = aws.StringValueSlice(output.QueueUrls)
 		moreQueueUrlsNextToken = aws.StringValue(output.NextToken)
-		return aws.StringValueSlice(output.QueueUrls), moreQueueUrlsNextToken, nil
+		return queueUrlsList, moreQueueUrlsNextToken, nil
 	}
 }
 
@@ -732,13 +925,38 @@ func (s *SQS) ListDeadLetterSourceQueues(queueUrl string,
 										 nextToken string,
 										 maxResults int64,
 										 timeOutDuration ...time.Duration) (queueUrlsList []string, moreQueueUrlsNextToken string, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-ListDeadLetterSourceQueues [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-NextToken", nextToken)
+			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-MaxResults", maxResults)
+			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-Result-QueueUrlsList", queueUrlsList)
+			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-Result-NextToken", moreQueueUrlsNextToken)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, "", errors.New("ListDeadLetterSourceQueues Failed: " + "SQS Client is Required")
+		err = errors.New("ListDeadLetterSourceQueues Failed: " + "SQS Client is Required")
+		return nil, "", err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return nil, "", errors.New("ListDeadLetterSourceQueues Failed: " + "Dead Letter Queue Url is Required")
+		err = errors.New("ListDeadLetterSourceQueues Failed: " + "Dead Letter Queue Url is Required")
+		return nil, "", err
 	}
 
 	// create input object
@@ -758,20 +976,26 @@ func (s *SQS) ListDeadLetterSourceQueues(queueUrl string,
 	var output *awssqs.ListDeadLetterSourceQueuesOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.ListDeadLetterSourceQueuesWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.ListDeadLetterSourceQueues(input)
+		if segCtxSet {
+			output, err = s.sqsClient.ListDeadLetterSourceQueuesWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.ListDeadLetterSourceQueues(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, "", errors.New("ListDeadLetterSourceQueues Failed: (List Action) " + err.Error())
+		err = errors.New("ListDeadLetterSourceQueues Failed: (List Action) " + err.Error())
+		return nil, "", err
 	} else {
+		queueUrlsList = aws.StringValueSlice(output.QueueUrls)
 		moreQueueUrlsNextToken = aws.StringValue(output.NextToken)
-		return aws.StringValueSlice(output.QueueUrls), moreQueueUrlsNextToken, nil
+		return queueUrlsList, moreQueueUrlsNextToken, nil
 	}
 }
 
@@ -845,21 +1069,46 @@ func (s *SQS) ListDeadLetterSourceQueues(queueUrl string,
 func (s *SQS) GetQueueAttributes(queueUrl string,
 								 attributeNames []sqsgetqueueattribute.SQSGetQueueAttribute,
 								 timeOutDuration ...time.Duration) (attributes map[sqsgetqueueattribute.SQSGetQueueAttribute]string, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-GetQueueAttributes [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-GetQueueAttributes-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-GetQueueAttributes-AttributeNames", attributeNames)
+			_ = seg.Seg.AddMetadata("SQS-GetQueueAttributes-Result-Attributes", attributes)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, errors.New("GetQueueAttributes Failed: " + "SQS Client is Required")
+		err = errors.New("GetQueueAttributes Failed: " + "SQS Client is Required")
+		return nil, err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return nil, errors.New("GetQueueAttributes Failed: " + "Queue Url is Required")
+		err = errors.New("GetQueueAttributes Failed: " + "Queue Url is Required")
+		return nil, err
 	}
 
 	if attributeNames == nil {
-		return nil, errors.New("GetQueueAttributes Failed: " + "Attribute Names Map is Required (nil)")
+		err = errors.New("GetQueueAttributes Failed: " + "Attribute Names Map is Required (nil)")
+		return nil, err
 	}
 
 	if len(attributeNames) <= 0 {
-		return nil, errors.New("GetQueueAttributes Failed: " + "Attribute Names Map is Required (len = 0)")
+		err = errors.New("GetQueueAttributes Failed: " + "Attribute Names Map is Required (len = 0)")
+		return nil, err
 	}
 
 	// create input object
@@ -880,19 +1129,25 @@ func (s *SQS) GetQueueAttributes(queueUrl string,
 	var output *awssqs.GetQueueAttributesOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.GetQueueAttributesWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.GetQueueAttributes(input)
+		if segCtxSet {
+			output, err = s.sqsClient.GetQueueAttributesWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.GetQueueAttributes(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, errors.New("GetQueueAttributes Failed: (Get Action) " + err.Error())
+		err = errors.New("GetQueueAttributes Failed: (Get Action) " + err.Error())
+		return nil, err
 	} else {
-		return s.fromAwsGetQueueAttributes(output.Attributes), nil
+		attributes = s.fromAwsGetQueueAttributes(output.Attributes)
+		return attributes, nil
 	}
 }
 
@@ -981,18 +1236,41 @@ func (s *SQS) GetQueueAttributes(queueUrl string,
 //											and only one copy of the message is delivered.
 func (s *SQS) SetQueueAttributes(queueUrl string,
 								 attributes map[sqssetqueueattribute.SQSSetQueueAttribute]string,
-								 timeOutDuration ...time.Duration) error {
+								 timeOutDuration ...time.Duration) (err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-SetQueueAttributes [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-SetQueueAttributes-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-SetQueueAttributes-Attributes", attributes)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return errors.New("SetQueueAttributes Failed: " + "SQS Client is Required")
+		err = errors.New("SetQueueAttributes Failed: " + "SQS Client is Required")
+		return err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return errors.New("SetQueueAttributes Failed: " + "Queue Url is Required")
+		err = errors.New("SetQueueAttributes Failed: " + "Queue Url is Required")
+		return err
 	}
 
 	if attributes == nil {
-		return errors.New("SetQueueAttributes Failed: " + "Attributes Map is Required")
+		err = errors.New("SetQueueAttributes Failed: " + "Attributes Map is Required")
+		return err
 	}
 
 	// create input object
@@ -1002,20 +1280,23 @@ func (s *SQS) SetQueueAttributes(queueUrl string,
 	}
 
 	// perform action
-	var err error
-
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		_, err = s.sqsClient.SetQueueAttributesWithContext(ctx, input)
 	} else {
-		_, err = s.sqsClient.SetQueueAttributes(input)
+		if segCtxSet {
+			_, err = s.sqsClient.SetQueueAttributesWithContext(segCtx, input)
+		} else {
+			_, err = s.sqsClient.SetQueueAttributes(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return errors.New("SetQueueAttributes Failed: (Set Action) " + err.Error())
+		err = errors.New("SetQueueAttributes Failed: (Set Action) " + err.Error())
+		return err
 	} else {
 		return nil
 	}
@@ -1052,17 +1333,43 @@ func (s *SQS) SendMessage(queueUrl string,
 						  messageAttributes map[string]*awssqs.MessageAttributeValue,
 						  delaySeconds int64,
 						  timeOutDuration ...time.Duration) (result *SQSMessageResult, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-SendMessage [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-SendMessage-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-SendMessage-MessageBody", messageBody)
+			_ = seg.Seg.AddMetadata("SQS-SendMessage-MessageAttributes", messageAttributes)
+			_ = seg.Seg.AddMetadata("SQS-SendMessage-DelaySeconds", delaySeconds)
+			_ = seg.Seg.AddMetadata("SQS-SendMessage-Result", result)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, errors.New("SendMessage Failed: " + "SQS Client is Required")
+		err = errors.New("SendMessage Failed: " + "SQS Client is Required")
+		return nil, err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return nil, errors.New("SendMessage Failed: " + "Queue Url is Required")
+		err = errors.New("SendMessage Failed: " + "Queue Url is Required")
+		return nil, err
 	}
 
 	if util.LenTrim(messageBody) <= 0 {
-		return nil, errors.New("SendMessage Failed: " + "Message Body is Required")
+		err = errors.New("SendMessage Failed: " + "Message Body is Required")
+		return nil, err
 	}
 
 	// create input object
@@ -1083,24 +1390,30 @@ func (s *SQS) SendMessage(queueUrl string,
 	var output *awssqs.SendMessageOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.SendMessageWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.SendMessage(input)
+		if segCtxSet {
+			output, err = s.sqsClient.SendMessageWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.SendMessage(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, errors.New("SendMessage Failed: (Send Action) " + err.Error())
+		err = errors.New("SendMessage Failed: (Send Action) " + err.Error())
+		return nil, err
 	} else {
-		return &SQSMessageResult{
+		result =  &SQSMessageResult{
 			MessageId: aws.StringValue(output.MessageId),
 			MD5ofMessageBody: aws.StringValue(output.MD5OfMessageBody),
 			MD5ofMessageAttributes: aws.StringValue(output.MD5OfMessageAttributes),
 			FifoSequenceNumber: "",
-		}, nil
+		}
+		return result , nil
 	}
 }
 
@@ -1186,25 +1499,54 @@ func (s *SQS) SendMessageFifo(queueUrl string,
 							  messageBody string,
 							  messageAttributes map[string]*awssqs.MessageAttributeValue,
 							  timeOutDuration ...time.Duration) (result *SQSMessageResult, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-SendMessageFifo [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-MessageDeduplicationID", messageDeduplicationId)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-MessageGroupID", messageGroupId)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-MessageBody", messageBody)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-MessageAttributes", messageAttributes)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-Result", result)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, errors.New("SendMessageFifo Failed: " + "SQS Client is Required")
+		err = errors.New("SendMessageFifo Failed: " + "SQS Client is Required")
+		return nil, err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return nil, errors.New("SendMessageFifo Failed: " + "Queue Url is Required")
+		err = errors.New("SendMessageFifo Failed: " + "Queue Url is Required")
+		return nil, err
 	}
 
 	if util.LenTrim(messageDeduplicationId) <= 0 {
-		return nil, errors.New("SendMessageFifo Failed: " + "Message Deduplication Id is Required")
+		err = errors.New("SendMessageFifo Failed: " + "Message Deduplication Id is Required")
+		return nil, err
 	}
 
 	if util.LenTrim(messageGroupId) <= 0 {
-		return nil, errors.New("SendMessageFifo Failed: " + "Message Group Id is Required")
+		err = errors.New("SendMessageFifo Failed: " + "Message Group Id is Required")
+		return nil, err
 	}
 
 	if util.LenTrim(messageBody) <= 0 {
-		return nil, errors.New("SendMessageFifo Failed: " + "Message Body is Required")
+		err = errors.New("SendMessageFifo Failed: " + "Message Body is Required")
+		return nil, err
 	}
 
 	// create input object
@@ -1223,24 +1565,30 @@ func (s *SQS) SendMessageFifo(queueUrl string,
 	var output *awssqs.SendMessageOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.SendMessageWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.SendMessage(input)
+		if segCtxSet {
+			output, err = s.sqsClient.SendMessageWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.SendMessage(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, errors.New("SendMessageFifo Failed: (Send Action) " + err.Error())
+		err = errors.New("SendMessageFifo Failed: (Send Action) " + err.Error())
+		return nil, err
 	} else {
-		return &SQSMessageResult{
+		result = &SQSMessageResult{
 			MessageId: aws.StringValue(output.MessageId),
 			MD5ofMessageBody: aws.StringValue(output.MD5OfMessageBody),
 			MD5ofMessageAttributes: aws.StringValue(output.MD5OfMessageAttributes),
 			FifoSequenceNumber: aws.StringValue(output.SequenceNumber),
-		}, nil
+		}
+		return result, nil
 	}
 }
 
@@ -1248,25 +1596,52 @@ func (s *SQS) SendMessageFifo(queueUrl string,
 func (s *SQS) SendMessageBatch(queueUrl string,
 							   messageEntries []*SQSStandardMessage,
 							   timeOutDuration ...time.Duration) (successList []*SQSSuccessResult, failedList []*SQSFailResult, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-SendMessageBatch [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-SendMessageBatch-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageBatch-MessageEntries", messageEntries)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageBatch-Result-SuccessList", successList)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageBatch-Result-FailedList", failedList)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, nil, errors.New("SendMessageBatch Failed: " + "SQS Client is Required")
+		err = errors.New("SendMessageBatch Failed: " + "SQS Client is Required")
+		return nil, nil, err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return nil, nil, errors.New("SendMessageBatch Failed: " + "Queue Url is Required")
+		err = errors.New("SendMessageBatch Failed: " + "Queue Url is Required")
+		return nil, nil, err
 	}
 
 	if messageEntries == nil {
-		return nil, nil, errors.New("SendMessageBatch Failed: " + "Message Entries Required (nil)")
+		err = errors.New("SendMessageBatch Failed: " + "Message Entries Required (nil)")
+		return nil, nil, err
 	}
 
 	if len(messageEntries) <= 0 {
-		return nil, nil, errors.New("SendMessageBatch Failed: " + "Message Entries Required (count = 0)")
+		err = errors.New("SendMessageBatch Failed: " + "Message Entries Required (count = 0)")
+		return nil, nil, err
 	}
 
 	if len(messageEntries) > 10 {
-		return nil, nil, errors.New("SendMessageBatch Failed: " + "Message Entries Per Batch Limited to 10")
+		err = errors.New("SendMessageBatch Failed: " + "Message Entries Per Batch Limited to 10")
+		return nil, nil, err
 	}
 
 	// create input object
@@ -1284,7 +1659,8 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 	}
 
 	if len(entries) <= 0 {
-		return nil, nil, errors.New("SendMessageBatch Failed: " + "Message Entries Elements Count Must Not Be Zero")
+		err = errors.New("SendMessageBatch Failed: " + "Message Entries Elements Count Must Not Be Zero")
+		return nil, nil, err
 	}
 
 	input := &awssqs.SendMessageBatchInput{
@@ -1296,17 +1672,22 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 	var output *awssqs.SendMessageBatchOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.SendMessageBatchWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.SendMessageBatch(input)
+		if segCtxSet {
+			output, err = s.sqsClient.SendMessageBatchWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.SendMessageBatch(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, nil, errors.New("SendMessageBatch Failed: (Send Action) " + err.Error())
+		err = errors.New("SendMessageBatch Failed: (Send Action) " + err.Error())
+		return nil, nil, err
 	} else {
 		if len(output.Successful) > 0 {
 			for _, v := range output.Successful {
@@ -1338,25 +1719,52 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 func (s *SQS) SendMessageBatchFifo(queueUrl string,
 								   messageEntries []*SQSFifoMessage,
 								   timeOutDuration ...time.Duration) (successList []*SQSSuccessResult, failedList []*SQSFailResult, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-SendMessageBatchFifo [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-SendMessageBatchFifo-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageBatchFifo-MessageEntries", messageEntries)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageBatchFifo-Result-SuccessList", successList)
+			_ = seg.Seg.AddMetadata("SQS-SendMessageBatchFifo-Result-FailedList", failedList)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, nil, errors.New("SendMessageBatchFifo Failed: " + "SQS Client is Required")
+		err = errors.New("SendMessageBatchFifo Failed: " + "SQS Client is Required")
+		return nil, nil, err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return nil, nil, errors.New("SendMessageBatchFifo Failed: " + "Queue Url is Required")
+		err = errors.New("SendMessageBatchFifo Failed: " + "Queue Url is Required")
+		return nil, nil, err
 	}
 
 	if messageEntries == nil {
-		return nil, nil, errors.New("SendMessageBatchFifo Failed: " + "Message Entries Required (nil)")
+		err = errors.New("SendMessageBatchFifo Failed: " + "Message Entries Required (nil)")
+		return nil, nil, err
 	}
 
 	if len(messageEntries) <= 0 {
-		return nil, nil, errors.New("SendMessageBatchFifo Failed: " + "Message Entries Required (count = 0)")
+		err = errors.New("SendMessageBatchFifo Failed: " + "Message Entries Required (count = 0)")
+		return nil, nil, err
 	}
 
 	if len(messageEntries) > 10 {
-		return nil, nil, errors.New("SendMessageBatchFifo Failed: " + "Message Entries Per Batch Limited to 10")
+		err = errors.New("SendMessageBatchFifo Failed: " + "Message Entries Per Batch Limited to 10")
+		return nil, nil, err
 	}
 
 	// create input object
@@ -1375,7 +1783,8 @@ func (s *SQS) SendMessageBatchFifo(queueUrl string,
 	}
 
 	if len(entries) <= 0 {
-		return nil, nil, errors.New("SendMessageBatchFifo Failed: " + "Message Entries Elements Count Must Not Be Zero")
+		err = errors.New("SendMessageBatchFifo Failed: " + "Message Entries Elements Count Must Not Be Zero")
+		return nil, nil, err
 	}
 
 	input := &awssqs.SendMessageBatchInput{
@@ -1387,17 +1796,22 @@ func (s *SQS) SendMessageBatchFifo(queueUrl string,
 	var output *awssqs.SendMessageBatchOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.SendMessageBatchWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.SendMessageBatch(input)
+		if segCtxSet {
+			output, err = s.sqsClient.SendMessageBatchWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.SendMessageBatch(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, nil, errors.New("SendMessageBatchFifo Failed: (Send Action) " + err.Error())
+		err = errors.New("SendMessageBatchFifo Failed: (Send Action) " + err.Error())
+		return nil, nil, err
 	} else {
 		if len(output.Successful) > 0 {
 			for _, v := range output.Successful {
@@ -1504,17 +1918,46 @@ func (s *SQS) ReceiveMessage(queueUrl string,
 							 waitTimeSeconds int64,
 							 receiveRequestAttemptId string,
 							 timeOutDuration ...time.Duration) (messagesList []*SQSReceivedMessage, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-ReceiveMessage [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-MaxNumberOfMessages", maxNumberOfMessages)
+			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-MessageAttributeNames", messageAttributeNames)
+			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-SystemAttributeNames", systemAttributeNames)
+			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-VisibilityTimeOutSeconds", visibilityTimeOutSeconds)
+			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-WaitTimeSeconds", waitTimeSeconds)
+			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-ReceiveRequestAttemptID", receiveRequestAttemptId)
+			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-Result-MessagesList", messagesList)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, errors.New("ReceiveMessage Failed: " + "SQS Client is Required")
+		err = errors.New("ReceiveMessage Failed: " + "SQS Client is Required")
+		return nil, err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return nil, errors.New("ReceiveMessage Failed: " + "Queue Url is Required")
+		err = errors.New("ReceiveMessage Failed: " + "Queue Url is Required")
+		return nil, err
 	}
 
 	if maxNumberOfMessages <= 0 || maxNumberOfMessages > 10 {
-		return nil, errors.New("ReceiveMessage Failed: " + "Max Number of Messages Must Be 1 to 10")
+		err = errors.New("ReceiveMessage Failed: " + "Max Number of Messages Must Be 1 to 10")
+		return nil, err
 	}
 
 	if visibilityTimeOutSeconds < 0 {
@@ -1563,17 +2006,22 @@ func (s *SQS) ReceiveMessage(queueUrl string,
 	var output *awssqs.ReceiveMessageOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.ReceiveMessageWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.ReceiveMessage(input)
+		if segCtxSet {
+			output, err = s.sqsClient.ReceiveMessageWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.ReceiveMessage(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, errors.New("ReceiveMessage Failed: (Receive Action) " + err.Error())
+		err = errors.New("ReceiveMessage Failed: (Receive Action) " + err.Error())
+		return nil, err
 	} else {
 		for _, v := range output.Messages {
 			if v != nil {
@@ -1598,18 +2046,42 @@ func (s *SQS) ReceiveMessage(queueUrl string,
 func (s *SQS) ChangeMessageVisibility(queueUrl string,
 									  receiptHandle string,
 									  visibilityTimeOutSeconds int64,
-									  timeOutDuration ...time.Duration) error {
+									  timeOutDuration ...time.Duration) (err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-ChangeMessageVisibility [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibility-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibility-ReceiptHandle", receiptHandle)
+			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibility-VisibilityTimeOutSeconds", visibilityTimeOutSeconds)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return errors.New("ChangeMessageVisibility Failed: " + "SQS Client is Required")
+		err = errors.New("ChangeMessageVisibility Failed: " + "SQS Client is Required")
+		return err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return errors.New("ChangeMessageVisibility Failed: " + "Queue Url is Required")
+		err = errors.New("ChangeMessageVisibility Failed: " + "Queue Url is Required")
+		return err
 	}
 
 	if util.LenTrim(receiptHandle) <= 0 {
-		return errors.New("ChangeMessageVisibility Failed: " + "Receipt Handle is Required")
+		err = errors.New("ChangeMessageVisibility Failed: " + "Receipt Handle is Required")
+		return err
 	}
 
 	if visibilityTimeOutSeconds < 0 {
@@ -1627,20 +2099,23 @@ func (s *SQS) ChangeMessageVisibility(queueUrl string,
 	}
 
 	// perform action
-	var err error
-
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		_, err = s.sqsClient.ChangeMessageVisibilityWithContext(ctx, input)
 	} else {
-		_, err = s.sqsClient.ChangeMessageVisibility(input)
+		if segCtxSet {
+			_, err = s.sqsClient.ChangeMessageVisibilityWithContext(segCtx, input)
+		} else {
+			_, err = s.sqsClient.ChangeMessageVisibility(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return errors.New("ChangeMessageVisibility Failed: (Change Action) " + err.Error())
+		err = errors.New("ChangeMessageVisibility Failed: (Change Action) " + err.Error())
+		return err
 	} else {
 		return nil
 	}
@@ -1650,25 +2125,52 @@ func (s *SQS) ChangeMessageVisibility(queueUrl string,
 func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 										   messageEntries []*SQSChangeVisibilityRequest,
 										   timeOutDuration ...time.Duration) (successIDsList []string, failedList []*SQSFailResult, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-ChangeMessageVisibilityBatch [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibilityBatch-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibilityBatch-MessageEntries", messageEntries)
+			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibilityBatch-Result-SuccessIDsList", successIDsList)
+			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibilityBatch-Result-FailedList", failedList)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, nil, errors.New("ChangeMessageVisibilityBatch Failed: " + "SQS Client is Required")
+		err = errors.New("ChangeMessageVisibilityBatch Failed: " + "SQS Client is Required")
+		return nil, nil, err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return nil, nil, errors.New("ChangeMessageVisibilityBatch Failed: " + "Queue Url is Required")
+		err = errors.New("ChangeMessageVisibilityBatch Failed: " + "Queue Url is Required")
+		return nil, nil, err
 	}
 
 	if messageEntries == nil {
-		return nil, nil, errors.New("ChangeMessageVisibilityBatch Failed: " + "Message Entries Required (nil)")
+		err = errors.New("ChangeMessageVisibilityBatch Failed: " + "Message Entries Required (nil)")
+		return nil, nil, err
 	}
 
 	if len(messageEntries) <= 0 {
-		return nil, nil, errors.New("ChangeMessageVisibilityBatch Failed: " + "Message Entries Required (count = 0")
+		err = errors.New("ChangeMessageVisibilityBatch Failed: " + "Message Entries Required (count = 0")
+		return nil, nil, err
 	}
 
 	if len(messageEntries) > 10 {
-		return nil, nil, errors.New("ChangeMessageVisibilityBatch Failed: " + "Message Entries Per Batch Limited to 10")
+		err = errors.New("ChangeMessageVisibilityBatch Failed: " + "Message Entries Per Batch Limited to 10")
+		return nil, nil, err
 	}
 
 	// create input object
@@ -1693,7 +2195,8 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 	}
 
 	if len(entries) <= 0 {
-		return nil, nil, errors.New("ChangeMessageVisibilityBatch Failed: " + "Message Entries Elements Count Must Not Be Zero")
+		err = errors.New("ChangeMessageVisibilityBatch Failed: " + "Message Entries Elements Count Must Not Be Zero")
+		return nil, nil, err
 	}
 
 	input := &awssqs.ChangeMessageVisibilityBatchInput{
@@ -1705,17 +2208,22 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 	var output *awssqs.ChangeMessageVisibilityBatchOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.ChangeMessageVisibilityBatchWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.ChangeMessageVisibilityBatch(input)
+		if segCtxSet {
+			output, err = s.sqsClient.ChangeMessageVisibilityBatchWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.ChangeMessageVisibilityBatch(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, nil, errors.New("ChangeMessageVisibilityBatch Failed: (Change Action) " + err.Error())
+		err = errors.New("ChangeMessageVisibilityBatch Failed: (Change Action) " + err.Error())
+		return nil, nil, err
 	} else {
 		if len(output.Successful) > 0 {
 			for _, v := range output.Successful {
@@ -1745,18 +2253,41 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 // DeleteMessage will delete a message from sqs queue based on receiptHandle and queueUrl specified
 func (s *SQS) DeleteMessage(queueUrl string,
 							receiptHandle string,
-							timeOutDuration ...time.Duration) error {
+							timeOutDuration ...time.Duration) (err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-DeleteMessage [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-DeleteMessage-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-DeleteMessage-ReceiptHandle", receiptHandle)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return errors.New("DeleteMessage Failed: " + "SQS Client is Required")
+		err = errors.New("DeleteMessage Failed: " + "SQS Client is Required")
+		return err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return errors.New("DeleteMessage Failed: " + "Queue Url is Required")
+		err = errors.New("DeleteMessage Failed: " + "Queue Url is Required")
+		return err
 	}
 
 	if util.LenTrim(receiptHandle) <= 0 {
-		return errors.New("DeleteMessage Failed: " + "Receipt Handle is Required")
+		err = errors.New("DeleteMessage Failed: " + "Receipt Handle is Required")
+		return err
 	}
 
 	// create input object
@@ -1766,20 +2297,23 @@ func (s *SQS) DeleteMessage(queueUrl string,
 	}
 
 	// perform action
-	var err error
-
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		_, err = s.sqsClient.DeleteMessageWithContext(ctx, input)
 	} else {
-		_, err = s.sqsClient.DeleteMessage(input)
+		if segCtxSet {
+			_, err = s.sqsClient.DeleteMessageWithContext(segCtx, input)
+		} else {
+			_, err = s.sqsClient.DeleteMessage(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return errors.New("DeleteMessage Failed: (Delete Action) " + err.Error())
+		err = errors.New("DeleteMessage Failed: (Delete Action) " + err.Error())
+		return err
 	} else {
 		return nil
 	}
@@ -1789,25 +2323,52 @@ func (s *SQS) DeleteMessage(queueUrl string,
 func (s *SQS) DeleteMessageBatch(queueUrl string,
 								 messageEntries []*SQSDeleteMessageRequest,
 								 timeOutDuration ...time.Duration) (successIDsList []string, failedList []*SQSFailResult, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("SQS-DeleteMessageBatch [QueueURL: " + queueUrl + "]", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("SQS-DeleteMessageBatch-QueueURL", queueUrl)
+			_ = seg.Seg.AddMetadata("SQS-DeleteMessageBatch-MessageEntries", messageEntries)
+			_ = seg.Seg.AddMetadata("SQS-DeleteMessageBatch-Result-SuccessIDsList", successIDsList)
+			_ = seg.Seg.AddMetadata("SQS-DeleteMessageBatch-Result-FailedList", failedList)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
 	// validate
 	if s.sqsClient == nil {
-		return nil, nil, errors.New("DeleteMessageBatch Failed: " + "SQS Client is Required")
+		err = errors.New("DeleteMessageBatch Failed: " + "SQS Client is Required")
+		return nil, nil, err
 	}
 
 	if util.LenTrim(queueUrl) <= 0 {
-		return nil, nil, errors.New("DeleteMessageBatch Failed: " + "Queue Url is Required")
+		err = errors.New("DeleteMessageBatch Failed: " + "Queue Url is Required")
+		return nil, nil, err
 	}
 
 	if messageEntries == nil {
-		return nil, nil, errors.New("DeleteMessageBatch Failed: " + "Message Entries Required (nil)")
+		err = errors.New("DeleteMessageBatch Failed: " + "Message Entries Required (nil)")
+		return nil, nil, err
 	}
 
 	if len(messageEntries) <= 0 {
-		return nil, nil, errors.New("DeleteMessageBatch Failed: " + "Message Entries Required (count = 0)")
+		err = errors.New("DeleteMessageBatch Failed: " + "Message Entries Required (count = 0)")
+		return nil, nil, err
 	}
 
 	if len(messageEntries) > 10 {
-		return nil, nil, errors.New("DeleteMessageBatch Failed: " + "Message Entries Per Batch Limited to 10")
+		err = errors.New("DeleteMessageBatch Failed: " + "Message Entries Per Batch Limited to 10")
+		return nil, nil, err
 	}
 
 	// create input object
@@ -1825,7 +2386,8 @@ func (s *SQS) DeleteMessageBatch(queueUrl string,
 	}
 
 	if len(entries) <= 0 {
-		return nil, nil, errors.New("DeleteMessagseBatch Failed: " + "Message Entries Elements Must Not Be Zero")
+		err = errors.New("DeleteMessagseBatch Failed: " + "Message Entries Elements Must Not Be Zero")
+		return nil, nil, err
 	}
 
 	input := &awssqs.DeleteMessageBatchInput{
@@ -1837,17 +2399,22 @@ func (s *SQS) DeleteMessageBatch(queueUrl string,
 	var output *awssqs.DeleteMessageBatchOutput
 
 	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), timeOutDuration[0])
+		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
 		output, err = s.sqsClient.DeleteMessageBatchWithContext(ctx, input)
 	} else {
-		output, err = s.sqsClient.DeleteMessageBatch(input)
+		if segCtxSet {
+			output, err = s.sqsClient.DeleteMessageBatchWithContext(segCtx, input)
+		} else {
+			output, err = s.sqsClient.DeleteMessageBatch(input)
+		}
 	}
 
 	// evaluate result
 	if err != nil {
-		return nil, nil, errors.New("DeleteMessageBatch Failed: (Delete Action) " + err.Error())
+		err = errors.New("DeleteMessageBatch Failed: (Delete Action) " + err.Error())
+		return nil, nil, err
 	} else {
 		if len(output.Successful) > 0 {
 			for _, v := range output.Successful {

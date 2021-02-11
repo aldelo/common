@@ -1,7 +1,7 @@
 package helper
 
 /*
- * Copyright 2020 Aldelo, LP
+ * Copyright 2020-2021 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,13 @@ package helper
  */
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/aldelo/common/rest"
+	"io/ioutil"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -155,6 +158,87 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 				}
 			}
 		}
+	}
+}
+
+// ReadHttpRequestBody reads raw body from http request body object,
+// and then sets the read body back to the request (once reading will remove the body content if not restored)
+func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
+	if req == nil {
+		return []byte{}, fmt.Errorf("Http Request Nil")
+	}
+
+	if body, err := ioutil.ReadAll(req.Body); err != nil {
+		return []byte{}, err
+	} else {
+		req.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+		return body, nil
+	}
+}
+
+// ReadHttpRequestHeaders parses headers into map
+func ReadHttpRequestHeaders(req *http.Request) (map[string]string, error) {
+	if req == nil {
+		return nil, fmt.Errorf("Http Request Nil")
+	}
+
+	m := make(map[string]string)
+
+	for k, v := range req.Header {
+		buf := ""
+
+		for _, d := range v {
+			if LenTrim(buf) > 0 {
+				buf += "; "
+			}
+
+			buf += d
+		}
+
+		m[k] = buf
+	}
+
+	return m, nil
+}
+
+// ParseHttpHeader parses headers into map[string]string,
+// where slice of header values for a key is delimited with semi-colon (;)
+func ParseHttpHeader(respHeader http.Header) (map[string]string, error) {
+	if respHeader == nil {
+		return nil, fmt.Errorf("Http Response Header Nil")
+	}
+
+	m := make(map[string]string)
+
+	for k, v := range respHeader {
+		buf := ""
+
+		for _, d := range v {
+			if LenTrim(buf) > 0 {
+				buf += "; "
+			}
+
+			buf += d
+		}
+
+		m[k] = buf
+	}
+
+	return m, nil
+}
+
+// EncodeHttpHeaderMapToString convers header map[string]string to string representation
+func EncodeHttpHeaderMapToString(headerMap map[string]string) string {
+	if headerMap == nil {
+		return ""
+	} else {
+		buf := ""
+
+		for k, v := range headerMap {
+			buf += fmt.Sprintf("%s: %s\n", k, v)
+		}
+
+		return buf
 	}
 }
 

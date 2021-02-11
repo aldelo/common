@@ -1,11 +1,28 @@
 package gin
 
 import (
+	"bytes"
 	"fmt"
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/rest"
 	"github.com/gin-gonic/gin"
 )
+
+// response body writer interceptor
+type ResponseBodyWriterInterceptor struct {
+	gin.ResponseWriter
+	RespBody *bytes.Buffer
+}
+
+func (r ResponseBodyWriterInterceptor) Write(b []byte) (int, error) {
+	r.RespBody.Write(b)
+	return r.ResponseWriter.Write(b)
+}
+
+func (r ResponseBodyWriterInterceptor) WriteString(s string) (int, error) {
+	r.RespBody.WriteString(s)
+	return r.ResponseWriter.WriteString(s)
+}
 
 // ReCAPTCHAResponseIFace interface
 type ReCAPTCHAResponseIFace interface {

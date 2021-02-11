@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020 Aldelo, LP
+ * Copyright 2020-2021 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -345,7 +345,7 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 			loginRequestData = j.LoginRequestDataPtr
 
 			if err := g.bindInput(c, j.AuthenticateBindingType, loginRequestData); err != nil {
-				return nil, jwt.ErrMissingLoginValues
+				return nil, fmt.Errorf(jwt.ErrMissingLoginValues.Error() + ": " + err.Error())
 			}
 
 			if loggedInCredential := j.AuthenticateHandler(loginRequestData); loggedInCredential != nil {

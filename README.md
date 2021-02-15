@@ -34,7 +34,14 @@ This package will continue to be updated with more reusable code as well.
   - redis wrapper (using go-redis package)
   - s3 wrapper (using aws sdk)
   - ses wrapper (using aws sdk)
+  - sqs wrapper (using aws sdk)
   - sns wrapper (using aws sdk)
+  - gin web server 
+  - xray wrapper (using aws sdk)
+    - use xray.Init() to config
+    - use xray.SetXRayServiceOn() to enable xray tracing
+    - xray tracing is already coded into the following services:
+      - kms, cloudmap, dynamodb, redis, s3, ses, sns, sqs, mysql, gin
 - wrappers for relational database access
   - mysql wrapper (using sqlx package)
   - sqlite wrapper (using sqlx package)
@@ -51,7 +58,7 @@ This package will continue to be updated with more reusable code as well.
 ```
     #!/bin/zsh
 
-    GOOS=linux GOARC=amd64 go build
+    GOOS=linux GOARCH=amd64 go build
     scp -i ~/.ssh/YourKey.pem YourBinary hostUserName@hostIP:/home/hostUserName/targetFolder
 ```
 - Descriptions:

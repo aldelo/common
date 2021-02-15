@@ -105,7 +105,7 @@ func (z *ZapLog) Sync() {
 
 // Printf is alias method to Infof
 func (z *ZapLog) Printf(format string, items ...interface{}) {
-	z.Infof(format, items)
+	z.Infof(format, items...)
 }
 
 // Sugared Logging, allows template variable such as %s

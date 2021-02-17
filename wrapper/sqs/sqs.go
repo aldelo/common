@@ -431,7 +431,7 @@ func (s *SQS) fromAwsSystemAttributes(attributes map[string]*string) (newMap map
 
 // GetQueueArnFromQueueUrl encodes arn from url data
 func (s *SQS) GetQueueArnFromQueue(queueUrl string, timeoutDuration ...time.Duration) (arn string, err error) {
-	seg := xray.NewSegmentNullable("SQS-GetQueueArnFromQueue [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-GetQueueArnFromQueue", s._parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -552,7 +552,7 @@ func (s *SQS) CreateQueue(queueName string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-CreateQueue [QueueName: " + queueName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-CreateQueue", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -623,7 +623,7 @@ func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (q
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-GetQueueUrl [QueueName: " + queueName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-GetQueueUrl", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -702,7 +702,7 @@ func (s *SQS) PurgeQueue(queueUrl string, timeOutDuration ...time.Duration) (err
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-PurgeQueue [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-PurgeQueue", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -766,7 +766,7 @@ func (s *SQS) DeleteQueue(queueUrl string, timeOutDuration ...time.Duration) (er
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-DeleteQueue [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-DeleteQueue", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -840,7 +840,7 @@ func (s *SQS) ListQueues(queueNamePrefix string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-ListQueues [QueueNamePrefix: " + queueNamePrefix + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-ListQueues", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -928,7 +928,7 @@ func (s *SQS) ListDeadLetterSourceQueues(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-ListDeadLetterSourceQueues [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-ListDeadLetterSourceQueues", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1072,7 +1072,7 @@ func (s *SQS) GetQueueAttributes(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-GetQueueAttributes [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-GetQueueAttributes", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1240,7 +1240,7 @@ func (s *SQS) SetQueueAttributes(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-SetQueueAttributes [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-SetQueueAttributes", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1336,7 +1336,7 @@ func (s *SQS) SendMessage(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-SendMessage [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-SendMessage", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1502,7 +1502,7 @@ func (s *SQS) SendMessageFifo(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-SendMessageFifo [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-SendMessageFifo", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1599,7 +1599,7 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-SendMessageBatch [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-SendMessageBatch", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1722,7 +1722,7 @@ func (s *SQS) SendMessageBatchFifo(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-SendMessageBatchFifo [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-SendMessageBatchFifo", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1921,7 +1921,7 @@ func (s *SQS) ReceiveMessage(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-ReceiveMessage [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-ReceiveMessage", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2050,7 +2050,7 @@ func (s *SQS) ChangeMessageVisibility(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-ChangeMessageVisibility [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-ChangeMessageVisibility", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2128,7 +2128,7 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-ChangeMessageVisibilityBatch [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-ChangeMessageVisibilityBatch", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2257,7 +2257,7 @@ func (s *SQS) DeleteMessage(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-DeleteMessage [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-DeleteMessage", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2326,7 +2326,7 @@ func (s *SQS) DeleteMessageBatch(queueUrl string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SQS-DeleteMessageBatch [QueueURL: " + queueUrl + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SQS-DeleteMessageBatch", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx

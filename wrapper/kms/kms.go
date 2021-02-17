@@ -188,7 +188,7 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-EncryptViaCmkAes256 [AesKmsKeyName: " + k.AesKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-EncryptViaCmkAes256", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -259,7 +259,7 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-ReEncryptViaCmkAes256 [SourceAesKmsKeyName: " + k.AesKmsKeyName + ", TargetAesKmsKeyName: " + targetKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-ReEncryptViaCmkAes256", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -348,7 +348,7 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-DecryptViaCmkAes256 [AesKmsKeyName: " + k.AesKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-DecryptViaCmkAes256", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -433,7 +433,7 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-EncryptViaCmkRsa2048 [RsaKmsKeyName: " + k.RsaKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-EncryptViaCmkRsa2048", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -509,7 +509,7 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-ReEncryptViaCmkRsa2048 [SourceRsaKmsKeyName: " + k.RsaKmsKeyName + ", TargetRsaKmsKeyName: " + targetKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-ReEncryptViaCmkRsa2048", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -598,7 +598,7 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-DecryptViaCmkRsa2048 [RsaKmsKeyName: " + k.RsaKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-DecryptViaCmkRsa2048", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -678,7 +678,7 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-SignViaCmkRsa2048 [SignatureKmsKeyName: " + k.SignatureKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-SignViaCmkRsa2048", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -756,7 +756,7 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-VerifyViaCmkRsa2048 [SignatureKmsKeyName: " + k.SignatureKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-VerifyViaCmkRsa2048", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -849,7 +849,7 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-GenerateDataKeyAes256 [AesKmsKeyName: " + k.AesKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-GenerateDataKeyAes256", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -911,7 +911,7 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-EncryptWithDataKeyAes256 [AesKmsKeyName: " + k.AesKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-EncryptWithDataKeyAes256", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1009,7 +1009,7 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-DecryptWithDataKeyAes256 [AesKmsKeyName: " + k.AesKmsKeyName + "]", k._parentSegment)
+	seg := xray.NewSegmentNullable("KMS-DecryptWithDataKeyAes256", k._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx

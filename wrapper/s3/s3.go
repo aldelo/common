@@ -215,7 +215,7 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-UploadFile [TargetKey: " + targetKey + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-UploadFile", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -339,7 +339,7 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-Upload [TargetKey: " + targetKey + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-Upload", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -456,7 +456,7 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-DownloadFile [TargetKey: " + targetKey + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-DownloadFile", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -579,7 +579,7 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-Download [TargetKey: " + targetKey + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-Download", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -687,7 +687,7 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-Delete [TargetKey: " + targetKey + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-Delete", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx

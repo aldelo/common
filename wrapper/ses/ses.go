@@ -901,7 +901,7 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-CreateTemplate [TemplateName: " + templateName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-CreateTemplate", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1004,7 +1004,7 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-UpdateTemplate [TemplateName: " + templateName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-UpdateTemplate", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1094,7 +1094,7 @@ func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Durati
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-DeleteTemplate [TemplateName: " + templateName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-DeleteTemplate", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1188,7 +1188,7 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-SendTemplateEmail [TemplateName: " + templateName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-SendTemplateEmail", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1352,7 +1352,7 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-SendBulkTemplateEmail [TemplateName: " + templateName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-SendBulkTemplateEmail", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1522,7 +1522,7 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-CreateCustomVerificationEmailTemplate [TemplateName: " + templateName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-CreateCustomVerificationEmailTemplate", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1634,7 +1634,7 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-UpdateCustomVerificationEmailTemplate [TemplateName: " + templateName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-UpdateCustomVerificationEmailTemplate", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1735,7 +1735,7 @@ func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOut
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-DeleteCustomVerificationEmailTemplate [TemplateName: " + templateName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-DeleteCustomVerificationEmailTemplate", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1800,7 +1800,7 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-SendCustomVerificationEmail [TemplateName: " + templateName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-SendCustomVerificationEmail", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx

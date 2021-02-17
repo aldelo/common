@@ -245,7 +245,7 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-CreateHttpNamespace [Name: " + name + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-CreateHttpNamespace", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -353,7 +353,7 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-CreatePrivateDnsNamespace [Name: " + name + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-CreatePrivateDnsNamespace", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -466,7 +466,7 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-CreatePublicDnsNamespace [Name: " + name + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-CreatePublicDnsNamespace", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -561,7 +561,7 @@ func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Dur
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-GetNamespace [NamespaceID: " + namespaceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-GetNamespace", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -873,7 +873,7 @@ func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-DeleteNamespace [NamespaceID: " + namespaceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-DeleteNamespace", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -963,7 +963,7 @@ func (sd *CloudMap) CreateService(name string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-CreateService [ServiceName: " + name + ", NamespaceID: " + namespaceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-CreateService", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1168,7 +1168,7 @@ func (sd *CloudMap) UpdateService(serviceId string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-UpdateService [ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-UpdateService", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1313,7 +1313,7 @@ func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duratio
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-GetService [ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-GetService", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1626,7 +1626,7 @@ func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Dura
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-DeleteService [ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-DeleteService", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1737,7 +1737,7 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-RegisterInstance [ServiceID: " + serviceId + ", InstanceID: " + instanceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-RegisterInstance", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1845,7 +1845,7 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-UpdateInstanceCustomHealthStatus [InstanceID: " + instanceId + ", ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-UpdateInstanceCustomHealthStatus", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1933,7 +1933,7 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-DeregisterInstance [InstanceID: " + instanceId + ", ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-DeregisterInstance", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2013,7 +2013,7 @@ func (sd *CloudMap) GetInstance(instanceId string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-GetInstance [InstanceID: " + instanceId + ", ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-GetInstance", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2102,7 +2102,7 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-GetInstancesHealthStatus [ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-GetInstancesHealthStatus", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2205,7 +2205,7 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-GetInstancesHealthStatusPages [ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-GetInstancesHealthStatusPages", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2326,7 +2326,7 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-DiscoverInstances [NamespaceName: " + namespaceName + ", ServiceName: " + serviceName + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-DiscoverInstances", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2430,7 +2430,7 @@ func (sd *CloudMap) ListInstances(serviceId string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-ListInstances [ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-ListInstances", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2528,7 +2528,7 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-ListInstancesPages [ServiceID: " + serviceId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-ListInstancesPages", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2632,7 +2632,7 @@ func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Dur
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cloudmap-GetOperation [OperationID: " + operationId + "]", sd._parentSegment)
+	seg := xray.NewSegmentNullable("Cloudmap-GetOperation", sd._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx

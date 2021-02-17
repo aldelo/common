@@ -356,7 +356,7 @@ func (svr *MySql) openNormal() error {
 
 // openWithXRay opens a database by connecting to it, wrap with XRay tracing, using the dsn properties defined in the struct fields
 func (svr *MySql) openWithXRay() (err error) {
-	trace := xray.NewSegment("MySql-Open-Entry [Database: " + svr.Database + "]", svr._parentSegment)
+	trace := xray.NewSegment("MySql-Open-Entry", svr._parentSegment)
 	defer trace.Close()
 	defer func() {
 		_ = trace.Seg.AddMetadata("DB-Host", svr.Host)

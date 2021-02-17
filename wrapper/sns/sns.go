@@ -478,7 +478,7 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-CreateTopic [TopicName: " + topicName + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-CreateTopic", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -548,7 +548,7 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-DeleteTopic [TopicArn: " + topicArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-DeleteTopic", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -617,7 +617,7 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ListTopics [NextToken: " + nextToken + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ListTopics", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -712,7 +712,7 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-GetTopicAttributes [TopicArn: " + topicArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-GetTopicAttributes", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -780,7 +780,7 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-SetTopicAttribute [TopicArn: " + topicArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-SetTopicAttribute", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -937,7 +937,7 @@ func (s *SNS) Subscribe(topicArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-Subscribe [TopicArn: " + topicArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-Subscribe", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1025,7 +1025,7 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-Unsubscribe [SubscriptionArn: " + subscriptionArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-Unsubscribe", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1101,7 +1101,7 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ConfirmSubscription [TopicArn: " + topicArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ConfirmSubscription", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1271,7 +1271,7 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ListSubscriptionsByTopic [TopicArn: " + topicArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ListSubscriptionsByTopic", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1384,7 +1384,7 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-GetSubscriptionAttributes [SubscriptionArn: " + subscriptionArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-GetSubscriptionAttributes", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1452,7 +1452,7 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-SetSubscriptionAttribute [SubscriptionArn: " + subscriptionArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-SetSubscriptionAttribute", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1565,7 +1565,7 @@ func (s *SNS) Publish(topicArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-Publish [TopicArn: " + topicArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-Publish", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1857,7 +1857,7 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-CheckIfPhoneNumberIsOptedOutparentSegment", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-CheckIfPhoneNumberIsOptedOutParentSegment", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2038,7 +2038,7 @@ func (s *SNS) CreatePlatformApplication(name string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-CreatePlatformApplication [Name: " + name + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-CreatePlatformApplication", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2121,7 +2121,7 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-DeletePlatformApplication [PlatformApplicationArn: " + platformApplicationArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-DeletePlatformApplication", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2269,7 +2269,7 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-GetPlatformApplicationAttributes [PlatformApplicationArn: " + platformApplicationArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-GetPlatformApplicationAttributes", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2336,7 +2336,7 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-SetPlatformApplicationAttributes [PlatformApplicationArn: " + platformApplicationArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-SetPlatformApplicationAttributes", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2420,7 +2420,7 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-CreatePlatformEndpoint [PlatformApplicationArn: " + platformApplicationArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-CreatePlatformEndpoint", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2501,7 +2501,7 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-DeletePlatformEndpoint [EndpointArn: " + endpointArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-DeletePlatformEndpoint", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2573,7 +2573,7 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ListEndpointsByPlatformApplication [PlatformApplicationArn: " + platformApplicationArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ListEndpointsByPlatformApplication", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2671,7 +2671,7 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-GetPlatformEndpointAttributes [EndpointArn: " + endpointArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-GetPlatformEndpointAttributes", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2738,7 +2738,7 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-SetPlatformEndpointAttributes [EndpointArn: " + endpointArn + "]", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-SetPlatformEndpointAttributes", s._parentSegment)
 
 	if seg != nil {
 		segCtx = seg.Ctx

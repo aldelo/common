@@ -18,13 +18,64 @@ package rest
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
+	"github.com/aldelo/common/tlsconfig"
 	"google.golang.org/protobuf/proto"
 	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
 )
+
+// server ca pems stores list of self-signed CAs for client tls config
+var serverCaPems []string
+
+// client tls config stores the current client tls root CA config object
+var clientTlsConfig *tls.Config
+
+// AppendServerCAPemFiles adds self-signed server ca pems to local cache,
+// and then recreates the clientTlsConfig object based on the new list of CAs
+func AppendServerCAPemFiles(caPemFilePath ...string) error {
+	if len(caPemFilePath) > 0 {
+		serverCaPems = append(serverCaPems, caPemFilePath...)
+		return newClientTlsCAsConfig()
+	} else {
+		return nil
+	}
+}
+
+// ResetServerCAPemFiles first clears serverCaPems cache,
+// then adds self-signed server ca pems to local cache,
+// then recreates the clientTlsConfig object based on the new list of CAs
+func ResetServerCAPemFiles(caPemFilePath ...string) error {
+	serverCaPems = []string{}
+	clientTlsConfig = nil
+
+	if len(caPemFilePath) > 0 {
+		serverCaPems = append(serverCaPems, caPemFilePath...)
+		return newClientTlsCAsConfig()
+	} else {
+		return nil
+	}
+}
+
+// newClientTlsCAsConfig creates new ClientTlsConfig object for the serverCaPems in cache
+func newClientTlsCAsConfig() error {
+	if len(serverCaPems) == 0 {
+		clientTlsConfig = nil
+		return nil
+	}
+
+	t := &tlsconfig.TlsConfig{}
+
+	if c, e := t.GetClientTlsConfig(serverCaPems, "", ""); e != nil {
+		return e
+	} else {
+		clientTlsConfig = c
+		return nil
+	}
+}
 
 //
 // HeaderKeyValue is struct used for containing http header element key value pair
@@ -39,7 +90,19 @@ type HeaderKeyValue struct {
 //
 func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	// create http client
-	client := &http.Client{}
+	var client *http.Client
+
+	if clientTlsConfig == nil {
+		client = &http.Client{}
+	} else {
+		tr := &http.Transport{
+			TLSClientConfig: clientTlsConfig,
+		}
+
+		client = &http.Client{
+			Transport: tr,
+		}
+	}
 
 	// create http request from client
 	var req *http.Request
@@ -95,7 +158,19 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 //		Content-Type: application/json
 func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	// create http client
-	client := &http.Client{}
+	var client *http.Client
+
+	if clientTlsConfig == nil {
+		client = &http.Client{}
+	} else {
+		tr := &http.Transport{
+			TLSClientConfig: clientTlsConfig,
+		}
+
+		client = &http.Client{
+			Transport: tr,
+		}
+	}
 
 	// create http request from client
 	var req *http.Request
@@ -160,7 +235,19 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 //		Content-Type: application/json
 func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	// create http client
-	client := &http.Client{}
+	var client *http.Client
+
+	if clientTlsConfig == nil {
+		client = &http.Client{}
+	} else {
+		tr := &http.Transport{
+			TLSClientConfig: clientTlsConfig,
+		}
+
+		client = &http.Client{
+			Transport: tr,
+		}
+	}
 
 	// create http request from client
 	var req *http.Request
@@ -225,7 +312,19 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 //		Content-Type: application/json
 func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	// create http client
-	client := &http.Client{}
+	var client *http.Client
+
+	if clientTlsConfig == nil {
+		client = &http.Client{}
+	} else {
+		tr := &http.Transport{
+			TLSClientConfig: clientTlsConfig,
+		}
+
+		client = &http.Client{
+			Transport: tr,
+		}
+	}
 
 	// create http request from client
 	var req *http.Request
@@ -279,7 +378,19 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 //		Content-Type: application/x-protobuf
 func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	// create http client
-	client := &http.Client{}
+	var client *http.Client
+
+	if clientTlsConfig == nil {
+		client = &http.Client{}
+	} else {
+		tr := &http.Transport{
+			TLSClientConfig: clientTlsConfig,
+		}
+
+		client = &http.Client{
+			Transport: tr,
+		}
+	}
 
 	// create http request from client
 	var req *http.Request
@@ -360,7 +471,19 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 //		Content-Type: application/x-protobuf
 func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	// create http client
-	client := &http.Client{}
+	var client *http.Client
+
+	if clientTlsConfig == nil {
+		client = &http.Client{}
+	} else {
+		tr := &http.Transport{
+			TLSClientConfig: clientTlsConfig,
+		}
+
+		client = &http.Client{
+			Transport: tr,
+		}
+	}
 
 	// marshal proto message to bytes
 	if requestProtoBufObjectPtr == nil {
@@ -453,7 +576,19 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 //		Content-Type: application/x-protobuf
 func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	// create http client
-	client := &http.Client{}
+	var client *http.Client
+
+	if clientTlsConfig == nil {
+		client = &http.Client{}
+	} else {
+		tr := &http.Transport{
+			TLSClientConfig: clientTlsConfig,
+		}
+
+		client = &http.Client{
+			Transport: tr,
+		}
+	}
 
 	// marshal proto message to bytes
 	if requestProtoBufObjectPtr == nil {
@@ -545,7 +680,19 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 //		Content-Type: application/x-protobuf
 func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	// create http client
-	client := &http.Client{}
+	var client *http.Client
+
+	if clientTlsConfig == nil {
+		client = &http.Client{}
+	} else {
+		tr := &http.Transport{
+			TLSClientConfig: clientTlsConfig,
+		}
+
+		client = &http.Client{
+			Transport: tr,
+		}
+	}
 
 	// create http request from client
 	var req *http.Request

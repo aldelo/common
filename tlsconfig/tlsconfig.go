@@ -1,4 +1,4 @@
-package crypto
+package tlsconfig
 
 /*
  * Copyright 2020-2021 Aldelo, LP
@@ -20,8 +20,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	util "github.com/aldelo/common"
 	"io/ioutil"
+	"strings"
 )
 
 type TlsConfig struct {}
@@ -34,7 +34,7 @@ type TlsConfig struct {}
 func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
 									   serverKeyPemPath string,
 									   clientCaCertPemPath []string) (*tls.Config, error) {
-	if util.LenTrim(serverCertPemPath) == 0 || util.LenTrim(serverKeyPemPath) == 0 {
+	if len(strings.TrimSpace(serverCertPemPath)) == 0 || len(strings.TrimSpace(serverKeyPemPath)) == 0 {
 		return nil, fmt.Errorf("Server TLS Config Requires Server Certificate and Key Pem Path")
 	}
 
@@ -46,12 +46,16 @@ func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
 	}
 
 	// if client ca cert pem defined, prep for mTLS
-	certPool := x509.NewCertPool()
+	certPool, _ := x509.SystemCertPool()
+	if certPool == nil {
+		certPool = x509.NewCertPool()
+	}
+
 	certPoolCount := 0
 
 	if len(clientCaCertPemPath) > 0 {
 		for _, v := range clientCaCertPemPath {
-			if util.LenTrim(v) > 0 {
+			if len(strings.TrimSpace(v)) > 0 {
 				if clientCa, e := ioutil.ReadFile(v); e != nil {
 					return nil, fmt.Errorf("Read Client CA Pem Failed: (%s) %s", v, e.Error())
 				} else {
@@ -108,10 +112,13 @@ func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
 		return nil, fmt.Errorf("Client TLS Config Requires Server CA Certificate Pem Path")
 	}
 
-	certPool := x509.NewCertPool()
+	certPool, _ := x509.SystemCertPool()
+	if certPool == nil {
+		certPool = x509.NewCertPool()
+	}
 
 	for _, v := range serverCaCertPemPath {
-		if util.LenTrim(v) > 0 {
+		if len(strings.TrimSpace(v)) > 0 {
 			if serverCa, e := ioutil.ReadFile(v); e != nil {
 				return nil, fmt.Errorf("Read Server CA Pem Failed: (%s) %s", v, e.Error())
 			} else {
@@ -128,7 +135,7 @@ func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
 	}
 
 	// for mTls set client cert
-	if util.LenTrim(clientCertPemPath) > 0 && util.LenTrim(clientKeyPemPath) > 0 {
+	if len(strings.TrimSpace(clientCertPemPath)) > 0 && len(strings.TrimSpace(clientKeyPemPath)) > 0 {
 		if clientCert, e := tls.LoadX509KeyPair(clientCertPemPath, clientKeyPemPath); e != nil {
 			return nil, fmt.Errorf("Load X509 Key Pair Failed: %s", e.Error())
 		} else {

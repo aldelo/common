@@ -998,7 +998,7 @@ func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration) (dd
 }
 
 func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
-	trace := xray.NewSegment("DynamoDB-PutItem [Table: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-PutItem", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -1263,7 +1263,7 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 							  expressionAttributeValues map[string]*dynamodb.AttributeValue,
 							  timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
 
-	trace := xray.NewSegment("DynamoDB-UpdateItem [TableName: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-UpdateItem", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -1551,7 +1551,7 @@ func (d *DynamoDB) DeleteItem(pkValue string, skValue string, timeOutDuration *t
 }
 
 func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
-	trace := xray.NewSegment("DynamoDB-DeleteItem [TableName: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-DeleteItem", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -1791,7 +1791,7 @@ func (d *DynamoDB) GetItem(resultItemPtr interface{},
 func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 						   pkValue string, skValue string,
 						   timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
-	trace := xray.NewSegment("DynamoDB-GetItem [TableName: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-GetItem", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -2246,7 +2246,7 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 									   expressionAttributeValues map[string]*dynamodb.AttributeValue,
 									   filterConditionExpression *expression.ConditionBuilder,
 									   projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
-	trace := xray.NewSegment("DynamoDB-QueryItems [TableName: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-QueryItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -2904,7 +2904,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 									  pagedQueryPageCountLimit *int64,
 									  exclusiveStartKey map[string]*dynamodb.AttributeValue,
 									  filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
-	trace := xray.NewSegment("DynamoDB-ScanItems [TableName: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-ScanItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -3420,7 +3420,7 @@ func (d *DynamoDB) BatchWriteItems(putItems interface{},
 func (d *DynamoDB) batchWriteItemsWithTrace(putItems interface{},
 								   			deleteKeys []DynamoDBTableKeys,
 								   			timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
-	trace := xray.NewSegment("DynamoDB-BatchWriteItems [TableName: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-BatchWriteItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if err != nil {
@@ -3900,7 +3900,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(resultItemsPtr interface{},
 										  timeOutDuration *time.Duration,
 										  consistentRead *bool,
 										  projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
-	trace := xray.NewSegment("DynamoDB-BatchGetItems [TableName: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-BatchGetItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if err != nil {
@@ -4368,7 +4368,7 @@ func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranIte
 }
 
 func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration, tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
-	trace := xray.NewSegment("DynamoDB-TransactionWriteItems [TableName: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-TransactionWriteItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if err != nil {
@@ -4823,7 +4823,7 @@ func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, tranKeys 
 }
 
 func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, tranKeys ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
-	trace := xray.NewSegment("DynamoDB-TransactionGetItems [TableName: " + d.TableName + "]", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-TransactionGetItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
 		if err != nil {

@@ -160,6 +160,23 @@ func StringSliceContains(strSlice *[]string, value string) bool {
 	}
 }
 
+// StringSliceExtractUnique returns unique string slice elements
+func StringSliceExtractUnique(strSlice []string) (result []string) {
+	if strSlice == nil {
+		return []string{}
+	} else if len(strSlice) <= 1 {
+		return strSlice
+	} else {
+		for _, v := range strSlice {
+			if !StringSliceContains(&result, v) {
+				result = append(result, v)
+			}
+		}
+
+		return result
+	}
+}
+
 // SliceSeekElement returns the first filterFunc input object's true response
 // note: use SliceObjectToSliceInterface to convert slice of objects to slice of interface before passing to slice parameter
 func SliceSeekElement(slice []interface{}, filterFunc func(input interface{}, filter ...interface{}) bool, filterParam ...interface{}) interface{} {

@@ -53,6 +53,8 @@ func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
 
 	certPoolCount := 0
 
+	clientCaCertPemPath = _stringSliceExtractUnique(clientCaCertPemPath)
+
 	if len(clientCaCertPemPath) > 0 {
 		for _, v := range clientCaCertPemPath {
 			if len(strings.TrimSpace(v)) > 0 {
@@ -117,6 +119,9 @@ func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
 		certPool = x509.NewCertPool()
 	}
 
+	// get unique server ca cert pem files
+	serverCaCertPemPath = _stringSliceExtractUnique(serverCaCertPemPath)
+
 	for _, v := range serverCaCertPemPath {
 		if len(strings.TrimSpace(v)) > 0 {
 			if serverCa, e := ioutil.ReadFile(v); e != nil {
@@ -146,4 +151,40 @@ func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
 	}
 
 	return config, nil
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// private functions to avoid using common namespace (which causes conflict with rest namespace - circular reference)
+// ---------------------------------------------------------------------------------------------------------------------
+
+// _stringSliceContains checks if value is contained within the strSlice
+func _stringSliceContains(strSlice *[]string, value string) bool {
+	if strSlice == nil {
+		return false
+	} else {
+		for _, v := range *strSlice {
+			if strings.ToLower(v) == strings.ToLower(value) {
+				return true
+			}
+		}
+
+		return false
+	}
+}
+
+// _stringSliceExtractUnique returns unique string slice elements
+func _stringSliceExtractUnique(strSlice []string) (result []string) {
+	if strSlice == nil {
+		return []string{}
+	} else if len(strSlice) <= 1 {
+		return strSlice
+	} else {
+		for _, v := range strSlice {
+			if !_stringSliceContains(&result, v) {
+				result = append(result, v)
+			}
+		}
+
+		return result
+	}
 }

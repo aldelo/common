@@ -66,6 +66,19 @@ import (
 			$> sudo systemctl disable xyz.service
 */
 
+/*
+	Windows OS Service Creation
+
+	*) assuming xyz.exe (output from GOOS=windows GOARCH=amd64 go build) is located in windows folder c:\xyzFolder,
+			be sure to place any dependency files into this folder or its sub folders as well.
+	*) assuming the desired windows service name is xyzService (name it any valid windows service name desired)
+
+	Create Windows Service Step:
+		c:\sc.exe create xyzService binpath= c:\xyzFolder\xyz.exe type= own start= auto
+
+	More Info, See https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/sc-create
+*/
+
 // =====================================================================================================================
 // systemd usage in main.go
 // =====================================================================================================================

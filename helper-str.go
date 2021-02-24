@@ -418,6 +418,27 @@ func IsNumericIntOnly(s string) bool {
 	}
 }
 
+// IsNumericFloat checks if string is float
+func IsNumericFloat64(s string, positiveOnly bool) bool {
+	if LenTrim(s) == 0 {
+		return false
+	}
+
+	if f, ok := ParseFloat64(s); !ok {
+		return false
+	} else {
+		if positiveOnly {
+			if f < 0 {
+				return false
+			} else {
+				return true
+			}
+		} else {
+			return true
+		}
+	}
+}
+
 // IsNumericIntAndNegativeSignOnly checks if the input string is 0-9 and possibly with lead negative sign only
 func IsNumericIntAndNegativeSignOnly(s string) bool {
 	if len(s) == 0 {

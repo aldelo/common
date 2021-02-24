@@ -17,6 +17,7 @@ package helper
  */
 
 import (
+	"aldelo.com/util"
 	"strings"
 	"time"
 	"fmt"
@@ -547,6 +548,332 @@ func IsDayOfMonthValid(year int, month int, day int) bool {
 	}
 }
 
+// IsDateValidYYYYMMDD checks if input string value is a valid date represented in the format of YYYYMMDD
+// valid year detected is 1970 - 2099
+func IsDateValidYYYYMMDD(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 8 {
+		return false
+	}
+
+	yyyy := 0
+	mm := 0
+	dd := 0
+
+	if yyyy = Atoi(Left(s, 4)); yyyy < 1970 || yyyy > 2099 {
+		return false
+	}
+
+	if mm = Atoi(Mid(s, 4, 2)); mm < 1 || mm > 12 {
+		return false
+	}
+
+	if dd = Atoi(Right(s, 2)); dd < 1 || dd > 31 {
+		return false
+	}
+
+	if !IsDayOfMonthValid(yyyy, mm, dd) {
+		return false
+	}
+
+	return true
+}
+
+// IsDateValidYYMMDD checks if input string value is a valid date represented in the format of YYMMDD
+// valid year detected is 00 - 99, with year 20xx assumed
+func IsDateValidYYMMDD(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 6 {
+		return false
+	}
+
+	yy := 0
+	mm := 0
+	dd := 0
+
+	if yy = Atoi(Left(s, 2)); yy < 0 || yy > 99 {
+		return false
+	}
+
+	if mm = Atoi(Mid(s, 2, 2)); mm < 1 || mm > 12 {
+		return false
+	}
+
+	if dd = Atoi(Right(s, 2)); dd < 1 || dd > 31 {
+		return false
+	}
+
+	if !IsDayOfMonthValid(2000 + yy, mm, dd) {
+		return false
+	}
+
+	return true
+}
+
+// IsDateValidYYYYMM checks if input string value is a valid date represented in the format of YYYYMM
+// valid year detected is 1970 - 2099
+func IsDateValidYYYYMM(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 6 {
+		return false
+	}
+
+	if yyyy := Atoi(Left(s, 4)); yyyy < 1970 || yyyy > 2099 {
+		return false
+	}
+
+	if mm := Atoi(Right(s, 2)); mm < 1 || mm > 12 {
+		return false
+	}
+
+	return true
+}
+
+// IsDateValidYYMM checks if input string value is a valid date represented in the format of YYMM
+// valid year detected is 00 - 99, with year 20xx assumed
+func IsDateValidYYMM(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 4 {
+		return false
+	}
+
+	if yy := Atoi(Left(s, 2)); yy < 0 || yy > 99 {
+		return false
+	}
+
+	if mm := Atoi(Right(s, 2)); mm < 1 || mm > 12 {
+		return false
+	}
+
+	return true
+}
+
+// IsDateValidMMDDYYYY checks if input string value is a valid date represented in the format of MMDDYYYY
+// valid year detected is 1970 - 2099
+func IsDateValidMMDDYYYY(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 8 {
+		return false
+	}
+
+	mm := 0
+	dd := 0
+	yyyy := 0
+
+	if mm = Atoi(Left(s, 2)); mm < 1 || mm > 12 {
+		return false
+	}
+
+	if dd = Atoi(Mid(s, 2, 2)); dd < 1 || dd > 31 {
+		return false
+	}
+
+	if yyyy = Atoi(Right(s, 4)); yyyy < 1970 || yyyy > 2099 {
+		return false
+	}
+
+	if !IsDayOfMonthValid(yyyy, mm, dd) {
+		return false
+	}
+
+	return true
+}
+
+// IsDateValidMMDDYY checks if input string value is a valid date represented in the format of MMDDYY
+// valid year detected is 1970 - 2099
+func IsDateValidMMDDYY(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 6 {
+		return false
+	}
+
+	mm := 0
+	dd := 0
+	yy := 0
+
+	if mm = Atoi(Left(s, 2)); mm < 1 || mm > 12 {
+		return false
+	}
+
+	if dd = Atoi(Mid(s, 2, 2)); dd < 1 || dd > 31 {
+		return false
+	}
+
+	if yy = Atoi(Right(s, 2)); yy < 0 || yy > 99 {
+		return false
+	}
+
+	if !IsDayOfMonthValid(2000 + yy, mm, dd) {
+		return false
+	}
+
+	return true
+}
+
+// IsDateValidMMYYYY checks if input string value is a valid date represented in the format of MMYYYY
+// valid year detected is 1970 - 2099
+func IsDateValidMMYYYY(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 6 {
+		return false
+	}
+
+	if mm := Atoi(Left(s, 2)); mm < 1 || mm > 12 {
+		return false
+	}
+
+	if yyyy := Atoi(Right(s, 4)); yyyy < 1970 || yyyy > 2099 {
+		return false
+	}
+
+	return true
+}
+
+// IsDateValidMMYY checks if input string value is a valid date represented in the format of MMYY
+// valid year detected is 00-99 with year 20xx assumed
+func IsDateValidMMYY(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 4 {
+		return false
+	}
+
+	if mm := Atoi(Left(s, 2)); mm < 1 || mm > 12 {
+		return false
+	}
+
+	if yy := Atoi(Right(s, 2)); yy < 0 || yy > 99 {
+		return false
+	}
+
+	return true
+}
+
+// IsTimeValidhhmmss checks if input string value is a valid time represented in the format of hhmmss (24 hour format)
+func IsTimeValidhhmmss(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 6 {
+		return false
+	}
+
+	if hh := Atoi(Left(s, 2)); hh < 0 || hh > 23 {
+		return false
+	}
+
+	if mm := Atoi(Mid(s, 2, 2)); mm < 0 || mm > 59 {
+		return false
+	}
+
+	if ss := Atoi(Right(s, 2)); ss < 0 || ss > 59 {
+		return false
+	}
+
+	return true
+}
+
+// IsTimeValidhhmm checks if input string value is a valid time represented in the format of hhmm (24 hour format)
+func IsTimeValidhhmm(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 4 {
+		return false
+	}
+
+	if hh := Atoi(Left(s, 2)); hh < 0 || hh > 23 {
+		return false
+	}
+
+	if mm := Atoi(Right(s, 2)); mm < 0 || mm > 59 {
+		return false
+	}
+
+	return true
+}
+
+// IsDateTimeValidYYYYMMDDhhmmss checks if input string value is a valid date time represented in the format of YYYYMMDDhhmmss (24 hour format)
+func IsDateTimeValidYYYYMMDDhhmmss(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 14 {
+		return false
+	}
+
+	if d := Left(s, 8); !IsDateValidYYYYMMDD(d) {
+		return false
+	}
+
+	if t := Right(s, 6); !IsTimeValidhhmmss(t) {
+		return false
+	}
+
+	return true
+}
+
+// IsDateTimeValidYYYYMMDDhhmm checks if input string value is a valid date time represented in the format of YYYYMMDDhhmm (24 hour format)
+func IsDateTimeValidYYYYMMDDhhmm(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 12 {
+		return false
+	}
+
+	if d := Left(s, 8); !IsDateValidYYYYMMDD(d) {
+		return false
+	}
+
+	if t := Right(s, 4); !IsTimeValidhhmm(t) {
+		return false
+	}
+
+	return true
+}
+
+// IsDateTimeValidYYMMDDhhmmss checks if input string value is a valid date time represented in the format of YYMMDDhhmmss (24 hour format)
+func IsDateTimeValidYYMMDDhhmmss(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 12 {
+		return false
+	}
+
+	if d := Left(s, 6); !IsDateValidYYMMDD(d) {
+		return false
+	}
+
+	if t := Right(s, 6); !IsTimeValidhhmmss(t) {
+		return false
+	}
+
+	return true
+}
+
+// IsDateTimeValidYYMMDDhhmm checks if input string value is a valid date time represented in the format of YYMMDDhhmm (24 hour format)
+func IsDateTimeValidYYMMDDhhmm(s string) bool {
+	s = Trim(s)
+
+	if len(s) != 10 {
+		return false
+	}
+
+	if d := Left(s, 6); !IsDateValidYYMMDD(d) {
+		return false
+	}
+
+	if t := Right(s, 4); !IsTimeValidhhmm(t) {
+		return false
+	}
+
+	return true
+}
+
 // FormatDateTimeToYYYYMMDDhhmmss for the date time struct received
 func FormatDateTimeToYYYYMMDDhhmmss(t time.Time) string {
 	return t.Format("20060102150405")
@@ -555,6 +882,11 @@ func FormatDateTimeToYYYYMMDDhhmmss(t time.Time) string {
 // FormatDateTimeToMMDDYYYYhhmmss for the date time struct received
 func FormatDateTimeToMMDDYYYYhhmmss(t time.Time) string {
 	return t.Format("01022006150405")
+}
+
+// FormatTimeTohhmmss for the date time struct received
+func FormatTimeTohhmmss(t time.Time) string {
+	return t.Format("150405")
 }
 
 // FormatDateToYYYYMMDD for the date time struct received

@@ -17,24 +17,56 @@ package helper
  */
 
 import (
-	"aldelo.com/util"
 	"strings"
 	"time"
 	"fmt"
 )
 
 // FormatDate will format the input date value to yyyy-mm-dd
-func FormatDate(t time.Time) string {
+func FormatDate(t time.Time, blankIfZero ...bool) string {
+	ifZero := false
+	if len(blankIfZero) > 0 {
+		ifZero = blankIfZero[0]
+	}
+
+	if ifZero {
+		if t.IsZero() {
+			return ""
+		}
+	}
+
 	return t.Format("2006-01-02")
 }
 
 // FormatTime will format the input date value to hh:mm:ss tt
-func FormatTime(t time.Time) string {
+func FormatTime(t time.Time, blankIfZero ...bool) string {
+	ifZero := false
+	if len(blankIfZero) > 0 {
+		ifZero = blankIfZero[0]
+	}
+
+	if ifZero {
+		if t.IsZero() {
+			return ""
+		}
+	}
+
 	return t.Format("03:04:05 PM")
 }
 
 // FormatDateTime will format the input date value to yyyy-mm-dd hh:mm:ss tt
-func FormatDateTime(t time.Time) string {
+func FormatDateTime(t time.Time, blankIfZero ...bool) string {
+	ifZero := false
+	if len(blankIfZero) > 0 {
+		ifZero = blankIfZero[0]
+	}
+
+	if ifZero {
+		if t.IsZero() {
+			return ""
+		}
+	}
+
 	return t.Format("2006-01-02 03:04:05 PM")
 }
 
@@ -69,6 +101,29 @@ func ParseDate(s string) time.Time {
 // check time.IsZero() to verify if a zero time is returned indicating parser failure
 func ParseTime(s string) time.Time {
 	t, err := time.Parse("03:04:05 PM", strings.TrimSpace(s))
+
+	if err != nil {
+		return time.Time{}
+	}
+
+	return t
+}
+
+// ParseTimeFromhhmmss will parse a time value from hhmmss format into time.Time object,
+// if parse failed, time.Time{} is returned (use time.IsZero() to check if parse success)
+func ParseTimeFromhhmmss(s string) time.Time {
+	s = strings.TrimSpace(s)
+
+	if IsNumericIntOnly(s) == false {
+		return time.Time{}
+	}
+
+	if LenTrim(s) != 6 {
+		return time.Time{}
+	}
+
+	v := Left(s, 2) + ":" + Mid(s, 2, 2) + ":" + Right(s, 2)
+	t, err := time.Parse("15:04:05", v)
 
 	if err != nil {
 		return time.Time{}

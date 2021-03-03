@@ -17,10 +17,68 @@ package helper
  */
 
 import (
+	"fmt"
 	"strings"
 	"time"
-	"fmt"
 )
+
+// ---------------------------------------------------------------------------------------------------------------------
+// custom time structs
+// ---------------------------------------------------------------------------------------------------------------------
+
+// JsonTime provides custom Json marshal and unmarshal interface implementations.
+// JsonTime marshals and unmarshal using RFC3339 time format
+type JsonTime time.Time
+
+// MarshalJSON marshals time value to format of RFC3339
+func (jt *JsonTime) MarshalJSON() ([]byte, error) {
+	if jt != nil {
+		t := time.Time(*jt)
+		buf := fmt.Sprintf(`"%s"`, t.Format(time.RFC3339))
+		return []byte(buf), nil
+	} else {
+		return []byte{}, fmt.Errorf("JsonTime Nil")
+	}
+}
+
+// UnmarshalJSON unmarshals time value in format of RFC3339 to JsonTime
+func (jt *JsonTime) UnmarshalJSON(b []byte) error {
+	if jt == nil {
+		return fmt.Errorf("JsonTime Nil")
+	}
+
+	buf := strings.Trim(string(b), `"`)
+	if t, e := time.Parse(time.RFC3339, buf); e != nil {
+		return e
+	} else {
+		*jt = JsonTime(t)
+		return nil
+	}
+}
+
+// ToTime converts JsonTime to time.Time
+func (jt *JsonTime) ToTime() time.Time {
+	if jt == nil {
+		return time.Time{}
+	} else {
+		return time.Time(*jt)
+	}
+}
+
+// ToJsonTime converts time.Time to JsonTime
+func ToJsonTime(t time.Time) JsonTime {
+	return JsonTime(t)
+}
+
+// ToJsonTimePtr converts time.Time to JsonTime pointer
+func ToJsonTimePtr(t time.Time) *JsonTime {
+	jt := JsonTime(t)
+	return &jt
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// time helpers
+// ---------------------------------------------------------------------------------------------------------------------
 
 // FormatDate will format the input date value to yyyy-mm-dd
 func FormatDate(t time.Time, blankIfZero ...bool) string {

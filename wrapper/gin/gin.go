@@ -29,10 +29,10 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-contrib/sessions/redis"
-	"github.com/utrack/gin-csrf"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/patrickmn/go-cache"
+	"github.com/utrack/gin-csrf"
 	"golang.org/x/time/rate"
 	"log"
 	"reflect"
@@ -398,9 +398,11 @@ func (g *Gin) RunServer() error {
 	var err error
 
 	if util.LenTrim(g.TlsCertPemFile) > 0 && util.LenTrim(g.TlsCertKeyFile) > 0 {
+		// gin on tls
 		log.Println("Web Server Tls Mode")
 		err = g._ginEngine.RunTLS(fmt.Sprintf(":%d", g.Port), g.TlsCertPemFile, g.TlsCertKeyFile)
 	} else {
+		// gin on non-tls
 		log.Println("Web Server Non-Tls Mode")
 		err = g._ginEngine.Run(fmt.Sprintf(":%d", g.Port))
 	}

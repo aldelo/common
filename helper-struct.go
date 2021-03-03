@@ -1404,9 +1404,12 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 			// pre-process csv value with validation
 			tagSetter := Trim(field.Tag.Get("setter"))
+			hasSetter := false
 
 			isBase := false
 			if LenTrim(tagSetter) > 0 {
+				hasSetter = true
+
 				if strings.ToLower(Left(tagSetter, 5)) == "base." {
 					isBase = true
 					tagSetter = Right(tagSetter, len(tagSetter)-5)
@@ -1425,7 +1428,9 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 					case "an":
 						csvValue, _ = ExtractAlphaNumeric(csvValue)
 					case "ans":
-						csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
+						if !hasSetter {
+							csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
+						}
 					case "b":
 						if StringSliceContains(&trueList, strings.ToLower(csvValue)) {
 							csvValue = "true"
@@ -1864,8 +1869,11 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 
 			// cache old value prior to getter invoke
 			oldVal := o
+			hasGetter := false
 
 			if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
+				hasGetter = true
+
 				isBase := false
 				useParam := false
 				paramVal := ""
@@ -1977,7 +1985,9 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 				case "an":
 					fv, _ = ExtractAlphaNumeric(fv)
 				case "ans":
-					fv, _ = ExtractAlphaNumericPrintableSymbols(fv)
+					if !hasGetter {
+						fv, _ = ExtractAlphaNumericPrintableSymbols(fv)
+					}
 				case "b":
 					if len(boolTrue) == 0 && len(boolFalse) == 0 {
 						if StringSliceContains(&trueList, strings.ToLower(fv)) {
@@ -2162,6 +2172,8 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		}
 	}
 
+	valuesCount := 0
+
 	for _, v := range csvList {
 		if v != "{?}" {
 			if LenTrim(csvPayload) > 0 {
@@ -2169,7 +2181,16 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			}
 
 			csvPayload += v
+
+			if LenTrim(v) > 0 {
+				valuesCount++
+			}
 		}
+	}
+
+	// if no actual values at all, set to blank
+	if valuesCount == 0 {
+		csvPayload = ""
 	}
 
 	return csvPayload, nil

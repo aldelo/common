@@ -59,11 +59,11 @@ package helper
  */
 
 import (
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
-	"fmt"
 )
 
 // Itoa converts integer into string.
@@ -280,7 +280,8 @@ func Float64ToInt(f float64) int {
 
 // CentsToFloat64 converts int (cents) into float64 value with two decimal value.
 func CentsToFloat64(i int) float64 {
-	return float64(i) * 0.01
+	f, _ := ParseFloat64(fmt.Sprintf("%.2f", float64(i) * 0.01))
+	return f
 }
 
 // FloatToString converts float64 value into string value.

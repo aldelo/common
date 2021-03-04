@@ -219,9 +219,11 @@ func EnvelopWithStxEtxLrc(contentData string) string {
 	return contentData + lrc
 }
 
-// StripStxEtxLrcFromEnvelop removes STX ETX and LRC from envelopment and returns content data,
-// this method will validate LRC, if LRC fails, blank is returned
-func StripStxEtxLrcFromEnvelop(envelopData string) string {
+// StripStxEtxLrcFromEnvelop removes STX ETX and LRC from envelopment and returns content data.
+// this method will validate LRC, if LRC fails, blank is returned.
+//
+// ignoreValueToLeftOfDelimiterSymbol = if set, any value to left side of this delimiter (along with this delimiter) is excluded from the return result
+func StripStxEtxLrcFromEnvelop(envelopData string, ignoreValueToLeftOfDelimiterSymbol ...string) string {
 	if len(envelopData) == 0 {
 		return ""
 	}
@@ -249,6 +251,13 @@ func StripStxEtxLrcFromEnvelop(envelopData string) string {
 				envelopData = envelopData[:len(envelopData)-1]
 			} else {
 				return ""
+			}
+		}
+
+		// if value to left of delimiter is to be excluded
+		if len(ignoreValueToLeftOfDelimiterSymbol) > 0 {
+			if p := strings.SplitN(envelopData, ignoreValueToLeftOfDelimiterSymbol[0], 2); len(p) == 2 {
+				envelopData = p[1]
 			}
 		}
 

@@ -764,7 +764,7 @@ func MarshalJSONIndent(v interface{}) (string, error) {
 // UnmarshalJSON will accept input json data string and deserialize into target object indicated by parameter v
 //
 // *** PASS PARAMETER AS "&v" IN ORDER TO BE WRITABLE ***
-//
+// *** v interface{} MUST BE initialized first ***
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***
 //
 // if unmarshal is successful, nil is returned, otherwise error info is returned

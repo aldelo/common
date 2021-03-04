@@ -714,6 +714,16 @@ func (g *Gin) newRouteFunc(relativePath string, method string, bindingType ginbi
 
 		if bindingInputPtr != nil {
 			// will perform binding
+			// create new object of bindingInputPtr
+			if t := util.ReflectGetType(bindingInputPtr); t != nil {
+				bindingInputPtr = util.ReflectObjectNewPtr(t)
+
+				if bindingInputPtr == nil {
+					_ = c.AbortWithError(500, fmt.Errorf("%s %s Failed on %s Binding: %s", method, relativePath, bindingType.Key(), "ReflectObjectNewPtr() Yielded Nil for Target Binding Object"))
+					return
+				}
+			}
+
 			if err := g.bindInput(c, bindingType, bindingInputPtr); err != nil {
 				// binding error
 				_ = c.AbortWithError(500, fmt.Errorf("%s %s Failed on %s Binding: %s", method, relativePath, bindingType.Key(), err.Error()))

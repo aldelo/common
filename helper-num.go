@@ -173,7 +173,7 @@ func ParseBool(s string) (bool, bool) {
 	var result bool
 	var err error
 
-	x := []string{"yes", "on", "running", "started"}
+	x := []string{"yes", "on", "running", "started", "y", "1"}
 
 	if StringSliceContains(&x, strings.ToLower(s)) {
 		s = "true"

@@ -771,3 +771,29 @@ func DerefError(v reflect.Value) error {
 
 	return nil
 }
+
+// ReflectGetType returns the type of obj interface{} passed in.
+// if obj interface{} is a pointer, then its base type will be returned instead
+func ReflectGetType(obj interface{}) reflect.Type {
+	if obj == nil {
+		return nil
+	} else {
+		t1 := reflect.TypeOf(obj)
+
+		if t1.Kind() == reflect.Ptr {
+			return t1.Elem()
+		} else {
+			return t1
+		}
+	}
+}
+
+// ReflectObjectNewPtr creates a new object ptr for the object type given at parameter.
+// the return interface{} represents the actual object ptr created
+func ReflectObjectNewPtr(objType reflect.Type) interface{} {
+	if objType == nil {
+		return nil
+	} else {
+		return reflect.New(objType).Interface()
+	}
+}

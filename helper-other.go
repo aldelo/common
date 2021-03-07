@@ -261,7 +261,8 @@ func ConsolePromptAndAnswer(prompt string, replyLowercase bool) string {
 	answer := ""
 
 	if _, e := fmt.Scanln(&answer); e != nil {
-		fmt.Println("Scan Error: ", e)
+		answer = ""
+		fmt.Println()
 	} else {
 		answer = RightTrimLF(answer)
 
@@ -283,7 +284,8 @@ func ConsolePromptAndAnswerBool(prompt string) bool {
 	result := false
 
 	if _, e := fmt.Scanln(&answer); e != nil {
-		fmt.Println("Scan Error: ", e)
+		fmt.Println()
+		return false
 	} else {
 		answer = RightTrimLF(answer)
 		result, _ = ParseBool(answer)
@@ -302,7 +304,8 @@ func ConsolePromptAndAnswerInt(prompt string) int {
 	result := 0
 
 	if _, e := fmt.Scanln(&answer); e != nil {
-		fmt.Println("Scan Error: ", e)
+		fmt.Println()
+		return 0
 	} else {
 		answer = RightTrimLF(answer)
 		result, _ = ParseInt32(answer)
@@ -321,7 +324,8 @@ func ConsolePromptAndAnswerFloat64(prompt string) float64 {
 	result := float64(0)
 
 	if _, e := fmt.Scanln(&answer); e != nil {
-		fmt.Println("Scan Error: ", e)
+		fmt.Println()
+		return 0
 	} else {
 		answer = RightTrimLF(answer)
 		result, _ = ParseFloat64(answer)

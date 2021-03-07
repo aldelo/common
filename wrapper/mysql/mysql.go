@@ -23,6 +23,7 @@ import (
 	"github.com/aldelo/common/wrapper/xray"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 	"strings"
+	"sync"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -183,6 +184,10 @@ import (
 //    	Charset = utf8, utf8mb4 (< Default)
 //		Collation = utf8mb4_general_ci (< Default), utf8_general_ci
 //    	...Timeout = must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
+//
+//		MaxOpenConns = maximum open and idle connections for the connection pool, default is 0, which is unlimited (db *sqlx.DB internally is a connection pool object)
+//		MaxIdleConns = maximum number of idle connections to keep in the connection pool, default is 0 which is unlimited, this number should be equal or less than MaxOpenConns
+//		MaxConnIdleTime = maximum duration that an idle connection be kept in the connection pool, default is 0 which has no time limit, suggest 5 - 10 minutes if set
 type MySql struct {
 	// MySql server connection properties
 	UserName  string
@@ -199,14 +204,197 @@ type MySql struct {
 	WriteTimeout string		// must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
 	RejectReadOnly bool
 
+	MaxOpenConns int
+	MaxIdleConns int
+	MaxConnIdleTime time.Duration
+
 	// mysql server state object
 	db *sqlx.DB
-	tx *sqlx.Tx
+	txMap map[string]*MySqlTransaction
+	mux sync.RWMutex
 
 	lastPing time.Time
-
 	_parentSegment *xray.XRayParentSegment
+}
+
+// MySqlTransaction represents an instance of the sqlx.Tx.
+// Since sqlx.DB is actually a connection pool container, it may initiate multiple sql transactions,
+// therefore, independent sqlx.Tx must be managed individually throughout its lifecycle.
+//
+// each mysql transaction created will also register with MySql struct, so that during Close/Cleanup, all the related outstanding Transactions can rollback
+type MySqlTransaction struct {
+	id string
+	parent *MySql
+	tx *sqlx.Tx
+	closed bool
 	_xrayTxSeg *xray.XSegment
+}
+
+// Commit will commit the current mysql transaction and close off from further uses (if commit was successful).
+// on commit error, transaction will not close off
+func (t *MySqlTransaction) Commit() (err error) {
+	if t._xrayTxSeg != nil {
+		defer func() {
+			if err != nil {
+				_ = t._xrayTxSeg.Seg.AddError(err)
+			}
+			if t.closed {
+				t._xrayTxSeg.Close()
+			}
+		}()
+	}
+
+	if t.closed {
+		err = fmt.Errorf("MySql Commit Transaction Not Valid, Transaction Already Closed")
+		return err
+	} else if util.LenTrim(t.id) == 0 {
+		err = fmt.Errorf("MySql Commit Transaction Not Valid, ID is Missing")
+		return err
+	} else if t.parent == nil {
+		err = fmt.Errorf("MySql Commit Transaction Not Valid, Parent is Missing")
+		return err
+	} else if t.tx == nil {
+		err = fmt.Errorf("MySql Commit Transaction Not Valid, Transaction Object Nil")
+		return err
+	}
+
+	if err = t.parent.Ping(); err != nil {
+		// ping failed
+		if t._xrayTxSeg != nil {
+			_ = t._xrayTxSeg.Seg.AddError(err)
+			t._xrayTxSeg.Close()
+			t._xrayTxSeg = nil
+		}
+		return err
+	}
+
+	if t._xrayTxSeg == nil {
+		// not using xray
+		if e := t.tx.Commit(); e != nil {
+			// on commit error, return error, don't close off transaction
+			err = fmt.Errorf("MySql Commit Transaction Failed, %s", e)
+			return err
+		} else {
+			// transaction commit success
+			t.closed = true
+
+			// remove this transaction from mysql parent txMap
+			t.parent.mux.Lock()
+			delete(t.parent.txMap, t.id)
+			t.parent.mux.Unlock()
+
+			// success response
+			return nil
+		}
+	} else {
+		// using xray
+		subSeg := t._xrayTxSeg.NewSubSegment("Commit-Transaction")
+		defer subSeg.Close()
+
+		subSeg.Capture("Commit-Transaction-Do", func() error {
+			if e := t.tx.Commit(); e != nil {
+				// on commit error, return error, don't close off transaction
+				err = fmt.Errorf("MySql Commit Transaction Failed, %s", e)
+				_ = subSeg.Seg.AddError(err)
+				return err
+			} else {
+				// transaction commit success
+				t.closed = true
+
+				// remove this transaction from mysql parent txMap
+				t.parent.mux.Lock()
+				delete(t.parent.txMap, t.id)
+				t.parent.mux.Unlock()
+
+				// success response
+				return nil
+			}
+		})
+
+		return err
+	}
+}
+
+// Rollback will rollback the current mysql transaction and close off from further uses (whether rollback succeeds or failures)
+func (t *MySqlTransaction) Rollback() (err error) {
+	if t._xrayTxSeg != nil {
+		defer func() {
+			if err != nil {
+				_ = t._xrayTxSeg.Seg.AddError(err)
+			}
+			t._xrayTxSeg.Close()
+		}()
+	}
+
+	if t.closed {
+		err = fmt.Errorf("MySql Rollback Transaction Not Valid, Transaction Already Closed")
+		return err
+	} else if util.LenTrim(t.id) == 0 {
+		err = fmt.Errorf("MySql Rollback Transaction Not Valid, ID is Missing")
+		return err
+	} else if t.parent == nil {
+		err = fmt.Errorf("MySql Rollback Transaction Not Valid, Parent is Missing")
+		return err
+	} else if t.tx == nil {
+		err = fmt.Errorf("MySql Rollback Transaction Not Valid, Transaction Object Nil")
+		return err
+	}
+
+	if err = t.parent.Ping(); err != nil {
+		// ping failed
+		if t._xrayTxSeg != nil {
+			_ = t._xrayTxSeg.Seg.AddError(err)
+			t._xrayTxSeg.Close()
+			t._xrayTxSeg = nil
+		}
+		return err
+	}
+
+	// perform rollback
+	if t._xrayTxSeg == nil {
+		if e := t.tx.Rollback(); e != nil {
+			err = fmt.Errorf("MySql Rollback Transaction Failed, %s", e)
+		}
+	} else {
+		subSeg := t._xrayTxSeg.NewSubSegment("Rollback-Transaction")
+		defer subSeg.Close()
+
+		subSeg.Capture("Rollback-Transaction-Do", func() error {
+			if e := t.tx.Rollback(); e != nil {
+				err = fmt.Errorf("MySql Rollback Transaction Failed, %s", e)
+				_ = subSeg.Seg.AddError(err)
+				return err
+			} else {
+				return nil
+			}
+		})
+	}
+
+	// transaction rollback success or failure, always close off transaction
+	t.closed = true
+
+	// remove this transaction from mysql parent txMap
+	t.parent.mux.Lock()
+	delete(t.parent.txMap, t.id)
+	t.parent.mux.Unlock()
+
+	// return response
+	return err
+}
+
+// ready checks if MySqlTransaction
+func (t *MySqlTransaction) ready() error {
+	if t.closed {
+		return fmt.Errorf("MySql Transaction Not Valid, Transaction Already Closed")
+	} else if util.LenTrim(t.id) == 0 {
+		return fmt.Errorf("MySql Transaction Not Valid, ID is Missing")
+	} else if t.parent == nil {
+		return fmt.Errorf("MySql Transaction Not Valid, Parent is Missing")
+	} else if t.tx == nil {
+		return fmt.Errorf("MySql Transaction Not Valid, Transaction Object Nil")
+	}
+
+	return nil
 }
 
 // MySqlResult defines sql action query result info
@@ -294,6 +482,24 @@ func (svr *MySql) GetDsn() (string, error) {
 	return str, nil
 }
 
+// cleanUpAllSqlTransactions is a helper that cleans up (rolls back) any outstanding sql transactions in the txMap
+func (svr *MySql) cleanUpAllSqlTransactions() {
+	svr.mux.Lock()
+	if svr.txMap != nil && len(svr.txMap) > 0 {
+		for k, v := range svr.txMap {
+			if v != nil && !v.closed && v.tx != nil {
+				_ = v.tx.Rollback()
+				if v._xrayTxSeg != nil {
+					v._xrayTxSeg.Close()
+				}
+			}
+			delete(svr.txMap, k)
+		}
+		svr.txMap = make(map[string]*MySqlTransaction)
+	}
+	svr.mux.Unlock()
+}
+
 // Open will open a database either as normal or with xray tracing,
 // Open uses the dsn properties defined in the struct fields
 func (svr *MySql) Open(parentSegment ...*xray.XRayParentSegment) error {
@@ -310,6 +516,10 @@ func (svr *MySql) Open(parentSegment ...*xray.XRayParentSegment) error {
 
 // openNormal opens a database by connecting to it, using the dsn properties defined in the struct fields
 func (svr *MySql) openNormal() error {
+	// clean up first
+	svr.db = nil
+	svr.cleanUpAllSqlTransactions()
+
 	// declare
 	var str string
 	var err error
@@ -318,15 +528,11 @@ func (svr *MySql) openNormal() error {
 	str, err = svr.GetDsn()
 
 	if err != nil {
-		svr.tx = nil
-		svr.db = nil
 		return err
 	}
 
 	// validate connection string
 	if len(str) == 0 {
-		svr.tx = nil
-		svr.db = nil
 		return errors.New("MySQL Server Connect String Generated Cannot Be Empty")
 	}
 
@@ -334,21 +540,33 @@ func (svr *MySql) openNormal() error {
 	svr.db, err = sqlx.Open("mysql", str)
 
 	if err != nil {
-		svr.tx = nil
-		svr.db = nil
 		return err
 	}
 
 	// test mysql server state object
 	if err = svr.db.Ping(); err != nil {
-		svr.tx = nil
 		svr.db = nil
 		return err
 	}
 	svr.lastPing = time.Now()
 
-	// upon open, transaction object already nil
-	svr.tx = nil
+	if svr.MaxOpenConns > 0 {
+		svr.db.SetMaxOpenConns(svr.MaxOpenConns)
+	}
+
+	if svr.MaxIdleConns > 0 {
+		if svr.MaxIdleConns <= svr.MaxOpenConns || svr.MaxOpenConns == 0 {
+			svr.db.SetMaxIdleConns(svr.MaxIdleConns)
+		} else {
+			svr.db.SetMaxIdleConns(svr.MaxOpenConns)
+		}
+	}
+
+	if svr.MaxConnIdleTime > 0 {
+		svr.db.SetConnMaxIdleTime(svr.MaxConnIdleTime)
+	}
+
+	svr.db.SetConnMaxLifetime(0)
 
 	// mysql server state object successfully opened
 	return nil
@@ -373,20 +591,17 @@ func (svr *MySql) openWithXRay() (err error) {
 		}
 	}()
 
+	// clean up first
+	svr.db = nil
+	svr.cleanUpAllSqlTransactions()
+
 	// declare
 	var str string
 
 	trace.Capture("Get-DSN", func() error {
 		// get connect string
 		str, err = svr.GetDsn()
-
-		if err != nil {
-			svr.tx = nil
-			svr.db = nil
-			return err
-		} else {
-			return nil
-		}
+		return err
 	})
 
 	if err != nil {
@@ -395,8 +610,6 @@ func (svr *MySql) openWithXRay() (err error) {
 
 	// validate connection string
 	if len(str) == 0 {
-		svr.tx = nil
-		svr.db = nil
 		err = errors.New("MySQL Server Connect String Generated Cannot Be Empty")
 		return err
 	}
@@ -406,8 +619,6 @@ func (svr *MySql) openWithXRay() (err error) {
 		baseDb, e := awsxray.SQLContext("mysql", str)
 
 		if e != nil {
-			svr.tx = nil
-			svr.db = nil
 			err = fmt.Errorf("openWithXRay() Failed During xray.SQLContext(): %s", e.Error())
 			return err
 		}
@@ -431,7 +642,6 @@ func (svr *MySql) openWithXRay() (err error) {
 
 	subTrace.Capture("Ping", func() error {
 		if err = svr.db.PingContext(trace.Ctx); err != nil {
-			svr.tx = nil
 			svr.db = nil
 			return err
 		}
@@ -443,8 +653,23 @@ func (svr *MySql) openWithXRay() (err error) {
 		return err
 	}
 
-	// upon open, transaction object already nil
-	svr.tx = nil
+	if svr.MaxOpenConns > 0 {
+		svr.db.SetMaxOpenConns(svr.MaxOpenConns)
+	}
+
+	if svr.MaxIdleConns > 0 {
+		if svr.MaxIdleConns <= svr.MaxOpenConns || svr.MaxOpenConns == 0 {
+			svr.db.SetMaxIdleConns(svr.MaxIdleConns)
+		} else {
+			svr.db.SetMaxIdleConns(svr.MaxOpenConns)
+		}
+	}
+
+	if svr.MaxConnIdleTime > 0 {
+		svr.db.SetConnMaxIdleTime(svr.MaxConnIdleTime)
+	}
+
+	svr.db.SetConnMaxLifetime(0)
 
 	// mysql server state object successfully opened
 	return nil
@@ -452,16 +677,16 @@ func (svr *MySql) openWithXRay() (err error) {
 
 // Close will close the database connection and set db to nil
 func (svr *MySql) Close() error {
+	svr.cleanUpAllSqlTransactions()
+
 	if svr.db != nil {
 		if err := svr.db.Close(); err != nil {
 			return err
 		}
 
 		// clean up
-		svr.tx = nil
 		svr.db = nil
 		svr._parentSegment = nil
-		svr._xrayTxSeg = nil
 		svr.lastPing = time.Time{}
 		return nil
 	}
@@ -504,189 +729,63 @@ func (svr *MySql) Ping() (err error) {
 	return nil
 }
 
-// Begin starts a database transaction, and stores the transaction object until commit or rollback
-func (svr *MySql) Begin() error {
+// Begin starts a mysql transaction, and stores the transaction object into txMap until commit or rollback.
+// ensure that transaction related actions are executed from the MySqlTransaction object.
+func (svr *MySql) Begin() (*MySqlTransaction, error) {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
-		if svr._xrayTxSeg != nil {
-			_ = svr._xrayTxSeg.Seg.AddError(err)
-			svr._xrayTxSeg.Close()
-			svr._xrayTxSeg = nil
-		}
-		return err
-	}
-
-	// does transaction already exist
-	if svr.tx != nil {
-		return errors.New("Transaction Already Started")
+		// begin failed
+		return nil, err
 	}
 
 	if !xray.XRayServiceOn() {
 		// begin transaction on database
-		tx, err := svr.db.Beginx()
-
-		if err != nil {
-			return err
+		if tx, err := svr.db.Beginx(); err != nil {
+			// begin failed
+			return nil, err
+		} else {
+			// begin succeeded, create MySqlTransaction and return result
+			myTx := &MySqlTransaction{
+				id: util.NewULID(),
+				parent: svr,
+				tx: tx,
+				closed: false,
+				_xrayTxSeg: nil,
+			}
+			if svr.txMap == nil {
+				svr.txMap = make(map[string]*MySqlTransaction)
+			}
+			svr.txMap[myTx.id] = myTx
+			return myTx, nil
 		}
-
-		// transaction begin successful,
-		// store tx into svr.tx field
-		svr.tx = tx
 	} else {
-		if svr._xrayTxSeg != nil {
-			svr._xrayTxSeg.Close()
-		}
-
-		svr._xrayTxSeg = xray.NewSegment("MySql-Transaction", svr._parentSegment)
-
-		subTrace := svr._xrayTxSeg.NewSubSegment("Begin-Transaction")
-		defer subTrace.Close()
-
 		// begin transaction on database
-		tx, err := svr.db.BeginTxx(subTrace.Ctx, &sql.TxOptions{
-			Isolation: 0,
-			ReadOnly: false,
-		})
+		xseg := xray.NewSegment("MySql-Transaction", svr._parentSegment)
+		subXSeg := xseg.NewSubSegment("Begin-Transaction")
 
-		if err != nil {
-			_ = subTrace.Seg.AddError(err)
-			_ = svr._xrayTxSeg.Seg.AddError(err)
-			svr._xrayTxSeg.Close()
-			svr._xrayTxSeg = nil
-			return err
-		}
-
-		// transaction begin successful,
-		// store tx into svr.tx field
-		svr.tx = tx
-	}
-
-	// return nil as success
-	return nil
-}
-
-// Commit finalizes a database transaction, and commits changes to database
-func (svr *MySql) Commit() error {
-	// verify if the database connection is good
-	if err := svr.Ping(); err != nil {
-		if svr._xrayTxSeg != nil {
-			_ = svr._xrayTxSeg.Seg.AddError(err)
-			svr._xrayTxSeg.Close()
-			svr._xrayTxSeg = nil
-		}
-		return err
-	}
-
-	// does transaction already exist
-	if svr.tx == nil {
-		return errors.New("Transaction Does Not Exist")
-	}
-
-	if !xray.XRayServiceOn() {
-		// perform tx commit
-		if err := svr.tx.Commit(); err != nil {
-			return err
-		}
-
-		// commit successful
-		svr.tx = nil
-		svr._xrayTxSeg = nil
-	} else {
-		subTrace := svr._xrayTxSeg.NewSubSegment("Commit-Transaction")
-		defer subTrace.Close()
-
-		var outErr error
-
-		subTrace.Capture("Commit-Transaction-Do", func() error {
-			// perform tx commit
-			if outErr = svr.tx.Commit(); outErr != nil {
-				_ = subTrace.Seg.AddError(outErr)
-				return outErr
-			} else {
-				return nil
+		if tx, err := svr.db.BeginTxx(subXSeg.Ctx, &sql.TxOptions{ Isolation: 0, ReadOnly: false }); err != nil {
+			// begin failed
+			_ = subXSeg.Seg.AddError(err)
+			_ = xseg.Seg.AddError(err)
+			subXSeg.Close()
+			xseg.Close()
+			return nil, err
+		} else {
+			// begin succeeded, create MySqlTransaction and return result
+			myTx := &MySqlTransaction{
+				id: util.NewULID(),
+				parent: svr,
+				tx: tx,
+				closed: false,
+				_xrayTxSeg: xseg,
 			}
-		})
-
-		if outErr != nil {
-			return outErr
-		}
-
-		// commit successful
-		svr._xrayTxSeg.Close()
-		svr.tx = nil
-		svr._xrayTxSeg = nil
-	}
-
-	return nil
-}
-
-// Rollback cancels pending database changes for the current transaction and clears out transaction object
-func (svr *MySql) Rollback() error {
-	// verify if the database connection is good
-	if err := svr.Ping(); err != nil {
-		if svr._xrayTxSeg != nil {
-			_ = svr._xrayTxSeg.Seg.AddError(err)
-			svr._xrayTxSeg.Close()
-			svr._xrayTxSeg = nil
-		}
-		return err
-	}
-
-	// does transaction already exist
-	if svr.tx == nil {
-		return errors.New("Transaction Does Not Exist")
-	}
-
-	if !xray.XRayServiceOn() {
-		// perform tx rollback
-		if err := svr.tx.Rollback(); err != nil {
-			svr.tx = nil
-			return err
-		}
-
-		// rollback successful
-		svr.tx = nil
-		svr._xrayTxSeg = nil
-	} else {
-		// perform tx rollback
-		defer func() {
-			svr.tx = nil
-			svr._xrayTxSeg.Close()
-			svr._xrayTxSeg = nil
-		}()
-
-		subTrace := svr._xrayTxSeg.NewSubSegment("RollBack-Transaction")
-		defer subTrace.Close()
-
-		var outErr error
-
-		subTrace.Capture("RollBack-Transaction-Do", func() error {
-			if outErr = svr.tx.Rollback(); outErr != nil {
-				_ = subTrace.Seg.AddError(outErr)
-				_ = svr._xrayTxSeg.Seg.AddError(outErr)
-				return outErr
-			} else {
-				return nil
+			if svr.txMap == nil {
+				svr.txMap = make(map[string]*MySqlTransaction)
 			}
-		})
-
-		if outErr != nil {
-			return outErr
+			svr.txMap[myTx.id] = myTx
+			subXSeg.Close()
+			return myTx, nil
 		}
-	}
-
-	return nil
-}
-
-func (svr *MySql) newTxSubSegment(name string) *xray.XSegment {
-	if xray.XRayServiceOn() {
-		if svr._xrayTxSeg == nil {
-			svr._xrayTxSeg = xray.NewSegment("MySql-Transaction", svr._parentSegment)
-		}
-
-		return svr._xrayTxSeg.NewSubSegment(name)
-	} else {
-		return nil
 	}
 }
 
@@ -715,44 +814,80 @@ func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interfa
 	// perform select action, and unmarshal result rows into target struct slice
 	var err error
 
-	if svr.tx == nil {
-		// not in transaction mode
-		// query using db object
-		if !xray.XRayServiceOn() {
-			err = svr.db.Select(dest, query, args...)
-		} else {
-			trace := xray.NewSegment("MySql-Select-GetStructSlice", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", query)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Struct-Slice-Result", dest)
-				if err != nil {
-					_ = trace.Seg.AddError(err)
-				}
-			}()
-
-			err = svr.db.SelectContext(trace.Ctx, dest, query, args...)
-		}
+	// not in transaction mode
+	// query using db object
+	if !xray.XRayServiceOn() {
+		err = svr.db.Select(dest, query, args...)
 	} else {
-		// in transaction mode
-		// query using tx object
-		if !xray.XRayServiceOn() {
-			err = svr.tx.Select(dest, query, args...)
-		} else {
-			subTrace := svr.newTxSubSegment("Transaction-Select-GetStructSlice")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Struct-Slice-Result", dest)
-				if err != nil {
-					_ = subTrace.Seg.AddError(err)
-				}
-			}()
+		trace := xray.NewSegment("MySql-Select-GetStructSlice", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", query)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Struct-Slice-Result", dest)
+			if err != nil {
+				_ = trace.Seg.AddError(err)
+			}
+		}()
 
-			err = svr.tx.SelectContext(subTrace.Ctx, dest, query, args...)
-		}
+		err = svr.db.SelectContext(trace.Ctx, dest, query, args...)
+	}
+
+	// if err is sql.ErrNoRows then treat as no error
+	if err != nil && err == sql.ErrNoRows {
+		notFound = true
+		dest = nil
+		err = nil
+	} else {
+		notFound = false
+	}
+
+	// return error
+	return notFound, err
+}
+
+// GetStructSlice performs query with optional variadic parameters, and unmarshal result rows into target struct slice,
+// in essence, each row of data is marshaled into the given struct, and multiple struct form the slice,
+// such as: []Customer where each row represent a customer, and multiple customers being part of the slice
+// [ Parameters ]
+//		dest = pointer to the struct slice or address of struct slice, this is the result of rows to be marshaled into struct slice
+//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+// 		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+// [ Return Values ]
+//		1) notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
+//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
+// [ Notes ]
+//		1) if error == nil, and len(dest struct slice) == 0 then zero struct slice result
+func (t *MySqlTransaction) GetStructSlice(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if retErr = t.ready(); retErr != nil {
+		return false, retErr
+	}
+
+	// verify if the database connection is good
+	if retErr = t.parent.Ping(); retErr != nil {
+		return false, retErr
+	}
+
+	// perform select action, and unmarshal result rows into target struct slice
+	var err error
+
+	// in transaction mode
+	// query using tx object
+	if t._xrayTxSeg == nil {
+		err = t.tx.Select(dest, query, args...)
+	} else {
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetStructSlice")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Struct-Slice-Result", dest)
+			if err != nil {
+				_ = subTrace.Seg.AddError(err)
+			}
+		}()
+
+		err = t.tx.SelectContext(subTrace.Ctx, dest, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -786,44 +921,77 @@ func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{})
 	// perform select action, and unmarshal result row (single row) into target struct (single object)
 	var err error
 
-	if svr.tx == nil {
-		// not in transaction mode
-		// query using db object
-		if !xray.XRayServiceOn() {
-			err = svr.db.Get(dest, query, args...)
-		} else {
-			trace := xray.NewSegment("MySql-Select-GetStruct", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", query)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Struct-Result", dest)
-				if err != nil {
-					_ = trace.Seg.AddError(err)
-				}
-			}()
-
-			err = svr.db.GetContext(trace.Ctx, dest, query, args...)
-		}
+	// not in transaction mode
+	// query using db object
+	if !xray.XRayServiceOn() {
+		err = svr.db.Get(dest, query, args...)
 	} else {
-		// in transaction mode
-		// query using tx object
-		if !xray.XRayServiceOn() {
-			err = svr.tx.Get(dest, query, args...)
-		} else {
-			subTrace := svr.newTxSubSegment("Transaction-Select-GetStruct")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Struct-Result", dest)
-				if err != nil {
-					_ = subTrace.Seg.AddError(err)
-				}
-			}()
+		trace := xray.NewSegment("MySql-Select-GetStruct", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", query)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Struct-Result", dest)
+			if err != nil {
+				_ = trace.Seg.AddError(err)
+			}
+		}()
 
-			err = svr.tx.GetContext(subTrace.Ctx, dest, query, args...)
-		}
+		err = svr.db.GetContext(trace.Ctx, dest, query, args...)
+	}
+
+	// if err is sql.ErrNoRows then treat as no error
+	if err != nil && err == sql.ErrNoRows {
+		notFound = true
+		dest = nil
+		err = nil
+	} else {
+		notFound = false
+	}
+
+	// return error
+	return notFound, err
+}
+
+// GetStruct performs query with optional variadic parameters, and unmarshal single result row into single target struct,
+// such as: Customer struct where one row of data represent a customer
+// [ Parameters ]
+//		dest = pointer to struct or address of struct, this is the result of row to be marshaled into this struct
+//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+// [ Return Values ]
+//		1) notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
+//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
+func (t *MySqlTransaction) GetStruct(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if retErr = t.ready(); retErr != nil {
+		return false, retErr
+	}
+
+	// verify if the database connection is good
+	if retErr = t.parent.Ping(); retErr != nil {
+		return false, retErr
+	}
+
+	// perform select action, and unmarshal result row (single row) into target struct (single object)
+	var err error
+
+	// in transaction mode
+	// query using tx object
+	if t._xrayTxSeg == nil {
+		err = t.tx.Get(dest, query, args...)
+	} else {
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetStruct")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Struct-Result", dest)
+			if err != nil {
+				_ = subTrace.Seg.AddError(err)
+			}
+		}()
+
+		err = t.tx.GetContext(subTrace.Ctx, dest, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -871,44 +1039,84 @@ func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sq
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
-		// not in transaction mode
-		// query using db object
-		if !xray.XRayServiceOn() {
-			rows, err = svr.db.Queryx(query, args...)
-		} else {
-			trace := xray.NewSegment("MySql-Select-GetRowsByOrdinalParams", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", query)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Rows-Result", rows)
-				if err != nil {
-					_ = trace.Seg.AddError(err)
-				}
-			}()
-
-			rows, err = svr.db.QueryxContext(trace.Ctx, query, args...)
-		}
+	// not in transaction mode
+	// query using db object
+	if !xray.XRayServiceOn() {
+		rows, err = svr.db.Queryx(query, args...)
 	} else {
-		// in transaction mode
-		// query using tx object
-		if !xray.XRayServiceOn() {
-			rows, err = svr.tx.Queryx(query, args...)
-		} else {
-			subTrace := svr.newTxSubSegment("Transaction-Select-GetRowsByOrdinalParams")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Rows-Result", rows)
-				if err != nil {
-					_ = subTrace.Seg.AddError(err)
-				}
-			}()
+		trace := xray.NewSegment("MySql-Select-GetRowsByOrdinalParams", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", query)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Rows-Result", rows)
+			if err != nil {
+				_ = trace.Seg.AddError(err)
+			}
+		}()
 
-			rows, err = svr.tx.QueryxContext(subTrace.Ctx, query, args...)
-		}
+		rows, err = svr.db.QueryxContext(trace.Ctx, query, args...)
+	}
+
+	// if err is sql.ErrNoRows then treat as no error
+	if err != nil && err == sql.ErrNoRows {
+		rows = nil
+		err = nil
+	}
+
+	// return result
+	return rows, err
+}
+
+// GetRowsByOrdinalParams performs query with optional variadic parameters to get ROWS of result, and returns *sqlx.Rows
+// [ Parameters ]
+//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+// [ Return Values ]
+//		1) *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
+// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+// [ Ranged Loop & Scan ]
+//		1) to loop, use:
+//				for {
+//						if !rows.Next() { break }
+//						rows.Scan(&x, &y, etc)
+//					}
+//		2) to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+// [ Continuous Loop & Scan ]
+//		1) Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
+//		2) ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
+//		3) ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
+func (t *MySqlTransaction) GetRowsByOrdinalParams(query string, args ...interface{}) (*sqlx.Rows, error) {
+	if err := t.ready(); err != nil {
+		return nil, err
+	}
+
+	// verify if the database connection is good
+	if err := t.parent.Ping(); err != nil {
+		return nil, err
+	}
+
+	// perform select action, and return sqlx rows
+	var rows *sqlx.Rows
+	var err error
+
+	// in transaction mode
+	// query using tx object
+	if t._xrayTxSeg == nil {
+		rows, err = t.tx.Queryx(query, args...)
+	} else {
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetRowsByOrdinalParams")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Rows-Result", rows)
+			if err != nil {
+				_ = subTrace.Seg.AddError(err)
+			}
+		}()
+
+		rows, err = t.tx.QueryxContext(subTrace.Ctx, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -958,44 +1166,93 @@ func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
-		// not in transaction mode
-		// query using db object
-		if !xray.XRayServiceOn() {
-			rows, err = svr.db.NamedQuery(query, args)
-		} else {
-			trace := xray.NewSegment("MySql-Select-GetRowsByNamedMapParam", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", query)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Rows-Result", rows)
-				if err != nil {
-					_ = trace.Seg.AddError(err)
-				}
-			}()
-
-			rows, err = svr.db.NamedQueryContext(trace.Ctx, query, args)
-		}
+	// not in transaction mode
+	// query using db object
+	if !xray.XRayServiceOn() {
+		rows, err = svr.db.NamedQuery(query, args)
 	} else {
-		// in transaction mode
-		// query using tx object
-		if !xray.XRayServiceOn() {
-			rows, err = svr.tx.NamedQuery(query, args)
-		} else {
-			subTrace := svr.newTxSubSegment("Transaction-Select-GetRowsByNamedMapParam")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Rows-Result", rows)
-				if err != nil {
-					_ = subTrace.Seg.AddError(err)
-				}
-			}()
+		trace := xray.NewSegment("MySql-Select-GetRowsByNamedMapParam", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", query)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Rows-Result", rows)
+			if err != nil {
+				_ = trace.Seg.AddError(err)
+			}
+		}()
 
-			rows, err = sqlx.NamedQueryContext(subTrace.Ctx, svr.tx, query, args)
-		}
+		rows, err = svr.db.NamedQueryContext(trace.Ctx, query, args)
+	}
+
+	if err != nil && err == sql.ErrNoRows {
+		// no rows
+		rows = nil
+		err = nil
+	}
+
+	// return result
+	return rows, err
+}
+
+// GetRowsByNamedMapParam performs query with named map containing parameters to get ROWS of result, and returns *sqlx.Rows
+// [ Syntax ]
+//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//		2) in go = setup a map variable: var p = make(map[string]interface{})
+//		3) in go = to set values into map variable: p["xyz"] = abc
+//				   where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
+//				   where abc is the value of the parameter value, whether string or other data types
+//				   note: in using map, just add additional map elements using the p["xyz"] = abc syntax
+//				   note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
+//		4) in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+// [ Parameters ]
+//		query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
+//		args = required, the map variable of the named parameters
+// [ Return Values ]
+//		1) *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
+// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+// [ Ranged Loop & Scan ]
+//		1) to loop, use:
+//				for {
+//						if !rows.Next() { break }
+//						rows.Scan(&x, &y, etc)
+//					}
+//		2) to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+// [ Continuous Loop & Scan ]
+//		1) Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
+//		2) ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
+//		3) ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
+func (t *MySqlTransaction) GetRowsByNamedMapParam(query string, args map[string]interface{}) (*sqlx.Rows, error) {
+	if err := t.ready(); err != nil {
+		return nil, err
+	}
+
+	// verify if the database connection is good
+	if err := t.parent.Ping(); err != nil {
+		return nil, err
+	}
+
+	// perform select action, and return sqlx rows
+	var rows *sqlx.Rows
+	var err error
+
+	// in transaction mode
+	// query using tx object
+	if t._xrayTxSeg == nil {
+		rows, err = t.tx.NamedQuery(query, args)
+	} else {
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetRowsByNamedMapParam")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Rows-Result", rows)
+			if err != nil {
+				_ = subTrace.Seg.AddError(err)
+			}
+		}()
+
+		rows, err = sqlx.NamedQueryContext(subTrace.Ctx, t.tx, query, args)
 	}
 
 	if err != nil && err == sql.ErrNoRows {
@@ -1041,44 +1298,89 @@ func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Ro
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
-		// not in transaction mode
-		// query using db object
-		if !xray.XRayServiceOn() {
-			rows, err = svr.db.NamedQuery(query, args)
-		} else {
-			trace := xray.NewSegment("MySql-Select-GetRowsByStructParam", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", query)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Rows-Result", rows)
-				if err != nil {
-					_ = trace.Seg.AddError(err)
-				}
-			}()
-
-			rows, err = svr.db.NamedQueryContext(trace.Ctx, query, args)
-		}
+	// not in transaction mode
+	// query using db object
+	if !xray.XRayServiceOn() {
+		rows, err = svr.db.NamedQuery(query, args)
 	} else {
-		// in transaction mode
-		// query using tx object
-		if !xray.XRayServiceOn() {
-			rows, err = svr.tx.NamedQuery(query, args)
-		} else {
-			subTrace := svr.newTxSubSegment("Transaction-Select-GetRowsByStructParam")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Rows-Result", rows)
-				if err != nil {
-					_ = subTrace.Seg.AddError(err)
-				}
-			}()
+		trace := xray.NewSegment("MySql-Select-GetRowsByStructParam", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", query)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Rows-Result", rows)
+			if err != nil {
+				_ = trace.Seg.AddError(err)
+			}
+		}()
 
-			rows, err = sqlx.NamedQueryContext(subTrace.Ctx, svr.tx, query, args)
-		}
+		rows, err = svr.db.NamedQueryContext(trace.Ctx, query, args)
+	}
+
+	if err != nil && err == sql.ErrNoRows {
+		// no rows
+		rows = nil
+		err = nil
+	}
+
+	// return result
+	return rows, err
+}
+
+// GetRowsByStructParam performs query with a struct as parameter input to get ROWS of result, and returns *sqlx.Rows
+// [ Syntax ]
+//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//		2) in sql = important: the :xyz defined where xyz portion of parameter name must batch the struct tag's `db:"xyz"`
+//		3) in go = a struct containing struct tags that matches the named parameters will be set with values, and passed into this function's args parameter input
+//		4) in go = when calling this function passing the struct variable, simply pass the struct variable into the args parameter
+// [ Parameters ]
+//		query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
+//		args = required, the struct variable where struct fields' struct tags match to the named parameters
+// [ Return Values ]
+//		1) *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
+// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+// [ Ranged Loop & Scan ]
+//		1) to loop, use:
+//				for {
+//						if !rows.Next() { break }
+//						rows.Scan(&x, &y, etc)
+//					}
+//		2) to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+// [ Continuous Loop & Scan ]
+//		1) Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
+//		2) ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
+//		3) ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
+func (t *MySqlTransaction) GetRowsByStructParam(query string, args interface{}) (*sqlx.Rows, error) {
+	if err := t.ready(); err != nil {
+		return nil, err
+	}
+
+	// verify if the database connection is good
+	if err := t.parent.Ping(); err != nil {
+		return nil, err
+	}
+
+	// perform select action, and return sqlx rows
+	var rows *sqlx.Rows
+	var err error
+
+	// in transaction mode
+	// query using tx object
+	if t._xrayTxSeg == nil {
+		rows, err = t.tx.NamedQuery(query, args)
+	} else {
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetRowsByStructParam")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Rows-Result", rows)
+			if err != nil {
+				_ = subTrace.Seg.AddError(err)
+			}
+		}()
+
+		rows, err = sqlx.NamedQueryContext(subTrace.Ctx, t.tx, query, args)
 	}
 
 	if err != nil && err == sql.ErrNoRows {
@@ -1103,7 +1405,7 @@ func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Ro
 //		rows = *sqlx.Rows
 //		dest = pointer or address to slice, such as: variable to "*[]string", or variable to "&cList for declaration cList []string"
 // [ Return Values ]
-//		1) endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop
+//		1) endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop (rows will be closed automatically)
 //		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool, err error) {
 	// ensure rows pointer is set
@@ -1122,6 +1424,7 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 				endOfRows = true
 				dest = nil
 				err = nil
+				_ = rows.Close()
 				return
 			}
 
@@ -1139,6 +1442,7 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 			endOfRows = true
 			dest = nil
 			err = nil
+			_ = rows.Close()
 		}
 	} else {
 		trace := xray.NewSegment("MySql-InMemory-ScanSlice", svr._parentSegment)
@@ -1159,6 +1463,7 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 					endOfRows = true
 					dest = nil
 					err = nil
+					_ = rows.Close()
 					return nil
 				}
 
@@ -1177,6 +1482,7 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 				endOfRows = true
 				dest = nil
 				err = nil
+				_ = rows.Close()
 				return nil
 			}
 		}, &xray.XTraceData{
@@ -1201,7 +1507,7 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 //		rows = *sqlx.Rows
 //		dest = pointer or address to struct, such as: variable to "*Customer", or variable to "&c for declaration c Customer"
 // [ Return Values ]
-//		1) endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop
+//		1) endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop (rows will be closed automatically)
 //		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool, err error) {
 	// ensure rows pointer is set
@@ -1220,6 +1526,7 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 				endOfRows = true
 				dest = nil
 				err = nil
+				_ = rows.Close()
 				return
 			}
 
@@ -1236,6 +1543,7 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 			endOfRows = true
 			dest = nil
 			err = nil
+			_ = rows.Close()
 		}
 	} else {
 		trace := xray.NewSegment("MySql-InMemory-ScanStruct", svr._parentSegment)
@@ -1256,6 +1564,7 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 					endOfRows = true
 					dest = nil
 					err = nil
+					_ = rows.Close()
 					return nil
 				}
 
@@ -1273,6 +1582,7 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 				endOfRows = true
 				dest = nil
 				err = nil
+				_ = rows.Close()
 				return nil
 			}
 		}, &xray.XTraceData{
@@ -1314,44 +1624,89 @@ func (svr *MySql) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, er
 	var row *sqlx.Row
 	var err error
 
-	if svr.tx == nil {
-		// not in transaction mode
-		// query using db object
-		if !xray.XRayServiceOn() {
-			row = svr.db.QueryRowx(query, args...)
-		} else {
-			trace := xray.NewSegment("MySql-Select-GetSingleRow", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", query)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Row-Result", row)
-				if err != nil {
-					_ = trace.Seg.AddError(err)
-				}
-			}()
-
-			row = svr.db.QueryRowxContext(trace.Ctx, query, args...)
-		}
+	// not in transaction mode
+	// query using db object
+	if !xray.XRayServiceOn() {
+		row = svr.db.QueryRowx(query, args...)
 	} else {
-		// in transaction mode
-		// query using tx object
-		if !xray.XRayServiceOn() {
-			row = svr.tx.QueryRowx(query, args...)
-		} else {
-			subTrace := svr.newTxSubSegment("Transaction-Select-GetSingleRow")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Row-Result", row)
-				if err != nil {
-					_ = subTrace.Seg.AddError(err)
-				}
-			}()
+		trace := xray.NewSegment("MySql-Select-GetSingleRow", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", query)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Row-Result", row)
+			if err != nil {
+				_ = trace.Seg.AddError(err)
+			}
+		}()
 
-			row = svr.tx.QueryRowxContext(subTrace.Ctx, query, args...)
+		row = svr.db.QueryRowxContext(trace.Ctx, query, args...)
+	}
+
+	if row == nil {
+		err = errors.New("No Row Data Found From Query")
+	} else {
+		err = row.Err()
+
+		if err != nil {
+			if err == sql.ErrNoRows {
+				// no rows
+				row = nil
+				err = nil
+			} else {
+				// has error
+				row = nil
+			}
 		}
+	}
+
+	// return result
+	return row, err
+}
+
+// GetSingleRow performs query with optional variadic parameters to get a single ROW of result, and returns *sqlx.Row (This function returns SINGLE ROW)
+// [ Parameters ]
+//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+// [ Return Values ]
+//		1) *sqlx.Row = pointer to sqlx.Row; or nil if no row yielded
+//		2) if error != nil, then error is encountered (if error = sql.ErrNoRows, then error is treated as nil, and sqlx.Row is returned as nil)
+// [ Scan Values ]
+//		1) Use row.Scan() and pass in pointer or address of variable to receive scanned value outputs (Scan is in the order of column sequences in select statement)
+// [ WARNING !!! ]
+//		WHEN USING Scan(), MUST CHECK Scan Result Error for sql.ErrNoRow status
+//		SUGGESTED TO USE ScanColumnsByRow() Instead of Scan()
+func (t *MySqlTransaction) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, error) {
+	if err := t.ready(); err != nil {
+		return nil, err
+	}
+
+	// verify if the database connection is good
+	if err := t.parent.Ping(); err != nil {
+		return nil, err
+	}
+
+	// perform select action, and return sqlx row
+	var row *sqlx.Row
+	var err error
+
+	// in transaction mode
+	// query using tx object
+	if t._xrayTxSeg == nil {
+		row = t.tx.QueryRowx(query, args...)
+	} else {
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetSingleRow")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Row-Result", row)
+			if err != nil {
+				_ = subTrace.Seg.AddError(err)
+			}
+		}()
+
+		row = t.tx.QueryRowxContext(subTrace.Ctx, query, args...)
 	}
 
 	if row == nil {
@@ -1630,44 +1985,93 @@ func (svr *MySql) GetScalarString(query string, args ...interface{}) (retVal str
 	// get row using query string and parameters
 	var row *sqlx.Row
 
-	if svr.tx == nil {
-		// not in transaction
-		// use db object
-		if !xray.XRayServiceOn() {
-			row = svr.db.QueryRowx(query, args...)
-		} else {
-			trace := xray.NewSegment("MySql-Select-GetScalarString", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", query)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Row-Result", row)
-				if retErr != nil {
-					_ = trace.Seg.AddError(retErr)
-				}
-			}()
-
-			row = svr.db.QueryRowxContext(trace.Ctx, query, args...)
-		}
+	// not in transaction
+	// use db object
+	if !xray.XRayServiceOn() {
+		row = svr.db.QueryRowx(query, args...)
 	} else {
-		// in transaction
-		// use tx object
-		if !xray.XRayServiceOn() {
-			row = svr.tx.QueryRowx(query, args...)
-		} else {
-			subTrace := svr.newTxSubSegment("Transaction-Select-GetScalarString")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Row-Result", row)
-				if retErr != nil {
-					_ = subTrace.Seg.AddError(retErr)
-				}
-			}()
+		trace := xray.NewSegment("MySql-Select-GetScalarString", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", query)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Row-Result", row)
+			if retErr != nil {
+				_ = trace.Seg.AddError(retErr)
+			}
+		}()
 
-			row = svr.tx.QueryRowxContext(subTrace.Ctx, query, args...)
+		row = svr.db.QueryRowxContext(trace.Ctx, query, args...)
+	}
+
+	if row == nil {
+		return "", false, errors.New("Scalar Query Yielded Empty Row")
+	} else {
+		retErr = row.Err()
+
+		if retErr != nil {
+			if retErr == sql.ErrNoRows {
+				// no rows
+				retErr = nil
+				return "", true, nil
+			} else {
+				// has error
+				return "", false, retErr
+			}
 		}
+	}
+
+	// get value via scan
+	retErr = row.Scan(&retVal)
+
+	if retErr == sql.ErrNoRows {
+		// no rows
+		retErr = nil
+		return "", true, nil
+	} else {
+		// return value
+		return retVal, false, retErr
+	}
+}
+
+// GetScalarString performs query with optional variadic parameters, and returns the first row and first column value in string data type
+// [ Parameters ]
+//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+// [ Return Values ]
+//		1) retVal = string value of scalar result, if no value, blank is returned
+//		2) retNotFound = now row found
+// 		3) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
+func (t *MySqlTransaction) GetScalarString(query string, args ...interface{}) (retVal string, retNotFound bool, retErr error) {
+	if err := t.ready(); err != nil {
+		return "", false, err
+	}
+
+	// verify if the database connection is good
+	if err := t.parent.Ping(); err != nil {
+		return "", false, err
+	}
+
+	// get row using query string and parameters
+	var row *sqlx.Row
+
+	// in transaction
+	// use tx object
+	if t._xrayTxSeg == nil {
+		row = t.tx.QueryRowx(query, args...)
+	} else {
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetScalarString")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Row-Result", row)
+			if retErr != nil {
+				_ = subTrace.Seg.AddError(retErr)
+			}
+		}()
+
+		row = t.tx.QueryRowxContext(subTrace.Ctx, query, args...)
 	}
 
 	if row == nil {
@@ -1717,44 +2121,94 @@ func (svr *MySql) GetScalarNullString(query string, args ...interface{}) (retVal
 	// get row using query string and parameters
 	var row *sqlx.Row
 
-	if svr.tx == nil {
-		// not in transaction
-		// use db object
-		if !xray.XRayServiceOn() {
-			row = svr.db.QueryRowx(query, args...)
-		} else {
-			trace := xray.NewSegment("MySql-Select-GetScalarNullString", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", query)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Row-Result", row)
-				if retErr != nil {
-					_ = trace.Seg.AddError(retErr)
-				}
-			}()
-
-			row = svr.db.QueryRowxContext(trace.Ctx, query, args...)
-		}
+	// not in transaction
+	// use db object
+	if !xray.XRayServiceOn() {
+		row = svr.db.QueryRowx(query, args...)
 	} else {
-		// in transaction
-		// use tx object
-		if !xray.XRayServiceOn() {
-			row = svr.tx.QueryRowx(query, args...)
-		} else {
-			subTrace := svr.newTxSubSegment("Transaction-Select-GetScalarNullString")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Row-Result", row)
-				if retErr != nil {
-					_ = subTrace.Seg.AddError(retErr)
-				}
-			}()
+		trace := xray.NewSegment("MySql-Select-GetScalarNullString", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", query)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Row-Result", row)
+			if retErr != nil {
+				_ = trace.Seg.AddError(retErr)
+			}
+		}()
 
-			row = svr.tx.QueryRowxContext(subTrace.Ctx, query, args...)
+		row = svr.db.QueryRowxContext(trace.Ctx, query, args...)
+	}
+
+	if row == nil {
+		retErr = errors.New("Scalar Query Yielded Empty Row")
+		return sql.NullString{}, false, retErr
+	} else {
+		retErr = row.Err()
+
+		if retErr != nil {
+			if retErr == sql.ErrNoRows {
+				// no rows
+				retErr = nil
+				return sql.NullString{}, true, nil
+			} else {
+				// has error
+				return sql.NullString{}, false, retErr
+			}
 		}
+	}
+
+	// get value via scan
+	retErr = row.Scan(&retVal)
+
+	if retErr == sql.ErrNoRows {
+		// no rows
+		retErr = nil
+		return sql.NullString{}, true, nil
+	} else {
+		// return value
+		return retVal, false, retErr
+	}
+}
+
+// GetScalarNullString performs query with optional variadic parameters, and returns the first row and first column value in sql.NullString{} data type
+// [ Parameters ]
+//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+// [ Return Values ]
+//		1) retVal = string value of scalar result, if no value, sql.NullString{} is returned
+//		2) retNotFound = now row found
+// 		3) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
+func (t *MySqlTransaction) GetScalarNullString(query string, args ...interface{}) (retVal sql.NullString, retNotFound bool, retErr error) {
+	if err := t.ready(); err != nil {
+		return sql.NullString{}, false, err
+	}
+
+	// verify if the database connection is good
+	if err := t.parent.Ping(); err != nil {
+		return sql.NullString{}, false, err
+	}
+
+	// get row using query string and parameters
+	var row *sqlx.Row
+
+	// in transaction
+	// use tx object
+	if t._xrayTxSeg == nil {
+		row = t.tx.QueryRowx(query, args...)
+	} else {
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetScalarNullString")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Row-Result", row)
+			if retErr != nil {
+				_ = subTrace.Seg.AddError(retErr)
+			}
+		}()
+
+		row = t.tx.QueryRowxContext(subTrace.Ctx, query, args...)
 	}
 
 	if row == nil {
@@ -1818,47 +2272,107 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 	var err error
 
 	if !xray.XRayServiceOn() {
-		if svr.tx == nil {
-			// not in transaction mode,
-			// action using db object
-			result, err = svr.db.Exec(actionQuery, args...)
-		} else {
-			// in transaction mode,
-			// action using tx object
-			result, err = svr.tx.Exec(actionQuery, args...)
-		}
+		// not in transaction mode,
+		// action using db object
+		result, err = svr.db.Exec(actionQuery, args...)
 	} else {
-		if svr.tx == nil {
-			// not in transaction mode,
-			// action using db object
-			trace := xray.NewSegment("MySql-Exec-ExecByOrdinalParams", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Exec-Result", result)
-				if err != nil {
-					_ = trace.Seg.AddError(err)
-				}
-			}()
+		// not in transaction mode,
+		// action using db object
+		trace := xray.NewSegment("MySql-Exec-ExecByOrdinalParams", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Exec-Result", result)
+			if err != nil {
+				_ = trace.Seg.AddError(err)
+			}
+		}()
 
-			result, err = svr.db.ExecContext(trace.Ctx, actionQuery, args...)
-		} else {
-			// in transaction mode,
-			// action using tx object
-			subTrace := svr.newTxSubSegment("Transaction-Exec-ExecByOrdinalParams")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", actionQuery)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Exec-Result", result)
-				if err != nil {
-					_ = subTrace.Seg.AddError(err)
-				}
-			}()
+		result, err = svr.db.ExecContext(trace.Ctx, actionQuery, args...)
+	}
 
-			result, err = svr.tx.ExecContext(subTrace.Ctx, actionQuery, args...)
+	if err != nil {
+		err = errors.New("ExecByOrdinalParams() Error: " + err.Error())
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// if inserted, get last id if known
+	var newID int64
+	newID = 0
+
+	if isInsert {
+		newID, err = result.LastInsertId()
+
+		if err != nil {
+			err = errors.New("ExecByOrdinalParams() Get LastInsertId() Error: " + err.Error())
+			return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
+	}
+
+	// get rows affected by this action
+	var affected int64
+	affected = 0
+
+	affected, err = result.RowsAffected()
+
+	if err != nil {
+		err = errors.New("ExecByOrdinalParams() Get RowsAffected() Error: " + err.Error())
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// return result
+	return MySqlResult{RowsAffected: affected, NewlyInsertedID: newID, Err: nil}
+}
+
+// ExecByOrdinalParams executes action query string and parameters to return result, if error, returns error object within result
+// [ Parameters ]
+//		actionQuery = sql action query, optionally having parameters marked as ?1, ?2 .. ?N, where each represents a parameter position
+//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+// [ Return Values ]
+//		1) MySqlResult = represents the sql action result received (including error info if applicable)
+func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...interface{}) MySqlResult {
+	if err := t.ready(); err != nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// verify if the database connection is good
+	if err := t.parent.Ping(); err != nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// is new insertion?
+	var isInsert bool
+
+	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
+		isInsert = true
+	} else {
+		isInsert = false
+	}
+
+	// perform exec action, and return to caller
+	var result sql.Result
+	var err error
+
+	if t._xrayTxSeg == nil {
+		// in transaction mode,
+		// action using tx object
+		result, err = t.tx.Exec(actionQuery, args...)
+	} else {
+		// in transaction mode,
+		// action using tx object
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Exec-ExecByOrdinalParams")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", actionQuery)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Exec-Result", result)
+			if err != nil {
+				_ = subTrace.Seg.AddError(err)
+			}
+		}()
+
+		result, err = t.tx.ExecContext(subTrace.Ctx, actionQuery, args...)
 	}
 
 	if err != nil {
@@ -1929,47 +2443,117 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 	var err error
 
 	if !xray.XRayServiceOn() {
-		if svr.tx == nil {
-			// not in transaction mode,
-			// action using db object
-			result, err = svr.db.NamedExec(actionQuery, args)
-		} else {
-			// in transaction mode,
-			// action using tx object
-			result, err = svr.tx.NamedExec(actionQuery, args)
-		}
+		// not in transaction mode,
+		// action using db object
+		result, err = svr.db.NamedExec(actionQuery, args)
 	} else {
-		if svr.tx == nil {
-			// not in transaction mode,
-			// action using db object
-			trace := xray.NewSegment("MySql-Exec-ExecByNamedMapParam", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Exec-Result", result)
-				if err != nil {
-					_ = trace.Seg.AddError(err)
-				}
-			}()
+		// not in transaction mode,
+		// action using db object
+		trace := xray.NewSegment("MySql-Exec-ExecByNamedMapParam", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Exec-Result", result)
+			if err != nil {
+				_ = trace.Seg.AddError(err)
+			}
+		}()
 
-			result, err = svr.db.NamedExecContext(trace.Ctx, actionQuery, args)
-		} else {
-			// in transaction mode,
-			// action using tx object
-			subTrace := svr.newTxSubSegment("Transaction-Exec-ExecByNamedMapParam")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", actionQuery)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Exec-Result", result)
-				if err != nil {
-					_ = subTrace.Seg.AddError(err)
-				}
-			}()
+		result, err = svr.db.NamedExecContext(trace.Ctx, actionQuery, args)
+	}
 
-			result, err = svr.tx.NamedExecContext(subTrace.Ctx, actionQuery, args)
+	if err != nil {
+		err = errors.New("ExecByNamedMapParam() Error: " + err.Error())
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// if inserted, get last id if known
+	var newID int64
+	newID = 0
+
+	if isInsert {
+		newID, err = result.LastInsertId()
+
+		if err != nil {
+			err = errors.New("ExecByNamedMapParam() Get LastInsertId() Error: " + err.Error())
+			return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
+	}
+
+	// get rows affected by this action
+	var affected int64
+	affected = 0
+
+	affected, err = result.RowsAffected()
+
+	if err != nil {
+		err = errors.New("ExecByNamedMapParam() Get RowsAffected() Error: " + err.Error())
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// return result
+	return MySqlResult{RowsAffected: affected, NewlyInsertedID: newID, Err: nil}
+}
+
+// ExecByNamedMapParam executes action query string with named map containing parameters to return result, if error, returns error object within result
+// [ Syntax ]
+//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//		2) in go = setup a map variable: var p = make(map[string]interface{})
+//		3) in go = to set values into map variable: p["xyz"] = abc
+//				   where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
+//				   where abc is the value of the parameter value, whether string or other data types
+//				   note: in using map, just add additional map elements using the p["xyz"] = abc syntax
+//				   note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
+//		4) in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+// [ Parameters ]
+//		actionQuery = sql action query, with named parameters using :xyz syntax
+//		args = required, the map variable of the named parameters
+// [ Return Values ]
+//		1) MySqlResult = represents the sql action result received (including error info if applicable)
+func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[string]interface{}) MySqlResult {
+	if err := t.ready(); err != nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// verify if the database connection is good
+	if err := t.parent.Ping(); err != nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// is new insertion?
+	var isInsert bool
+
+	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
+		isInsert = true
+	} else {
+		isInsert = false
+	}
+
+	// perform exec action, and return to caller
+	var result sql.Result
+	var err error
+
+	if t._xrayTxSeg == nil {
+		// in transaction mode,
+		// action using tx object
+		result, err = t.tx.NamedExec(actionQuery, args)
+	} else {
+		// in transaction mode,
+		// action using tx object
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Exec-ExecByNamedMapParam")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", actionQuery)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Exec-Result", result)
+			if err != nil {
+				_ = subTrace.Seg.AddError(err)
+			}
+		}()
+
+		result, err = t.tx.NamedExecContext(subTrace.Ctx, actionQuery, args)
+
 	}
 
 	if err != nil {
@@ -2035,47 +2619,111 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 	var err error
 
 	if !xray.XRayServiceOn() {
-		if svr.tx == nil {
-			// not in transaction mode,
-			// action using db object
-			result, err = svr.db.NamedExec(actionQuery, args)
-		} else {
-			// in transaction mode,
-			// action using tx object
-			result, err = svr.tx.NamedExec(actionQuery, args)
-		}
+		// not in transaction mode,
+		// action using db object
+		result, err = svr.db.NamedExec(actionQuery, args)
 	} else {
-		if svr.tx == nil {
-			// not in transaction mode,
-			// action using db object
-			trace := xray.NewSegment("MySql-Exec-ExecByStructParam", svr._parentSegment)
-			defer trace.Close()
-			defer func() {
-				_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
-				_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = trace.Seg.AddMetadata("Exec-Result", result)
-				if err != nil {
-					_ = trace.Seg.AddError(err)
-				}
-			}()
+		// not in transaction mode,
+		// action using db object
+		trace := xray.NewSegment("MySql-Exec-ExecByStructParam", svr._parentSegment)
+		defer trace.Close()
+		defer func() {
+			_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
+			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = trace.Seg.AddMetadata("Exec-Result", result)
+			if err != nil {
+				_ = trace.Seg.AddError(err)
+			}
+		}()
 
-			result, err = svr.db.NamedExecContext(trace.Ctx, actionQuery, args)
-		} else {
-			// in transaction mode,
-			// action using tx object
-			subTrace := svr.newTxSubSegment("Transaction-Exec-ExecByStructParam")
-			defer subTrace.Close()
-			defer func() {
-				_ = subTrace.Seg.AddMetadata("SQL-Query", actionQuery)
-				_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-				_ = subTrace.Seg.AddMetadata("Exec-Result", result)
-				if err != nil {
-					_ = subTrace.Seg.AddError(err)
-				}
-			}()
+		result, err = svr.db.NamedExecContext(trace.Ctx, actionQuery, args)
+	}
 
-			result, err = svr.tx.NamedExecContext(subTrace.Ctx, actionQuery, args)
+	if err != nil {
+		err = errors.New("ExecByStructParam() Error: " + err.Error())
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// if inserted, get last id if known
+	var newID int64
+	newID = 0
+
+	if isInsert {
+		newID, err = result.LastInsertId()
+
+		if err != nil {
+			err = errors.New("ExecByStructParam() Get LastInsertId() Error: " + err.Error())
+			return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
+	}
+
+	// get rows affected by this action
+	var affected int64
+	affected = 0
+
+	affected, err = result.RowsAffected()
+
+	if err != nil {
+		err = errors.New("ExecByStructParam() Get RowsAffected() Error: " + err.Error())
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// return result
+	return MySqlResult{RowsAffected: affected, NewlyInsertedID: newID, Err: nil}
+}
+
+// ExecByStructParam executes action query string with struct containing parameters to return result, if error, returns error object within result,
+// the struct fields' struct tags must match the parameter names, such as: struct tag `db:"customerID"` must match parameter name in sql as ":customerID"
+// [ Syntax ]
+//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//		2) in go = using a struct to contain fields to match parameters, make sure struct tags match to the sql parameter names, such as struct tag `db:"customerID"` must match parameter name in sql as ":customerID" (the : is not part of the match)
+// [ Parameters ]
+//		actionQuery = sql action query, with named parameters using :xyz syntax
+//		args = required, the struct variable, whose fields having struct tags matching sql parameter names
+// [ Return Values ]
+//		1) MySqlResult = represents the sql action result received (including error info if applicable)
+func (t *MySqlTransaction) ExecByStructParam(actionQuery string, args interface{}) MySqlResult {
+	if err := t.ready(); err != nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// verify if the database connection is good
+	if err := t.parent.Ping(); err != nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
+	}
+
+	// is new insertion?
+	var isInsert bool
+
+	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
+		isInsert = true
+	} else {
+		isInsert = false
+	}
+
+	// perform exec action, and return to caller
+	var result sql.Result
+	var err error
+
+	if t._xrayTxSeg == nil {
+		// in transaction mode,
+		// action using tx object
+		result, err = t.tx.NamedExec(actionQuery, args)
+	} else {
+		// in transaction mode,
+		// action using tx object
+		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Exec-ExecByStructParam")
+		defer subTrace.Close()
+		defer func() {
+			_ = subTrace.Seg.AddMetadata("SQL-Query", actionQuery)
+			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
+			_ = subTrace.Seg.AddMetadata("Exec-Result", result)
+			if err != nil {
+				_ = subTrace.Seg.AddError(err)
+			}
+		}()
+
+		result, err = t.tx.NamedExecContext(subTrace.Ctx, actionQuery, args)
 	}
 
 	if err != nil {

@@ -255,7 +255,7 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 // ================================================================================================================
 
 // ConsoleLPromptAndAnswer is a helper to prompt a message and then scan a response in console
-func ConsolePromptAndAnswer(prompt string, replyLowercase bool) string {
+func ConsolePromptAndAnswer(prompt string, replyLowercase bool, autoTrim ...bool) string {
 	fmt.Print(prompt)
 
 	answer := ""
@@ -270,6 +270,12 @@ func ConsolePromptAndAnswer(prompt string, replyLowercase bool) string {
 			answer = strings.ToLower(answer)
 		}
 
+		if len(autoTrim) > 0 {
+			if autoTrim[0] {
+				answer = Trim(answer)
+			}
+		}
+
 		fmt.Println()
 	}
 
@@ -277,18 +283,30 @@ func ConsolePromptAndAnswer(prompt string, replyLowercase bool) string {
 }
 
 // ConsoleLPromptAndAnswerBool is a helper to prompt a message and then scan a response in console
-func ConsolePromptAndAnswerBool(prompt string) bool {
+func ConsolePromptAndAnswerBool(prompt string, defaultTrue ...bool) bool {
 	fmt.Print(prompt)
 
 	answer := ""
 	result := false
+	defVal := false
+
+	if len(defaultTrue) > 0 {
+		if defaultTrue[0] {
+			defVal = true
+		}
+	}
 
 	if _, e := fmt.Scanln(&answer); e != nil {
 		fmt.Println()
-		return false
+		return defVal
 	} else {
 		answer = RightTrimLF(answer)
-		result, _ = ParseBool(answer)
+
+		if LenTrim(answer) > 0 {
+			result, _ = ParseBool(answer)
+		} else {
+			result = defVal
+		}
 
 		fmt.Println()
 	}
@@ -297,7 +315,7 @@ func ConsolePromptAndAnswerBool(prompt string) bool {
 }
 
 // ConsoleLPromptAndAnswerInt is a helper to prompt a message and then scan a response in console
-func ConsolePromptAndAnswerInt(prompt string) int {
+func ConsolePromptAndAnswerInt(prompt string, preventNegative ...bool) int {
 	fmt.Print(prompt)
 
 	answer := ""
@@ -310,6 +328,14 @@ func ConsolePromptAndAnswerInt(prompt string) int {
 		answer = RightTrimLF(answer)
 		result, _ = ParseInt32(answer)
 
+		if result < 0 {
+			if len(preventNegative) > 0 {
+				if preventNegative[0] {
+					result = 0
+				}
+			}
+		}
+
 		fmt.Println()
 	}
 
@@ -317,7 +343,7 @@ func ConsolePromptAndAnswerInt(prompt string) int {
 }
 
 // ConsoleLPromptAndAnswerFloat64 is a helper to prompt a message and then scan a response in console
-func ConsolePromptAndAnswerFloat64(prompt string) float64 {
+func ConsolePromptAndAnswerFloat64(prompt string, preventNegative ...bool) float64 {
 	fmt.Print(prompt)
 
 	answer := ""
@@ -329,6 +355,14 @@ func ConsolePromptAndAnswerFloat64(prompt string) float64 {
 	} else {
 		answer = RightTrimLF(answer)
 		result, _ = ParseFloat64(answer)
+
+		if result < 0 {
+			if len(preventNegative) > 0 {
+				if preventNegative[0] {
+					result = 0
+				}
+			}
+		}
 
 		fmt.Println()
 	}

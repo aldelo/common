@@ -234,7 +234,13 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 							buf = defVal
 						}
 
-						buf = outPrefix + buf
+						if skipBlank && LenTrim(buf) == 0 {
+							buf = ""
+						} else if skipZero && buf == "0" {
+							buf = ""
+						} else {
+							buf = outPrefix + buf
+						}
 					}
 
 					if LenTrim(output) > 0 {
@@ -790,6 +796,43 @@ func StructClearFields(inputStructPtr interface{}) {
 			}
 		}
 	}
+}
+
+// StructNonDefaultRequiredFieldsCount returns count of struct fields that are tagged as required but not having any default values pre-set
+func StructNonDefaultRequiredFieldsCount(inputStructPtr interface{}) int {
+	if inputStructPtr == nil {
+		return 0
+	}
+
+	s := reflect.ValueOf(inputStructPtr)
+
+	if s.Kind() != reflect.Ptr {
+		return 0
+	} else {
+		s = s.Elem()
+	}
+
+	if s.Kind() != reflect.Struct {
+		return 0
+	}
+
+	count := 0
+
+	for i := 0; i < s.NumField(); i++ {
+		field := s.Type().Field(i)
+
+		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
+			tagDef := field.Tag.Get("def")
+			tagReq := field.Tag.Get("req")
+
+			if len(tagDef) == 0 && strings.ToLower(tagReq) == "true" {
+				// required and no default value
+				count++
+			}
+		}
+	}
+
+	return count
 }
 
 // IsStructFieldSet checks if any field value is not default blank or zero
@@ -1748,7 +1791,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		return "", fmt.Errorf("InputStructPtr Must Be Struct")
 	}
 
-	if !IsStructFieldSet(inputStructPtr) {
+	if !IsStructFieldSet(inputStructPtr) && StructNonDefaultRequiredFieldsCount(inputStructPtr) > 0 {
 		return "", nil
 	}
 
@@ -2168,11 +2211,15 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			}
 
 			// store fv into sorted slice
-			csvList[tagPos] = outPrefix + fv
+			if skipBlank && LenTrim(fv) == 0 {
+				csvList[tagPos] = ""
+			} else if skipZero && fv == "0" {
+				csvList[tagPos] = ""
+			} else {
+				csvList[tagPos] = outPrefix + fv
+			}
 		}
 	}
-
-	valuesCount := 0
 
 	for _, v := range csvList {
 		if v != "{?}" {
@@ -2181,16 +2228,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			}
 
 			csvPayload += v
-
-			if LenTrim(v) > 0 {
-				valuesCount++
-			}
 		}
-	}
-
-	// if no actual values at all, set to blank
-	if valuesCount == 0 {
-		csvPayload = ""
 	}
 
 	return csvPayload, nil

@@ -60,6 +60,7 @@ package helper
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -233,17 +234,20 @@ func Float32ToString(f float32) string {
 }
 
 // Float32ToStringCents converts float32 value into string representing cent values, 2.12 returned as "212".
+// Since float32 can not be precisely calculated in some cases, use math.Round returns the nearest integer
 func Float32ToStringCents(f float32) string {
+	centsInt := int(math.Round(math.Abs(float64(f) * 100)))
 	if f >= 0.00 {
-		return strings.ReplaceAll(PadLeft(Itoa(int(f * 100)), 3), " ", "0")
+		return strings.ReplaceAll(PadLeft(Itoa(centsInt), 3), " ", "0")
 	} else {
-		return  "-" + strings.ReplaceAll(PadLeft(Itoa(int(f * 100 * -1)), 3), " ", "0")
+		return "-" + strings.ReplaceAll(PadLeft(Itoa(centsInt), 3), " ", "0")
 	}
 }
 
 // Float64ToIntCents converts float64 value into int, representing cent values, 2.12 returned as 212.
+// Since float64 can not be precisely calculated in some cases, use math.Round returns the nearest integer
 func Float64ToIntCents(f float64) int {
-	return int(f * 100)
+	return int(math.Round(f * 100))
 }
 
 // Float32PtrToFloat32 returns 0 if pointer is nil, otherwise actual float32 value.

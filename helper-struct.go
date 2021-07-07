@@ -1804,6 +1804,8 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		csvList[i] = "{?}"	// indicates value not set, to be excluded
 	}
 
+	excludePlaceholders := true
+
 	uniqueMap := make(map[string]string)
 
 	for i := 0; i < s.NumField(); i++ {
@@ -1908,6 +1910,10 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 				timeFormat = vs[4]
 				outPrefix = vs[5]
 				zeroBlank, _ = ParseBool(vs[6])
+			}
+
+			if excludePlaceholders {
+				excludePlaceholders = LenTrim(outPrefix) > 0
 			}
 
 			// cache old value prior to getter invoke
@@ -2221,13 +2227,29 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		}
 	}
 
+	firstCsvElement := true
+
 	for _, v := range csvList {
-		if v != "{?}" {
-			if LenTrim(csvPayload) > 0 {
+		if excludePlaceholders {
+			if v != "{?}" && LenTrim(v) > 0 {
+				if LenTrim(csvPayload) > 0 {
+					csvPayload += csvDelimiter
+				}
+
+				csvPayload += v
+			}
+		} else {
+			if !firstCsvElement {
 				csvPayload += csvDelimiter
 			}
 
-			csvPayload += v
+			if v != "{?}" {
+				csvPayload += v
+			}
+
+			if firstCsvElement {
+				firstCsvElement = false
+			}
 		}
 	}
 

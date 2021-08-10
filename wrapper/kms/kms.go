@@ -41,11 +41,11 @@ package kms
 
 import (
 	"context"
-	util "github.com/aldelo/common"
-	awshttp2 "github.com/aldelo/common/wrapper/aws"
-	"github.com/aldelo/common/crypto"
-	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"errors"
+	util "github.com/aldelo/common"
+	"github.com/aldelo/common/crypto"
+	awshttp2 "github.com/aldelo/common/wrapper/aws"
+	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aldelo/common/wrapper/xray"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"

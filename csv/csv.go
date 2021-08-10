@@ -36,7 +36,7 @@ type Csv struct {
 // Open will open a csv file path for access
 func (c *Csv) Open(path string) error {
 	if c == nil {
-		c = new(Csv)
+		return errors.New("Open File Failed: " + "Csv Nil")
 	}
 
 	c.ParsedCount = -1

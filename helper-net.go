@@ -227,7 +227,7 @@ func ParseHttpHeader(respHeader http.Header) (map[string]string, error) {
 	return m, nil
 }
 
-// EncodeHttpHeaderMapToString convers header map[string]string to string representation
+// EncodeHttpHeaderMapToString converts header map[string]string to string representation
 func EncodeHttpHeaderMapToString(headerMap map[string]string) string {
 	if headerMap == nil {
 		return ""

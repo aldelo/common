@@ -27,8 +27,8 @@ import (
  * limitations under the License.
  */
 
-// src and dst both must be struct，and dst must be point
-// it will copy the src struct with same tag name as dst struct tag
+// Fill copies the src struct with same tag name to dst struct tag pointer,
+// src and dst both must be struct，and dst must be pointer
 func Fill(src interface{}, dst interface{}) error {
 	srcType := reflect.TypeOf(src)
 	srcValue := reflect.ValueOf(src)
@@ -1013,7 +1013,7 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 // SetStructFieldDefaultValues sets default value defined in struct tag `def:""` into given field,
 // this method is used during unmarshal action only,
 // default value setting is for value types and fields with `setter:""` defined only,
-// timeformat is used if field is datetime, for overriding default format of ISO style
+// time format is used if field is datetime, for overriding default format of ISO style
 func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 	if inputStructPtr == nil {
 		return false

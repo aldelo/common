@@ -1,3 +1,4 @@
+// Package helper:
 // common project provides commonly used helper utility functions, custom utility types, and third party package wrappers.
 // common project helps code reuse, and faster composition of logic without having to delve into commonly recurring code logic and related testings.
 // common project source directories and brief description:
@@ -426,7 +427,7 @@ func StringPtrToString(s *string) string {
 	}
 }
 
-// SliceObjectsToSliceInterfaces converts slice of objects into slice of interfaces.
+// SliceObjectsToSliceInterface converts slice of objects into slice of interfaces.
 // objectsSlice is received via interface parameter, and is expected to be a Slice,
 // the slice is enumerated to convert each object within the slice to interface{},
 // the final converted slice of interface is returned, if operation failed, nil is returned.

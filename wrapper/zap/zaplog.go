@@ -108,126 +108,126 @@ func (z *ZapLog) Printf(format string, items ...interface{}) {
 	z.Infof(format, items...)
 }
 
-// Sugared Logging, allows template variable such as %s
+// Infof is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Infof(logTemplateData string, args ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Infof(logTemplateData, args...)
 	}
 }
 
-// Sugared Logging, allows key value pairs variadic
+// Infow is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Infow(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Infow(logMessageData, keyValuePairs...)
 	}
 }
 
-// Faster Logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
+// Info is faster Logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Info(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
 		z.zapLogger.Info(logMessageData, fields...)
 	}
 }
 
-// Sugared Logging, allows template variable such as %s
+// Debugf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Debugf(logTemplateData string, args ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Debugf(logTemplateData, args...)
 	}
 }
 
-// Sugared Logging, allows key value pairs variadic
+// Debugw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Debugw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Debugw(logMessageData, keyValuePairs...)
 	}
 }
 
-// Faster Logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
+// Debug is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Debug(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
 		z.zapLogger.Debug(logMessageData, fields...)
 	}
 }
 
-// Sugared Logging, allows template variable such as %s
+// Warnf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Warnf(logTemplateData string, args ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Warnf(logTemplateData, args...)
 	}
 }
 
-// Sugared Logging, allows key value pairs variadic
+// Warnw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Warnw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Warnw(logMessageData, keyValuePairs...)
 	}
 }
 
-// Faster Logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
+// Warn is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Warn(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
 		z.zapLogger.Warn(logMessageData, fields...)
 	}
 }
 
-// Sugared Logging, allows template variable such as %s
+// Errorf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Errorf(logTemplateData string, args ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Errorf(logTemplateData, args...)
 	}
 }
 
-// Sugared Logging, allows key value pairs variadic
+// Errorw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Errorw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Errorw(logMessageData, keyValuePairs...)
 	}
 }
 
-// Faster Logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
+// Error is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Error(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
 		z.zapLogger.Error(logMessageData, fields...)
 	}
 }
 
-// Sugared Logging, allows template variable such as %s
+// Panicf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Panicf(logTemplateData string, args ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Panicf(logTemplateData, args...)
 	}
 }
 
-// Sugared Logging, allows key value pairs variadic
+// Panicw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Panicw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Panicw(logMessageData, keyValuePairs...)
 	}
 }
 
-// Faster Logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
+// Panic is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Panic(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
 		z.zapLogger.Panic(logMessageData, fields...)
 	}
 }
 
-// Sugared Logging, allows template variable such as %s
+// Fatalf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Fatalf(logTemplateData string, args ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Fatalf(logTemplateData, args...)
 	}
 }
 
-// Sugared Logging, allows key value pairs variadic
+// Fatalw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Fatalw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
 		z.sugarLogger.Fatalw(logMessageData, keyValuePairs...)
 	}
 }
 
-// Faster Logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
+// Fatal is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Fatal(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
 		z.zapLogger.Fatal(logMessageData, fields...)

@@ -18,11 +18,11 @@ package gin
 
 import (
 	"fmt"
-	"io"
 	"github.com/gin-gonic/gin"
+	"github.com/go-errors/errors"
+	"io"
 	"log"
 	"net/http/httputil"
-	"github.com/go-errors/errors"
 )
 
 // NiceRecovery replaces default recovery, with custom content,

@@ -41,7 +41,7 @@ func (jt *JsonTime) MarshalJSON() ([]byte, error) {
 	}
 }
 
-// UnmarshalJSON unmarshals time value in format of RFC3339 to JsonTime
+// UnmarshalJSON unmarshal time value in format of RFC3339 to JsonTime
 func (jt *JsonTime) UnmarshalJSON(b []byte) error {
 	if jt == nil {
 		return fmt.Errorf("JsonTime Nil")
@@ -363,7 +363,7 @@ func ParseDateFromMMYY(s string) time.Time {
 	return ParseDateTimeCustom(d, "01-06")
 }
 
-// ParseDateToLastDayOfMonth
+// ParseDateToLastDayOfMonth takes in a time.Time struct and returns the last date of month
 func ParseDateToLastDayOfMonth(t time.Time) time.Time {
 	if t.IsZero() {
 		return t

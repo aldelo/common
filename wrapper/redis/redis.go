@@ -49,8 +49,8 @@ import (
 	"github.com/go-redis/redis/v8"
 	"strings"
 
-	util "github.com/aldelo/common"
 	"errors"
+	util "github.com/aldelo/common"
 	"time"
 )
 

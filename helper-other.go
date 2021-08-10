@@ -254,7 +254,7 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 // console helpers
 // ================================================================================================================
 
-// ConsoleLPromptAndAnswer is a helper to prompt a message and then scan a response in console
+// ConsolePromptAndAnswer is a helper to prompt a message and then scan a response in console
 func ConsolePromptAndAnswer(prompt string, replyLowercase bool, autoTrim ...bool) string {
 	fmt.Print(prompt)
 
@@ -282,7 +282,7 @@ func ConsolePromptAndAnswer(prompt string, replyLowercase bool, autoTrim ...bool
 	return answer
 }
 
-// ConsoleLPromptAndAnswerBool is a helper to prompt a message and then scan a response in console
+// ConsolePromptAndAnswerBool is a helper to prompt a message and then scan a response in console
 func ConsolePromptAndAnswerBool(prompt string, defaultTrue ...bool) bool {
 	fmt.Print(prompt)
 
@@ -314,7 +314,7 @@ func ConsolePromptAndAnswerBool(prompt string, defaultTrue ...bool) bool {
 	return result
 }
 
-// ConsoleLPromptAndAnswerInt is a helper to prompt a message and then scan a response in console
+// ConsolePromptAndAnswerInt is a helper to prompt a message and then scan a response in console
 func ConsolePromptAndAnswerInt(prompt string, preventNegative ...bool) int {
 	fmt.Print(prompt)
 
@@ -342,7 +342,7 @@ func ConsolePromptAndAnswerInt(prompt string, preventNegative ...bool) int {
 	return result
 }
 
-// ConsoleLPromptAndAnswerFloat64 is a helper to prompt a message and then scan a response in console
+// ConsolePromptAndAnswerFloat64 is a helper to prompt a message and then scan a response in console
 func ConsolePromptAndAnswerFloat64(prompt string, preventNegative ...bool) float64 {
 	fmt.Print(prompt)
 

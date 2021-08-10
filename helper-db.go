@@ -155,7 +155,7 @@ func FromNullTime(t sql.NullTime) time.Time {
 	return t.Time
 }
 
-//ToNullTime sets time.Time into NullTime output
+// ToNullTime sets time.Time into NullTime output
 func ToNullTime(t time.Time) sql.NullTime {
 	if t.IsZero() == true {
 		return sql.NullTime{Valid: false, Time: time.Time{}}

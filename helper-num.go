@@ -95,7 +95,7 @@ func IsFloat64(s string) bool {
 	return true
 }
 
-// IsBool tests if input string is boolean
+// IsBoolType tests if input string is boolean
 func IsBoolType(s string) bool {
 	x := []string{"yes", "on", "running", "started"}
 

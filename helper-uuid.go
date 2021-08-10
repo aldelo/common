@@ -19,9 +19,9 @@ package helper
 import (
 	"database/sql"
 	"github.com/google/uuid"
-	"github.com/oklog/ulid"
-	"time"
+	"github.com/oklog/ulid/v2"
 	"math/rand"
+	"time"
 )
 
 // ================================================================================================================

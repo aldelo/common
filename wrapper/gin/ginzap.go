@@ -175,7 +175,7 @@ func (z *GinZap) PanicLogger() gin.HandlerFunc {
 									)
 
 					// If the connection is dead, we can't write a status to it.
-					c.Error(err.(error)) // nolint: errcheck
+					_ = c.Error(err.(error)) // nolint: errcheck
 					c.Abort()
 					return
 				}

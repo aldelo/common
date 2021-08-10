@@ -418,7 +418,7 @@ func IsNumericIntOnly(s string) bool {
 	}
 }
 
-// IsNumericFloat checks if string is float
+// IsNumericFloat64 checks if string is float
 func IsNumericFloat64(s string, positiveOnly bool) bool {
 	if LenTrim(s) == 0 {
 		return false

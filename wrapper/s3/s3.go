@@ -40,12 +40,12 @@ package s3
 // =================================================================================================================
 
 import (
-	util "github.com/aldelo/common"
-	awshttp2 "github.com/aldelo/common/wrapper/aws"
-	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"bytes"
 	"context"
 	"errors"
+	util "github.com/aldelo/common"
+	awshttp2 "github.com/aldelo/common/wrapper/aws"
+	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aldelo/common/wrapper/xray"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"

@@ -17,11 +17,11 @@ package mysql
  */
 
 import (
-	util "github.com/aldelo/common"
 	"bytes"
+	util "github.com/aldelo/common"
 )
 
-// struct to help building sql queries (use named parameters instead of ordinal)
+// QueryBuilder struct to help build sql queries (use named parameters instead of ordinal)
 type QueryBuilder struct {
 	buf bytes.Buffer					// internal buffer holder
 	output string						// internal output data based on buffer string()
@@ -37,7 +37,7 @@ func (q *QueryBuilder) ClearAll() {
 	q.paramsOrdinal = make([]interface{}, 0)
 }
 
-// ClearSQl will clear the sql buffer and output only, leaving named map params intact
+// ClearSQL will clear the sql buffer and output only, leaving named map params intact
 func (q *QueryBuilder) ClearSQL() {
 	q.buf.Reset()
 	q.output = ""

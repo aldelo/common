@@ -24,6 +24,7 @@ import (
 	"time"
 )
 
+// ViperConf struct info,
 // ConfigName or SpecificConfigFileFullPath = One of the field is required
 // UseYAML = true uses YAML; false uses JSON
 // UseAutomaticEnvVar = true will auto load environment variables that matches to key
@@ -110,7 +111,7 @@ func (v *ViperConf) Init() (bool, error) {
 	}
 }
 
-// if config file does not exist, this call will panic
+// WatchConfig watches if config file does not exist, this call will panic
 func (v *ViperConf) WatchConfig() {
 	if v.viperClient != nil {
 		v.viperClient.WatchConfig()

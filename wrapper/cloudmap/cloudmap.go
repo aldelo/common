@@ -2508,7 +2508,7 @@ func (sd *CloudMap) ListInstances(serviceId string,
 	return output.Instances, *output.NextToken, nil
 }
 
-// ListInstances lists summary information about the instances registered using a specified service
+// ListInstancesPages lists summary information about the instances registered using a specified service
 // (issues multiple page requests until max results is met or all data is retrieved)
 //
 // Parameters:
@@ -2859,7 +2859,7 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 	return output.Operations, *output.NextToken, nil
 }
 
-// ListOperations lists operations that match the criteria specified in parameters
+// ListOperationsPages lists operations that match the criteria specified in parameters
 // (issues multiple page requests until max results is met or all data is retrieved)
 //
 // Parameters:

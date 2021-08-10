@@ -318,8 +318,8 @@ func NewServer(name string, port uint, releaseMode bool, customRecovery bool, cu
 
 // NewAuthMiddleware will create a new jwt auth middleware with basic info provided,
 // then this new middleware is set into Gin wrapper internal var,
-// this middleware's additional fields and handlers must then be defined by accessing the AuthMiddleware func,
-// once middleware's completely prepared, then call the RunServer which automatically builds the auth middleware for use
+// this middleware additional fields and handlers must then be defined by accessing the AuthMiddleware func,
+// once middleware completely prepared, then call the RunServer which automatically builds the auth middleware for use
 func (g *Gin) NewAuthMiddleware(realm string, identityKey string, signingSecretKey string, authenticateBinding ginbindtype.GinBindType, setup ...func(j *GinJwt)) bool {
 	g._ginJwtAuth = nil
 
@@ -927,7 +927,7 @@ func (g *Gin) setupGZipMiddleware(rg gin.IRoutes, gz *GZipConfig) {
 }
 
 // setupSessionMiddleware sets up session middleware,
-// session is setup on the gin engine level (rather than route groups)
+// session is set up on the gin engine level (rather than route groups)
 func (g *Gin) setupSessionMiddleware() {
 	if g._ginEngine != nil && g.SessionMiddleware != nil && util.LenTrim(g.SessionMiddleware.SecretKey) > 0 && len(g.SessionMiddleware.SessionNames) > 0 {
 		var store sessions.Store
@@ -959,7 +959,7 @@ func (g *Gin) setupSessionMiddleware() {
 }
 
 // setupCsrfMiddleware sets up csrf protection middleware,
-// this middleware is setup on the gin engine level (rather than route groups),
+// this middleware is set up on the gin engine level (rather than route groups),
 // this middleware requires gin-contrib/sessions middleware setup and used before setting this up
 func (g *Gin) setupCsrfMiddleware() {
 	if g._ginEngine != nil && g.SessionMiddleware != nil && g.CsrfMiddleware != nil && util.LenTrim(g.SessionMiddleware.SecretKey) > 0 && len(g.SessionMiddleware.SessionNames) > 0 && util.LenTrim(g.CsrfMiddleware.Secret) > 0 {
@@ -1004,7 +1004,7 @@ func (g *Gin) setupHtmlTemplateRenderer() {
 
 /*
 
-// method_descriptions_only lists most of gin context methods, its method signature, and method descriptions,
+// method_descriptions_only lists most of gin's context methods, its method signature, and method descriptions,
 // for simpler reference in one place rather having to refer to documentation separately
 func method_descriptions_only() {
 	c := gin.Context{}

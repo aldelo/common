@@ -43,8 +43,8 @@ import (
 	"context"
 	"fmt"
 	util "github.com/aldelo/common"
-	"github.com/aws/aws-xray-sdk-go/xray"
 	"github.com/aws/aws-xray-sdk-go/header"
+	"github.com/aws/aws-xray-sdk-go/xray"
 	"net/http"
 	"os"
 )

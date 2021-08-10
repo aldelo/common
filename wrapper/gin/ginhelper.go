@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// response body writer interceptor
+// ResponseBodyWriterInterceptor struct contains response body writer interceptor
 type ResponseBodyWriterInterceptor struct {
 	gin.ResponseWriter
 	RespBody *bytes.Buffer
@@ -77,7 +77,7 @@ func ActionStatusNotOK(c *gin.Context, errInfo string) {
 
 // VerifyGoogleReCAPTCHAv2 is a helper for use gin web server,
 // it will verify the given recaptcha response with the recaptcha secret pass in from gin context,
-// and if verify sucessful, nil is returned
+// and if verify successful, nil is returned
 func VerifyGoogleReCAPTCHAv2(c *gin.Context, recaptchaResponse string, recaptchaRequired bool) (err error) {
 	if c == nil {
 		return fmt.Errorf("Verify Google ReCAPTCHA v2 Requires GIN Context")

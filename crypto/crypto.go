@@ -30,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -380,7 +381,7 @@ func AesCbcEncrypt(data string, passphrase string) (string, error) {
 	// otherwise padding needs to be performed
 	if len(data)%aes.BlockSize != 0 {
 		// pad with blank spaces up to 16 bytes
-		data = util.Padding(data, util.NextFixedLength(data, aes.BlockSize), true, string(ascii.NUL))
+		data = util.Padding(data, util.NextFixedLength(data, aes.BlockSize), true, strconv.Itoa(ascii.NUL))
 	}
 
 	// convert data and passphrase into byte array
@@ -467,7 +468,7 @@ func AesCbcDecrypt(data string, passphrase string) (string, error) {
 	mode.CryptBlocks(text, text)
 
 	// return decrypted data
-	return strings.ReplaceAll(string(text[:]), string(ascii.NUL), ""), nil
+	return strings.ReplaceAll(string(text[:]), strconv.Itoa(ascii.NUL), ""), nil
 }
 
 // ================================================================================================================
@@ -979,7 +980,7 @@ func RsaAesPublicKeyEncryptAndSign(plainText string, recipientPublicKeyHexOrPem 
 	// encrypt plain text data using aes key with aes gcm,
 	// note: payload format = plainText<VT>senderPublicKeyHex<VT>plainTextSignature
 	//
-	aesEncryptedData, err3 := AesGcmEncrypt(plainText+string(ascii.VT)+senderPublicKeyHexOrPem+string(ascii.VT)+signature, aesKey)
+	aesEncryptedData, err3 := AesGcmEncrypt(plainText+strconv.Itoa(ascii.VT)+senderPublicKeyHexOrPem+strconv.Itoa(ascii.VT)+signature, aesKey)
 
 	if err3 != nil {
 		return "", errors.New("Dynamic AES Data Encrypt Error: " + err3.Error())
@@ -1000,7 +1001,7 @@ func RsaAesPublicKeyEncryptAndSign(plainText string, recipientPublicKeyHexOrPem 
 	//       parse first 512 bytes of payload = aes encrypted key (use recipient rsa private key to decrypt)
 	//       parse rest other than first 512 bytes of payload = aes encrypted data, using aes key to decrypt, contains plaintext<VT>senderPublicKey<VT>siganture
 	//
-	encryptedPayload := string(ascii.STX) + aesEncryptedKey + aesEncryptedData + Sha256(recipientPublicKeyHexOrPem, "TPK@2019") + string(ascii.ETX) // wrap in STX and ETX envelop to denote start and end of the encrypted payload
+	encryptedPayload := strconv.Itoa(ascii.STX) + aesEncryptedKey + aesEncryptedData + Sha256(recipientPublicKeyHexOrPem, "TPK@2019") + strconv.Itoa(ascii.ETX) // wrap in STX and ETX envelop to denote start and end of the encrypted payload
 
 	//
 	// send encrypted payload data to caller
@@ -1037,11 +1038,11 @@ func RsaAesPrivateKeyDecryptAndVerify(encryptedData string, recipientPrivateKeyH
 		return "", "", errors.New("Encrypted Payload Envelop Not Valid: Must Exceed 578 Bytes")
 	}
 
-	if util.Left(encryptedData, 1) != string(ascii.STX) {
+	if util.Left(encryptedData, 1) != strconv.Itoa(ascii.STX) {
 		return "", "", errors.New("Encrypted Payload Envelop Not Valid: No STX Found")
 	}
 
-	if util.Right(encryptedData, 1) != string(ascii.ETX) {
+	if util.Right(encryptedData, 1) != strconv.Itoa(ascii.ETX) {
 		return "", "", errors.New("Encrypted Payload Envelop Not Valid: No ETX Found")
 	}
 
@@ -1090,7 +1091,7 @@ func RsaAesPrivateKeyDecryptAndVerify(encryptedData string, recipientPrivateKeyH
 	// parse decrypted data into elements using VT as separator
 	// expects 3 parts exactly
 	//
-	parts := strings.Split(aesData, string(ascii.VT))
+	parts := strings.Split(aesData, strconv.Itoa(ascii.VT))
 
 	if len(parts) != 3 {
 		return "", "", errors.New("Decrypted AES Data Not Valid: " + "Expected 3 Parts Exactly, " + util.Itoa(len(parts)) + " Parts Returned Instead" + aesData)

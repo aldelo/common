@@ -741,7 +741,7 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 	return nil
 }
 
-// Get pointer base type
+// DerefPointersZero gets pointer base type
 func DerefPointersZero(rv reflect.Value) (drv reflect.Value, isPtr bool, isNilPtr bool) {
 	for rv.Kind() == reflect.Ptr {
 		isPtr = true
@@ -760,7 +760,7 @@ func DerefPointersZero(rv reflect.Value) (drv reflect.Value, isPtr bool, isNilPt
 	return
 }
 
-// Deference reflect.Value to error object if underlying type was error
+// DerefError dereferences reflect.Value to error object if underlying type was error
 func DerefError(v reflect.Value) error {
 	if e, ok := v.Interface().(error); ok {
 		// v is error, check if error exists

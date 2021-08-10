@@ -41,7 +41,7 @@ import (
 func NewTemplate(templateBaseDir string, templateLayoutPath string, templatePagePath string) *GinTemplate {
 	return &GinTemplate{
 		TemplateBaseDir: templateBaseDir,
-		Templates: []TemplateDefintion{
+		Templates: []TemplateDefinition{
 			{
 				LayoutPath: templateLayoutPath,
 				PagePath: templatePagePath,
@@ -53,14 +53,14 @@ func NewTemplate(templateBaseDir string, templateLayoutPath string, templatePage
 // GinTemplate defines the struct for working with html template renderer
 type GinTemplate struct {
 	TemplateBaseDir string
-	Templates []TemplateDefintion
+	Templates []TemplateDefinition
 
 	_htmlrenderer multitemplate.Renderer
 	_htmlTemplatesCount int
 }
 
 // TemplateDefinition defines an unit of template render target
-type TemplateDefintion struct {
+type TemplateDefinition struct {
 	LayoutPath string
 	PagePath string
 }

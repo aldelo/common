@@ -69,7 +69,7 @@ func AsciiToString(i int) string {
 	return string(rune(i))
 }
 
-// calculate the LRC value for input string,
+// GetLRC calculates the LRC value for input string,
 // returns blank LRC to indicate error condition (see error for reason)
 //
 // parameters:

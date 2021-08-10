@@ -179,7 +179,7 @@ func (s *SES) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 	}
 }
 
-// Connect will establish a connection to the SES service
+// connectInternal will establish a connection to the SES service
 func (s *SES) connectInternal() error {
 	// clean up prior object
 	s.sesClient = nil

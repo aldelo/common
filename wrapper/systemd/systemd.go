@@ -17,8 +17,8 @@ package systemd
  */
 
 import (
-	"log"
 	"github.com/kardianos/service"
+	"log"
 )
 
 // =====================================================================================================================
@@ -123,9 +123,7 @@ import (
 //
 var logger service.Logger
 
-//
-// define service program
-//
+// ServiceProgram defines service program
 type ServiceProgram struct {
 	ServiceName string
 	DisplayName string

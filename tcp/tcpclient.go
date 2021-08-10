@@ -18,8 +18,8 @@ package tcp
 
 import (
 	"bytes"
-	util "github.com/aldelo/common"
 	"fmt"
+	util "github.com/aldelo/common"
 	"net"
 	"strings"
 	"time"

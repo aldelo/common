@@ -93,8 +93,8 @@ type DynamoDB struct {
 
 	// operating table
 	TableName string
-	PKName string
-	SKName string
+	PKName    string
+	SKName    string
 
 	// last execute param string
 	LastExecuteParamsPayload string
@@ -104,10 +104,10 @@ type DynamoDB struct {
 
 // DynamoDBError struct contains special status info including error and retry advise
 type DynamoDBError struct {
-	ErrorMessage string
+	ErrorMessage  string
 	SuppressError bool
 
-	AllowRetry bool
+	AllowRetry        bool
 	RetryNeedsBackOff bool
 }
 
@@ -126,15 +126,15 @@ type DynamoDBTableKeys struct {
 	PK string
 	SK string
 
-	ResultItemPtr interface{}		`dynamodbav:"-"`
-	ResultError error				`dynamodbav:"-"`
+	ResultItemPtr interface{} `dynamodbav:"-"`
+	ResultError   error       `dynamodbav:"-"`
 
 	resultProcessed bool
 }
 
 // DynamoDBUnprocessedItemsAndKeys defines struct to slices of items and keys
 type DynamoDBUnprocessedItemsAndKeys struct {
-	PutItems []map[string]*dynamodb.AttributeValue
+	PutItems   []map[string]*dynamodb.AttributeValue
 	DeleteKeys []*DynamoDBTableKeys
 }
 
@@ -220,11 +220,11 @@ func (u *DynamoDBUnprocessedItemsAndKeys) UnmarshalPutItems(resultItemsPtr inter
 //					a) av, err := dynamodbattribute.MarshalList(xyzSlice)
 //					b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
 type DynamoDBUpdateItemInput struct {
-	PK string
-	SK string
-	UpdateExpression string
-	ConditionExpression string
-	ExpressionAttributeNames map[string]*string
+	PK                        string
+	SK                        string
+	UpdateExpression          string
+	ConditionExpression       string
+	ExpressionAttributeNames  map[string]*string
 	ExpressionAttributeValues map[string]*dynamodb.AttributeValue
 }
 
@@ -235,9 +235,9 @@ type DynamoDBUpdateItemInput struct {
 //			a) We use interface{} because []interface{} will require each element conversion (instead we will handle conversion by internal code)
 //			b) PutItems ALWAYS Slice of Struct (Value), NOT pointers to Structs
 type DynamoDBTransactionWrites struct {
-	PutItems interface{}
-	UpdateItems []*DynamoDBUpdateItemInput
-	DeleteItems []*DynamoDBTableKeys
+	PutItems          interface{}
+	UpdateItems       []*DynamoDBUpdateItemInput
+	DeleteItems       []*DynamoDBTableKeys
 	TableNameOverride string
 }
 
@@ -285,7 +285,7 @@ func (w *DynamoDBTransactionWrites) MarshalPutItems() (result []map[string]*dyna
 
 // DynamoDBTransactionReads defines one or more items to get by PK / SK
 type DynamoDBTransactionReads struct {
-	Keys []*DynamoDBTableKeys
+	Keys              []*DynamoDBTableKeys
 	TableNameOverride string
 }
 
@@ -358,9 +358,9 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			case dynamodb.ErrCodeTransactionInProgressException:
 				// show error + no retry
 				return &DynamoDBError{
-					ErrorMessage: prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 
@@ -369,9 +369,9 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			case dynamodb.ErrCodeLimitExceededException:
 				// show error + allow retry with backoff
 				return &DynamoDBError{
-					ErrorMessage: prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
-					SuppressError: false,
-					AllowRetry: true,
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					SuppressError:     false,
+					AllowRetry:        true,
 					RetryNeedsBackOff: true,
 				}
 
@@ -380,26 +380,26 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			case dynamodb.ErrCodeRequestLimitExceeded:
 				// no error + allow retry with backoff
 				return &DynamoDBError{
-					ErrorMessage: prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
-					SuppressError: true,
-					AllowRetry: true,
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					SuppressError:     true,
+					AllowRetry:        true,
 					RetryNeedsBackOff: true,
 				}
 
 			case dynamodb.ErrCodeInternalServerError:
 				// no error + allow auto retry without backoff
 				return &DynamoDBError{
-					ErrorMessage: prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
-					SuppressError: true,
-					AllowRetry: true,
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					SuppressError:     true,
+					AllowRetry:        true,
 					RetryNeedsBackOff: false,
 				}
 
 			default:
 				return &DynamoDBError{
-					ErrorMessage: prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -408,9 +408,9 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			prefixType = "[General] "
 
 			return &DynamoDBError{
-				ErrorMessage: prefix + prefixType + err.Error(),
-				SuppressError: false,
-				AllowRetry: false,
+				ErrorMessage:      prefix + prefixType + err.Error(),
+				SuppressError:     false,
+				AllowRetry:        false,
 				RetryNeedsBackOff: false,
 			}
 		}
@@ -480,8 +480,8 @@ func (d *DynamoDB) connectInternal() error {
 	// establish aws session connection and connect to dynamodb service
 	if sess, err := session.NewSession(
 		&aws.Config{
-			Region:      aws.String(d.AwsRegion.Key()),
-			HTTPClient:  httpCli,
+			Region:     aws.String(d.AwsRegion.Key()),
+			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error
 		return errors.New("Connect To DynamoDB Failed: (AWS Session Error) " + err.Error())
@@ -527,7 +527,7 @@ func (d *DynamoDB) enableDaxInternal() error {
 	}
 
 	cfg := dax.DefaultConfig()
-	cfg.HostPorts = []string{ d.DaxEndpoint }
+	cfg.HostPorts = []string{d.DaxEndpoint}
 	cfg.Region = d.AwsRegion.Key()
 
 	var err error
@@ -970,7 +970,7 @@ func (d *DynamoDB) TimeOutDuration(timeOutSeconds uint) *time.Duration {
 	if timeOutSeconds == 0 {
 		return nil
 	} else {
-		return util.DurationPtr(time.Duration(timeOutSeconds)*time.Second)
+		return util.DurationPtr(time.Duration(timeOutSeconds) * time.Second)
 	}
 }
 
@@ -1027,7 +1027,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 			return fmt.Errorf(ddbErr.ErrorMessage)
 		} else {
 			input := &dynamodb.PutItemInput{
-				Item: av,
+				Item:      av,
 				TableName: aws.String(d.TableName),
 			}
 
@@ -1056,7 +1056,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
 			"TableName": d.TableName,
-			"ItemInfo": item,
+			"ItemInfo":  item,
 		},
 	})
 
@@ -1081,7 +1081,7 @@ func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duratio
 		ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (MarshalMap)")
 	} else {
 		input := &dynamodb.PutItemInput{
-			Item: av,
+			Item:      av,
 			TableName: aws.String(d.TableName),
 		}
 
@@ -1114,16 +1114,16 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 		maxRetries = 10
 	}
 
-	timeout := 5*time.Second
+	timeout := 5 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 5*time.Second {
-		timeout = 5*time.Second
+		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
-		timeout = 15*time.Second
+		timeout = 15 * time.Second
 	}
 
 	if err := d.PutItem(item, util.DurationPtr(timeout)); err != nil {
@@ -1131,9 +1131,9 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 		if maxRetries > 0 {
 			if err.AllowRetry {
 				if err.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("PutItemWithRetry Failed: " + err.ErrorMessage)
@@ -1144,9 +1144,9 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 					return nil
 				} else {
 					return &DynamoDBError{
-						ErrorMessage: "PutItemWithRetry Failed: " + err.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "PutItemWithRetry Failed: " + err.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -1157,9 +1157,9 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 				return nil
 			} else {
 				return &DynamoDBError{
-					ErrorMessage: "PutItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "PutItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -1257,11 +1257,11 @@ func (d *DynamoDB) UpdateItem(pkValue string, skValue string,
 }
 
 func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
-							  updateExpression string,
-							  conditionExpression string,
-							  expressionAttributeNames map[string]*string,
-							  expressionAttributeValues map[string]*dynamodb.AttributeValue,
-							  timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	updateExpression string,
+	conditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
 
 	trace := xray.NewSegment("DynamoDB-UpdateItem", d._parentSegment)
 	defer trace.Close()
@@ -1362,12 +1362,12 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 		}
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
-			"TableName": d.TableName,
-			"PK": pkValue,
-			"SK": skValue,
-			"UpdateExpression": updateExpression,
-			"ConditionExpress": conditionExpression,
-			"ExpressionAttributeNames": expressionAttributeNames,
+			"TableName":                 d.TableName,
+			"PK":                        pkValue,
+			"SK":                        skValue,
+			"UpdateExpression":          updateExpression,
+			"ConditionExpress":          conditionExpression,
+			"ExpressionAttributeNames":  expressionAttributeNames,
 			"ExpressionAttributeValues": expressionAttributeValues,
 		},
 	})
@@ -1467,26 +1467,26 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 
 // UpdateItemWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
-									   pkValue string, skValue string,
-									   updateExpression string,
-									   conditionExpression string,
-									   expressionAttributeNames map[string]*string,
-									   expressionAttributeValues map[string]*dynamodb.AttributeValue,
-									   timeOutDuration *time.Duration) *DynamoDBError {
+	pkValue string, skValue string,
+	updateExpression string,
+	conditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	timeOutDuration *time.Duration) *DynamoDBError {
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
 
-	timeout := 10*time.Second
+	timeout := 10 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 10*time.Second {
-		timeout = 10*time.Second
+		timeout = 10 * time.Second
 	} else if timeout > 30*time.Second {
-		timeout = 30*time.Second
+		timeout = 30 * time.Second
 	}
 
 	if err := d.UpdateItem(pkValue, skValue, updateExpression, conditionExpression, expressionAttributeNames, expressionAttributeValues, util.DurationPtr(timeout)); err != nil {
@@ -1494,9 +1494,9 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 		if maxRetries > 0 {
 			if err.AllowRetry {
 				if err.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("UpdateItemWithRetry Failed: " + err.ErrorMessage)
@@ -1507,9 +1507,9 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 					return nil
 				} else {
 					return &DynamoDBError{
-						ErrorMessage: "UpdateItemWithRetry Failed: " + err.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "UpdateItemWithRetry Failed: " + err.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -1520,9 +1520,9 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 				return nil
 			} else {
 				return &DynamoDBError{
-					ErrorMessage: "UpdateItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "UpdateItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -1559,7 +1559,7 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 		}
 	}()
 
-	if d.cn	== nil {
+	if d.cn == nil {
 		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return ddbErr
 	}
@@ -1589,15 +1589,15 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 	trace.Capture("DeleteItem", func() error {
 		m := make(map[string]*dynamodb.AttributeValue)
 
-		m[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(pkValue) }
+		m[d.PKName] = &dynamodb.AttributeValue{S: aws.String(pkValue)}
 
 		if util.LenTrim(skValue) > 0 {
-			m[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(skValue) }
+			m[d.SKName] = &dynamodb.AttributeValue{S: aws.String(skValue)}
 		}
 
 		params := &dynamodb.DeleteItemInput{
 			TableName: aws.String(d.TableName),
-			Key: m,
+			Key:       m,
 		}
 
 		// record params payload
@@ -1625,8 +1625,8 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
 			"TableName": d.TableName,
-			"PK": pkValue,
-			"SK": skValue,
+			"PK":        pkValue,
+			"SK":        skValue,
 		},
 	})
 
@@ -1635,7 +1635,7 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 }
 
 func (d *DynamoDB) deleteItemNormal(pkValue string, skValue string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
-	if d.cn	== nil {
+	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -1659,15 +1659,15 @@ func (d *DynamoDB) deleteItemNormal(pkValue string, skValue string, timeOutDurat
 
 	m := make(map[string]*dynamodb.AttributeValue)
 
-	m[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(pkValue) }
+	m[d.PKName] = &dynamodb.AttributeValue{S: aws.String(pkValue)}
 
 	if util.LenTrim(skValue) > 0 {
-		m[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(skValue) }
+		m[d.SKName] = &dynamodb.AttributeValue{S: aws.String(skValue)}
 	}
 
 	params := &dynamodb.DeleteItemInput{
 		TableName: aws.String(d.TableName),
-		Key: m,
+		Key:       m,
 	}
 
 	// record params payload
@@ -1699,16 +1699,16 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 		maxRetries = 10
 	}
 
-	timeout := 5*time.Second
+	timeout := 5 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 5*time.Second {
-		timeout = 5*time.Second
+		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
-		timeout = 15*time.Second
+		timeout = 15 * time.Second
 	}
 
 	if err := d.DeleteItem(pkValue, skValue, util.DurationPtr(timeout)); err != nil {
@@ -1716,9 +1716,9 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 		if maxRetries > 0 {
 			if err.AllowRetry {
 				if err.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("DeleteItemWithRetry Failed: " + err.ErrorMessage)
@@ -1729,9 +1729,9 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 					return nil
 				} else {
 					return &DynamoDBError{
-						ErrorMessage: "DeleteItemWithRetry Failed: " + err.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "DeleteItemWithRetry Failed: " + err.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -1742,9 +1742,9 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 				return nil
 			} else {
 				return &DynamoDBError{
-					ErrorMessage: "DeleteItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "DeleteItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -1779,8 +1779,8 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) GetItem(resultItemPtr interface{},
-						   pkValue string, skValue string,
-						   timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
+	pkValue string, skValue string,
+	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
 	if xray.XRayServiceOn() {
 		return d.getItemWithTrace(resultItemPtr, pkValue, skValue, timeOutDuration, consistentRead, projectedAttributes...)
 	} else {
@@ -1789,8 +1789,8 @@ func (d *DynamoDB) GetItem(resultItemPtr interface{},
 }
 
 func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
-						   pkValue string, skValue string,
-						   timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
+	pkValue string, skValue string,
+	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
 	trace := xray.NewSegment("DynamoDB-GetItem", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -1799,7 +1799,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 		}
 	}()
 
-	if d.cn	== nil {
+	if d.cn == nil {
 		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return ddbErr
 	}
@@ -1836,10 +1836,10 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 		// define key filter
 		m := make(map[string]*dynamodb.AttributeValue)
 
-		m[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(pkValue) }
+		m[d.PKName] = &dynamodb.AttributeValue{S: aws.String(pkValue)}
 
 		if util.LenTrim(skValue) > 0 {
-			m[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(skValue) }
+			m[d.SKName] = &dynamodb.AttributeValue{S: aws.String(skValue)}
 		}
 
 		// define projected attributes
@@ -1886,7 +1886,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 		// set params
 		params := &dynamodb.GetItemInput{
 			TableName: aws.String(d.TableName),
-			Key: m,
+			Key:       m,
 		}
 
 		if projSet {
@@ -1936,8 +1936,8 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
 			"TableName": d.TableName,
-			"PK": pkValue,
-			"SK": skValue,
+			"PK":        pkValue,
+			"SK":        skValue,
 		},
 	})
 
@@ -1946,9 +1946,9 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 }
 
 func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
-								 pkValue string, skValue string,
-								 timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
-	if d.cn	== nil {
+	pkValue string, skValue string,
+	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
+	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -1978,10 +1978,10 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 	// define key filter
 	m := make(map[string]*dynamodb.AttributeValue)
 
-	m[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(pkValue) }
+	m[d.PKName] = &dynamodb.AttributeValue{S: aws.String(pkValue)}
 
 	if util.LenTrim(skValue) > 0 {
-		m[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(skValue) }
+		m[d.SKName] = &dynamodb.AttributeValue{S: aws.String(skValue)}
 	}
 
 	// define projected attributes
@@ -2027,7 +2027,7 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 	// set params
 	params := &dynamodb.GetItemInput{
 		TableName: aws.String(d.TableName),
-		Key: m,
+		Key:       m,
 	}
 
 	if projSet {
@@ -2075,22 +2075,22 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 
 // GetItemWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
-									resultItemPtr interface{}, pkValue string, skValue string,
-									timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) *DynamoDBError {
+	resultItemPtr interface{}, pkValue string, skValue string,
+	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) *DynamoDBError {
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
 
-	timeout := 5*time.Second
+	timeout := 5 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 5*time.Second {
-		timeout = 5*time.Second
+		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
-		timeout = 15*time.Second
+		timeout = 15 * time.Second
 	}
 
 	if err := d.GetItem(resultItemPtr, pkValue, skValue, util.DurationPtr(timeout), consistentRead, projectedAttributes...); err != nil {
@@ -2098,9 +2098,9 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 		if maxRetries > 0 {
 			if err.AllowRetry {
 				if err.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("GetItemWithRetry Failed: " + err.ErrorMessage)
@@ -2111,9 +2111,9 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 					return nil
 				} else {
 					return &DynamoDBError{
-						ErrorMessage: "GetItemWithRetry Failed: " + err.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "GetItemWithRetry Failed: " + err.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -2124,9 +2124,9 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 				return nil
 			} else {
 				return &DynamoDBError{
-					ErrorMessage: "GetItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "GetItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -2212,40 +2212,40 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
-							  timeOutDuration *time.Duration,
-							  consistentRead *bool,
-							  indexName *string,
-							  pageLimit *int64,
-							  pagedQuery bool,
-							  pagedQueryPageCountLimit *int64,
-							  exclusiveStartKey map[string]*dynamodb.AttributeValue,
-							  keyConditionExpression string,
-							  expressionAttributeNames map[string]*string,
-							  expressionAttributeValues map[string]*dynamodb.AttributeValue,
-							  filterConditionExpression *expression.ConditionBuilder,
-							  projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	indexName *string,
+	pageLimit *int64,
+	pagedQuery bool,
+	pagedQueryPageCountLimit *int64,
+	exclusiveStartKey map[string]*dynamodb.AttributeValue,
+	keyConditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	filterConditionExpression *expression.ConditionBuilder,
+	projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	if xray.XRayServiceOn() {
 		return d.queryItemsWithTrace(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey,
-									 keyConditionExpression, expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
+			keyConditionExpression, expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
 	} else {
 		return d.queryItemsNormal(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey,
-								  keyConditionExpression, expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
+			keyConditionExpression, expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
 	}
 }
 
 func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
-									   timeOutDuration *time.Duration,
-									   consistentRead *bool,
-									   indexName *string,
-									   pageLimit *int64,
-									   pagedQuery bool,
-									   pagedQueryPageCountLimit *int64,
-									   exclusiveStartKey map[string]*dynamodb.AttributeValue,
-									   keyConditionExpression string,
-									   expressionAttributeNames map[string]*string,
-									   expressionAttributeValues map[string]*dynamodb.AttributeValue,
-									   filterConditionExpression *expression.ConditionBuilder,
-									   projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	indexName *string,
+	pageLimit *int64,
+	pagedQuery bool,
+	pagedQueryPageCountLimit *int64,
+	exclusiveStartKey map[string]*dynamodb.AttributeValue,
+	keyConditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	filterConditionExpression *expression.ConditionBuilder,
+	projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	trace := xray.NewSegment("DynamoDB-QueryItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -2328,11 +2328,11 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		} else if filterConditionExpression != nil {
 			expr, err = expression.NewBuilder().WithFilter(*filterConditionExpression).Build()
 			filterSet = true
-			projSet	 = false
+			projSet = false
 		} else if projSet {
 			expr, err = expression.NewBuilder().WithProjection(proj).Build()
 			filterSet = false
-			projSet	 = true
+			projSet = true
 		}
 
 		if err != nil {
@@ -2342,8 +2342,8 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 
 		// build query input params
 		params := &dynamodb.QueryInput{
-			TableName: aws.String(d.TableName),
-			KeyConditionExpression: aws.String(keyConditionExpression),
+			TableName:                 aws.String(d.TableName),
+			KeyConditionExpression:    aws.String(keyConditionExpression),
 			ExpressionAttributeValues: expressionAttributeValues,
 		}
 
@@ -2426,11 +2426,11 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		}
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
-			"TableName": d.TableName,
-			"IndexName": aws.StringValue(indexName),
-			"ExclusiveStartKey": exclusiveStartKey,
-			"KeyConditionExpression": keyConditionExpression,
-			"ExpressionAttributeNames": expressionAttributeNames,
+			"TableName":                 d.TableName,
+			"IndexName":                 aws.StringValue(indexName),
+			"ExclusiveStartKey":         exclusiveStartKey,
+			"KeyConditionExpression":    keyConditionExpression,
+			"ExpressionAttributeNames":  expressionAttributeNames,
 			"ExpressionAttributeValues": expressionAttributeValues,
 			"FilterConditionExpression": filterConditionExpression,
 		},
@@ -2445,18 +2445,18 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 }
 
 func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
-									timeOutDuration *time.Duration,
-									consistentRead *bool,
-									indexName *string,
-									pageLimit *int64,
-									pagedQuery bool,
-									pagedQueryPageCountLimit *int64,
-									exclusiveStartKey map[string]*dynamodb.AttributeValue,
-									keyConditionExpression string,
-									expressionAttributeNames map[string]*string,
-									expressionAttributeValues map[string]*dynamodb.AttributeValue,
-									filterConditionExpression *expression.ConditionBuilder,
-									projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	indexName *string,
+	pageLimit *int64,
+	pagedQuery bool,
+	pagedQueryPageCountLimit *int64,
+	exclusiveStartKey map[string]*dynamodb.AttributeValue,
+	keyConditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	filterConditionExpression *expression.ConditionBuilder,
+	projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	if d.cn == nil {
 		return nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -2525,11 +2525,11 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 	} else if filterConditionExpression != nil {
 		expr, err = expression.NewBuilder().WithFilter(*filterConditionExpression).Build()
 		filterSet = true
-		projSet	 = false
+		projSet = false
 	} else if projSet {
 		expr, err = expression.NewBuilder().WithProjection(proj).Build()
 		filterSet = false
-		projSet	 = true
+		projSet = true
 	}
 
 	if err != nil {
@@ -2538,8 +2538,8 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 
 	// build query input params
 	params := &dynamodb.QueryInput{
-		TableName: aws.String(d.TableName),
-		KeyConditionExpression: aws.String(keyConditionExpression),
+		TableName:                 aws.String(d.TableName),
+		KeyConditionExpression:    aws.String(keyConditionExpression),
 		ExpressionAttributeValues: expressionAttributeValues,
 	}
 
@@ -2622,61 +2622,61 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 
 // QueryItemsWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
-									   resultItemsPtr interface{},
-									   timeOutDuration *time.Duration,
-									   consistentRead *bool,
-									   indexName *string,
-									   pageLimit *int64,
-									   pagedQuery bool,
-									   pagedQueryPageCountLimit *int64,
-									   exclusiveStartKey map[string]*dynamodb.AttributeValue,
-									   keyConditionExpression string,
-									   expressionAttributeNames map[string]*string,
-									   expressionAttributeValues map[string]*dynamodb.AttributeValue,
-									   filterConditionExpression *expression.ConditionBuilder,
-									   projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	resultItemsPtr interface{},
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	indexName *string,
+	pageLimit *int64,
+	pagedQuery bool,
+	pagedQueryPageCountLimit *int64,
+	exclusiveStartKey map[string]*dynamodb.AttributeValue,
+	keyConditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	filterConditionExpression *expression.ConditionBuilder,
+	projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
 
-	timeout := 5*time.Second
+	timeout := 5 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 5*time.Second {
-		timeout = 5*time.Second
+		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
-		timeout = 15*time.Second
+		timeout = 15 * time.Second
 	}
 
 	if prevEvalKey, ddbErr = d.QueryItems(resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
-						   pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, keyConditionExpression,
-						   expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...); ddbErr != nil {
+		pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, keyConditionExpression,
+		expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...); ddbErr != nil {
 		// has error
 		if maxRetries > 0 {
 			if ddbErr.AllowRetry {
 				if ddbErr.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("QueryItemsWithRetry Failed: " + ddbErr.ErrorMessage)
 				return d.QueryItemsWithRetry(maxRetries-1,
-											 resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
-											 pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, keyConditionExpression,
-											 expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
+					resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
+					pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, keyConditionExpression,
+					expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
 			} else {
 				if ddbErr.SuppressError {
 					log.Println("QueryItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
 					return nil, nil
 				} else {
 					return nil, &DynamoDBError{
-						ErrorMessage: "QueryItemsWithRetry Failed: " + ddbErr.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "QueryItemsWithRetry Failed: " + ddbErr.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -2687,9 +2687,9 @@ func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
 				return nil, nil
 			} else {
 				return nil, &DynamoDBError{
-					ErrorMessage: "QueryItemsWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "QueryItemsWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -2769,13 +2769,13 @@ func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
-											pagedSlicePtr interface{},
-											resultSlicePtr interface{},
-											timeOutDuration *time.Duration,
-											indexName string,
-											keyConditionExpression string,
-											expressionAttributeValues map[string]*dynamodb.AttributeValue,
-											filterConditionExpression *expression.ConditionBuilder) (returnItemsList interface{}, err error) {
+	pagedSlicePtr interface{},
+	resultSlicePtr interface{},
+	timeOutDuration *time.Duration,
+	indexName string,
+	keyConditionExpression string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	filterConditionExpression *expression.ConditionBuilder) (returnItemsList interface{}, err error) {
 
 	if pagedSlicePtr == nil {
 		return nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Query and is Required")
@@ -2815,9 +2815,9 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 
 	for {
 		if prevEvalKey, e = d.QueryItemsWithRetry(maxRetries, pagedSlicePtr, timeOutDuration, nil, indexNamePtr,
-												 	aws.Int64(pageLimit), true, aws.Int64(pagedQueryPageCountLimit), prevEvalKey,
-												 	keyConditionExpression, nil, expressionAttributeValues,
-												 	filterConditionExpression); e != nil {
+			aws.Int64(pageLimit), true, aws.Int64(pagedQueryPageCountLimit), prevEvalKey,
+			keyConditionExpression, nil, expressionAttributeValues,
+			filterConditionExpression); e != nil {
 			// error
 			return nil, fmt.Errorf("QueryPagedItemsWithRetry Failed: %s", e)
 		} else {
@@ -2880,14 +2880,14 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
-							 timeOutDuration *time.Duration,
-							 consistentRead *bool,
-							 indexName *string,
-							 pageLimit *int64,
-							 pagedQuery bool,
-							 pagedQueryPageCountLimit *int64,
-							 exclusiveStartKey map[string]*dynamodb.AttributeValue,
-							 filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	indexName *string,
+	pageLimit *int64,
+	pagedQuery bool,
+	pagedQueryPageCountLimit *int64,
+	exclusiveStartKey map[string]*dynamodb.AttributeValue,
+	filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	if xray.XRayServiceOn() {
 		return d.scanItemsWithTrace(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, filterConditionExpression, projectedAttributes...)
 	} else {
@@ -2896,14 +2896,14 @@ func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
 }
 
 func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
-									  timeOutDuration *time.Duration,
-									  consistentRead *bool,
-									  indexName *string,
-									  pageLimit *int64,
-									  pagedQuery bool,
-									  pagedQueryPageCountLimit *int64,
-									  exclusiveStartKey map[string]*dynamodb.AttributeValue,
-									  filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	indexName *string,
+	pageLimit *int64,
+	pagedQuery bool,
+	pagedQueryPageCountLimit *int64,
+	exclusiveStartKey map[string]*dynamodb.AttributeValue,
+	filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	trace := xray.NewSegment("DynamoDB-ScanItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -2958,7 +2958,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 				proj = expression.NamesList(firstProjectedAttribute)
 			}
 
-			projSet	= true
+			projSet = true
 		}
 
 		// build expression
@@ -3044,9 +3044,9 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 		}
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
-			"TableName": d.TableName,
-			"IndexName": aws.StringValue(indexName),
-			"ExclusiveStartKey": exclusiveStartKey,
+			"TableName":                 d.TableName,
+			"IndexName":                 aws.StringValue(indexName),
+			"ExclusiveStartKey":         exclusiveStartKey,
 			"FilterConditionExpression": filterConditionExpression,
 		},
 	})
@@ -3060,14 +3060,14 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 }
 
 func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
-								   timeOutDuration *time.Duration,
-								   consistentRead *bool,
-								   indexName *string,
-								   pageLimit *int64,
-								   pagedQuery bool,
-								   pagedQueryPageCountLimit *int64,
-								   exclusiveStartKey map[string]*dynamodb.AttributeValue,
-								   filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	indexName *string,
+	pageLimit *int64,
+	pagedQuery bool,
+	pagedQueryPageCountLimit *int64,
+	exclusiveStartKey map[string]*dynamodb.AttributeValue,
+	filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	if d.cn == nil {
 		return nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -3110,7 +3110,7 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 			proj = expression.NamesList(firstProjectedAttribute)
 		}
 
-		projSet	= true
+		projSet = true
 	}
 
 	// build expression
@@ -3195,57 +3195,57 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 
 // ScanItemsWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
-									  resultItemsPtr interface{},
-									  timeOutDuration *time.Duration,
-									  consistentRead *bool,
-									  indexName *string,
-									  pageLimit *int64,
-									  pagedQuery bool,
-									  pagedQueryPageCountLimit *int64,
-									  exclusiveStartKey map[string]*dynamodb.AttributeValue,
-									  filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+	resultItemsPtr interface{},
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	indexName *string,
+	pageLimit *int64,
+	pagedQuery bool,
+	pagedQueryPageCountLimit *int64,
+	exclusiveStartKey map[string]*dynamodb.AttributeValue,
+	filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
 
-	timeout := 10*time.Second
+	timeout := 10 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 10*time.Second {
-		timeout = 10*time.Second
+		timeout = 10 * time.Second
 	} else if timeout > 30*time.Second {
-		timeout = 30*time.Second
+		timeout = 30 * time.Second
 	}
 
 	if prevEvalKey, ddbErr = d.ScanItems(resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
-										 pagedQuery, pagedQueryPageCountLimit,
-										 exclusiveStartKey, filterConditionExpression, projectedAttributes...); ddbErr != nil {
+		pagedQuery, pagedQueryPageCountLimit,
+		exclusiveStartKey, filterConditionExpression, projectedAttributes...); ddbErr != nil {
 		// has error
 		if maxRetries > 0 {
 			if ddbErr.AllowRetry {
 				if ddbErr.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("ScanItemsWithRetry Failed: " + ddbErr.ErrorMessage)
 				return d.ScanItemsWithRetry(maxRetries-1,
-										    resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
-										    pagedQuery, pagedQueryPageCountLimit,
-											exclusiveStartKey, filterConditionExpression, projectedAttributes...)
+					resultItemsPtr, util.DurationPtr(timeout), consistentRead, indexName, pageLimit,
+					pagedQuery, pagedQueryPageCountLimit,
+					exclusiveStartKey, filterConditionExpression, projectedAttributes...)
 			} else {
 				if ddbErr.SuppressError {
 					log.Println("ScanItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
 					return nil, nil
 				} else {
 					return nil, &DynamoDBError{
-						ErrorMessage: "ScanItemsWithRetry Failed: " + ddbErr.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "ScanItemsWithRetry Failed: " + ddbErr.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -3256,9 +3256,9 @@ func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
 				return nil, nil
 			} else {
 				return nil, &DynamoDBError{
-					ErrorMessage: "ScanItemsWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "ScanItemsWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -3305,11 +3305,11 @@ func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
-										   pagedSlicePtr interface{},
-										   resultSlicePtr interface{},
-										   timeOutDuration *time.Duration,
-										   indexName string,
-										   filterConditionExpression expression.ConditionBuilder) (returnItemsList interface{}, err error) {
+	pagedSlicePtr interface{},
+	resultSlicePtr interface{},
+	timeOutDuration *time.Duration,
+	indexName string,
+	filterConditionExpression expression.ConditionBuilder) (returnItemsList interface{}, err error) {
 
 	if pagedSlicePtr == nil {
 		return nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Scan and is Required")
@@ -3408,8 +3408,8 @@ func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) BatchWriteItems(putItems interface{},
-								   deleteKeys []DynamoDBTableKeys,
-								   timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+	deleteKeys []DynamoDBTableKeys,
+	timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
 	if xray.XRayServiceOn() {
 		return d.batchWriteItemsWithTrace(putItems, deleteKeys, timeOutDuration)
 	} else {
@@ -3418,8 +3418,8 @@ func (d *DynamoDB) BatchWriteItems(putItems interface{},
 }
 
 func (d *DynamoDB) batchWriteItemsWithTrace(putItems interface{},
-								   			deleteKeys []DynamoDBTableKeys,
-								   			timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+	deleteKeys []DynamoDBTableKeys,
+	timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
 	trace := xray.NewSegment("DynamoDB-BatchWriteItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -3594,21 +3594,21 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItems interface{},
 					}
 				}
 
-				successCount = deleteCount+putCount-len(list)
+				successCount = deleteCount + putCount - len(list)
 				unprocessedItems = outList
 				err = nil
 				return nil
 			}
 		}
 
-		successCount = deleteCount+putCount
+		successCount = deleteCount + putCount
 		unprocessedItems = nil
 		err = nil
 		return nil
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
-			"TableName": d.TableName,
-			"PutItems": putItems,
+			"TableName":  d.TableName,
+			"PutItems":   putItems,
 			"DeleteKeys": deleteKeys,
 		},
 	})
@@ -3618,8 +3618,8 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItems interface{},
 }
 
 func (d *DynamoDB) batchWriteItemsNormal(putItems interface{},
-										 deleteKeys []DynamoDBTableKeys,
-										 timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+	deleteKeys []DynamoDBTableKeys,
+	timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
 	if d.cn == nil {
 		return 0, nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -3779,14 +3779,14 @@ func (d *DynamoDB) batchWriteItemsNormal(putItems interface{},
 				}
 			}
 
-			successCount = deleteCount+putCount-len(list)
+			successCount = deleteCount + putCount - len(list)
 			unprocessedItems = outList
 			err = nil
 			return successCount, unprocessedItems, err
 		}
 	}
 
-	successCount = deleteCount+putCount
+	successCount = deleteCount + putCount
 	unprocessedItems = nil
 	err = nil
 
@@ -3796,22 +3796,22 @@ func (d *DynamoDB) batchWriteItemsNormal(putItems interface{},
 
 // BatchWriteItemsWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
-											putItems interface{}, deleteKeys []DynamoDBTableKeys,
-											timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+	putItems interface{}, deleteKeys []DynamoDBTableKeys,
+	timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
 
-	timeout := 10*time.Second
+	timeout := 10 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 10*time.Second {
-		timeout = 10*time.Second
+		timeout = 10 * time.Second
 	} else if timeout > 30*time.Second {
-		timeout = 30*time.Second
+		timeout = 30 * time.Second
 	}
 
 	if successCount, unprocessedItems, err = d.BatchWriteItems(putItems, deleteKeys, util.DurationPtr(timeout)); err != nil {
@@ -3819,9 +3819,9 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 		if maxRetries > 0 {
 			if err.AllowRetry {
 				if err.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("BatchWriteItemsWithRetry Failed: " + err.ErrorMessage)
@@ -3832,9 +3832,9 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 					return 0, nil, nil
 				} else {
 					return 0, nil, &DynamoDBError{
-						ErrorMessage: "BatchWriteItemsWithRetry Failed: " + err.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "BatchWriteItemsWithRetry Failed: " + err.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -3845,9 +3845,9 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 				return 0, nil, nil
 			} else {
 				return 0, nil, &DynamoDBError{
-					ErrorMessage: "BatchWriteItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "BatchWriteItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -3884,10 +3884,10 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 //				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //					Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) BatchGetItems(resultItemsPtr interface{},
- 								 searchKeys []DynamoDBTableKeys,
-								 timeOutDuration *time.Duration,
-								 consistentRead *bool,
-								 projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
+	searchKeys []DynamoDBTableKeys,
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
 	if xray.XRayServiceOn() {
 		return d.batchGetItemsWithTrace(resultItemsPtr, searchKeys, timeOutDuration, consistentRead, projectedAttributes...)
 	} else {
@@ -3896,10 +3896,10 @@ func (d *DynamoDB) BatchGetItems(resultItemsPtr interface{},
 }
 
 func (d *DynamoDB) batchGetItemsWithTrace(resultItemsPtr interface{},
-										  searchKeys []DynamoDBTableKeys,
-										  timeOutDuration *time.Duration,
-										  consistentRead *bool,
-										  projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
+	searchKeys []DynamoDBTableKeys,
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
 	trace := xray.NewSegment("DynamoDB-BatchGetItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -4073,7 +4073,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(resultItemsPtr interface{},
 		}
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
-			"TableName": d.TableName,
+			"TableName":  d.TableName,
 			"SearchKeys": searchKeys,
 		},
 	})
@@ -4082,10 +4082,10 @@ func (d *DynamoDB) batchGetItemsWithTrace(resultItemsPtr interface{},
 }
 
 func (d *DynamoDB) batchGetItemsNormal(resultItemsPtr interface{},
-									   searchKeys []DynamoDBTableKeys,
-									   timeOutDuration *time.Duration,
-									   consistentRead *bool,
-									   projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
+	searchKeys []DynamoDBTableKeys,
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
 	if d.cn == nil {
 		return false, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -4237,25 +4237,25 @@ func (d *DynamoDB) batchGetItemsNormal(resultItemsPtr interface{},
 
 // BatchGetItemsWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint,
-										  resultItemsPtr interface{},
-										  searchKeys []DynamoDBTableKeys,
-										  timeOutDuration *time.Duration,
-										  consistentRead *bool,
-										  projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
+	resultItemsPtr interface{},
+	searchKeys []DynamoDBTableKeys,
+	timeOutDuration *time.Duration,
+	consistentRead *bool,
+	projectedAttributes ...string) (notFound bool, err *DynamoDBError) {
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
 
-	timeout := 5*time.Second
+	timeout := 5 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 5*time.Second {
-		timeout = 5*time.Second
+		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
-		timeout = 15*time.Second
+		timeout = 15 * time.Second
 	}
 
 	if notFound, err = d.BatchGetItems(resultItemsPtr, searchKeys, util.DurationPtr(timeout), consistentRead, projectedAttributes...); err != nil {
@@ -4263,9 +4263,9 @@ func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint,
 		if maxRetries > 0 {
 			if err.AllowRetry {
 				if err.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("BatchGetItemsWithRetry Failed: " + err.ErrorMessage)
@@ -4276,9 +4276,9 @@ func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint,
 					return true, nil
 				} else {
 					return true, &DynamoDBError{
-						ErrorMessage: "BatchGetItemsWithRetry Failed: " + err.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "BatchGetItemsWithRetry Failed: " + err.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -4289,9 +4289,9 @@ func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint,
 				return true, nil
 			} else {
 				return true, &DynamoDBError{
-					ErrorMessage: "BatchGetItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "BatchGetItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -4306,8 +4306,8 @@ func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint,
 // will auto retry delete if temporarily failed,
 // if there are deleteFailKeys, its returned, if all succeeded, nil is returned
 func (d *DynamoDB) BatchDeleteItemsWithRetry(maxRetries uint,
-											 timeOutDuration *time.Duration,
-											 deleteKeys ...*DynamoDBTableKeys) (deleteFailKeys []*DynamoDBTableKeys, err error) {
+	timeOutDuration *time.Duration,
+	deleteKeys ...*DynamoDBTableKeys) (deleteFailKeys []*DynamoDBTableKeys, err error) {
 	if len(deleteKeys) == 0 {
 		return []*DynamoDBTableKeys{}, fmt.Errorf("BatchDeleteItemsWithRetry Failed: %s", err)
 	}
@@ -4316,16 +4316,16 @@ func (d *DynamoDB) BatchDeleteItemsWithRetry(maxRetries uint,
 		maxRetries = 10
 	}
 
-	timeout := 5*time.Second
+	timeout := 5 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 5*time.Second {
-		timeout = 5*time.Second
+		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
-		timeout = 15*time.Second
+		timeout = 15 * time.Second
 	}
 
 	for _, key := range deleteKeys {
@@ -4415,7 +4415,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 					m := new(dynamodb.TransactWriteItem)
 
 					md := make(map[string]*dynamodb.AttributeValue)
-					md[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(v.PK) }
+					md[d.PKName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
 
 					if util.LenTrim(v.SK) > 0 {
 						if !skOK {
@@ -4428,12 +4428,12 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 							}
 						}
 
-						md[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(v.SK) }
+						md[d.SKName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 					}
 
 					m.Delete = &dynamodb.Delete{
 						TableName: aws.String(tableName),
-						Key: md,
+						Key:       md,
 					}
 
 					items = append(items, m)
@@ -4451,7 +4451,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 
 						m.Put = &dynamodb.Put{
 							TableName: aws.String(tableName),
-							Item: v,
+							Item:      v,
 						}
 
 						items = append(items, m)
@@ -4464,7 +4464,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 					m := new(dynamodb.TransactWriteItem)
 
 					mk := make(map[string]*dynamodb.AttributeValue)
-					mk[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(v.PK) }
+					mk[d.PKName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
 
 					if util.LenTrim(v.SK) > 0 {
 						if !skOK {
@@ -4477,12 +4477,12 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 							}
 						}
 
-						mk[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(v.SK) }
+						mk[d.SKName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 					}
 
 					m.Update = &dynamodb.Update{
 						TableName: aws.String(tableName),
-						Key: mk,
+						Key:       mk,
 					}
 
 					if util.LenTrim(v.ConditionExpression) > 0 {
@@ -4553,7 +4553,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
 			"TableName": d.TableName,
-			"Items": tranItems,
+			"Items":     tranItems,
 		},
 	})
 
@@ -4596,7 +4596,7 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 				m := new(dynamodb.TransactWriteItem)
 
 				md := make(map[string]*dynamodb.AttributeValue)
-				md[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(v.PK) }
+				md[d.PKName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
 
 				if util.LenTrim(v.SK) > 0 {
 					if !skOK {
@@ -4609,12 +4609,12 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 						}
 					}
 
-					md[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(v.SK) }
+					md[d.SKName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 				}
 
 				m.Delete = &dynamodb.Delete{
 					TableName: aws.String(tableName),
-					Key: md,
+					Key:       md,
 				}
 
 				items = append(items, m)
@@ -4632,7 +4632,7 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 
 					m.Put = &dynamodb.Put{
 						TableName: aws.String(tableName),
-						Item: v,
+						Item:      v,
 					}
 
 					items = append(items, m)
@@ -4645,7 +4645,7 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 				m := new(dynamodb.TransactWriteItem)
 
 				mk := make(map[string]*dynamodb.AttributeValue)
-				mk[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(v.PK) }
+				mk[d.PKName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
 
 				if util.LenTrim(v.SK) > 0 {
 					if !skOK {
@@ -4658,12 +4658,12 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 						}
 					}
 
-					mk[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(v.SK) }
+					mk[d.SKName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 				}
 
 				m.Update = &dynamodb.Update{
 					TableName: aws.String(tableName),
-					Key: mk,
+					Key:       mk,
 				}
 
 				if util.LenTrim(v.ConditionExpression) > 0 {
@@ -4730,22 +4730,22 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 
 // TransactionWriteItemsWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
-												  timeOutDuration *time.Duration,
-												  tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
+	timeOutDuration *time.Duration,
+	tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
 
-	timeout := 10*time.Second
+	timeout := 10 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 10*time.Second {
-		timeout = 10*time.Second
+		timeout = 10 * time.Second
 	} else if timeout > 30*time.Second {
-		timeout = 30*time.Second
+		timeout = 30 * time.Second
 	}
 
 	if success, err = d.TransactionWriteItems(util.DurationPtr(timeout), tranItems...); err != nil {
@@ -4753,9 +4753,9 @@ func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 		if maxRetries > 0 {
 			if err.AllowRetry {
 				if err.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("TransactionWriteItemsWithRetry Failed: " + err.ErrorMessage)
@@ -4763,12 +4763,12 @@ func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 			} else {
 				if err.SuppressError {
 					log.Println("TransactionWriteItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return false,nil
+					return false, nil
 				} else {
 					return false, &DynamoDBError{
-						ErrorMessage: "TransactionWriteItemsWithRetry Failed: " + err.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "TransactionWriteItemsWithRetry Failed: " + err.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -4779,9 +4779,9 @@ func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 				return false, nil
 			} else {
 				return false, &DynamoDBError{
-					ErrorMessage: "TransactionWriteItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "TransactionWriteItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}
@@ -4880,7 +4880,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 					m := new(dynamodb.TransactGetItem)
 
 					md := make(map[string]*dynamodb.AttributeValue)
-					md[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(v.PK) }
+					md[d.PKName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
 
 					if util.LenTrim(v.SK) > 0 {
 						if !skOK {
@@ -4893,12 +4893,12 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 							}
 						}
 
-						md[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(v.SK) }
+						md[d.SKName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 					}
 
 					m.Get = &dynamodb.Get{
 						TableName: aws.String(tableName),
-						Key: md,
+						Key:       md,
 					}
 
 					keys = append(keys, m)
@@ -4954,7 +4954,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 		if result.Responses != nil && len(result.Responses) > 0 {
 			hasSK := util.LenTrim(d.SKName) > 0
 
-			for _, v := range result.Responses {
+			for i, v := range result.Responses {
 				itemAv := v.Item
 
 				if itemAv != nil {
@@ -4966,9 +4966,8 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 					}
 
 					if len(pk) > 0 {
-						// loop through output slice to match and unmarshal
-						for _, o := range output {
-							if !o.resultProcessed {
+						if i < len(output) {
+							if o := output[i]; o != nil && !o.resultProcessed {
 								found := false
 
 								if len(sk) > 0 {
@@ -5008,7 +5007,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
 			"TableName": d.TableName,
-			"Keys": tranKeys,
+			"Keys":      tranKeys,
 		},
 	})
 
@@ -5061,7 +5060,7 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, tra
 				m := new(dynamodb.TransactGetItem)
 
 				md := make(map[string]*dynamodb.AttributeValue)
-				md[d.PKName] = &dynamodb.AttributeValue{ S: aws.String(v.PK) }
+				md[d.PKName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
 
 				if util.LenTrim(v.SK) > 0 {
 					if !skOK {
@@ -5074,12 +5073,12 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, tra
 						}
 					}
 
-					md[d.SKName] = &dynamodb.AttributeValue{ S: aws.String(v.SK) }
+					md[d.SKName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 				}
 
 				m.Get = &dynamodb.Get{
 					TableName: aws.String(tableName),
-					Key: md,
+					Key:       md,
 				}
 
 				keys = append(keys, m)
@@ -5132,7 +5131,7 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, tra
 	if result.Responses != nil && len(result.Responses) > 0 {
 		hasSK := util.LenTrim(d.SKName) > 0
 
-		for _, v := range result.Responses {
+		for i, v := range result.Responses {
 			itemAv := v.Item
 
 			if itemAv != nil {
@@ -5144,9 +5143,8 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, tra
 				}
 
 				if len(pk) > 0 {
-					// loop through output slice to match and unmarshal
-					for _, o := range output {
-						if !o.resultProcessed {
+					if i < len(output) {
+						if o := output[i]; o != nil && !o.resultProcessed {
 							found := false
 
 							if len(sk) > 0 {
@@ -5187,22 +5185,22 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, tra
 
 // TransactionGetItemsWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
-											    timeOutDuration *time.Duration,
-											    tranKeys ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
+	timeOutDuration *time.Duration,
+	tranKeys ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
 
-	timeout := 5*time.Second
+	timeout := 5 * time.Second
 
 	if timeOutDuration != nil {
 		timeout = *timeOutDuration
 	}
 
 	if timeout < 5*time.Second {
-		timeout = 5*time.Second
+		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
-		timeout = 15*time.Second
+		timeout = 15 * time.Second
 	}
 
 	if successCount, err = d.TransactionGetItems(util.DurationPtr(timeout), tranKeys...); err != nil {
@@ -5210,9 +5208,9 @@ func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
 		if maxRetries > 0 {
 			if err.AllowRetry {
 				if err.RetryNeedsBackOff {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				} else {
-					time.Sleep(100*time.Millisecond)
+					time.Sleep(100 * time.Millisecond)
 				}
 
 				log.Println("TransactionGetItemsWithRetry Failed: " + err.ErrorMessage)
@@ -5223,9 +5221,9 @@ func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
 					return 0, nil
 				} else {
 					return 0, &DynamoDBError{
-						ErrorMessage: "TransactionGetItemsWithRetry Failed: " + err.ErrorMessage,
-						SuppressError: false,
-						AllowRetry: false,
+						ErrorMessage:      "TransactionGetItemsWithRetry Failed: " + err.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
 						RetryNeedsBackOff: false,
 					}
 				}
@@ -5236,9 +5234,9 @@ func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
 				return 0, nil
 			} else {
 				return 0, &DynamoDBError{
-					ErrorMessage: "TransactionGetItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
-					SuppressError: false,
-					AllowRetry: false,
+					ErrorMessage:      "TransactionGetItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
 			}

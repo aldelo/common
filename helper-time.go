@@ -128,6 +128,22 @@ func FormatDateTime(t time.Time, blankIfZero ...bool) string {
 	return t.Format("2006-01-02 03:04:05 PM")
 }
 
+// FormatDateTimeToISO8601_RFC3339 accepts time struct and converts to iso8601 string output format
+func FormatDateTimeToISO8601_RFC3339(t time.Time, blankIfZero ...bool) string {
+	ifZero := false
+	if len(blankIfZero) > 0 {
+		ifZero = blankIfZero[0]
+	}
+
+	if ifZero {
+		if t.IsZero() {
+			return ""
+		}
+	}
+
+	return t.Format(time.RFC3339)
+}
+
 // DateFormatString returns the date format string constant (yyyy-mm-dd)
 func DateFormatString() string {
 	return "2006-01-02"
@@ -591,16 +607,16 @@ func DateToLocal2(t time.Time) time.Time {
 
 // IsLeapYear checks if the year input is leap year or not
 func IsLeapYear(year int) bool {
-	if year % 100 == 0 {
+	if year%100 == 0 {
 		// is century year, divisible by 400 is leap year
-		if year % 400 == 0 {
+		if year%400 == 0 {
 			return true
 		} else {
 			return false
 		}
 	} else {
 		// not a century year, divisible by 4 is leap year
-		if year % 4 == 0 {
+		if year%4 == 0 {
 			return true
 		} else {
 			return false
@@ -718,7 +734,7 @@ func IsDateValidYYMMDD(s string) bool {
 		return false
 	}
 
-	if !IsDayOfMonthValid(2000 + yy, mm, dd) {
+	if !IsDayOfMonthValid(2000+yy, mm, dd) {
 		return false
 	}
 
@@ -822,7 +838,7 @@ func IsDateValidMMDDYY(s string) bool {
 		return false
 	}
 
-	if !IsDayOfMonthValid(2000 + yy, mm, dd) {
+	if !IsDayOfMonthValid(2000+yy, mm, dd) {
 		return false
 	}
 

@@ -131,7 +131,7 @@ func (c *Crud) CreatePKValue(values ...string) (pkValue string, err error) {
 	if util.LenTrim(pkValue) > 0 {
 		return pkValue, nil
 	} else {
-		return "", fmt.Errorf("Create PK Value Failed: ", err.Error())
+		return "", fmt.Errorf("Create PK Value Failed: %s", err.Error())
 	}
 }
 
@@ -157,7 +157,7 @@ func (c *Crud) Get(pkValue string, skValue string, resultDataPtr interface{}, co
 
 	if e := c._ddb.GetItemWithRetry(c._actionRetries, resultDataPtr, pkValue, skValue, c._ddb.TimeOutDuration(c._timeout), util.BoolPtr(consistentRead), projectedAttributes...); e != nil {
 		// get error
-		return fmt.Errorf("Get From Data Store Failed: (GetItem) ", e.Error())
+		return fmt.Errorf("Get From Data Store Failed: (GetItem) %s", e.Error())
 	} else {
 		// get success
 		return nil
@@ -190,7 +190,7 @@ func (c *Crud) BatchGet(searchKeys []PkSkValuePair, resultDataSlicePtr interface
 
 	if notFound, e := c._ddb.BatchGetItemsWithRetry(c._actionRetries, resultDataSlicePtr, ddbSearchKeys, c._ddb.TimeOutDuration(c._timeout), util.BoolPtr(consistentRead), projectedAttributes...); e != nil {
 		// error
-		return false, fmt.Errorf("BatchGet From Data Store Failed: (BatchGetItems) " + e.Error())
+		return false, fmt.Errorf("BatchGet From Data Store Failed: (BatchGetItems) %s" + e.Error())
 	} else {
 		// success
 		return !notFound, nil
@@ -210,7 +210,7 @@ func (c *Crud) TransactionGet(transReads ...*DynamoDBTransactionReads) (successC
 
 	if success, e := c._ddb.TransactionGetItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), transReads...); e != nil {
 		// error
-		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (TransactionGetItems) " + e.Error())
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (TransactionGetItems) %s" + e.Error())
 	} else {
 		// success
 		return success, nil
@@ -232,7 +232,7 @@ func (c *Crud) Set(dataPtr interface{}) (err error) {
 
 	if e := c._ddb.PutItemWithRetry(c._actionRetries, dataPtr, c._ddb.TimeOutDuration(c._timeout)); e != nil {
 		// set error
-		return fmt.Errorf("Set To Data Store Failed: (PutItem) ", e.Error())
+		return fmt.Errorf("Set To Data Store Failed: (PutItem) %s", e.Error())
 	} else {
 		// set success
 		return nil
@@ -263,7 +263,7 @@ func (c *Crud) BatchSet(putDataSlice interface{}, deleteKeys []PkSkValuePair) (s
 
 	if success, unprocessed, e := c._ddb.BatchWriteItemsWithRetry(c._actionRetries, putDataSlice, ddbDeleteKeys, c._ddb.TimeOutDuration(c._timeout)); e != nil {
 		// error
-		return 0, nil, nil, fmt.Errorf("BatchSet To Data Store Failed: (BatchWriteItems) " + e.Error())
+		return 0, nil, nil, fmt.Errorf("BatchSet To Data Store Failed: (BatchWriteItems) %s" + e.Error())
 	} else {
 		// success (may contain unprocessed)
 		if unprocessed != nil {
@@ -308,7 +308,7 @@ func (c *Crud) TransactionSet(transWrites ...*DynamoDBTransactionWrites) (succes
 
 	if ok, e := c._ddb.TransactionWriteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), transWrites...); e != nil {
 		// error
-		return false, fmt.Errorf("TransactionSet To Data Store Failed: (TransactionWriteItems) " + e.Error())
+		return false, fmt.Errorf("TransactionSet To Data Store Failed: (TransactionWriteItems) %s" + e.Error())
 	} else {
 		// success
 		return ok, nil
@@ -393,7 +393,7 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 		c._ddb.TimeOutDuration(c._timeout), keyExpression.IndexName,
 		keyCondition, keyValues, nil); e != nil {
 		// query error
-		return nil, fmt.Errorf("Query From Data Store Failed: (QueryPaged) " + e.Error())
+		return nil, fmt.Errorf("Query From Data Store Failed: (QueryPaged) %s" + e.Error())
 	} else {
 		// query success
 		return dataList, nil
@@ -498,7 +498,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 	if e := c._ddb.UpdateItemWithRetry(c._actionRetries, pkValue, skValue, updateExpression, conditionExpression, nil, expressionAttributeValues, c._ddb.TimeOutDuration(c._timeout)); e != nil {
 		// error
-		return fmt.Errorf("Update To Data Store Failed: (UpdateItem) " + e.Error())
+		return fmt.Errorf("Update To Data Store Failed: (UpdateItem) %s" + e.Error())
 	} else {
 		// success
 		return nil
@@ -521,7 +521,7 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 
 	if e := c._ddb.DeleteItemWithRetry(c._actionRetries, pkValue, skValue, c._ddb.TimeOutDuration(c._timeout)); e != nil {
 		// delete error
-		return fmt.Errorf("Delete From Data Store Failed: (DeleteItem) ", e.Error())
+		return fmt.Errorf("Delete From Data Store Failed: (DeleteItem) %s", e.Error())
 	} else {
 		// delete success
 		return nil
@@ -548,7 +548,7 @@ func (c *Crud) BatchDelete(deleteKeys ...PkSkValuePair) (successCount int, faile
 	}
 
 	if failed, e := c._ddb.BatchDeleteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), ddbDeleteKeys...); e != nil {
-		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 2) " + e.Error())
+		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 2) %s" + e.Error())
 	} else {
 		successCount = len(deleteKeys)
 

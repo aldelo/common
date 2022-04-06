@@ -8,7 +8,7 @@ require (
 	github.com/antlr/antlr4 v0.0.0-20200820155224-be881fa6b91d // indirect
 	github.com/appleboy/gin-jwt/v2 v2.8.0
 	github.com/aws/aws-dax-go v1.2.9
-	github.com/aws/aws-sdk-go v1.43.29
+	github.com/aws/aws-sdk-go v1.43.31
 	github.com/aws/aws-xray-sdk-go v1.6.0
 	github.com/cactus/go-statsd-client/statsd v0.0.0-20200728222731-a2baea3bbfc6 // indirect
 	github.com/dchest/uniuri v0.0.0-20200228104902-7aecb25e1fe5 // indirect

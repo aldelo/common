@@ -28,8 +28,6 @@ type Crud struct {
 	_ddb           *DynamoDB
 	_timeout       uint
 	_actionRetries uint
-	_pkAppName     string
-	_pkServiceName string
 }
 
 type ConnectionConfig struct {
@@ -40,8 +38,6 @@ type ConnectionConfig struct {
 
 	TimeoutSeconds uint
 	ActionRetries  uint
-	PKAppName      string
-	PKServiceName  string
 }
 
 type QueryExpression struct {
@@ -96,8 +92,6 @@ func (c *Crud) Open(cfg *ConnectionConfig) error {
 
 		c._timeout = cfg.TimeoutSeconds
 		c._actionRetries = cfg.ActionRetries
-		c._pkAppName = cfg.PKAppName
-		c._pkServiceName = cfg.PKServiceName
 
 		return nil
 	}
@@ -109,14 +103,12 @@ func (c *Crud) Close() {
 		c._ddb = nil
 		c._timeout = 5
 		c._actionRetries = 4
-		c._pkAppName = ""
-		c._pkServiceName = ""
 	}
 }
 
 // CreatePKValue generates composite pk values from configured app and service name, along with parameterized pk values
-func (c *Crud) CreatePKValue(values ...string) (pkValue string, err error) {
-	pkValue = fmt.Sprintf("%s#%s", c._pkAppName, c._pkServiceName)
+func (c *Crud) CreatePKValue(pkApp string, pkService string, pkScope string, pkIdentifier string, values ...string) (pkValue string, err error) {
+	pkValue = fmt.Sprintf("%s#%s#%s#%s", pkApp, pkService, pkScope, pkIdentifier)
 
 	for _, v := range values {
 		if util.LenTrim(v) > 0 {
@@ -210,7 +202,7 @@ func (c *Crud) TransactionGet(transReads ...*DynamoDBTransactionReads) (successC
 
 	if success, e := c._ddb.TransactionGetItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), transReads...); e != nil {
 		// error
-		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (TransactionGetItems) %s" + e.Error())
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (TransactionGetItems) %s", e.Error())
 	} else {
 		// success
 		return success, nil
@@ -308,7 +300,7 @@ func (c *Crud) TransactionSet(transWrites ...*DynamoDBTransactionWrites) (succes
 
 	if ok, e := c._ddb.TransactionWriteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), transWrites...); e != nil {
 		// error
-		return false, fmt.Errorf("TransactionSet To Data Store Failed: (TransactionWriteItems) %s" + e.Error())
+		return false, fmt.Errorf("TransactionSet To Data Store Failed: (TransactionWriteItems) %s", e.Error())
 	} else {
 		// success
 		return ok, nil
@@ -393,7 +385,7 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 		c._ddb.TimeOutDuration(c._timeout), keyExpression.IndexName,
 		keyCondition, keyValues, nil); e != nil {
 		// query error
-		return nil, fmt.Errorf("Query From Data Store Failed: (QueryPaged) %s" + e.Error())
+		return nil, fmt.Errorf("Query From Data Store Failed: (QueryPaged) %s", e.Error())
 	} else {
 		// query success
 		return dataList, nil
@@ -498,7 +490,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 	if e := c._ddb.UpdateItemWithRetry(c._actionRetries, pkValue, skValue, updateExpression, conditionExpression, nil, expressionAttributeValues, c._ddb.TimeOutDuration(c._timeout)); e != nil {
 		// error
-		return fmt.Errorf("Update To Data Store Failed: (UpdateItem) %s" + e.Error())
+		return fmt.Errorf("Update To Data Store Failed: (UpdateItem) %s", e.Error())
 	} else {
 		// success
 		return nil
@@ -548,7 +540,7 @@ func (c *Crud) BatchDelete(deleteKeys ...PkSkValuePair) (successCount int, faile
 	}
 
 	if failed, e := c._ddb.BatchDeleteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), ddbDeleteKeys...); e != nil {
-		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 2) %s" + e.Error())
+		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 2) %s", e.Error())
 	} else {
 		successCount = len(deleteKeys)
 

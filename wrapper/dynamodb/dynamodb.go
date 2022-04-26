@@ -1891,6 +1891,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 
 		if projSet {
 			params.ProjectionExpression = expr.Projection()
+			params.ExpressionAttributeNames = expr.Names()
 		}
 
 		if consistentRead != nil {
@@ -2032,6 +2033,7 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 
 	if projSet {
 		params.ProjectionExpression = expr.Projection()
+		params.ExpressionAttributeNames = expr.Names()
 	}
 
 	if consistentRead != nil {
@@ -2369,6 +2371,14 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 
 		if projSet {
 			params.ProjectionExpression = expr.Projection()
+
+			if params.ExpressionAttributeNames == nil {
+				params.ExpressionAttributeNames = expr.Names()
+			} else {
+				for k1, v1 := range expr.Names() {
+					params.ExpressionAttributeNames[k1] = v1
+				}
+			}
 		}
 
 		if consistentRead != nil {
@@ -2565,6 +2575,14 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 
 	if projSet {
 		params.ProjectionExpression = expr.Projection()
+
+		if params.ExpressionAttributeNames == nil {
+			params.ExpressionAttributeNames = expr.Names()
+		} else {
+			for k1, v1 := range expr.Names() {
+				params.ExpressionAttributeNames[k1] = v1
+			}
+		}
 	}
 
 	if consistentRead != nil {
@@ -2986,6 +3004,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 
 		if projSet {
 			params.ProjectionExpression = expr.Projection()
+			params.ExpressionAttributeNames = expr.Names()
 		}
 
 		if consistentRead != nil {
@@ -3137,6 +3156,7 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 
 	if projSet {
 		params.ProjectionExpression = expr.Projection()
+		params.ExpressionAttributeNames = expr.Names()
 	}
 
 	if consistentRead != nil {
@@ -4012,6 +4032,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(resultItemsPtr interface{},
 
 		if projSet {
 			params.RequestItems[d.TableName].ProjectionExpression = expr.Projection()
+			params.RequestItems[d.TableName].ExpressionAttributeNames = expr.Names()
 		}
 
 		if consistentRead != nil {
@@ -4183,6 +4204,7 @@ func (d *DynamoDB) batchGetItemsNormal(resultItemsPtr interface{},
 
 	if projSet {
 		params.RequestItems[d.TableName].ProjectionExpression = expr.Projection()
+		params.RequestItems[d.TableName].ExpressionAttributeNames = expr.Names()
 	}
 
 	if consistentRead != nil {

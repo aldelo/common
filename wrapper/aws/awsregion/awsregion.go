@@ -37,6 +37,7 @@ const (
 	AWS_ap_southeast_2_sydney    AWSRegion = 8
 )
 
+// https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RegionsAndAvailabilityZones.html
 func GetAwsRegion(regionStr string) AWSRegion {
 	switch strings.ToLower(regionStr) {
 	case "us-west-2":

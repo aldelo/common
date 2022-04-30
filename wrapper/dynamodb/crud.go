@@ -17,11 +17,14 @@ package dynamodb
  */
 
 import (
+	"context"
 	"fmt"
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aws/aws-sdk-go/aws"
 	ddb "github.com/aws/aws-sdk-go/service/dynamodb"
+	"strings"
+	"time"
 )
 
 type Crud struct {
@@ -65,6 +68,13 @@ type AttributeValue struct {
 	IsBool    bool
 	ListValue []string
 }
+
+type GlobalTableInfo struct {
+	TableName string
+	Regions   []awsregion.AWSRegion
+}
+
+var cachedGlobalTableSupportedRegions []string
 
 // Open will establish connection to the target dynamodb table as defined in config.yaml
 func (c *Crud) Open(cfg *ConnectionConfig) error {
@@ -559,5 +569,1029 @@ func (c *Crud) BatchDelete(deleteKeys ...PkSkValuePair) (successCount int, faile
 		}
 
 		return successCount, failedDeletes, nil
+	}
+}
+
+// CreateTable will create a new dynamodb table based on input parameter values
+//
+// onDemand = sets billing to "PAY_PER_REQUEST", required if creating global table
+// rcu / wcu = defaults to 2 if value is 0
+// attributes = PK and SK are inserted automatically, only need to specify non PK SK attributes
+func (c *Crud) CreateTable(tableName string,
+	onDemand bool,
+	rcu int64, wcu int64,
+	sse *ddb.SSESpecification,
+	enableStream bool,
+	lsi []*ddb.LocalSecondaryIndex,
+	gsi []*ddb.GlobalSecondaryIndex,
+	attributes []*ddb.AttributeDefinition,
+	customDynamoDBConnection ...*DynamoDB) error {
+
+	// check for custom object
+	var ddbObj *DynamoDB
+
+	if len(customDynamoDBConnection) > 0 {
+		ddbObj = customDynamoDBConnection[0]
+	} else {
+		ddbObj = c._ddb
+	}
+
+	// validate
+	if ddbObj == nil {
+		return fmt.Errorf("CreateTable Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(tableName) == 0 {
+		return fmt.Errorf("CreateTable Failed: (Validater 2) Table Name is Required")
+	}
+
+	if sse != nil {
+		if aws.BoolValue(sse.Enabled) {
+			if sse.SSEType == nil {
+				sse.SSEType = aws.String("KMS")
+			}
+		}
+	}
+
+	if rcu <= 0 {
+		rcu = 2
+	}
+
+	if wcu <= 0 {
+		wcu = 2
+	}
+
+	billing := "PROVISIONED"
+
+	if onDemand {
+		billing = "PAY_PER_REQUEST"
+	}
+
+	// prepare
+	input := &ddb.CreateTableInput{
+		TableName: aws.String(tableName),
+		KeySchema: []*ddb.KeySchemaElement{
+			{
+				AttributeName: aws.String("PK"),
+				KeyType:       aws.String("HASH"),
+			},
+			{
+				AttributeName: aws.String("SK"),
+				KeyType:       aws.String("RANGE"),
+			},
+		},
+		TableClass:  aws.String("STANDARD"),
+		BillingMode: aws.String(billing),
+	}
+
+	if !onDemand {
+		input.ProvisionedThroughput = &ddb.ProvisionedThroughput{
+			ReadCapacityUnits:  aws.Int64(rcu),
+			WriteCapacityUnits: aws.Int64(wcu),
+		}
+	}
+
+	if sse != nil {
+		input.SSESpecification = sse
+	}
+
+	if enableStream {
+		input.StreamSpecification = &ddb.StreamSpecification{
+			StreamEnabled:  aws.Bool(true),
+			StreamViewType: aws.String("NEW_AND_OLD_IMAGES"),
+		}
+	}
+
+	if lsi != nil && len(lsi) > 0 {
+		input.LocalSecondaryIndexes = lsi
+	}
+
+	if gsi != nil && len(gsi) > 0 {
+		input.GlobalSecondaryIndexes = gsi
+	}
+
+	if attributes == nil {
+		attributes = []*ddb.AttributeDefinition{}
+	}
+
+	attributes = append(attributes, &ddb.AttributeDefinition{
+		AttributeName: aws.String("PK"),
+		AttributeType: aws.String("S"),
+	}, &ddb.AttributeDefinition{
+		AttributeName: aws.String("SK"),
+		AttributeType: aws.String("S"),
+	})
+
+	if attributes != nil && len(attributes) > 0 {
+		input.AttributeDefinitions = attributes
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := ddbObj.CreateTable(input, ctx); err != nil {
+		return fmt.Errorf("CreateTable on %s Failed: (Exec 1) %s", ddbObj.AwsRegion.Key(), err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("CreateTable on %s Failed: (Exec 2) %s", ddbObj.AwsRegion.Key(), "Output Response is Nil")
+		} else {
+			return nil
+		}
+	}
+}
+
+// UpdateTable will update an existing dynamodb table based on input parameter values
+//
+// tableName = (required) the name of dynamodb table to be updated
+// rcu / wcu = if > 0, corresponding update is affected to the provisioned throughput; if to be updated, both must be set
+// gsi = contains slice of global secondary index updates (create / delete / update ... of gsi)
+// attributes = attributes involved for the table (does not pre-load PK or SK in this function call)
+func (c *Crud) UpdateTable(tableName string, rcu int64, wcu int64,
+	gsi []*ddb.GlobalSecondaryIndexUpdate,
+	attributes []*ddb.AttributeDefinition) error {
+
+	// validate
+	if c._ddb == nil {
+		return fmt.Errorf("UpdateTable Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(tableName) == 0 {
+		return fmt.Errorf("UpdateTable Failed: (Validater 2) Table Name is Required")
+	}
+
+	if (rcu > 0 || wcu > 0) && (rcu <= 0 || wcu <= 0) {
+		return fmt.Errorf("UpdateTable Failed: (Validater 3) Capacity Update Requires Both RCU and WCU Provided")
+	}
+
+	var hasUpdates bool
+
+	// prepare
+	input := &ddb.UpdateTableInput{
+		TableName: aws.String(tableName),
+	}
+
+	if rcu > 0 && wcu > 0 {
+		input.ProvisionedThroughput = &ddb.ProvisionedThroughput{
+			ReadCapacityUnits:  aws.Int64(rcu),
+			WriteCapacityUnits: aws.Int64(wcu),
+		}
+		hasUpdates = true
+	}
+
+	if gsi != nil && len(gsi) > 0 {
+		input.GlobalSecondaryIndexUpdates = gsi
+		hasUpdates = true
+	}
+
+	if attributes != nil && len(attributes) > 0 {
+		input.AttributeDefinitions = attributes
+		hasUpdates = true
+	}
+
+	if !hasUpdates {
+		return fmt.Errorf("UpdateTable Failed: (Validater 4) No Update Parameter Inputs Provided")
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.UpdateTable(input, ctx); err != nil {
+		return fmt.Errorf("UpdateTable Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("UpdateTable Failed: (Exec 2) %s", "Output Response is Nil")
+		} else {
+			return nil
+		}
+	}
+}
+
+// DeleteTable will delete the target dynamodb table given by input parameter values
+func (c *Crud) DeleteTable(tableName string, region awsregion.AWSRegion) error {
+	// validate
+	if c._ddb == nil {
+		return fmt.Errorf("DeleteTable Failed: (Validater 1) Connection Not Established")
+	}
+
+	if !region.Valid() && region != awsregion.UNKNOWN {
+		return fmt.Errorf("DeleteTable Failed: (Validater 2) Region is Required")
+	}
+
+	// *
+	// * get dynamodb object
+	// *
+	var ddbObj *DynamoDB
+
+	if c._ddb.AwsRegion == region {
+		ddbObj = c._ddb
+	} else {
+		d := &DynamoDB{
+			AwsRegion:   region,
+			TableName:   tableName,
+			PKName:      "PK",
+			SKName:      "SK",
+			HttpOptions: c._ddb.HttpOptions,
+			SkipDax:     true,
+			DaxEndpoint: "",
+		}
+
+		if err := d.connectInternal(); err != nil {
+			return fmt.Errorf("DeleteTable Failed: (Validater 3) Delete Regional Replica from %s Table %s Error, %s", region.Key(), tableName, err.Error())
+		}
+
+		ddbObj = d
+	}
+
+	// prepare
+	input := &ddb.DeleteTableInput{
+		TableName: aws.String(tableName),
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := ddbObj.DeleteTable(input, ctx); err != nil {
+		return fmt.Errorf("DeleteTable Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("DeleteTable Failed: (Exec 2) %s", "Output Response is Nil")
+		} else {
+			return nil
+		}
+	}
+}
+
+// ListTables will return list of all dynamodb table names
+func (c *Crud) ListTables() ([]string, error) {
+	outputData := new([]string)
+
+	if err := c.listTablesInternal(nil, outputData); err != nil {
+		return []string{}, err
+	} else {
+		return *outputData, nil
+	}
+}
+
+func (c *Crud) listTablesInternal(exclusiveStartTableName *string, outputData *[]string) error {
+	// validate
+	if c._ddb == nil {
+		return fmt.Errorf("listTablesInternal Failed: (Validater 1) Connection Not Established")
+	}
+
+	// prepare
+	input := &ddb.ListTablesInput{
+		ExclusiveStartTableName: exclusiveStartTableName,
+		Limit:                   aws.Int64(100),
+	}
+
+	if outputData == nil {
+		outputData = new([]string)
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.ListTables(input, ctx); err != nil {
+		return fmt.Errorf("listTablesInternal Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("listTablesInternal Failed: (Exec 2) %s", "Output Response is Nil")
+		}
+
+		for _, v := range output.TableNames {
+			*outputData = append(*outputData, aws.StringValue(v))
+		}
+
+		if util.LenTrim(aws.StringValue(output.LastEvaluatedTableName)) > 0 {
+			// more to query
+			if err := c.listTablesInternal(output.LastEvaluatedTableName, outputData); err != nil {
+				return err
+			} else {
+				return nil
+			}
+		} else {
+			// no more query
+			return nil
+		}
+	}
+}
+
+// DescribeTable will describe the dynamodb table info based on input parameter values
+func (c *Crud) DescribeTable(tableName string) (*ddb.TableDescription, error) {
+	// validate
+	if c._ddb == nil {
+		return nil, fmt.Errorf("DescribeTable Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(tableName) == 0 {
+		return nil, fmt.Errorf("DescribeTable Failed: (Validater 2) Table Name is Required")
+	}
+
+	// prepare
+	input := &ddb.DescribeTableInput{
+		TableName: aws.String(tableName),
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.DescribeTable(input, ctx); err != nil {
+		return nil, fmt.Errorf("DescribeTable Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return nil, fmt.Errorf("DescribeTable Failed: (Exec 2) %s", "Output Response is Nil")
+		} else {
+			if output.Table == nil {
+				return nil, fmt.Errorf("DescribeTable Failed: (Exec 3) %s", "Table Description From Output is Nil")
+			} else {
+				return output.Table, nil
+			}
+		}
+	}
+}
+
+// supportGlobalTable checks if input parameter supports dynamodb global table
+func (c *Crud) supportGlobalTable(region awsregion.AWSRegion) bool {
+	if !region.Valid() && region != awsregion.UNKNOWN {
+		return false
+	}
+
+	if len(cachedGlobalTableSupportedRegions) == 0 {
+		cachedGlobalTableSupportedRegions = []string{
+			awsregion.AWS_us_east_1_nvirginia.Key(),
+			awsregion.AWS_us_west_2_oregon.Key(),
+			awsregion.AWS_ap_southeast_1_singapore.Key(),
+			awsregion.AWS_ap_northeast_1_tokyo.Key(),
+			awsregion.AWS_ap_southeast_2_sydney.Key(),
+			awsregion.AWS_eu_central_1_frankfurt.Key(),
+			awsregion.AWS_eu_west_2_london.Key(),
+		}
+	}
+
+	return util.StringSliceContains(&cachedGlobalTableSupportedRegions, region.Key())
+}
+
+// CreateGlobalTable will create a new dynamodb global table based on input parameter values，
+// this function first creates the primary table in the current default region,
+// then this function creates the same table on replicaRegions identified.
+//
+// billing = default to PAY_PER_REQUEST (onDemand)
+// stream = enabled, with old and new images
+//
+// global table supported regions:
+//		us-east-1 (nvirginia), us-east-2 (ohio), us-west-1 (california), us-west-2 (oregon)
+//		eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
+//		ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
+//
+// warning: do not first create the original table, this function creates the primary automatically
+func (c *Crud) CreateGlobalTable(tableName string,
+	sse *ddb.SSESpecification,
+	lsi []*ddb.LocalSecondaryIndex,
+	gsi []*ddb.GlobalSecondaryIndex,
+	attributes []*ddb.AttributeDefinition,
+	replicaRegions []awsregion.AWSRegion) error {
+
+	// validate
+	if c._ddb == nil {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(tableName) == 0 {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 2) Global Table Name is Required")
+	}
+
+	if !c.supportGlobalTable(c._ddb.AwsRegion) {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 3-1) Region %s Not Support Global Table", c._ddb.AwsRegion.Key())
+	}
+
+	for _, r := range replicaRegions {
+		if r.Valid() && r != awsregion.UNKNOWN && !c.supportGlobalTable(r) {
+			return fmt.Errorf("CreateGlobalTable Failed: (Validater 3-2) Region %s Not Support Global Table", r.Key())
+		}
+	}
+
+	if sse != nil {
+		if aws.BoolValue(sse.Enabled) {
+			if sse.SSEType == nil {
+				sse.SSEType = aws.String("KMS")
+			}
+		}
+	}
+
+	if replicaRegions == nil {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 4) Regions List is Required")
+	}
+
+	if len(replicaRegions) == 0 {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 5) Regions List is Required")
+	}
+
+	// prepare
+	input := &ddb.CreateGlobalTableInput{
+		GlobalTableName: aws.String(tableName),
+	}
+
+	replicas := []*ddb.Replica{
+		{
+			RegionName: aws.String(c._ddb.AwsRegion.Key()),
+		},
+	}
+
+	for _, v := range replicaRegions {
+		if v.Valid() && v != awsregion.UNKNOWN {
+			replicas = append(replicas, &ddb.Replica{
+				RegionName: aws.String(v.Key()),
+			})
+		}
+	}
+
+	if len(replicas) == 0 {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 6) Replicas' Region List is Required")
+	}
+
+	input.ReplicationGroup = replicas
+
+	// *
+	// * create replica region tables before creating global table
+	// *
+	if err := c.CreateTable(tableName, true, 0, 0, sse, true, lsi, gsi, attributes); err != nil {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 7) Create Regional Primary Table Error, " + err.Error())
+	}
+
+	for _, r := range replicaRegions {
+		if r.Valid() && r != awsregion.UNKNOWN && c._ddb.AwsRegion.Key() != r.Key() {
+			d := &DynamoDB{
+				AwsRegion:   r,
+				TableName:   tableName,
+				PKName:      "PK",
+				SKName:      "SK",
+				HttpOptions: c._ddb.HttpOptions,
+				SkipDax:     true,
+				DaxEndpoint: "",
+			}
+
+			if err := d.connectInternal(); err != nil {
+				return fmt.Errorf("CreateGlobalTable Failed: (Validater 8) Create Regional Replica to %s Table %s Error, %s", r.Key(), tableName, err.Error())
+			}
+
+			if err := c.CreateTable(tableName, true, 0, 0, sse, true, lsi, gsi, attributes, d); err != nil {
+				return fmt.Errorf("CreateGlobalTable Failed: (Validater 9) Create Regional Replica to %s to Table %s Error, %s", r.Key(), tableName, err.Error())
+			}
+		}
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.CreateGlobalTable(input, ctx); err != nil {
+		return fmt.Errorf("CreateGlobalTable Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("CreateGlobalTable Failed: (Exec 2) %s", "Output Response is Nil")
+		} else {
+			return nil
+		}
+	}
+}
+
+// UpdateGlobalTable creates or deletes global table replicas
+//
+// if update is to create new global table regional replicas, the regional tables will auto create based on given table name,
+// then associate to global table
+//
+// if update is to delete existing global table regional replicas, the regional table will be removed from global replication, and actual table deleted
+//
+// global table supported regions:
+//		us-east-1 (nvirginia), us-east-2 (ohio), us-west-1 (california), us-west-2 (oregon)
+//		eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
+//		ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
+//
+// warning: do not first create the new replica table when adding to global table, this function creates all the new replica tables automatically
+func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWSRegion, deleteRegions []awsregion.AWSRegion) error {
+	// validate
+	if c._ddb == nil {
+		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(tableName) == 0 {
+		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 2) Global Table Name is Required")
+	}
+
+	if createRegions == nil && deleteRegions == nil {
+		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 3) Either Create Regions or Delete Regions List is Required")
+	}
+
+	if len(createRegions) == 0 && len(deleteRegions) == 0 {
+		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 4) Either Create Regions or Delete Regions List is Required")
+	}
+
+	if createRegions != nil && len(createRegions) > 0 {
+		for _, r := range createRegions {
+			if r.Valid() && r != awsregion.UNKNOWN && !c.supportGlobalTable(r) {
+				return fmt.Errorf("UpdateGlobalTable Failed: (Validater 5) Region %s Not Support Global Table", r.Key())
+			}
+		}
+	}
+
+	// *
+	// * create new regions
+	// *
+	if createRegions != nil && len(createRegions) > 0 {
+		// load current region table description
+		tblDesc, err := c.DescribeTable(tableName)
+
+		if err != nil {
+			return fmt.Errorf("UpdateGlobalTable Failed: (Validater 6) Describe Current Region %s Table %s Failed, %s", c._ddb.AwsRegion.Key(), tableName, err.Error())
+		}
+
+		if tblDesc == nil {
+			return fmt.Errorf("UpdateGlobalTable Failed: (Validater 7) Describe Current Region %s Table %s Failed, %s", c._ddb.AwsRegion.Key(), tableName, "Received Table Description is Nil")
+		}
+
+		// create new tables in target regions based on tblDesc
+		var sse *ddb.SSESpecification
+
+		if tblDesc.SSEDescription != nil {
+			if aws.StringValue(tblDesc.SSEDescription.Status) == "ENABLED" {
+				sse = new(ddb.SSESpecification)
+				sse.Enabled = aws.Bool(true)
+
+				sse.SSEType = tblDesc.SSEDescription.SSEType
+				sse.KMSMasterKeyId = tblDesc.SSEDescription.KMSMasterKeyArn
+			}
+		}
+
+		var lsi []*ddb.LocalSecondaryIndex
+
+		if tblDesc.LocalSecondaryIndexes != nil && len(tblDesc.LocalSecondaryIndexes) > 0 {
+			for _, v := range tblDesc.LocalSecondaryIndexes {
+				if v != nil {
+					lsi = append(lsi, &ddb.LocalSecondaryIndex{
+						IndexName:  v.IndexName,
+						KeySchema:  v.KeySchema,
+						Projection: v.Projection,
+					})
+				}
+			}
+		}
+
+		var gsi []*ddb.GlobalSecondaryIndex
+
+		if tblDesc.GlobalSecondaryIndexes != nil && len(tblDesc.GlobalSecondaryIndexes) > 0 {
+			for _, v := range tblDesc.GlobalSecondaryIndexes {
+				if v != nil {
+					gsi = append(gsi, &ddb.GlobalSecondaryIndex{
+						IndexName:  v.IndexName,
+						KeySchema:  v.KeySchema,
+						Projection: v.Projection,
+					})
+				}
+			}
+		}
+
+		var attributes []*ddb.AttributeDefinition
+
+		if tblDesc.AttributeDefinitions != nil && len(tblDesc.AttributeDefinitions) > 0 {
+			for _, v := range tblDesc.AttributeDefinitions {
+				if v != nil && strings.ToUpper(aws.StringValue(v.AttributeName)) != "PK" && strings.ToUpper(aws.StringValue(v.AttributeName)) != "SK" {
+					attributes = append(attributes, &ddb.AttributeDefinition{
+						AttributeName: v.AttributeName,
+						AttributeType: v.AttributeType,
+					})
+				}
+			}
+		}
+
+		for _, r := range createRegions {
+			if r.Valid() && r != awsregion.UNKNOWN && c._ddb.AwsRegion.Key() != r.Key() {
+				d := &DynamoDB{
+					AwsRegion:   r,
+					TableName:   tableName,
+					PKName:      "PK",
+					SKName:      "SK",
+					HttpOptions: c._ddb.HttpOptions,
+					SkipDax:     true,
+					DaxEndpoint: "",
+				}
+
+				if err := d.connectInternal(); err != nil {
+					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 8) Create Regional Replica to %s Table %s Error, %s", r.Key(), tableName, err.Error())
+				}
+
+				if err := c.CreateTable(tableName, true, 0, 0, sse, true, lsi, gsi, attributes, d); err != nil {
+					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 9) Create Regional Replica to %s to Table %s Error, %s", r.Key(), tableName, err.Error())
+				}
+			}
+		}
+	}
+
+	// *
+	// * construct replicaUpdates slice
+	// *
+	updates := []*ddb.ReplicaUpdate{}
+
+	if createRegions != nil && len(createRegions) > 0 {
+		for _, r := range createRegions {
+			if r.Valid() && r != awsregion.UNKNOWN {
+				updates = append(updates, &ddb.ReplicaUpdate{
+					Create: &ddb.CreateReplicaAction{
+						RegionName: aws.String(r.Key()),
+					},
+				})
+			}
+		}
+	}
+
+	if deleteRegions != nil && len(deleteRegions) > 0 {
+		for _, r := range deleteRegions {
+			if r.Valid() && r != awsregion.UNKNOWN {
+				updates = append(updates, &ddb.ReplicaUpdate{
+					Delete: &ddb.DeleteReplicaAction{
+						RegionName: aws.String(r.Key()),
+					},
+				})
+			}
+		}
+	}
+
+	// prepare
+	input := &ddb.UpdateGlobalTableInput{
+		GlobalTableName: aws.String(tableName),
+		ReplicaUpdates:  updates,
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.UpdateGlobalTable(input, ctx); err != nil {
+		return fmt.Errorf("UpdateGlobalTable Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("UpdateGlobalTable Failed: (Exec 2) %s", "Output Response is Nil")
+		} else {
+			// *
+			// * if there are replica deletes, delete source tables here
+			// *
+			m := ""
+
+			if deleteRegions != nil && len(deleteRegions) > 0 {
+				for _, r := range deleteRegions {
+					if r.Valid() && r != awsregion.UNKNOWN {
+						if err := c.DeleteTable(tableName, r); err != nil {
+							if util.LenTrim(m) > 0 {
+								m += "; "
+							}
+
+							m += fmt.Sprintf("Delete Regional Replica Table %s From %s Failed (%s)", tableName, r.Key(), err.Error())
+						}
+					}
+				}
+			}
+
+			if util.LenTrim(m) > 0 {
+				m = "UpdateGlobalTable Needs Clean Up;" + m + "; Clean Up By Manual Delete From AWS DynamoDB Console"
+				return fmt.Errorf(m)
+			} else {
+				return nil
+			}
+		}
+	}
+}
+
+// ListGlobalTables will return list of all dynamodb global table names
+//
+// global table supported regions:
+//		us-east-1 (nvirginia), us-east-2 (ohio), us-west-1 (california), us-west-2 (oregon)
+//		eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
+//		ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
+func (c *Crud) ListGlobalTables(filterRegion ...awsregion.AWSRegion) ([]*GlobalTableInfo, error) {
+	outputData := new([]*GlobalTableInfo)
+
+	region := awsregion.UNKNOWN
+
+	if len(filterRegion) > 0 {
+		region = filterRegion[0]
+	}
+
+	if region.Valid() && region != awsregion.UNKNOWN {
+		if !c.supportGlobalTable(region) {
+			return []*GlobalTableInfo{}, fmt.Errorf("ListGlobalTables Failed: (Validater 1) Region %s Not Support Global Table", region.Key())
+		}
+	}
+
+	if err := c.listGlobalTablesInternal(region, nil, outputData); err != nil {
+		return []*GlobalTableInfo{}, err
+	} else {
+		return *outputData, nil
+	}
+}
+
+func (c *Crud) listGlobalTablesInternal(filterRegion awsregion.AWSRegion, exclusiveStartGlobalTableName *string, outputData *[]*GlobalTableInfo) error {
+	// validate
+	if c._ddb == nil {
+		return fmt.Errorf("listGlobalTablesInternal Failed: (Validater 1) Connection Not Established")
+	}
+
+	if outputData == nil {
+		outputData = new([]*GlobalTableInfo)
+	}
+
+	// prepare
+	input := &ddb.ListGlobalTablesInput{
+		ExclusiveStartGlobalTableName: exclusiveStartGlobalTableName,
+		Limit:                         aws.Int64(100),
+	}
+
+	if filterRegion.Valid() && filterRegion != awsregion.UNKNOWN {
+		input.RegionName = aws.String(filterRegion.Key())
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.ListGlobalTables(input, ctx); err != nil {
+		return fmt.Errorf("listGlobalTablesInternal Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("listGlobalTablesInternal Failed: (Exec 2) %s", "Output Response is Nil")
+		}
+
+		for _, v := range output.GlobalTables {
+			if v != nil {
+				g := &GlobalTableInfo{TableName: aws.StringValue(v.GlobalTableName)}
+
+				for _, r := range v.ReplicationGroup {
+					if r != nil && r.RegionName != nil {
+						if rv := awsregion.GetAwsRegion(aws.StringValue(r.RegionName)); rv.Valid() && rv != awsregion.UNKNOWN {
+							g.Regions = append(g.Regions, rv)
+						}
+					}
+				}
+
+				*outputData = append(*outputData, g)
+			}
+		}
+
+		if util.LenTrim(aws.StringValue(output.LastEvaluatedGlobalTableName)) > 0 {
+			// more to query
+			if err := c.listGlobalTablesInternal(filterRegion, output.LastEvaluatedGlobalTableName, outputData); err != nil {
+				return err
+			} else {
+				return nil
+			}
+		} else {
+			// no more query
+			return nil
+		}
+	}
+}
+
+// DescribeGlobalTable will describe the dynamodb global table info based on input parameter values
+func (c *Crud) DescribeGlobalTable(tableName string) (*ddb.GlobalTableDescription, error) {
+	// validate
+	if c._ddb == nil {
+		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(tableName) == 0 {
+		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Validater 2) Global Table Name is Required")
+	}
+
+	// prepare
+	input := &ddb.DescribeGlobalTableInput{
+		GlobalTableName: aws.String(tableName),
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.DescribeGlobalTable(input, ctx); err != nil {
+		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return nil, fmt.Errorf("DescribeGlobalTable Failed: (Exec 2) %s", "Output Response is Nil")
+		} else {
+			if output.GlobalTableDescription == nil {
+				return nil, fmt.Errorf("DescribeGlobalTable Failed: (Exec 3) %s", "Global Table Description From Output is Nil")
+			} else {
+				return output.GlobalTableDescription, nil
+			}
+		}
+	}
+}
+
+// CreateBackup creates dynamodb backup based on the given input parameter
+func (c *Crud) CreateBackup(tableName string, backupName string) (backupArn string, err error) {
+	// validate
+	if c._ddb == nil {
+		return "", fmt.Errorf("CreateBackup Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(tableName) == 0 {
+		return "", fmt.Errorf("CreateBackup Failed: (Validater 3) Table Name is Required")
+	}
+
+	if util.LenTrim(backupName) == 0 {
+		return "", fmt.Errorf("CreateBackup Failed: (Validater 3) Backup Name is Required")
+	}
+
+	// prepare
+	input := &ddb.CreateBackupInput{
+		TableName:  aws.String(tableName),
+		BackupName: aws.String(backupName),
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.CreateBackup(input, ctx); err != nil {
+		return "", fmt.Errorf("CreateBackup Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return "", fmt.Errorf("CreateBackup Failed: (Exec 2) %s", "Output Response is Nil")
+		} else if output.BackupDetails == nil {
+			return "", fmt.Errorf("CreateBackup Failed: (Exec 3) %s", "Backup Details in Output Response is Nil")
+		} else {
+			return aws.StringValue(output.BackupDetails.BackupArn), nil
+		}
+	}
+}
+
+// DeleteBackup deletes dynamodb backup based on the given input parameter
+func (c *Crud) DeleteBackup(backupArn string) error {
+	// validate
+	if c._ddb == nil {
+		return fmt.Errorf("DeleteBackup Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(backupArn) == 0 {
+		return fmt.Errorf("DeleteBackup Failed: (Validater 2) BackupArn is Required")
+	}
+
+	// prepare
+	input := &ddb.DeleteBackupInput{
+		BackupArn: aws.String(backupArn),
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.DeleteBackup(input, ctx); err != nil {
+		return fmt.Errorf("DeleteBackup Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("DeleteBackup Failed: (Exec 2) %s", "Output Response is Nil")
+		} else {
+			return nil
+		}
+	}
+}
+
+// ListBackups lists dynamodb backups based on the given input parameter
+func (c *Crud) ListBackups(tableNameFilter string, fromTime *time.Time, toTime *time.Time) ([]*ddb.BackupSummary, error) {
+	outputData := new([]*ddb.BackupSummary)
+
+	var tableName *string
+
+	if util.LenTrim(tableNameFilter) > 0 {
+		tableName = aws.String(tableNameFilter)
+	}
+
+	if err := c.listBackupsInternal(tableName, fromTime, toTime, nil, outputData); err != nil {
+		return []*ddb.BackupSummary{}, err
+	} else {
+		return *outputData, nil
+	}
+}
+
+// listBackupsInternal handles dynamodb backups listing internal logic
+func (c *Crud) listBackupsInternal(tableNameFilter *string, fromTime *time.Time, toTime *time.Time,
+	exclusiveStartBackupArn *string, outputData *[]*ddb.BackupSummary) error {
+
+	// validate
+	if c._ddb == nil {
+		return fmt.Errorf("listBackupsInternal Failed: (Validater 1) Connection Not Established")
+	}
+
+	// prepare
+	input := &ddb.ListBackupsInput{
+		BackupType:              aws.String("ALL"),
+		Limit:                   aws.Int64(1),
+		TableName:               tableNameFilter,
+		TimeRangeLowerBound:     fromTime,
+		TimeRangeUpperBound:     toTime,
+		ExclusiveStartBackupArn: exclusiveStartBackupArn,
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.ListBackups(input, ctx); err != nil {
+		return fmt.Errorf("listBackupsInternal Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("listBackupsInternal Failed: (Exec 2) %s", "Output Response is Nil")
+		}
+
+		for _, v := range output.BackupSummaries {
+			if v != nil {
+				*outputData = append(*outputData, v)
+			}
+		}
+
+		if util.LenTrim(aws.StringValue(output.LastEvaluatedBackupArn)) > 0 {
+			// more to query
+			if err := c.listBackupsInternal(tableNameFilter, fromTime, toTime, output.LastEvaluatedBackupArn, outputData); err != nil {
+				return err
+			} else {
+				return nil
+			}
+		} else {
+			// no more query
+			return nil
+		}
+	}
+}
+
+// DescribeBackup describes a given dynamodb backup info
+func (c *Crud) DescribeBackup(backupArn string) (*ddb.BackupDescription, error) {
+	// validate
+	if c._ddb == nil {
+		return nil, fmt.Errorf("DescribeBackup Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(backupArn) == 0 {
+		return nil, fmt.Errorf("DescribeBackup Failed: (Validater 2) BackupArn is Required")
+	}
+
+	// prepare
+	input := &ddb.DescribeBackupInput{
+		BackupArn: aws.String(backupArn),
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.DescribeBackup(input, ctx); err != nil {
+		return nil, fmt.Errorf("DescribeBackup Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return nil, fmt.Errorf("DescribeBackup Failed: (Exec 2) %s", "Output Response is Nil")
+		} else {
+			if output.BackupDescription == nil {
+				return nil, fmt.Errorf("DescribeBackup Failed: (Exec 3) %s", "Backup Description From Output is Nil")
+			} else {
+				return output.BackupDescription, nil
+			}
+		}
+	}
+}
+
+// UpdatePointInTimeBackup updates dynamodb continuous backup options (point in time recovery) based on the given input parameter
+func (c *Crud) UpdatePointInTimeBackup(tableName string, pointInTimeRecoveryEnabled bool) error {
+	// validate
+	if c._ddb == nil {
+		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Validater 1) Connection Not Established")
+	}
+
+	if util.LenTrim(tableName) == 0 {
+		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Validater 2) Table Name is Required")
+	}
+
+	// prepare
+	input := &ddb.UpdateContinuousBackupsInput{
+		TableName: aws.String(tableName),
+		PointInTimeRecoverySpecification: &ddb.PointInTimeRecoverySpecification{
+			PointInTimeRecoveryEnabled: aws.Bool(pointInTimeRecoveryEnabled),
+		},
+	}
+
+	// execute
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if output, err := c._ddb.UpdatePointInTimeBackup(input, ctx); err != nil {
+		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return fmt.Errorf("UpdatePointInTimeBackup Failed: (Exec 2) %s", "Output Response is Nil")
+		} else if output.ContinuousBackupsDescription == nil {
+			return fmt.Errorf("UpdatePointInTimeBackup Failed: (Exec 3) %s", "Continuous Backup Description in Output Response is Nil")
+		} else {
+			return nil
+		}
 	}
 }

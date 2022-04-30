@@ -5268,3 +5268,241 @@ func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
 		return successCount, nil
 	}
 }
+
+// CreateTable creates a new dynamodb table to the default aws region (as configured by aws cli)
+func (d *DynamoDB) CreateTable(input *dynamodb.CreateTableInput, ctx ...aws.Context) (*dynamodb.CreateTableOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB CreateTable Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB CreateTable Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.CreateTable(input)
+	} else {
+		return d.cn.CreateTableWithContext(ctx[0], input)
+	}
+}
+
+// UpdateTable updates an existing dynamodb table with provided input parameter
+func (d *DynamoDB) UpdateTable(input *dynamodb.UpdateTableInput, ctx ...aws.Context) (*dynamodb.UpdateTableOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB UpdateTable Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB UpdateTable Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.UpdateTable(input)
+	} else {
+		return d.cn.UpdateTableWithContext(ctx[0], input)
+	}
+}
+
+// DeleteTable deletes an existing dynamodb table
+func (d *DynamoDB) DeleteTable(input *dynamodb.DeleteTableInput, ctx ...aws.Context) (*dynamodb.DeleteTableOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB DeleteTable Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB DeleteTable Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.DeleteTable(input)
+	} else {
+		return d.cn.DeleteTableWithContext(ctx[0], input)
+	}
+}
+
+// ListTables queries dynamodb tables list and returns found tables info
+func (d *DynamoDB) ListTables(input *dynamodb.ListTablesInput, ctx ...aws.Context) (*dynamodb.ListTablesOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB ListTables Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB ListTable Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.ListTables(input)
+	} else {
+		return d.cn.ListTablesWithContext(ctx[0], input)
+	}
+}
+
+// DescribeTable describes the dynamodb table info for target identified in input parameter
+func (d *DynamoDB) DescribeTable(input *dynamodb.DescribeTableInput, ctx ...aws.Context) (*dynamodb.DescribeTableOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB DescribeTable Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB DescribeTable Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.DescribeTable(input)
+	} else {
+		return d.cn.DescribeTableWithContext(ctx[0], input)
+	}
+}
+
+// CreateGlobalTable creates a dynamodb global table
+func (d *DynamoDB) CreateGlobalTable(input *dynamodb.CreateGlobalTableInput, ctx ...aws.Context) (*dynamodb.CreateGlobalTableOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB CreateGlobalTable Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB CreateGlobalTable Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.CreateGlobalTable(input)
+	} else {
+		return d.cn.CreateGlobalTableWithContext(ctx[0], input)
+	}
+}
+
+// UpdateGlobalTable updates a dynamodb global table
+func (d *DynamoDB) UpdateGlobalTable(input *dynamodb.UpdateGlobalTableInput, ctx ...aws.Context) (*dynamodb.UpdateGlobalTableOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB UpdateGlobalTable Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB UpdateGlobalTable Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.UpdateGlobalTable(input)
+	} else {
+		return d.cn.UpdateGlobalTableWithContext(ctx[0], input)
+	}
+}
+
+// ListGlobalTables lists dynamodb global tables
+func (d *DynamoDB) ListGlobalTables(input *dynamodb.ListGlobalTablesInput, ctx ...aws.Context) (*dynamodb.ListGlobalTablesOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB ListGlobalTables Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB ListGlobalTables Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.ListGlobalTables(input)
+	} else {
+		return d.cn.ListGlobalTablesWithContext(ctx[0], input)
+	}
+}
+
+// DescribeGlobalTable describes dynamodb global table
+func (d *DynamoDB) DescribeGlobalTable(input *dynamodb.DescribeGlobalTableInput, ctx ...aws.Context) (*dynamodb.DescribeGlobalTableOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB DescribeGlobalTable Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB DescribeGlobalTable Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.DescribeGlobalTable(input)
+	} else {
+		return d.cn.DescribeGlobalTableWithContext(ctx[0], input)
+	}
+}
+
+// CreateBackup creates dynamodb table backup
+func (d *DynamoDB) CreateBackup(input *dynamodb.CreateBackupInput, ctx ...aws.Context) (*dynamodb.CreateBackupOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB CreateBackup Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB CreateBackup Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.CreateBackup(input)
+	} else {
+		return d.cn.CreateBackupWithContext(ctx[0], input)
+	}
+}
+
+// DeleteBackup deletes an existing dynamodb table backup
+func (d *DynamoDB) DeleteBackup(input *dynamodb.DeleteBackupInput, ctx ...aws.Context) (*dynamodb.DeleteBackupOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB DeleteBackup Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB DeleteBackup Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.DeleteBackup(input)
+	} else {
+		return d.cn.DeleteBackupWithContext(ctx[0], input)
+	}
+}
+
+// ListBackups lists dynamodb table backup
+func (d *DynamoDB) ListBackups(input *dynamodb.ListBackupsInput, ctx ...aws.Context) (*dynamodb.ListBackupsOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB ListBackups Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB ListBackups Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.ListBackups(input)
+	} else {
+		return d.cn.ListBackupsWithContext(ctx[0], input)
+	}
+}
+
+// DescribeBackup describes dynamodb table backup
+func (d *DynamoDB) DescribeBackup(input *dynamodb.DescribeBackupInput, ctx ...aws.Context) (*dynamodb.DescribeBackupOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB DescribeBackup Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB DescribeBackup Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.DescribeBackup(input)
+	} else {
+		return d.cn.DescribeBackupWithContext(ctx[0], input)
+	}
+}
+
+// UpdatePointInTimeBackup updates dynamodb table point in time backup option
+func (d *DynamoDB) UpdatePointInTimeBackup(input *dynamodb.UpdateContinuousBackupsInput, ctx ...aws.Context) (*dynamodb.UpdateContinuousBackupsOutput, error) {
+	if d.cn == nil {
+		return nil, fmt.Errorf("DynamoDB UpdatePointInTimeBackup Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("DynamoDB UpdatePointInTimeBackup Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.UpdateContinuousBackups(input)
+	} else {
+		return d.cn.UpdateContinuousBackupsWithContext(ctx[0], input)
+	}
+}

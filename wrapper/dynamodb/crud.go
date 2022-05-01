@@ -1487,7 +1487,7 @@ func (c *Crud) listBackupsInternal(tableNameFilter *string, fromTime *time.Time,
 	// prepare
 	input := &ddb.ListBackupsInput{
 		BackupType:              aws.String("ALL"),
-		Limit:                   aws.Int64(1),
+		Limit:                   aws.Int64(25),
 		TableName:               tableNameFilter,
 		TimeRangeLowerBound:     fromTime,
 		TimeRangeUpperBound:     toTime,

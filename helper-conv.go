@@ -122,9 +122,9 @@ func Atob(s string) bool {
 	case "f":
 		b = false
 	case "n":
-		b=false
+		b = false
 	case "0":
-		b=false
+		b = false
 	}
 
 	return b
@@ -220,7 +220,16 @@ func StrToUint64(s string) uint64 {
 	if v, e := strconv.ParseUint(s, 10, 64); e != nil {
 		return 0
 	} else {
-		return uint64(v)
+		return v
+	}
+}
+
+// StrToInt64 converts from string to int64, if string is not a valid int64, 0 is returned.
+func StrToInt64(s string) int64 {
+	if v, e := strconv.ParseInt(s, 10, 64); e != nil {
+		return 0
+	} else {
+		return v
 	}
 }
 
@@ -285,7 +294,7 @@ func Float64ToInt(f float64) int {
 
 // CentsToFloat64 converts int (cents) into float64 value with two decimal value.
 func CentsToFloat64(i int) float64 {
-	f, _ := ParseFloat64(fmt.Sprintf("%.2f", float64(i) * 0.01))
+	f, _ := ParseFloat64(fmt.Sprintf("%.2f", float64(i)*0.01))
 	return f
 }
 
@@ -449,11 +458,9 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 func IntToHex(i int) string {
 	buf := StringToHex(Itoa(i))
 
-	if len(buf) % 2 != 0 {
+	if len(buf)%2 != 0 {
 		buf = "0" + buf
 	}
 
 	return buf
 }
-
-

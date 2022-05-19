@@ -50,8 +50,9 @@ type QueryExpression struct {
 	UseSK           bool
 	SKName          string
 	SKIsNumber      bool
-	SKCompareSymbol string // = <= >= < > (not equal is not allowed)
+	SKCompareSymbol string // valid symbols: = <= >= < > BETWEEN begins_with (note = not equal symbol is not allowed)
 	SKValue         string
+	SKValue2        string // used only if SKComparerSymbol is BETWEEN
 
 	IndexName string
 }
@@ -378,14 +379,37 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 		}
 
 		keyCondition += " AND " + keyExpression.SKName + keyExpression.SKCompareSymbol + ":" + keyExpression.SKName
+		var isBetween bool
+
+		switch strings.TrimSpace(strings.ToUpper(keyExpression.SKCompareSymbol)) {
+		case "BETWEEN":
+			keyCondition += fmt.Sprintf("%s BETWEEN %s AND %s", keyExpression.SKName, ":"+keyExpression.SKName, ":"+keyExpression.SKName+"2")
+			isBetween = true
+		case "BEGINS_WITH":
+			keyCondition += fmt.Sprintf("begins_with(%s, %s)", keyExpression.SKName, ":"+keyExpression.SKName)
+		default:
+			keyCondition += keyExpression.SKName + keyExpression.SKCompareSymbol + ":" + keyExpression.SKName
+		}
 
 		if !keyExpression.SKIsNumber {
 			keyValues[":"+keyExpression.SKName] = &ddb.AttributeValue{
 				S: aws.String(keyExpression.SKValue),
 			}
+
+			if isBetween {
+				keyValues[":"+keyExpression.SKName+"2"] = &ddb.AttributeValue{
+					S: aws.String(keyExpression.SKValue2),
+				}
+			}
 		} else {
 			keyValues[":"+keyExpression.SKName] = &ddb.AttributeValue{
 				N: aws.String(keyExpression.SKValue),
+			}
+
+			if isBetween {
+				keyValues[":"+keyExpression.SKName+"2"] = &ddb.AttributeValue{
+					N: aws.String(keyExpression.SKValue2),
+				}
 			}
 		}
 	}

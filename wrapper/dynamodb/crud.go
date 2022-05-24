@@ -378,7 +378,7 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 			keyExpression.SKCompareSymbol = "="
 		}
 
-		keyCondition += " AND " + keyExpression.SKName + keyExpression.SKCompareSymbol + ":" + keyExpression.SKName
+		keyCondition += " AND "
 		var isBetween bool
 
 		switch strings.TrimSpace(strings.ToUpper(keyExpression.SKCompareSymbol)) {

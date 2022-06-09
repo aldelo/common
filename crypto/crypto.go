@@ -79,7 +79,11 @@ func FnvHashDigit(data string, digitLimit int) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(data))
 
-	return int(h.Sum32() % 9 + 1)
+	if digitLimit < 2 {
+		digitLimit = 2
+	}
+
+	return int(h.Sum32()%uint32(digitLimit-1) + 1)
 }
 
 // ================================================================================================================

@@ -29,6 +29,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"strings"
 
@@ -67,6 +68,18 @@ func Generate32ByteRandomKey(passphrase string) (string, error) {
 	}
 
 	return util.ByteToHex(key), nil
+}
+
+// ================================================================================================================
+// FNV HELPERS
+// ================================================================================================================
+
+// FnvHashDigit returns persistent hash digit value, limited by the digit limit parameter
+func FnvHashDigit(data string, digitLimit int) int {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(data))
+
+	return int(h.Sum32() % 9 + 1)
 }
 
 // ================================================================================================================
@@ -845,7 +858,6 @@ func RsaPublicKeyVerify(data string, publicKeyHexOrPem string, signatureHex stri
 		// get public key from hex
 		publicKey, err = rsaPublicKeyFromHex(publicKeyHexOrPem)
 	}
-
 
 	if err != nil {
 		return err

@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -194,4 +195,10 @@ func ExponentialToNumber(exp string) string {
 	} else {
 		return exp
 	}
+}
+
+// RoundFloat64 converts float64 value to target precision
+func RoundFloat64(val float64, precision uint) float64 {
+	ratio := math.Pow(10, float64(precision))
+	return math.Round(val*ratio) / ratio
 }

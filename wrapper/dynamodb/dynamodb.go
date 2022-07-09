@@ -1760,6 +1760,9 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 // important
 //		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
+// warning
+//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
 // parameters:
 //		resultItemPtr = required, pointer to item object for return value to unmarshal into; if projected attributes less than struct fields, unmatched is defaulted
 //			a) MUST BE STRUCT OBJECT; NEVER A SLICE
@@ -1768,7 +1771,8 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 //		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
 //		consistentRead = optional, scan uses consistent read or eventual consistent read, default is eventual consistent read
 //		projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
-//						      attribute names must match struct field name or struct tag's json / dynamodbav tag values
+//						      attribute names must match struct field name or struct tag's json / dynamodbav tag values,
+//							  if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 //
 // notes:
 //		item struct tags
@@ -2076,6 +2080,9 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 }
 
 // GetItemWithRetry handles dynamodb retries in case action temporarily fails
+//
+// warning
+//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 	resultItemPtr interface{}, pkValue string, skValue string,
 	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) *DynamoDBError {
@@ -2145,6 +2152,9 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 //
 // important
 //		if dynamodb table is defined as PK and SK together, then to search without GSI/LSI, MUST use PK and SK together or error will trigger
+//
+// warning
+//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 //
 // parameters:
 //		resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
@@ -2639,6 +2649,9 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 }
 
 // QueryItemsWithRetry handles dynamodb retries in case action temporarily fails
+//
+// warning
+//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
 	resultItemsPtr interface{},
 	timeOutDuration *time.Duration,
@@ -2866,6 +2879,9 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 
 // ScanItems will scan dynamodb items in given table, project results, using filter expression
 // >>> DO NOT USE SCAN IF POSSIBLE - SCAN IS NOT EFFICIENT ON RCU <<<
+//
+// warning
+//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 //
 // parameters:
 //		resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
@@ -3214,6 +3230,9 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 }
 
 // ScanItemsWithRetry handles dynamodb retries in case action temporarily fails
+//
+// warning
+//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
 	resultItemsPtr interface{},
 	timeOutDuration *time.Duration,
@@ -3883,6 +3902,9 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 // important
 //		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
+// warning
+//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
 // parameters:
 //		resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
 //		searchKeys = required, slice of DynamoDBTableKeys struct objects to perform search against
@@ -4258,6 +4280,9 @@ func (d *DynamoDB) batchGetItemsNormal(resultItemsPtr interface{},
 }
 
 // BatchGetItemsWithRetry handles dynamodb retries in case action temporarily fails
+//
+// warning
+//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint,
 	resultItemsPtr interface{},
 	searchKeys []DynamoDBTableKeys,

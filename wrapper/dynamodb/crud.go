@@ -141,6 +141,8 @@ func (c *Crud) CreatePKValue(pkApp string, pkService string, pkScope string, pkI
 // Get retrieves data from dynamodb table with given pk and sk values,
 // resultDataPtr refers to pointer to struct of the target dynamodb table record
 //		result struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
+//
+// warning: projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
 func (c *Crud) Get(pkValue string, skValue string, resultDataPtr interface{}, consistentRead bool, projectedAttributes ...string) (err error) {
 	if c._ddb == nil {
 		return fmt.Errorf("Get From Data Store Failed: (Validater 1) Connection Not Established")
@@ -169,6 +171,8 @@ func (c *Crud) Get(pkValue string, skValue string, resultDataPtr interface{}, co
 
 // BatchGet executes get against up to 100 PK SK search keys,
 // results populated into resultDataSlicePtr (each slice element is struct of underlying dynamodb table record attributes definition)
+//
+// warning: projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
 func (c *Crud) BatchGet(searchKeys []PkSkValuePair, resultDataSlicePtr interface{}, consistentRead bool, projectedAttributes ...string) (found bool, err error) {
 	if c._ddb == nil {
 		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 1) Connection Not Established")

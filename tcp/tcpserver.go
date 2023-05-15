@@ -1,7 +1,7 @@
 package tcp
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,23 +42,23 @@ type TCPServer struct {
 	Port uint
 
 	ListenerAcceptHandler func(clientIP string)
-	ListenerErrorHandler func(err error)
+	ListenerErrorHandler  func(err error)
 
 	ClientReceiveHandler func(clientIP string, data []byte, writeToClientFunc func(writeData []byte, clientIP string) error)
-	ClientErrorHandler func(clientIP string, err error)
+	ClientErrorHandler   func(clientIP string, err error)
 
-	ReadBufferSize uint
+	ReadBufferSize        uint
 	ListenerYieldDuration time.Duration
-	ReaderYieldDuration time.Duration
+	ReaderYieldDuration   time.Duration
 
-	ReadDeadlineDuration time.Duration
+	ReadDeadlineDuration  time.Duration
 	WriteDeadLineDuration time.Duration
 
 	_tcpListener net.Listener
-	_serving bool
-	_clients map[string]net.Conn
-	_clientEnd map[string]chan bool
-	_mux sync.Mutex
+	_serving     bool
+	_clients     map[string]net.Conn
+	_clientEnd   map[string]chan bool
+	_mux         sync.Mutex
 }
 
 // Serve will startup TCP Server and begin accepting TCP Client connections, and initiates connection processing
@@ -137,7 +137,7 @@ func (s *TCPServer) Serve() (err error) {
 			}
 		}()
 
-		log.Println("TCP Server Addr: ", util.GetLocalIP() + ":" + util.UintToStr(s.Port))
+		log.Println("TCP Server Addr: ", util.GetLocalIP()+":"+util.UintToStr(s.Port))
 		return nil
 	}
 }
@@ -253,7 +253,7 @@ func (s *TCPServer) handleClientConnection(conn net.Conn) {
 	}
 
 	readDeadline := 1000 * time.Millisecond
-	if s.ReadDeadlineDuration > 250 * time.Millisecond && s.ReadDeadlineDuration <= 5000 * time.Millisecond {
+	if s.ReadDeadlineDuration > 250*time.Millisecond && s.ReadDeadlineDuration <= 5000*time.Millisecond {
 		readDeadline = s.ReadDeadlineDuration
 	}
 
@@ -333,7 +333,3 @@ func (s *TCPServer) handleClientConnection(conn net.Conn) {
 		time.Sleep(readYield)
 	}
 }
-
-
-
-

@@ -1,7 +1,7 @@
 package redis
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,38 +61,40 @@ import (
 // Redis defines wrapper struct to handle redis interactions with AWS ElasticCache Redis service (using go-redis package)
 //
 // IMPORTANT
-//		AWS ELASTICACHE REDIS lives within the VPC that the cluster is launched
-//		Access is allowed ONLY WITHIN EC2 in the same VPC
-//		There is no external public access since AWS Redis uses private IP only
+//
+//	AWS ELASTICACHE REDIS lives within the VPC that the cluster is launched
+//	Access is allowed ONLY WITHIN EC2 in the same VPC
+//	There is no external public access since AWS Redis uses private IP only
 //
 // Dev Testing
-//		Test On AWS EC2 (via SSH into EC2) since elastic cache redis is deployed within vpc access only
+//
+//	Test On AWS EC2 (via SSH into EC2) since elastic cache redis is deployed within vpc access only
 //
 // Reference Info
-//		1) Redis Commands Documentation = https://redis.io/commands
-//		2) Go-Redis Documentation = https://pkg.go.dev/github.com/go-redis/redis?tab=doc
+//  1. Redis Commands Documentation = https://redis.io/commands
+//  2. Go-Redis Documentation = https://pkg.go.dev/github.com/go-redis/redis?tab=doc
 type Redis struct {
 	// config fields
 	AwsRedisWriterEndpoint string
 	AwsRedisReaderEndpoint string
 
 	// client connection fields
-	cnWriter *redis.Client
-	cnReader *redis.Client
+	cnWriter   *redis.Client
+	cnReader   *redis.Client
 	cnAreReady bool
 
 	// objects containing wrapped functions
-	BIT *BIT
-	LIST *LIST
-	HASH *HASH
-	SET *SET
+	BIT        *BIT
+	LIST       *LIST
+	HASH       *HASH
+	SET        *SET
 	SORTED_SET *SORTED_SET
-	GEO *GEO
-	STREAM *STREAM
-	PUBSUB *PUBSUB
-	PIPELINE *PIPELINE
-	TTL *TTL
-	UTILS *UTILS
+	GEO        *GEO
+	STREAM     *STREAM
+	PUBSUB     *PUBSUB
+	PIPELINE   *PIPELINE
+	TTL        *TTL
+	UTILS      *UTILS
 
 	_parentSegment *xray.XRayParentSegment
 }
@@ -266,13 +268,13 @@ func (r *Redis) connectInternal() error {
 
 	// establish new writer redis client
 	r.cnWriter = redis.NewClient(&redis.Options{
-		Addr: r.AwsRedisWriterEndpoint,		// redis endpoint url and port
-		Password: "", 						// no password set
-		DB: 0, 								// use default DB
-		ReadTimeout: 3 * time.Second,		// time after read operation timeout
-		WriteTimeout: 3 * time.Second,		// time after write operation timeout
-		PoolSize: 10, 						// 10 connections per every cpu
-		MinIdleConns: 3, 					// minimum number of idle connections to keep
+		Addr:         r.AwsRedisWriterEndpoint, // redis endpoint url and port
+		Password:     "",                       // no password set
+		DB:           0,                        // use default DB
+		ReadTimeout:  3 * time.Second,          // time after read operation timeout
+		WriteTimeout: 3 * time.Second,          // time after write operation timeout
+		PoolSize:     10,                       // 10 connections per every cpu
+		MinIdleConns: 3,                        // minimum number of idle connections to keep
 	})
 
 	if r.cnWriter == nil {
@@ -281,13 +283,13 @@ func (r *Redis) connectInternal() error {
 
 	// establish new reader redis client
 	r.cnReader = redis.NewClient(&redis.Options{
-		Addr: r.AwsRedisReaderEndpoint,		// redis endpoint url and port
-		Password: "", 						// no password set
-		DB: 0, 								// use default DB
-		ReadTimeout: 3 * time.Second,		// time after read operation timeout
-		WriteTimeout: 3 * time.Second,		// time after write operation timeout
-		PoolSize: 10, 						// 10 connections per every cpu
-		MinIdleConns: 3, 					// minimum number of idle connections to keep
+		Addr:         r.AwsRedisReaderEndpoint, // redis endpoint url and port
+		Password:     "",                       // no password set
+		DB:           0,                        // use default DB
+		ReadTimeout:  3 * time.Second,          // time after read operation timeout
+		WriteTimeout: 3 * time.Second,          // time after write operation timeout
+		PoolSize:     10,                       // 10 connections per every cpu
+		MinIdleConns: 3,                        // minimum number of idle connections to keep
 	})
 
 	if r.cnReader == nil {
@@ -1301,8 +1303,9 @@ func (r *Redis) handleStringStructMapCmd(stringStructMapCmd *redis.StringStructM
 // SetBase is helper to set value into redis by key.
 //
 // notes
-//		setCondition = support for SetNX and SetXX
-func (r *Redis) SetBase(key string, val interface{}, setCondition redissetcondition.RedisSetCondition,  expires ...time.Duration) (err error) {
+//
+//	setCondition = support for SetNX and SetXX
+func (r *Redis) SetBase(key string, val interface{}, setCondition redissetcondition.RedisSetCondition, expires ...time.Duration) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Set", r._parentSegment)
 
@@ -1334,8 +1337,9 @@ func (r *Redis) SetBase(key string, val interface{}, setCondition redissetcondit
 // setBaseInternal is helper to set value into redis by key
 //
 // notes
-//		setCondition = support for SetNX and SetXX
-func (r *Redis) setBaseInternal(key string, val interface{}, setCondition redissetcondition.RedisSetCondition,  expires ...time.Duration) error {
+//
+//	setCondition = support for SetNX and SetXX
+func (r *Redis) setBaseInternal(key string, val interface{}, setCondition redissetcondition.RedisSetCondition, expires ...time.Duration) error {
 	// validate
 	if !r.cnAreReady {
 		return errors.New("Redis Set Failed: " + "Endpoint Connections Not Ready")
@@ -1730,7 +1734,8 @@ func (r *Redis) getSetInternal(key string, val string) (oldValue string, notFoun
 // optional parameter setIfNotExists indicates if instead MSetNX is to be used
 //
 // notes
-//		kvMap = map of key string, and interface{} value
+//
+//	kvMap = map of key string, and interface{} value
 func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-MSet", r._parentSegment)
@@ -1756,7 +1761,8 @@ func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err 
 // optional parameter setIfNotExists indicates if instead MSetNX is to be used
 //
 // notes
-//		kvMap = map of key string, and interface{} value
+//
+//	kvMap = map of key string, and interface{} value
 func (r *Redis) msetInternal(kvMap map[string]interface{}, setIfNotExists ...bool) error {
 	// validate
 	if kvMap == nil {
@@ -1841,10 +1847,10 @@ func (r *Redis) mgetInternal(key ...string) (results []interface{}, notFound boo
 // SetRange sets val into key's stored value in redis, offset by the offset number
 //
 // example:
-//		1) "Hello World"
-//		2) Offset 6 = W
-//		3) Val "Xyz" replaces string from Offset Position 6
-//		4) End Result String = "Hello Xyzld"
+//  1. "Hello World"
+//  2. Offset 6 = W
+//  3. Val "Xyz" replaces string from Offset Position 6
+//  4. End Result String = "Hello Xyzld"
 func (r *Redis) SetRange(key string, offset int64, val string) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SetRange", r._parentSegment)
@@ -1871,10 +1877,10 @@ func (r *Redis) SetRange(key string, offset int64, val string) (err error) {
 // setRangeInternal sets val into key's stored value in redis, offset by the offset number
 //
 // example:
-//		1) "Hello World"
-//		2) Offset 6 = W
-//		3) Val "Xyz" replaces string from Offset Position 6
-//		4) End Result String = "Hello Xyzld"
+//  1. "Hello World"
+//  2. Offset 6 = W
+//  3. Val "Xyz" replaces string from Offset Position 6
+//  4. End Result String = "Hello Xyzld"
 func (r *Redis) setRangeInternal(key string, offset int64, val string) error {
 	// validate
 	if len(key) <= 0 {
@@ -1907,7 +1913,7 @@ func (r *Redis) GetRange(key string, start int64, end int64) (val string, notFou
 		defer seg.Close()
 		defer func() {
 			_ = seg.Seg.AddMetadata("Redis-GetRange-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GetRange-Start-End", util.Int64ToString(start) + "-" + util.Int64ToString(end))
+			_ = seg.Seg.AddMetadata("Redis-GetRange-Start-End", util.Int64ToString(start)+"-"+util.Int64ToString(end))
 			_ = seg.Seg.AddMetadata("Redis-GetRange-Not-Found", notFound)
 			_ = seg.Seg.AddMetadata("Redis-GetRange-Value", val)
 
@@ -2038,7 +2044,7 @@ func (r *Redis) int64AddOrReduceInternal(key string, val int64, isReduce ...bool
 	}
 
 	// evaluate cmd result
-	return r.handleIntCmd(cmd, "Redis " + methodName + " Failed: ")
+	return r.handleIntCmd(cmd, "Redis "+methodName+" Failed: ")
 }
 
 // Float64AddOrReduce will add or reduce float64 value against a key in redis,
@@ -2297,7 +2303,7 @@ func (r *Redis) strLenInternal(key string) (length int64, notFound bool, err err
 	if !r.cnAreReady {
 		return 0, false, errors.New("Redis StrLen Failed: " + "Endpoint Connections Not Ready")
 	}
-	
+
 	cmd := r.cnReader.StrLen(r.cnReader.Context(), key)
 	return r.handleIntCmd(cmd, "Redis StrLen Failed: ")
 }
@@ -2596,14 +2602,16 @@ func (b *BIT) bitCountInternal(key string, offsetFrom int64, offsetTo int64) (va
 // See detail at https://redis.io/commands/bitfield
 //
 // Supported Sub Commands:
-//		GET <type> <offset> -- returns the specified bit field
-//		SET <type> <offset> <value> -- sets the specified bit field and returns its old value
-// 		INCRBY <type> <offset> <increment> -- increments or decrements (if negative) the specified bit field and returns the new value
+//
+//	GET <type> <offset> -- returns the specified bit field
+//	SET <type> <offset> <value> -- sets the specified bit field and returns its old value
+//	INCRBY <type> <offset> <increment> -- increments or decrements (if negative) the specified bit field and returns the new value
 //
 // Notes:
-//		i = if integer type, i can be preceeded to indicate signed integer, such as i5 = signed integer 5
-//		u = if integer type, u can be preceeded to indicate unsigned integer, such as u5 = unsigned integer 5
-//		# = if offset is preceeded with #, the specified offset is multiplied by the type width, such as #0 = 0, #1 = 8 when type if 8-bit byte
+//
+//	i = if integer type, i can be preceeded to indicate signed integer, such as i5 = signed integer 5
+//	u = if integer type, u can be preceeded to indicate unsigned integer, such as u5 = unsigned integer 5
+//	# = if offset is preceeded with #, the specified offset is multiplied by the type width, such as #0 = 0, #1 = 8 when type if 8-bit byte
 func (b *BIT) BitField(key string, args ...interface{}) (valBits []int64, err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-BitField", b.core._parentSegment)
@@ -2631,14 +2639,16 @@ func (b *BIT) BitField(key string, args ...interface{}) (valBits []int64, err er
 // See detail at https://redis.io/commands/bitfield
 //
 // Supported Sub Commands:
-//		GET <type> <offset> -- returns the specified bit field
-//		SET <type> <offset> <value> -- sets the specified bit field and returns its old value
-// 		INCRBY <type> <offset> <increment> -- increments or decrements (if negative) the specified bit field and returns the new value
+//
+//	GET <type> <offset> -- returns the specified bit field
+//	SET <type> <offset> <value> -- sets the specified bit field and returns its old value
+//	INCRBY <type> <offset> <increment> -- increments or decrements (if negative) the specified bit field and returns the new value
 //
 // Notes:
-//		i = if integer type, i can be preceeded to indicate signed integer, such as i5 = signed integer 5
-//		u = if integer type, u can be preceeded to indicate unsigned integer, such as u5 = unsigned integer 5
-//		# = if offset is preceeded with #, the specified offset is multiplied by the type width, such as #0 = 0, #1 = 8 when type if 8-bit byte
+//
+//	i = if integer type, i can be preceeded to indicate signed integer, such as i5 = signed integer 5
+//	u = if integer type, u can be preceeded to indicate unsigned integer, such as u5 = unsigned integer 5
+//	# = if offset is preceeded with #, the specified offset is multiplied by the type width, such as #0 = 0, #1 = 8 when type if 8-bit byte
 func (b *BIT) bitFieldInternal(key string, args ...interface{}) (valBits []int64, err error) {
 	// validate
 	if b.core == nil {
@@ -2667,7 +2677,8 @@ func (b *BIT) bitFieldInternal(key string, args ...interface{}) (valBits []int64
 // if operation failed, error is returned, if success, nil is returned
 //
 // Supported:
-//		And, Or, XOr, Not
+//
+//	And, Or, XOr, Not
 func (b *BIT) BitOp(keyDest string, bitOpType redisbitop.RedisBitop, keySource ...string) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-BitOp", b.core._parentSegment)
@@ -2696,7 +2707,8 @@ func (b *BIT) BitOp(keyDest string, bitOpType redisbitop.RedisBitop, keySource .
 // if operation failed, error is returned, if success, nil is returned
 //
 // Supported:
-//		And, Or, XOr, Not
+//
+//	And, Or, XOr, Not
 func (b *BIT) bitOpInternal(keyDest string, bitOpType redisbitop.RedisBitop, keySource ...string) error {
 	// validate
 	if b.core == nil {
@@ -3083,7 +3095,7 @@ func (l *LIST) lpopInternal(key string, outputDataType redisdatatype.RedisDataTy
 	}
 
 	if !l.core.cnAreReady {
-		return  false, errors.New("Redis LPop Failed: " + "Endpoint Connections Not Ready")
+		return false, errors.New("Redis LPop Failed: " + "Endpoint Connections Not Ready")
 	}
 
 	if len(key) <= 0 {
@@ -3209,15 +3221,16 @@ func (l *LIST) rpopLPushInternal(keySource string, keyDest string, outputDataTyp
 		return false, errors.New("Redis RPopLPush Failed: " + "Output Object Pointer is Required")
 	}
 
-	 cmd := l.core.cnWriter.RPopLPush(l.core.cnWriter.Context(), keySource, keyDest)
-	 return l.core.handleStringCmd(cmd, outputDataType, outputObjectPtr, "Redis RPopLPush Failed: ")
+	cmd := l.core.cnWriter.RPopLPush(l.core.cnWriter.Context(), keySource, keyDest)
+	return l.core.handleStringCmd(cmd, outputDataType, outputObjectPtr, "Redis RPopLPush Failed: ")
 }
 
 // LIndex returns the element by list index position, for the value stored in list by key,
 // Index is zero-based,
 // Negative Index can be used to denote reverse order,
-//		such as -1 = last element
-//		such as -2 = second to last element, and so on
+//
+//	such as -1 = last element
+//	such as -2 = second to last element, and so on
 //
 // Error is returned if value at key is not a list
 func (l *LIST) LIndex(key string, index int64, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
@@ -3248,8 +3261,9 @@ func (l *LIST) LIndex(key string, index int64, outputDataType redisdatatype.Redi
 // lindexInternal returns the element by list index position, for the value stored in list by key,
 // Index is zero-based,
 // Negative Index can be used to denote reverse order,
-//		such as -1 = last element
-//		such as -2 = second to last element, and so on
+//
+//	such as -1 = last element
+//	such as -2 = second to last element, and so on
 //
 // Error is returned if value at key is not a list
 func (l *LIST) lindexInternal(key string, index int64, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
@@ -3327,7 +3341,8 @@ func (l *LIST) llenInternal(key string) (val int64, notFound bool, err error) {
 // Offsets stop > last element, stop uses last element instead
 //
 // Example:
-//		start top = 0 - 10 = returns 11 elements (0 to 10 = 11)
+//
+//	start top = 0 - 10 = returns 11 elements (0 to 10 = 11)
 func (l *LIST) LRange(key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LRange", l.core._parentSegment)
@@ -3361,7 +3376,8 @@ func (l *LIST) LRange(key string, start int64, stop int64) (outputSlice []string
 // Offsets stop > last element, stop uses last element instead
 //
 // Example:
-//		start top = 0 - 10 = returns 11 elements (0 to 10 = 11)
+//
+//	start top = 0 - 10 = returns 11 elements (0 to 10 = 11)
 func (l *LIST) lrangeInternal(key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if l.core == nil {
@@ -3388,7 +3404,8 @@ func (l *LIST) lrangeInternal(key string, start int64, stop int64) (outputSlice 
 // count = 0 = removes all elements equal to 'element value'
 //
 // Example:
-//		LREM list 02 "hello" = removes the last two occurrences of "hello" in the list stored at key named 'list'
+//
+//	LREM list 02 "hello" = removes the last two occurrences of "hello" in the list stored at key named 'list'
 func (l *LIST) LRem(key string, count int64, value interface{}) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LRem", l.core._parentSegment)
@@ -3420,7 +3437,8 @@ func (l *LIST) LRem(key string, count int64, value interface{}) (err error) {
 // count = 0 = removes all elements equal to 'element value'
 //
 // Example:
-//		LREM list 02 "hello" = removes the last two occurrences of "hello" in the list stored at key named 'list'
+//
+//	LREM list 02 "hello" = removes the last two occurrences of "hello" in the list stored at key named 'list'
 func (l *LIST) lremInternal(key string, count int64, value interface{}) error {
 	// validate
 	if l.core == nil {
@@ -3448,7 +3466,8 @@ func (l *LIST) lremInternal(key string, count int64, value interface{}) error {
 // Both start and stop can be negative, where -1 is the last element, while -2 is the second to last element
 //
 // Example:
-//		LTRIM foobar 0 2 = modifies the list store at key named 'foobar' so that only the first 3 elements of the list will remain
+//
+//	LTRIM foobar 0 2 = modifies the list store at key named 'foobar' so that only the first 3 elements of the list will remain
 func (l *LIST) LTrim(key string, start int64, stop int64) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LTrim", l.core._parentSegment)
@@ -3477,7 +3496,8 @@ func (l *LIST) LTrim(key string, start int64, stop int64) (err error) {
 // Both start and stop can be negative, where -1 is the last element, while -2 is the second to last element
 //
 // Example:
-//		LTRIM foobar 0 2 = modifies the list store at key named 'foobar' so that only the first 3 elements of the list will remain
+//
+//	LTRIM foobar 0 2 = modifies the list store at key named 'foobar' so that only the first 3 elements of the list will remain
 func (l *LIST) ltrimInternal(key string, start int64, stop int64) error {
 	// validate
 	if l.core == nil {
@@ -3652,7 +3672,8 @@ func (h *HASH) hsetInternal(key string, value ...interface{}) error {
 // if 'field' does not currently existing in hash
 //
 // note:
-//		'field' must not yet exist in hash, otherwise will not add
+//
+//	'field' must not yet exist in hash, otherwise will not add
 func (h *HASH) HSetNX(key string, field string, value interface{}) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HSetNX", h.core._parentSegment)
@@ -3680,7 +3701,8 @@ func (h *HASH) HSetNX(key string, field string, value interface{}) (err error) {
 // if 'field' does not currently existing in hash
 //
 // note:
-//		'field' must not yet exist in hash, otherwise will not add
+//
+//	'field' must not yet exist in hash, otherwise will not add
 func (h *HASH) hsetNXInternal(key string, field string, value interface{}) error {
 	// validate
 	if h.core == nil {
@@ -4080,14 +4102,16 @@ func (h *HASH) hvalsInternal(key string) (outputSlice []string, notFound bool, e
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
+//
 // count = hint to redis count of elements to retrieve in the call
 func (h *HASH) HScan(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
 	// get new xray segment for tracing
@@ -4122,14 +4146,16 @@ func (h *HASH) HScan(key string, cursor uint64, match string, count int64) (outp
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
+//
 // count = hint to redis count of elements to retrieve in the call
 func (h *HASH) hscanInternal(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
 	// validate
@@ -4212,13 +4238,12 @@ func (h *HASH) hincrByInternal(key string, field string, incrValue int64) error 
 		return errors.New("Redis HIncrBy Failed: " + "Increment Value Must Not Be Zero")
 	}
 
-
 	cmd := h.core.cnWriter.HIncrBy(h.core.cnWriter.Context(), key, field, incrValue)
 
 	if _, _, err := h.core.handleIntCmd(cmd, "Redis HIncrBy Failed: "); err != nil {
 		return err
- 	} else {
- 		return nil
+	} else {
+		return nil
 	}
 }
 
@@ -4390,11 +4415,12 @@ func (s *SET) scardInternal(key string) (val int64, notFound bool, err error) {
 // SDiff returns the members of the set resulting from the difference between the first set and all the successive sets
 //
 // Example:
-//		key1 = { a, b, c, d }
-//		key2 = { c }
-//		key3 = { a, c, e }
-// 		SDIFF key1, key2, key3 = { b, d }
-//			{ b, d } is returned because this is the difference delta
+//
+//	key1 = { a, b, c, d }
+//	key2 = { c }
+//	key3 = { a, c, e }
+//	SDIFF key1, key2, key3 = { b, d }
+//		{ b, d } is returned because this is the difference delta
 func (s *SET) SDiff(key ...string) (outputSlice []string, notFound bool, err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SDiff", s.core._parentSegment)
@@ -4421,11 +4447,12 @@ func (s *SET) SDiff(key ...string) (outputSlice []string, notFound bool, err err
 // sdiffInternal returns the members of the set resulting from the difference between the first set and all the successive sets
 //
 // Example:
-//		key1 = { a, b, c, d }
-//		key2 = { c }
-//		key3 = { a, c, e }
-// 		SDIFF key1, key2, key3 = { b, d }
-//			{ b, d } is returned because this is the difference delta
+//
+//	key1 = { a, b, c, d }
+//	key2 = { c }
+//	key3 = { a, c, e }
+//	SDIFF key1, key2, key3 = { b, d }
+//		{ b, d } is returned because this is the difference delta
 func (s *SET) sdiffInternal(key ...string) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if s.core == nil {
@@ -4448,11 +4475,12 @@ func (s *SET) sdiffInternal(key ...string) (outputSlice []string, notFound bool,
 // if destination already exists, it is overwritten
 //
 // Example:
-//		key1 = { a, b, c, d }
-//		key2 = { c }
-//		key3 = { a, c, e }
-// 		SDIFF key1, key2, key3 = { b, d }
-//			{ b, d } is stored because this is the difference delta
+//
+//	key1 = { a, b, c, d }
+//	key2 = { c }
+//	key3 = { a, c, e }
+//	SDIFF key1, key2, key3 = { b, d }
+//		{ b, d } is stored because this is the difference delta
 func (s *SET) SDiffStore(keyDest string, keySource ...string) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SDiffStore", s.core._parentSegment)
@@ -4479,11 +4507,12 @@ func (s *SET) SDiffStore(keyDest string, keySource ...string) (err error) {
 // if destination already exists, it is overwritten
 //
 // Example:
-//		key1 = { a, b, c, d }
-//		key2 = { c }
-//		key3 = { a, c, e }
-// 		SDIFF key1, key2, key3 = { b, d }
-//			{ b, d } is stored because this is the difference delta
+//
+//	key1 = { a, b, c, d }
+//	key2 = { c }
+//	key3 = { a, c, e }
+//	SDIFF key1, key2, key3 = { b, d }
+//		{ b, d } is stored because this is the difference delta
 func (s *SET) sdiffStoreInternal(keyDest string, keySource ...string) error {
 	// validate
 	if s.core == nil {
@@ -4509,11 +4538,12 @@ func (s *SET) sdiffStoreInternal(keyDest string, keySource ...string) error {
 // SInter returns the members of the set resulting from the intersection of all the given sets
 //
 // Example:
-//		Key1 = { a, b, c, d }
-//		Key2 = { c }
-//		Key3 = { a, c, e }
-//		SINTER key1 key2 key3 = { c }
-//			{ c } is returned because this is the intersection on all keys (appearing in all keys)
+//
+//	Key1 = { a, b, c, d }
+//	Key2 = { c }
+//	Key3 = { a, c, e }
+//	SINTER key1 key2 key3 = { c }
+//		{ c } is returned because this is the intersection on all keys (appearing in all keys)
 func (s *SET) SInter(key ...string) (outputSlice []string, notFound bool, err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SInter", s.core._parentSegment)
@@ -4540,11 +4570,12 @@ func (s *SET) SInter(key ...string) (outputSlice []string, notFound bool, err er
 // sinterInternal returns the members of the set resulting from the intersection of all the given sets
 //
 // Example:
-//		Key1 = { a, b, c, d }
-//		Key2 = { c }
-//		Key3 = { a, c, e }
-//		SINTER key1 key2 key3 = { c }
-//			{ c } is returned because this is the intersection on all keys (appearing in all keys)
+//
+//	Key1 = { a, b, c, d }
+//	Key2 = { c }
+//	Key3 = { a, c, e }
+//	SINTER key1 key2 key3 = { c }
+//		{ c } is returned because this is the intersection on all keys (appearing in all keys)
 func (s *SET) sinterInternal(key ...string) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if s.core == nil {
@@ -4567,11 +4598,12 @@ func (s *SET) sinterInternal(key ...string) (outputSlice []string, notFound bool
 // if destination already exists, it is overwritten
 //
 // Example:
-//		Key1 = { a, b, c, d }
-//		Key2 = { c }
-//		Key3 = { a, c, e }
-//		SINTER key1 key2 key3 = { c }
-//			{ c } is stored because this is the intersection on all keys (appearing in all keys)
+//
+//	Key1 = { a, b, c, d }
+//	Key2 = { c }
+//	Key3 = { a, c, e }
+//	SINTER key1 key2 key3 = { c }
+//		{ c } is stored because this is the intersection on all keys (appearing in all keys)
 func (s *SET) SInterStore(keyDest string, keySource ...string) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SInterStore", s.core._parentSegment)
@@ -4598,11 +4630,12 @@ func (s *SET) SInterStore(keyDest string, keySource ...string) (err error) {
 // if destination already exists, it is overwritten
 //
 // Example:
-//		Key1 = { a, b, c, d }
-//		Key2 = { c }
-//		Key3 = { a, c, e }
-//		SINTER key1 key2 key3 = { c }
-//			{ c } is stored because this is the intersection on all keys (appearing in all keys)
+//
+//	Key1 = { a, b, c, d }
+//	Key2 = { c }
+//	Key3 = { a, c, e }
+//	SINTER key1 key2 key3 = { c }
+//		{ c } is stored because this is the intersection on all keys (appearing in all keys)
 func (s *SET) sinterStoreInternal(keyDest string, keySource ...string) error {
 	// validate
 	if s.core == nil {
@@ -4765,14 +4798,16 @@ func (s *SET) smembersMapInternal(key string) (outputMap map[string]struct{}, no
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
+//
 // count = hint to redis count of elements to retrieve in the call
 func (s *SET) SScan(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
 	// get new xray segment for tracing
@@ -4807,14 +4842,16 @@ func (s *SET) SScan(key string, cursor uint64, match string, count int64) (outpu
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
+//
 // count = hint to redis count of elements to retrieve in the call
 func (s *SET) sscanInternal(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
 	// validate
@@ -5008,7 +5045,7 @@ func (s *SET) sremInternal(key string, member ...interface{}) error {
 // If source set does not exist, or does not contain the specified element, no operation is performed and 0 is returned,
 // Otherwise, the element is removed from the source set and added to the destination set
 //
-// If the specified element already exist in the destination set, it is only removed from the source set
+// # If the specified element already exist in the destination set, it is only removed from the source set
 //
 // Error is returned if the source or destination does not hold a set value
 func (s *SET) SMove(keySource string, keyDest string, member interface{}) (err error) {
@@ -5040,7 +5077,7 @@ func (s *SET) SMove(keySource string, keyDest string, member interface{}) (err e
 // If source set does not exist, or does not contain the specified element, no operation is performed and 0 is returned,
 // Otherwise, the element is removed from the source set and added to the destination set
 //
-// If the specified element already exist in the destination set, it is only removed from the source set
+// # If the specified element already exist in the destination set, it is only removed from the source set
 //
 // Error is returned if the source or destination does not hold a set value
 func (s *SET) smoveInternal(keySource string, keyDest string, member interface{}) error {
@@ -5190,10 +5227,11 @@ func (s *SET) spopNInternal(key string, count int64) (outputSlice []string, notF
 // if a key is not existent, it is treated as a empty set
 //
 // Example:
-//		key1 = { a, b, c }
-//		key2 = { c }
-// 		key3 = { a, c, e }
-//		SUNION key1 key2 key3 = { a, b, c, d, e }
+//
+//	key1 = { a, b, c }
+//	key2 = { c }
+//	key3 = { a, c, e }
+//	SUNION key1 key2 key3 = { a, b, c, d, e }
 func (s *SET) SUnion(key ...string) (outputSlice []string, notFound bool, err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SUnion", s.core._parentSegment)
@@ -5221,10 +5259,11 @@ func (s *SET) SUnion(key ...string) (outputSlice []string, notFound bool, err er
 // if a key is not existent, it is treated as a empty set
 //
 // Example:
-//		key1 = { a, b, c }
-//		key2 = { c }
-// 		key3 = { a, c, e }
-//		SUNION key1 key2 key3 = { a, b, c, d, e }
+//
+//	key1 = { a, b, c }
+//	key2 = { c }
+//	key3 = { a, c, e }
+//	SUNION key1 key2 key3 = { a, b, c, d, e }
 func (s *SET) sunionInternal(key ...string) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if s.core == nil {
@@ -5248,10 +5287,11 @@ func (s *SET) sunionInternal(key ...string) (outputSlice []string, notFound bool
 // if 'destination' already exists, it is overwritten
 //
 // Example:
-//		key1 = { a, b, c }
-//		key2 = { c }
-// 		key3 = { a, c, e }
-//		SUNION key1 key2 key3 = { a, b, c, d, e }
+//
+//	key1 = { a, b, c }
+//	key2 = { c }
+//	key3 = { a, c, e }
+//	SUNION key1 key2 key3 = { a, b, c, d, e }
 func (s *SET) SUnionStore(keyDest string, keySource ...string) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SUnionStore", s.core._parentSegment)
@@ -5279,10 +5319,11 @@ func (s *SET) SUnionStore(keyDest string, keySource ...string) (err error) {
 // if 'destination' already exists, it is overwritten
 //
 // Example:
-//		key1 = { a, b, c }
-//		key2 = { c }
-// 		key3 = { a, c, e }
-//		SUNION key1 key2 key3 = { a, b, c, d, e }
+//
+//	key1 = { a, b, c }
+//	key2 = { c }
+//	key3 = { a, c, e }
+//	SUNION key1 key2 key3 = { a, b, c, d, e }
 func (s *SET) sunionStoreInternal(keyDest string, keySource ...string) error {
 	// validate
 	if s.core == nil {
@@ -5312,17 +5353,17 @@ func (s *SET) sunionStoreInternal(keyDest string, keySource ...string) error {
 // ZAdd will add all the specified members with the specified scores to the sorted set stored at key,
 // If a specified member is already a member of the sorted set, the score is updated and the element reinserted at the right position to ensure the correct ordering
 //
-// If key does not exist, a new sorted set with the specified members is created as if the set was empty
+// # If key does not exist, a new sorted set with the specified members is created as if the set was empty
 //
-// If value at key is not a sorted set, then error is returned
+// # If value at key is not a sorted set, then error is returned
 //
 // Score Values:
-//		1) Should be string representation of a double precision floating point number
+//  1. Should be string representation of a double precision floating point number
 //
 // Other ZAdd Options:
-// 		1) ZAdd XX / XXCH = only update elements that already exists, never add elements
-// 		2) ZAdd NX / NXCH = don't update already existing elements, always add new elements
-// 		3) ZAdd CH = modify the return value from the number of new or updated elements added, CH = Changed
+//  1. ZAdd XX / XXCH = only update elements that already exists, never add elements
+//  2. ZAdd NX / NXCH = don't update already existing elements, always add new elements
+//  3. ZAdd CH = modify the return value from the number of new or updated elements added, CH = Changed
 func (z *SORTED_SET) ZAdd(key string, setCondition redissetcondition.RedisSetCondition, getChanged bool, member ...*redis.Z) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZAdd", z.core._parentSegment)
@@ -5350,17 +5391,17 @@ func (z *SORTED_SET) ZAdd(key string, setCondition redissetcondition.RedisSetCon
 // zaddInternal will add all the specified members with the specified scores to the sorted set stored at key,
 // If a specified member is already a member of the sorted set, the score is updated and the element reinserted at the right position to ensure the correct ordering
 //
-// If key does not exist, a new sorted set with the specified members is created as if the set was empty
+// # If key does not exist, a new sorted set with the specified members is created as if the set was empty
 //
-// If value at key is not a sorted set, then error is returned
+// # If value at key is not a sorted set, then error is returned
 //
 // Score Values:
-//		1) Should be string representation of a double precision floating point number
+//  1. Should be string representation of a double precision floating point number
 //
 // Other ZAdd Options:
-// 		1) ZAdd XX / XXCH = only update elements that already exists, never add elements
-// 		2) ZAdd NX / NXCH = don't update already existing elements, always add new elements
-// 		3) ZAdd CH = modify the return value from the number of new or updated elements added, CH = Changed
+//  1. ZAdd XX / XXCH = only update elements that already exists, never add elements
+//  2. ZAdd NX / NXCH = don't update already existing elements, always add new elements
+//  3. ZAdd CH = modify the return value from the number of new or updated elements added, CH = Changed
 func (z *SORTED_SET) zaddInternal(key string, setCondition redissetcondition.RedisSetCondition, getChanged bool, member ...*redis.Z) error {
 	// validate
 	if z.core == nil {
@@ -5582,7 +5623,7 @@ func (z *SORTED_SET) zincrInternal(key string, setCondition redissetcondition.Re
 // If member does not exist in the sorted set, it is added with increment value as its score,
 // If key does not exist, a new sorted set with the specified member as its sole member is created
 //
-// Error is returned if the value stored at key is not a sorted set
+// # Error is returned if the value stored at key is not a sorted set
 //
 // Score should be string representation of a numeric value, and accepts double precision floating point numbers
 // To decrement, use negative value
@@ -5613,7 +5654,7 @@ func (z *SORTED_SET) ZIncrBy(key string, increment float64, member string) (err 
 // If member does not exist in the sorted set, it is added with increment value as its score,
 // If key does not exist, a new sorted set with the specified member as its sole member is created
 //
-// Error is returned if the value stored at key is not a sorted set
+// # Error is returned if the value stored at key is not a sorted set
 //
 // Score should be string representation of a numeric value, and accepts double precision floating point numbers
 // To decrement, use negative value
@@ -5655,7 +5696,8 @@ func (z *SORTED_SET) zincrByInternal(key string, increment float64, member strin
 // If 'destination' already exists, it is overwritten
 //
 // Default Logic:
-//		Resulting score of an element is the sum of its scores in the sorted set where it exists
+//
+//	Resulting score of an element is the sum of its scores in the sorted set where it exists
 func (z *SORTED_SET) ZInterStore(keyDest string, store *redis.ZStore) (err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZInterStore", z.core._parentSegment)
@@ -5686,7 +5728,8 @@ func (z *SORTED_SET) ZInterStore(keyDest string, store *redis.ZStore) (err error
 // If 'destination' already exists, it is overwritten
 //
 // Default Logic:
-//		Resulting score of an element is the sum of its scores in the sorted set where it exists
+//
+//	Resulting score of an element is the sum of its scores in the sorted set where it exists
 func (z *SORTED_SET) zinterStoreInternal(keyDest string, store *redis.ZStore) error {
 	// validate
 	if z.core == nil {
@@ -6539,14 +6582,16 @@ func (z *SORTED_SET) zrevRankInternal(key string, member string) (val int64, not
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
+//
 // count = hint to redis count of elements to retrieve in the call
 func (z *SORTED_SET) ZScan(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
 	// get new xray segment for tracing
@@ -6581,14 +6626,16 @@ func (z *SORTED_SET) ZScan(key string, cursor uint64, match string, count int64)
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
+//
 // count = hint to redis count of elements to retrieve in the call
 func (z *SORTED_SET) zscanInternal(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
 	// validate
@@ -7155,7 +7202,7 @@ func (g *GEO) geoRadiusStoreInternal(key string, longitude float64, latitude flo
 // GeoRadiusByMember is same as GeoRadius, except instead of taking as the center of the area to query (long lat),
 // this takes the name of a member already existing inside the geospatial index represented by the sorted set
 //
-// The position of the specified member is used as the center of the query
+// # The position of the specified member is used as the center of the query
 //
 // radius = units are: m (meters), km (kilometers), mi (miles), ft (feet)
 // withDist = return the distance of returned items from the specified center (using same unit as units specified in the radius)
@@ -7195,7 +7242,7 @@ func (g *GEO) GeoRadiusByMember(key string, member string, query *redis.GeoRadiu
 // geoRadiusByMemberInternal is same as GeoRadius, except instead of taking as the center of the area to query (long lat),
 // this takes the name of a member already existing inside the geospatial index represented by the sorted set
 //
-// The position of the specified member is used as the center of the query
+// # The position of the specified member is used as the center of the query
 //
 // radius = units are: m (meters), km (kilometers), mi (miles), ft (feet)
 // withDist = return the distance of returned items from the specified center (using same unit as units specified in the radius)
@@ -7272,7 +7319,7 @@ func (g *GEO) geoRadiusByMemberInternal(key string, member string, query *redis.
 // GeoRadiusByMemberStore is same as GeoRadiusStore, except instead of taking as the center of the area to query (long lat),
 // this takes the name of a member already existing inside the geospatial index represented by the sorted set
 //
-// The position of the specified member is used as the center of the query
+// # The position of the specified member is used as the center of the query
 //
 // radius = units are: m (meters), km (kilometers), mi (miles), ft (feet)
 // withDist = return the distance of returned items from the specified center (using same unit as units specified in the radius)
@@ -7311,7 +7358,7 @@ func (g *GEO) GeoRadiusByMemberStore(key string, member string, query *redis.Geo
 // geoRadiusByMemberStoreInternal is same as GeoRadiusStore, except instead of taking as the center of the area to query (long lat),
 // this takes the name of a member already existing inside the geospatial index represented by the sorted set
 //
-// The position of the specified member is used as the center of the query
+// # The position of the specified member is used as the center of the query
 //
 // radius = units are: m (meters), km (kilometers), mi (miles), ft (feet)
 // withDist = return the distance of returned items from the specified center (using same unit as units specified in the radius)
@@ -7387,7 +7434,7 @@ func (g *GEO) geoRadiusByMemberStoreInternal(key string, member string, query *r
 
 // XAck removes one or multiple messages from the 'pending entries list (PEL)' of a stream consumer group
 //
-// A message is pending, and as such stored inside the PEL, when it was delivered to some consumer
+// # A message is pending, and as such stored inside the PEL, when it was delivered to some consumer
 //
 // Once a consumer successfully processes a message, it should call XAck to remove the message so it does not get processed again (and releases message from memory in redis)
 func (x *STREAM) XAck(stream string, group string, id ...string) (err error) {
@@ -7415,7 +7462,7 @@ func (x *STREAM) XAck(stream string, group string, id ...string) (err error) {
 
 // xackInternal removes one or multiple messages from the 'pending entries list (PEL)' of a stream consumer group
 //
-// A message is pending, and as such stored inside the PEL, when it was delivered to some consumer
+// # A message is pending, and as such stored inside the PEL, when it was delivered to some consumer
 //
 // Once a consumer successfully processes a message, it should call XAck to remove the message so it does not get processed again (and releases message from memory in redis)
 func (x *STREAM) xackInternal(stream string, group string, id ...string) error {
@@ -8438,13 +8485,13 @@ func (x *STREAM) xtrimApproxInternal(key string, maxLen int64) error {
 // Once client is subscribed, do not call other redis actions, other than Subscribe, PSubscribe, Ping, Unsubscribe, PUnsubscribe, and Quit (Per Redis Doc)
 //
 // glob-style patterns:
-//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//		7) Use \ to escape special characters if needing to match verbatim
+//  1. h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//  2. h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//  3. h*llo = * represents any single or more char match (hllo, heeeelo match)
+//  4. h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//  5. h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//  6. h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//  7. Use \ to escape special characters if needing to match verbatim
 func (ps *PUBSUB) PSubscribe(channel ...string) (psObj *redis.PubSub, err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-PSubscribe", ps.core._parentSegment)
@@ -8472,13 +8519,13 @@ func (ps *PUBSUB) PSubscribe(channel ...string) (psObj *redis.PubSub, err error)
 // Once client is subscribed, do not call other redis actions, other than Subscribe, PSubscribe, Ping, Unsubscribe, PUnsubscribe, and Quit (Per Redis Doc)
 //
 // glob-style patterns:
-//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//		7) Use \ to escape special characters if needing to match verbatim
+//  1. h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//  2. h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//  3. h*llo = * represents any single or more char match (hllo, heeeelo match)
+//  4. h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//  5. h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//  6. h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//  7. Use \ to escape special characters if needing to match verbatim
 func (ps *PUBSUB) psubscribeInternal(channel ...string) (*redis.PubSub, error) {
 	// validate
 	if ps.core == nil {
@@ -8589,13 +8636,13 @@ func (ps *PUBSUB) publishInternal(channel string, message interface{}) (valRecei
 // pattern = optional, channels matching specific glob-style pattern are listed; otherwise, all channels listed
 //
 // glob-style patterns:
-//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//		7) Use \ to escape special characters if needing to match verbatim
+//  1. h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//  2. h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//  3. h*llo = * represents any single or more char match (hllo, heeeelo match)
+//  4. h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//  5. h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//  6. h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//  7. Use \ to escape special characters if needing to match verbatim
 func (ps *PUBSUB) PubSubChannels(pattern string) (valChannels []string, err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-PubSubChannels", ps.core._parentSegment)
@@ -8623,13 +8670,13 @@ func (ps *PUBSUB) PubSubChannels(pattern string) (valChannels []string, err erro
 // pattern = optional, channels matching specific glob-style pattern are listed; otherwise, all channels listed
 //
 // glob-style patterns:
-//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//		7) Use \ to escape special characters if needing to match verbatim
+//  1. h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//  2. h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//  3. h*llo = * represents any single or more char match (hllo, heeeelo match)
+//  4. h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//  5. h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//  6. h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//  7. Use \ to escape special characters if needing to match verbatim
 func (ps *PUBSUB) pubSubChannelsInternal(pattern string) (valChannels []string, err error) {
 	// validate
 	if ps.core == nil {
@@ -9558,14 +9605,16 @@ func (u *UTILS) objectRefCountInternal(key string) (val int64, notFound bool, er
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
+//
 // count = hint to redis count of elements to retrieve in the call
 func (u *UTILS) Scan(cursor uint64, match string, count int64) (keys []string, resultCursor uint64, err error) {
 	// get new xray segment for tracing
@@ -9599,14 +9648,16 @@ func (u *UTILS) Scan(cursor uint64, match string, count int64) (keys []string, r
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
+//
 // count = hint to redis count of elements to retrieve in the call
 func (u *UTILS) scanInternal(cursor uint64, match string, count int64) (keys []string, resultCursor uint64, err error) {
 	// validate
@@ -9628,14 +9679,15 @@ func (u *UTILS) scanInternal(cursor uint64, match string, count int64) (keys []s
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
 func (u *UTILS) Keys(match string) (valKeys []string, notFound bool, err error) {
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Keys", u.core._parentSegment)
@@ -9665,14 +9717,15 @@ func (u *UTILS) Keys(match string) (valKeys []string, notFound bool, err error) 
 // stop iteration = when redis returns cursor value of 0
 //
 // match = filters elements based on match filter, for elements retrieved from redis before return to client
-//		glob-style patterns:
-//			1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
-//			2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
-//			3) h*llo = * represents any single or more char match (hllo, heeeelo match)
-//			4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
-//			5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
-//			6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
-//			7) Use \ to escape special characters if needing to match verbatim
+//
+//	glob-style patterns:
+//		1) h?llo = ? represents any single char match (hello, hallo, hxllo match, but heello not match)
+//		2) h??llo = ?? represents any two char match (heello, haello, hxyllo match, but heeello not match)
+//		3) h*llo = * represents any single or more char match (hllo, heeeelo match)
+//		4) h[ae]llo = [ae] represents char inside [ ] that are to match (hello, hallo match, but hillo not match)
+//		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
+//		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
+//		7) Use \ to escape special characters if needing to match verbatim
 func (u *UTILS) keysInternal(match string) (valKeys []string, notFound bool, err error) {
 	// validate
 	if u.core == nil {
@@ -9883,7 +9936,6 @@ func (u *UTILS) sortInternal(key string, sortPattern *redis.Sort) (val []string,
 		return nil, false, errors.New("Redis Sort Failed: " + "Key is Required")
 	}
 
-
 	cmd := u.core.cnReader.Sort(u.core.cnReader.Context(), key, sortPattern)
 	return u.core.handleStringSliceCmd(cmd, "Redis Sort Failed: ")
 }
@@ -9991,6 +10043,3 @@ func (u *UTILS) sortStoreInternal(keyToSort string, keyToStore string, sortPatte
 	_, _, err := u.core.handleIntCmd(cmd, "Redis SortStore Failed: ")
 	return err
 }
-
-
-

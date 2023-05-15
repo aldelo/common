@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import (
 // NewGinZapMiddleware returns a newly created GinZap struct object
 func NewGinZapMiddleware(logName string, outputToConsole bool) *GinZap {
 	return &GinZap{
-		LogName: logName,
+		LogName:         logName,
 		OutputToConsole: outputToConsole,
 	}
 }
@@ -49,12 +49,12 @@ func NewGinZapMiddleware(logName string, outputToConsole bool) *GinZap {
 // TimeUtc = (optional) default = false
 // PanicStack = (optional) when panic, log to include stack
 type GinZap struct {
-	LogName string
+	LogName         string
 	OutputToConsole bool
 
-	TimeFormat string	// default = time.RFC3339
-	TimeUtc bool		// default = false
-	PanicStack bool		// default = false
+	TimeFormat string // default = time.RFC3339
+	TimeUtc    bool   // default = false
+	PanicStack bool   // default = false
 
 	_zapLog *data.ZapLog
 }
@@ -66,9 +66,9 @@ func (z *GinZap) Init() error {
 	}
 
 	z._zapLog = &data.ZapLog{
-		DisableLogger: false,
+		DisableLogger:   false,
 		OutputToConsole: z.OutputToConsole,
-		AppName: z.LogName,
+		AppName:         z.LogName,
 	}
 
 	if err := z._zapLog.Init(); err != nil {
@@ -170,9 +170,9 @@ func (z *GinZap) PanicLogger() gin.HandlerFunc {
 				httpRequest, _ := httputil.DumpRequest(c.Request, false)
 				if brokenPipe {
 					z._zapLog.Error(c.Request.URL.Path,
-									zap.Any("error", err),
-									zap.String("request", string(httpRequest)),
-									)
+						zap.Any("error", err),
+						zap.String("request", string(httpRequest)),
+					)
 
 					// If the connection is dead, we can't write a status to it.
 					_ = c.Error(err.(error)) // nolint: errcheck
@@ -188,17 +188,17 @@ func (z *GinZap) PanicLogger() gin.HandlerFunc {
 
 				if z.PanicStack {
 					z._zapLog.Error("[Recovery From Panic]",
-										zap.Time("time", t),
-										zap.Any("error", err),
-										zap.String("request", string(httpRequest)),
-										zap.String("stack", string(debug.Stack())),
-									)
+						zap.Time("time", t),
+						zap.Any("error", err),
+						zap.String("request", string(httpRequest)),
+						zap.String("stack", string(debug.Stack())),
+					)
 				} else {
 					z._zapLog.Error("[Recovery From Panic]",
-										zap.Time("time", t),
-										zap.Any("error", err),
-										zap.String("request", string(httpRequest)),
-									)
+						zap.Time("time", t),
+						zap.Any("error", err),
+						zap.String("request", string(httpRequest)),
+					)
 				}
 
 				c.AbortWithStatus(http.StatusInternalServerError)

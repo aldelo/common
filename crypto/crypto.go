@@ -1,7 +1,7 @@
 package crypto
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -948,9 +948,10 @@ func RsaPrivateKeyDecryptAndPublicKeyVerify(data string, recipientPrivateKeyHexO
 // and then sign plain text data using sender's private key,
 // and then using recipient's public key to encrypt the dynamic aes key,
 // and finally compose the encrypted payload that encapsulates a full envelop:
-//   <STX>RsaPublicKeyEncryptedAESKeyData + AesGcmEncryptedPayload(PlainTextData<VT>SenderPublicKey<VT>PlainTextDataSignature)<ETX>
 //
-//   warning: VT is used in encrypted payload as separator, make sure to escape VT if it is to be used inside the plainTextData <<< IMPORTANT
+//	<STX>RsaPublicKeyEncryptedAESKeyData + AesGcmEncryptedPayload(PlainTextData<VT>SenderPublicKey<VT>PlainTextDataSignature)<ETX>
+//
+//	warning: VT is used in encrypted payload as separator, make sure to escape VT if it is to be used inside the plainTextData <<< IMPORTANT
 //
 // recipientPublicKeyHexOrPem = can be either HEX or PEM
 // senderPublicKeyHexOrPem = can be either HEX or PEM
@@ -1042,9 +1043,10 @@ func RsaAesParseTPKHashFromEncryptedPayload(encryptedData string) string {
 // this function will then parse the decrypted payload and perform a verification of signature using the sender's public key
 //
 // usage tip: the sender's public key can then be used to encrypt the return data back to the sender as a reply using RsaAesPublicKeyEncryptedAndSign(),
-//            in this usage pattern, only the public key is used in each messaging cycle, while the aes key is dynamically generated each time and no prior knowledge of it is known,
-//            since the public key encrypted data cannot be decrypted unless with private key, then as long as the private key is protected, then the messaging pipeline will be secured,
-//            furthermore, by using sender private key sign and sender public key verify into the message authentication, we further ensure the plain text data is coming from the expected source
+//
+//	in this usage pattern, only the public key is used in each messaging cycle, while the aes key is dynamically generated each time and no prior knowledge of it is known,
+//	since the public key encrypted data cannot be decrypted unless with private key, then as long as the private key is protected, then the messaging pipeline will be secured,
+//	furthermore, by using sender private key sign and sender public key verify into the message authentication, we further ensure the plain text data is coming from the expected source
 //
 // recipientPrivateKeyHexOrPem = can be either HEX or PEM
 func RsaAesPrivateKeyDecryptAndVerify(encryptedData string, recipientPrivateKeyHexOrPem string) (plainText string, senderPublicKeyHexOrPem string, err error) {

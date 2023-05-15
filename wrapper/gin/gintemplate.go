@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,24 +27,25 @@ import (
 //
 // templateBaseDir = (required) base directory that contains template files
 // templateLayoutPath = (required) relative page layout folder path, layout defines site theme and common base pages
-//						1) to use page parts, use {{ template "xyz" }}
-//						2) see golang html page template rules for more information
+//  1. to use page parts, use {{ template "xyz" }}
+//  2. see golang html page template rules for more information
+//
 // templatePagePath = (optional) relative page part folder path, pages define portion of html to be inserted into layout themes
-//						1) to define page part with named template, use {{ define "xyz" }}  {{ end }}
-//						2) see golang html page template rules for more information
+//  1. to define page part with named template, use {{ define "xyz" }}  {{ end }}
+//  2. see golang html page template rules for more information
 //
 // notes
-//		1) c.HTML name = page html name, such as home.html, if there is no page name, then use layout name
-//		2) if c.HTML name cannot find target in renderer, error 500 will be encountered
-//		3) layout file should not contain page parts may not be rendered in c.HTML call
-//		4) basic info about html templates = https://blog.gopheracademy.com/advent-2017/using-go-templates/
+//  1. c.HTML name = page html name, such as home.html, if there is no page name, then use layout name
+//  2. if c.HTML name cannot find target in renderer, error 500 will be encountered
+//  3. layout file should not contain page parts may not be rendered in c.HTML call
+//  4. basic info about html templates = https://blog.gopheracademy.com/advent-2017/using-go-templates/
 func NewTemplate(templateBaseDir string, templateLayoutPath string, templatePagePath string) *GinTemplate {
 	return &GinTemplate{
 		TemplateBaseDir: templateBaseDir,
 		Templates: []TemplateDefinition{
 			{
 				LayoutPath: templateLayoutPath,
-				PagePath: templatePagePath,
+				PagePath:   templatePagePath,
 			},
 		},
 	}
@@ -53,16 +54,16 @@ func NewTemplate(templateBaseDir string, templateLayoutPath string, templatePage
 // GinTemplate defines the struct for working with html template renderer
 type GinTemplate struct {
 	TemplateBaseDir string
-	Templates []TemplateDefinition
+	Templates       []TemplateDefinition
 
-	_htmlrenderer multitemplate.Renderer
+	_htmlrenderer       multitemplate.Renderer
 	_htmlTemplatesCount int
 }
 
 // TemplateDefinition defines an unit of template render target
 type TemplateDefinition struct {
 	LayoutPath string
-	PagePath string
+	PagePath   string
 }
 
 // LoadHtmlTemplates will load html templates and set renderer into struct internal var
@@ -176,8 +177,3 @@ func (t *GinTemplate) SetHtmlRenderer(g *Gin) error {
 	g._ginEngine.HTMLRender = t._htmlrenderer
 	return nil
 }
-
-
-
-
-

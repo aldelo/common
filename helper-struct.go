@@ -12,7 +12,7 @@ import (
 )
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,27 +57,27 @@ func Fill(src interface{}, dst interface{}) error {
 // if there is a need to name the value of tagName, but still need to exclude from output, use the excludeTagName with -, such as `x:"-"`
 //
 // special struct tags:
-//		1) `getter:"Key"`			// if field type is custom struct or enum,
-//									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
-//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
-//									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
-//		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-//		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-// 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
-//		5) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
-//		6) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
-//		7) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
-//											2006, 06 = year,
-//											01, 1, Jan, January = month,
-//											02, 2, _2 = day (_2 = width two, right justified)
-//											03, 3, 15 = hour (15 = 24 hour format)
-//											04, 4 = minute
-//											05, 5 = second
-//											PM pm = AM PM
-//		8) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
-// 		9) `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
+//  1. `getter:"Key"`			// if field type is custom struct or enum,
+//     specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+//     NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//     NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
+//  2. `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  3. `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  4. `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
+//  5. `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
+//  6. `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
+//  7. `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//     2006, 06 = year,
+//     01, 1, Jan, January = month,
+//     02, 2, _2 = day (_2 = width two, right justified)
+//     03, 3, 15 = hour (15 = 24 hour format)
+//     04, 4 = minute
+//     05, 5 = second
+//     PM pm = AM PM
+//  8. `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
+//  9. `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
 func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("MarshalStructToQueryParams Requires Input Struct Variable Pointer")
@@ -230,7 +230,7 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					if boolFalse == " " && len(outPrefix) > 0 && buf == "false" {
 						buf = ""
 					} else {
-						if len(buf) == 0 && len(defVal) > 0  {
+						if len(buf) == 0 && len(defVal) > 0 {
 							buf = defVal
 						}
 
@@ -266,26 +266,26 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 // if there is a need to name the value of tagName, but still need to exclude from output, use the excludeTagName with -, such as `x:"-"`
 //
 // special struct tags:
-//		1) `getter:"Key"`			// if field type is custom struct or enum,
-//									   specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
-//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
-//									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
-//		2) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-//		3) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-// 		4) `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
-//		5) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
-//		6) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
-//		7) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
-//											2006, 06 = year,
-//											01, 1, Jan, January = month,
-//											02, 2, _2 = day (_2 = width two, right justified)
-//											03, 3, 15 = hour (15 = 24 hour format)
-//											04, 4 = minute
-//											05, 5 = second
-//											PM pm = AM PM
-// 		8) `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
+//  1. `getter:"Key"`			// if field type is custom struct or enum,
+//     specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+//     NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//     NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
+//  2. `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  3. `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  4. `uniqueid:"xyz"`			// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal
+//  5. `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
+//  6. `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
+//  7. `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//     2006, 06 = year,
+//     01, 1, Jan, January = month,
+//     02, 2, _2 = day (_2 = width two, right justified)
+//     03, 3, 15 = hour (15 = 24 hour format)
+//     04, 4 = minute
+//     05, 5 = second
+//     PM pm = AM PM
+//  8. `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
 func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagName string) (string, error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("MarshalStructToJson Requires Input Struct Variable Pointer")
@@ -473,23 +473,23 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 // note: this method expects simple json in key value pairs only, not json containing slices or more complex json structs within existing json field
 //
 // Predefined Struct Tags Usable:
-// 		1) `setter:"ParseByKey`		// if field type is custom struct or enum,
-//									   specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
-//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
-//									   NOTE: setter method always intake a string parameter
-//		2) `def:""`					// default value to set into struct field in case unmarshal doesn't set the struct field value
-//		3) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
-//											2006, 06 = year,
-//											01, 1, Jan, January = month,
-//											02, 2, _2 = day (_2 = width two, right justified)
-//											03, 3, 15 = hour (15 = 24 hour format)
-//											04, 4 = minute
-//											05, 5 = second
-//											PM pm = AM PM
-//		4) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-//		5) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  1. `setter:"ParseByKey`		// if field type is custom struct or enum,
+//     specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+//     NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//     NOTE: setter method always intake a string parameter
+//  2. `def:""`					// default value to set into struct field in case unmarshal doesn't set the struct field value
+//  3. `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//     2006, 06 = year,
+//     01, 1, Jan, January = month,
+//     02, 2, _2 = day (_2 = width two, right justified)
+//     03, 3, 15 = hour (15 = 24 hour format)
+//     04, 4 = minute
+//     05, 5 = second
+//     PM pm = AM PM
+//  4. `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  5. `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
 func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagName string, excludeTagName string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -862,7 +862,7 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 			switch o.Kind() {
 			case reflect.String:
 				if LenTrim(o.String()) > 0 {
-					if o.String() != tagDef	{
+					if o.String() != tagDef {
 						return true
 					}
 				}
@@ -880,7 +880,7 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 				fallthrough
 			case reflect.Int64:
 				if o.Int() != 0 {
-					if Int64ToString(o.Int()) != tagDef	{
+					if Int64ToString(o.Int()) != tagDef {
 						return true
 					}
 				}
@@ -888,7 +888,7 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 				fallthrough
 			case reflect.Float64:
 				if o.Float() != 0 {
-					if Float64ToString(o.Float()) != tagDef	{
+					if Float64ToString(o.Float()) != tagDef {
 						return true
 					}
 				}
@@ -1182,53 +1182,53 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 // additionally processes struct tag data validation and length / range (if not valid, will set to data type default)
 //
 // Predefined Struct Tags Usable:
-//		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
-//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds,
-//											 if multiple fields are in exclusive condition, and skipBlank or skipZero, always include a blank default field as the last of unique field list
-//										     if value is '-', this means position value is calculated from other fields and set via `setter:"base.Xyz"` during unmarshal csv, there is no marshal to csv for this field
-//		2) `type:"xyz"`				// data type expected:
-//											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
-//											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
-//		3) `regex:"xyz"`			// if Type = REGEX, this struct tag contains the regular expression string,
-//										 	regex express such as [^A-Za-z0-9_-]+
-//										 	method will replace any regex matched string to blank
-//		4) `size:"x..y"`			// data type size rule:
-//											x = Exact size match
-//											x.. = From x and up
-//											..y = From 0 up to y
-//											x..y = From x to y
-//											+%z = Append to x, x.., ..y, x..y; adds additional constraint that the result size must equate to 0 from modulo of z
-//		5) `range:"x..y"`			// data type range value when Type is N, if underlying data type is string, method will convert first before testing
-//		6) `req:"true"`				// indicates data value is required or not, true or false
-//		7) `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
-//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
-//									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
-// 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
-//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
-//									   NOTE: setter method always intake a string parameter value
-//		9) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
-//									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
-//		10) `def:""`				// default value to set into struct field in case unmarshal doesn't set the struct field value
-//		11) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
-//											2006, 06 = year,
-//											01, 1, Jan, January = month,
-//											02, 2, _2 = day (_2 = width two, right justified)
-//											03, 3, 15 = hour (15 = 24 hour format)
-//											04, 4 = minute
-//											05, 5 = second
-//											PM pm = AM PM
-//		12) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-//		13) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-//		14) `validate:"==x"`		// if field has to match a specific value or the entire method call will fail, match data format as:
-//									   		==xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
-//												[if == validate against one or more values, use ||]
-//									   		!=xyz (!= refers to not equal)
-//												[if != validate against one or more values, use &&]
-//											>=xyz >>xyz <<xyz <=xyz (greater equal, greater, less than, less equal; xyz must be int or float)
-//											:=Xyz where Xyz is a parameterless function defined at struct level, that performs validation, returns bool or error where true or nil indicates validation success
-//									   note: expected source data type for validate to be effective is string, int, float64; if field is blank and req = false, then validate will be skipped
+//  1. `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
+//     NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds,
+//     if multiple fields are in exclusive condition, and skipBlank or skipZero, always include a blank default field as the last of unique field list
+//     if value is '-', this means position value is calculated from other fields and set via `setter:"base.Xyz"` during unmarshal csv, there is no marshal to csv for this field
+//  2. `type:"xyz"`				// data type expected:
+//     A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
+//     H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
+//  3. `regex:"xyz"`			// if Type = REGEX, this struct tag contains the regular expression string,
+//     regex express such as [^A-Za-z0-9_-]+
+//     method will replace any regex matched string to blank
+//  4. `size:"x..y"`			// data type size rule:
+//     x = Exact size match
+//     x.. = From x and up
+//     ..y = From 0 up to y
+//     x..y = From x to y
+//     +%z = Append to x, x.., ..y, x..y; adds additional constraint that the result size must equate to 0 from modulo of z
+//  5. `range:"x..y"`			// data type range value when Type is N, if underlying data type is string, method will convert first before testing
+//  6. `req:"true"`				// indicates data value is required or not, true or false
+//  7. `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+//     NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//     NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
+//  8. `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+//     NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//     NOTE: setter method always intake a string parameter value
+//  9. `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
+//     WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
+//  10. `def:""`				// default value to set into struct field in case unmarshal doesn't set the struct field value
+//  11. `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//     2006, 06 = year,
+//     01, 1, Jan, January = month,
+//     02, 2, _2 = day (_2 = width two, right justified)
+//     03, 3, 15 = hour (15 = 24 hour format)
+//     04, 4 = minute
+//     05, 5 = second
+//     PM pm = AM PM
+//  12. `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  13. `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  14. `validate:"==x"`		// if field has to match a specific value or the entire method call will fail, match data format as:
+//     ==xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
+//     [if == validate against one or more values, use ||]
+//     !=xyz (!= refers to not equal)
+//     [if != validate against one or more values, use &&]
+//     >=xyz >>xyz <<xyz <=xyz (greater equal, greater, less than, less equal; xyz must be int or float)
+//     :=Xyz where Xyz is a parameterless function defined at struct level, that performs validation, returns bool or error where true or nil indicates validation success
+//     note: expected source data type for validate to be effective is string, int, float64; if field is blank and req = false, then validate will be skipped
 func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDelimiter string, customDelimiterParserFunc func(string) []string) error {
 	if inputStructPtr == nil {
 		return fmt.Errorf("InputStructPtr is Required")
@@ -1342,18 +1342,18 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			}
 
 			/*
-			// tagRange not used in unmarshal
-			tagRange := Trim(strings.ToLower(field.Tag.Get("range")))
-			arRange := strings.Split(tagRange, "..")
-			rangeMin := 0
-			rangeMax := 0
-			if len(arRange) == 2 {
-				rangeMin, _ = ParseInt32(arRange[0])
-				rangeMax, _ = ParseInt32(arRange[1])
-			} else {
-				rangeMin, _ = ParseInt32(tagRange)
-				rangeMax = rangeMin
-			}
+				// tagRange not used in unmarshal
+				tagRange := Trim(strings.ToLower(field.Tag.Get("range")))
+				arRange := strings.Split(tagRange, "..")
+				rangeMin := 0
+				rangeMax := 0
+				if len(arRange) == 2 {
+					rangeMin, _ = ParseInt32(arRange[0])
+					rangeMax, _ = ParseInt32(arRange[1])
+				} else {
+					rangeMin, _ = ParseInt32(tagRange)
+					rangeMax = rangeMin
+				}
 			*/
 
 			// tagReq not used in unmarshal
@@ -1723,57 +1723,57 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 // this method provides data validation and if fails, will return error (for string if size exceeds max, it will truncate)
 //
 // Predefined Struct Tags Usable:
-//		1) `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
-//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
-//											 if multiple fields are in exclusive condition, and skipBlank or skipZero, always include a blank default field as the last of unique field list
-//										     if value is '-', this means position value is calculated from other fields and set via `setter:"base.Xyz"` during unmarshal csv, there is no marshal to csv for this field
-//		2) `type:"xyz"`				// data type expected:
-//											A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
-//											H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
-//		3) `regex:"xyz"`			// if Type = REGEX, this struct tag contains the regular expression string,
-//										 	regex express such as [^A-Za-z0-9_-]+
-//										 	method will replace any regex matched string to blank
-//		4) `size:"x..y"`			// data type size rule:
-//											x = Exact size match
-//											x.. = From x and up
-//											..y = From 0 up to y
-//											x..y = From x to y
-//											+%z = Append to x, x.., ..y, x..y; adds additional constraint that the result size must equate to 0 from modulo of z
-//		5) `range:"x..y"`			// data type range value when Type is N, if underlying data type is string, method will convert first before testing
-//		6) `req:"true"`				// indicates data value is required or not, true or false
-//		7) `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
-//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
-//									   NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
-// 		8) `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
-//									   NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
-//									   NOTE: setter method always intake a string parameter value
-//		9) `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-//		10) `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
-//									   if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
-// 		11) `uniqueid:"xyz"`		// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal,
-//									   NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
-//		12) `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
-//		13) `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
-//		14) `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
-//											2006, 06 = year,
-//											01, 1, Jan, January = month,
-//											02, 2, _2 = day (_2 = width two, right justified)
-//											03, 3, 15 = hour (15 = 24 hour format)
-//											04, 4 = minute
-//											05, 5 = second
-//											PM pm = AM PM
-//		15) `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
-//									   WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
-// 		16) `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
-//		17) `validate:"==x"`		// if field has to match a specific value or the entire method call will fail, match data format as:
-//									   		==xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
-//												[if == validate against one or more values, use ||]
-//									   		!=xyz (!= refers to not equal)
-//												[if != validate against one or more values, use &&]
-//											>=xyz >>xyz <<xyz <=xyz (greater equal, greater, less than, less equal; xyz must be int or float)
-//											:=Xyz where Xyz is a parameterless function defined at struct level, that performs validation, returns bool or error where true or nil indicates validation success
-//									   note: expected source data type for validate to be effective is string, int, float64; if field is blank and req = false, then validate will be skipped
+//  1. `pos:"1"`				// ordinal position of the field in relation to the csv parsed output expected (Zero-Based Index)
+//     NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
+//     if multiple fields are in exclusive condition, and skipBlank or skipZero, always include a blank default field as the last of unique field list
+//     if value is '-', this means position value is calculated from other fields and set via `setter:"base.Xyz"` during unmarshal csv, there is no marshal to csv for this field
+//  2. `type:"xyz"`				// data type expected:
+//     A = AlphabeticOnly, N = NumericOnly 0-9, AN = AlphaNumeric, ANS = AN + PrintableSymbols,
+//     H = Hex, B64 = Base64, B = true/false, REGEX = Regular Expression, Blank = Any,
+//  3. `regex:"xyz"`			// if Type = REGEX, this struct tag contains the regular expression string,
+//     regex express such as [^A-Za-z0-9_-]+
+//     method will replace any regex matched string to blank
+//  4. `size:"x..y"`			// data type size rule:
+//     x = Exact size match
+//     x.. = From x and up
+//     ..y = From 0 up to y
+//     x..y = From x to y
+//     +%z = Append to x, x.., ..y, x..y; adds additional constraint that the result size must equate to 0 from modulo of z
+//  5. `range:"x..y"`			// data type range value when Type is N, if underlying data type is string, method will convert first before testing
+//  6. `req:"true"`				// indicates data value is required or not, true or false
+//  7. `getter:"Key"`			// if field type is custom struct or enum, specify the custom method getter (no parameters allowed) that returns the expected value in first ordinal result position
+//     NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//     NOTE: if the method is to receive a parameter value, always in string data type, add '(x)' after the method name, such as 'XYZ(x)' or 'base.XYZ(x)'
+//  8. `setter:"ParseByKey`		// if field type is custom struct or enum, specify the custom method (only 1 lookup parameter value allowed) setter that sets value(s) into the field
+//     NOTE: if the method to invoke resides at struct level, precede the method name with 'base.', for example, 'base.XYZ' where XYZ is method name to invoke
+//     NOTE: setter method always intake a string parameter value
+//  9. `booltrue:"1"` 			// if field is defined, contains bool literal for true condition, such as 1 or true, that overrides default system bool literal value,
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  10. `boolfalse:"0"`			// if field is defined, contains bool literal for false condition, such as 0 or false, that overrides default system bool literal value
+//     if bool literal value is determined by existence of outprefix and itself is blank, place a space in both booltrue and boolfalse (setting blank will negate literal override)
+//  11. `uniqueid:"xyz"`		// if two or more struct field is set with the same uniqueid, then only the first encountered field with the same uniqueid will be used in marshal,
+//     NOTE: if field is mutually exclusive with one or more uniqueId, then pos # should be named the same for all uniqueIds
+//  12. `skipblank:"false"`		// if true, then any fields that is blank string will be excluded from marshal (this only affects fields that are string)
+//  13. `skipzero:"false"`		// if true, then any fields that are 0, 0.00, time.Zero(), false, nil will be excluded from marshal (this only affects fields that are number, bool, time, pointer)
+//  14. `timeformat:"20060102"`	// for time.Time field, optional date time format, specified as:
+//     2006, 06 = year,
+//     01, 1, Jan, January = month,
+//     02, 2, _2 = day (_2 = width two, right justified)
+//     03, 3, 15 = hour (15 = 24 hour format)
+//     04, 4 = minute
+//     05, 5 = second
+//     PM pm = AM PM
+//  15. `outprefix:""`			// for marshal method, if field value is to precede with an output prefix, such as XYZ= (affects marshal queryParams / csv methods only)
+//     WARNING: if csv is variable elements count, rather than fixed count ordinal, then csv MUST include outprefix for all fields in order to properly identify target struct field
+//  16. `zeroblank:"false"`		// set true to set blank to data when value is 0, 0.00, or time.IsZero
+//  17. `validate:"==x"`		// if field has to match a specific value or the entire method call will fail, match data format as:
+//     ==xyz (== refers to equal, for numbers and string match, xyz is data to match, case insensitive)
+//     [if == validate against one or more values, use ||]
+//     !=xyz (!= refers to not equal)
+//     [if != validate against one or more values, use &&]
+//     >=xyz >>xyz <<xyz <=xyz (greater equal, greater, less than, less equal; xyz must be int or float)
+//     :=Xyz where Xyz is a parameterless function defined at struct level, that performs validation, returns bool or error where true or nil indicates validation success
+//     note: expected source data type for validate to be effective is string, int, float64; if field is blank and req = false, then validate will be skipped
 func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPayload string, err error) {
 	if inputStructPtr == nil {
 		return "", fmt.Errorf("InputStructPtr is Required")
@@ -1801,7 +1801,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 	csvLen := len(csvList)
 
 	for i := 0; i < csvLen; i++ {
-		csvList[i] = "{?}"	// indicates value not set, to be excluded
+		csvList[i] = "{?}" // indicates value not set, to be excluded
 	}
 
 	excludePlaceholders := true
@@ -2255,5 +2255,3 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 
 	return csvPayload, nil
 }
-
-

@@ -1,7 +1,7 @@
 package sns
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -163,8 +163,8 @@ func (s *SNS) connectInternal() error {
 	// establish aws session connection and keep session object in struct
 	if sess, err := session.NewSession(
 		&aws.Config{
-			Region:      aws.String(s.AwsRegion.Key()),
-			HTTPClient:  httpCli,
+			Region:     aws.String(s.AwsRegion.Key()),
+			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error
 		return errors.New("Connect To SNS Failed: (AWS Session Error) " + err.Error())
@@ -461,20 +461,21 @@ func (s *SNS) fromAwsEndpointAttributes(attributes map[string]*string) (newMap m
 // once topic is created, the topicArn is returned for subsequent uses
 //
 // Parameters:
-//		1) topicName = required, the name of the topic to create in SNS
-//		2) attributes = optional, topic attributes to further customize the topic
-//		3) timeOutDuration = optional, indicates timeout value for context
+//  1. topicName = required, the name of the topic to create in SNS
+//  2. attributes = optional, topic attributes to further customize the topic
+//  3. timeOutDuration = optional, indicates timeout value for context
 //
 // Topic Attributes: (Key = Expected Value)
-//		1) DeliveryPolicy = The JSON serialization of the topic's delivery policy
-//	   	2) DisplayName = The human-readable name used in the From field for notifications to email and email-json endpoints
-//	    3) Policy = The JSON serialization of the topic's access control policy
+//  1. DeliveryPolicy = The JSON serialization of the topic's delivery policy
+//  2. DisplayName = The human-readable name used in the From field for notifications to email and email-json endpoints
+//  3. Policy = The JSON serialization of the topic's access control policy
 //
 // The following attribute applies only to server-side-encryption (https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html):
+//
 //	   	a) KmsMasterKeyId = The ID of an AWS-managed customer master key (CMK) for Amazon SNS or a custom CMK.
 //							For more information, see Key Terms (https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html#sse-key-terms)
 //	   						For more examples, see KeyId (https://docs.aws.amazon.com/kms/latest/APIReference/API_DescribeKey.html#API_DescribeKey_RequestParameters) in the AWS Key Management Service API Reference
-func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribute.SNSCreateTopicAttribute]string, timeOutDuration ...time.Duration) (topicArn string, err error){
+func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribute.SNSCreateTopicAttribute]string, timeOutDuration ...time.Duration) (topicArn string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -606,13 +607,13 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 // ListTopics will list SNS topics, with optional nextToken for retrieving more list from a prior call
 //
 // Parameters:
-//		1) nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
+//  2. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) topicArnsList = string slice of topic ARNs, nil if not set
-//		2) moreTopicArnsNextToken = if there are more topics, this token is filled, to query more, use the token as input parameter, blank if no more
-//		3) err = error info if any
+//  1. topicArnsList = string slice of topic ARNs, nil if not set
+//  2. moreTopicArnsNextToken = if there are more topics, this token is filled, to query more, use the token as input parameter, blank if no more
+//  3. err = error info if any
 func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (topicArnsList []string, moreTopicArnsNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -686,25 +687,26 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 // GetTopicAttributes will retrieve a map of topic attributes based on topicArn
 //
 // Parameters:
-//		1) topicArn = required, specify the topicArn to retrieve related topic attributes
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. topicArn = required, specify the topicArn to retrieve related topic attributes
+//  2. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) attributes = map of sns get topic attributes key value pairs related to teh topic ARN being queried
-//		2) err = error info if any
+//  1. attributes = map of sns get topic attributes key value pairs related to teh topic ARN being queried
+//  2. err = error info if any
 //
 // Topic Attributes: (Key = Expected Value)
-//		1) DeliveryPolicy = The JSON serialization of the topic's delivery policy (See Subscribe DeliveryPolicy Json Format)
-//	   	2) DisplayName = The human-readable name used in the From field for notifications to email and email-json endpoints
-//	   	3) Owner = The AWS account ID of the topic's owner
-//	    4) Policy = The JSON serialization of the topic's access control policy
-//		5) SubscriptionsConfirmed = The number of confirmed subscriptions for the topic
-//	   	6) SubscriptionsDeleted = The number of deleted subscriptions for the topic
-//	   	7) SubscriptionsPending = The number of subscriptions pending confirmation for the topic
-//	   	8) TopicArn = The topic's ARN
-//		9) EffectiveDeliveryPolicy = Yhe JSON serialization of the effective delivery policy, taking system defaults into account
+//  1. DeliveryPolicy = The JSON serialization of the topic's delivery policy (See Subscribe DeliveryPolicy Json Format)
+//  2. DisplayName = The human-readable name used in the From field for notifications to email and email-json endpoints
+//  3. Owner = The AWS account ID of the topic's owner
+//  4. Policy = The JSON serialization of the topic's access control policy
+//  5. SubscriptionsConfirmed = The number of confirmed subscriptions for the topic
+//  6. SubscriptionsDeleted = The number of deleted subscriptions for the topic
+//  7. SubscriptionsPending = The number of subscriptions pending confirmation for the topic
+//  8. TopicArn = The topic's ARN
+//  9. EffectiveDeliveryPolicy = Yhe JSON serialization of the effective delivery policy, taking system defaults into account
 //
 // The following attribute applies only to server-side-encryption (https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html):
+//
 //	   	a) KmsMasterKeyId = The ID of an AWS-managed customer master key (CMK) for Amazon SNS or a custom CMK.
 //							For more information, see Key Terms (https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html#sse-key-terms)
 //	   						For more examples, see KeyId (https://docs.aws.amazon.com/kms/latest/APIReference/API_DescribeKey.html#API_DescribeKey_RequestParameters) in the AWS Key Management Service API Reference
@@ -774,9 +776,9 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 // SetTopicAttribute will set or update a topic attribute,
 // For attribute value or Json format, see corresponding notes in CreateTopic where applicable
 func (s *SNS) SetTopicAttribute(topicArn string,
-								attributeName snscreatetopicattribute.SNSCreateTopicAttribute,
-								attributeValue string,
-								timeOutDuration ...time.Duration) (err error) {
+	attributeName snscreatetopicattribute.SNSCreateTopicAttribute,
+	attributeValue string,
+	timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -816,8 +818,8 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 
 	// create input object
 	input := &sns.SetTopicAttributesInput{
-		TopicArn: aws.String(topicArn),
-		AttributeName: aws.String(attributeName.Key()),
+		TopicArn:       aws.String(topicArn),
+		AttributeName:  aws.String(attributeName.Key()),
 		AttributeValue: aws.String(attributeValue),
 	}
 
@@ -850,90 +852,91 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 
 // Subscribe will allow client to subscribe to a SNS topic (previously created with CreateTopic method),
 // the subscriptionArn is returned upon success,
-// 		if subscription needs client confirmation, then the string 'pending confirmation' is returned instead
+//
+//	if subscription needs client confirmation, then the string 'pending confirmation' is returned instead
 //
 // Parameters:
-//		1) topicArn = required, subscribe to this topic ARN
-//		2) protocol = required, SNS callback protocol, so that when publish to the topic occurs, this protocol is used as callback
-//		3) endPoint = required, SNS callback endpoint, so that when publish to the topic occurs, this endpoint is triggered by the callback
-//		4) attributes = optional, map of sns subscribe attribute key value pairs
-//		5) timeOutDuration = optional, indicates timeout value for context
+//  1. topicArn = required, subscribe to this topic ARN
+//  2. protocol = required, SNS callback protocol, so that when publish to the topic occurs, this protocol is used as callback
+//  3. endPoint = required, SNS callback endpoint, so that when publish to the topic occurs, this endpoint is triggered by the callback
+//  4. attributes = optional, map of sns subscribe attribute key value pairs
+//  5. timeOutDuration = optional, indicates timeout value for context
 //
 // Protocols: (Key = Expected Value)
-//		1) http = delivery of JSON-encoded message via HTTP POST
-//	   	2) https = delivery of JSON-encoded message via HTTPS POST
-//	   	3) email = delivery of message via SMTP
-//	   	4) email-json = delivery of JSON-encoded message via SMTP
-//	   	5) sms = delivery of message via SMS
-//	   	6) sqs = delivery of JSON-encoded message to an Amazon SQS queue
-//	   	7) application = delivery of JSON-encoded message to an EndpointArn for a mobile app and device
-//		8) lambda = delivery of JSON-encoded message to an Amazon Lambda function
+//  1. http = delivery of JSON-encoded message via HTTP POST
+//  2. https = delivery of JSON-encoded message via HTTPS POST
+//  3. email = delivery of message via SMTP
+//  4. email-json = delivery of JSON-encoded message via SMTP
+//  5. sms = delivery of message via SMS
+//  6. sqs = delivery of JSON-encoded message to an Amazon SQS queue
+//  7. application = delivery of JSON-encoded message to an EndpointArn for a mobile app and device
+//  8. lambda = delivery of JSON-encoded message to an Amazon Lambda function
 //
 // Endpoint To Receive Notifications: (Based on Protocol)
-//	   	1) http protocol = the endpoint is an URL beginning with http://
-//	   	2) https protocol = the endpoint is a URL beginning with https://
-//	   	3) email protocol = the endpoint is an email address
-//	   	4) email-json protocol = the endpoint is an email address
-//	   	5) sms protocol = the endpoint is a phone number of an SMS-enabled device
-//	   	6) sqs protocol = the endpoint is the ARN of an Amazon SQS queue
-//	   	7) application protocol = the endpoint is the EndpointArn of a mobile app and device
-//	   	8) lambda protocol = the endpoint is the ARN of an Amazon Lambda function
+//  1. http protocol = the endpoint is an URL beginning with http://
+//  2. https protocol = the endpoint is a URL beginning with https://
+//  3. email protocol = the endpoint is an email address
+//  4. email-json protocol = the endpoint is an email address
+//  5. sms protocol = the endpoint is a phone number of an SMS-enabled device
+//  6. sqs protocol = the endpoint is the ARN of an Amazon SQS queue
+//  7. application protocol = the endpoint is the EndpointArn of a mobile app and device
+//  8. lambda protocol = the endpoint is the ARN of an Amazon Lambda function
 //
 // Subscribe Attributes: (Key = Expected Value)
-//		1) DeliveryPolicy = The policy that defines how Amazon SNS retries failed deliveries to HTTP/S endpoints
-//						    *) example to set delivery policy to 5 retries:
-//							  	{
-//									"healthyRetryPolicy": {
-//										"minDelayTarget": <intValue>,
-//										"maxDelayTarget": <intValue>,
-//										"numRetries": <intValue>,
-//										"numMaxDelayRetries": <intValue>,
-//										"backoffFunction": "<linear|arithmetic|geometric|exponential>"
-//									},
-//									"throttlePolicy": {
-//										"maxReceivesPerSecond": <intValue>
-//									}
-//								}
-//							 *) Not All Json Elements Need To Be Filled in Policy, Use What is Needed, such as:
-//								{ "healthyRetryPolicy": { "numRetries": 5 } }
-//	   	2) FilterPolicy = The simple JSON object that lets your subscriber receive only a subset of messages,
-//	   					  rather than receiving every message published to the topic:
-//	   		  			     *) subscriber attribute controls filter allowance,
-//	   		  	  				publish attribute indicates attributes contained in message
-//		  				     *) if any single attribute in this policy doesn't match an attribute assigned to message, this policy rejects the message:
-//								{
-//									"store": ["example_corp"],
-//									"event": [{"anything-but": "order_cancelled"}],
-//									"customer_interests": ["rugby", "football", "baseball"],
-//									"price_usd": [{"numeric": [">=", 100]}]
-//								}
-//							  *) "xyz": [{"anything-but": ...}] keyword indicates to match anything but the defined value ... Json element (... may be string or numeric)
-//							  *) "xyz": [{"prefix": ...}] keyword indicates to match value prefixed from the defined value ... in Json element
-//							  *) "xyz": [{"numeric": ["=", ...]}] keyword indicates numeric equal matching as indicated by numeric and =
-//							  *) "xyz": [{"numeric": [">", ...]}] keyword indicates numeric compare matching as indicated by numeric and >, <, >=, <=
-//							  *) "xyz": [{"numeric": [">", 0, "<", 100]}] keyword indicates numeric ranged compare matching as indicated by numeric and >, <, in parts
-//							  *) "xyz": [{"exists": true}] keyword indicates attribute xyz exists matching
-//	   	3) RawMessageDelivery = When set to true, enables raw message delivery to Amazon SQS or HTTP/S endpoints.
-//								This eliminates the need for the endpoints to process JSON formatting, which is otherwise created for Amazon SNS metadata
-//	   	4) RedrivePolicy = When specified, sends undeliverable messages to the specified Amazon SQS dead-letter queue.
-//						   Messages that can't be delivered due to client errors (for example, when the subscribed endpoint is unreachable),
-//						   or server errors (for example, when the service that powers the subscribed endpoint becomes unavailable),
-//						   are held in the dead-letter queue for further analysis or reprocessing
-//							   *) example of RedrivePolicy to route failed messages to Dead Letter Queue (DLQ):
-//								  {
-//									  "deadLetterTargetArn": "dead letter sns queue arn such as arn:aws:sqs:us-east-2:12345678021:MyDeadLetterQueue"
-//								  }
+//  1. DeliveryPolicy = The policy that defines how Amazon SNS retries failed deliveries to HTTP/S endpoints
+//     *) example to set delivery policy to 5 retries:
+//     {
+//     "healthyRetryPolicy": {
+//     "minDelayTarget": <intValue>,
+//     "maxDelayTarget": <intValue>,
+//     "numRetries": <intValue>,
+//     "numMaxDelayRetries": <intValue>,
+//     "backoffFunction": "<linear|arithmetic|geometric|exponential>"
+//     },
+//     "throttlePolicy": {
+//     "maxReceivesPerSecond": <intValue>
+//     }
+//     }
+//     *) Not All Json Elements Need To Be Filled in Policy, Use What is Needed, such as:
+//     { "healthyRetryPolicy": { "numRetries": 5 } }
+//  2. FilterPolicy = The simple JSON object that lets your subscriber receive only a subset of messages,
+//     rather than receiving every message published to the topic:
+//     *) subscriber attribute controls filter allowance,
+//     publish attribute indicates attributes contained in message
+//     *) if any single attribute in this policy doesn't match an attribute assigned to message, this policy rejects the message:
+//     {
+//     "store": ["example_corp"],
+//     "event": [{"anything-but": "order_cancelled"}],
+//     "customer_interests": ["rugby", "football", "baseball"],
+//     "price_usd": [{"numeric": [">=", 100]}]
+//     }
+//     *) "xyz": [{"anything-but": ...}] keyword indicates to match anything but the defined value ... Json element (... may be string or numeric)
+//     *) "xyz": [{"prefix": ...}] keyword indicates to match value prefixed from the defined value ... in Json element
+//     *) "xyz": [{"numeric": ["=", ...]}] keyword indicates numeric equal matching as indicated by numeric and =
+//     *) "xyz": [{"numeric": [">", ...]}] keyword indicates numeric compare matching as indicated by numeric and >, <, >=, <=
+//     *) "xyz": [{"numeric": [">", 0, "<", 100]}] keyword indicates numeric ranged compare matching as indicated by numeric and >, <, in parts
+//     *) "xyz": [{"exists": true}] keyword indicates attribute xyz exists matching
+//  3. RawMessageDelivery = When set to true, enables raw message delivery to Amazon SQS or HTTP/S endpoints.
+//     This eliminates the need for the endpoints to process JSON formatting, which is otherwise created for Amazon SNS metadata
+//  4. RedrivePolicy = When specified, sends undeliverable messages to the specified Amazon SQS dead-letter queue.
+//     Messages that can't be delivered due to client errors (for example, when the subscribed endpoint is unreachable),
+//     or server errors (for example, when the service that powers the subscribed endpoint becomes unavailable),
+//     are held in the dead-letter queue for further analysis or reprocessing
+//     *) example of RedrivePolicy to route failed messages to Dead Letter Queue (DLQ):
+//     {
+//     "deadLetterTargetArn": "dead letter sns queue arn such as arn:aws:sqs:us-east-2:12345678021:MyDeadLetterQueue"
+//     }
 //
 // Subscription Confirmation Support:
-//		1) Http / Https Endpoints Requires Subscription Confirmation Support, See Details in URL Below:
-//			a) https://docs.aws.amazon.com/sns/latest/dg/sns-http-https-endpoint-as-subscriber.html
-//		2) Once Subscribe action is performed, SNS sends confirmation notification to the HTTP/s Endpoint:
-//			b) Client Upon Receipt of the SNS Notification, Retrieve Token and Respond via ConfirmSubscription method
+//  1. Http / Https Endpoints Requires Subscription Confirmation Support, See Details in URL Below:
+//     a) https://docs.aws.amazon.com/sns/latest/dg/sns-http-https-endpoint-as-subscriber.html
+//  2. Once Subscribe action is performed, SNS sends confirmation notification to the HTTP/s Endpoint:
+//     b) Client Upon Receipt of the SNS Notification, Retrieve Token and Respond via ConfirmSubscription method
 func (s *SNS) Subscribe(topicArn string,
-						protocol snsprotocol.SNSProtocol,
-						endPoint string,
-						attributes map[snssubscribeattribute.SNSSubscribeAttribute]string,
-						timeOutDuration ...time.Duration) (subscriptionArn string, err error) {
+	protocol snsprotocol.SNSProtocol,
+	endPoint string,
+	attributes map[snssubscribeattribute.SNSSubscribeAttribute]string,
+	timeOutDuration ...time.Duration) (subscriptionArn string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1019,8 +1022,8 @@ func (s *SNS) Subscribe(topicArn string,
 // nil is returned if successful, otherwise err is filled with error info
 //
 // Parameters:
-//		1) subscriptionArn = required, the subscription ARN to remove from SNS
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. subscriptionArn = required, the subscription ARN to remove from SNS
+//  2. timeOutDuration = optional, indicates timeout value for context
 func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1084,19 +1087,19 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 // the SNS subscription confirmation will contain a Token which is needed by ConfirmSubscription as input parameter in order to confirm,
 //
 // Parameters:
-//		1) topicArn = required, the topic in SNS to confirm subscription for
-//		2) token = required, the token from SNS confirmation notification receive upon call to Subscribe
-//		3) timeOutDuration = optional, indicates timeout value for context
+//  1. topicArn = required, the topic in SNS to confirm subscription for
+//  2. token = required, the token from SNS confirmation notification receive upon call to Subscribe
+//  3. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) subscriptionArn = upon confirmation, the subscription ARN attained
-//		2) err = the error info if any
+//  1. subscriptionArn = upon confirmation, the subscription ARN attained
+//  2. err = the error info if any
 //
 // Subscription Confirmation Support:
-//		1) Http / Https / Email Endpoints Requires Subscription Confirmation Support, See Details in URL Below:
-//			a) https://docs.aws.amazon.com/sns/latest/dg/sns-http-https-endpoint-as-subscriber.html
-//		2) Once Subscribe action is performed, SNS sends confirmation notification to the HTTP/s Endpoint:
-//			b) Client Upon Receipt of the SNS Notification, Retrieve Token and Respond via ConfirmSubscription method
+//  1. Http / Https / Email Endpoints Requires Subscription Confirmation Support, See Details in URL Below:
+//     a) https://docs.aws.amazon.com/sns/latest/dg/sns-http-https-endpoint-as-subscriber.html
+//  2. Once Subscribe action is performed, SNS sends confirmation notification to the HTTP/s Endpoint:
+//     b) Client Upon Receipt of the SNS Notification, Retrieve Token and Respond via ConfirmSubscription method
 func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration ...time.Duration) (subscriptionArn string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1138,7 +1141,7 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 	// create input object
 	input := &sns.ConfirmSubscriptionInput{
 		TopicArn: aws.String(topicArn),
-		Token: aws.String(token),
+		Token:    aws.String(token),
 	}
 
 	// perform action
@@ -1170,13 +1173,13 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 // ListSubscriptions will list SNS subscriptions, with optional nextToken for retrieving more list from a prior call
 //
 // Parameters:
-//		1) nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
+//  2. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) subscriptionsList = *SubscribedTopic slice containing subscriptions along with its related topic, nil if not set
-//		2) moreSubscriptionsNextToken = if there are more subscriptions, this token is filled, to query more, use the token as input parameter, blank if no more
-//		3) err = error info if any
+//  1. subscriptionsList = *SubscribedTopic slice containing subscriptions along with its related topic, nil if not set
+//  2. moreSubscriptionsNextToken = if there are more subscriptions, this token is filled, to query more, use the token as input parameter, blank if no more
+//  3. err = error info if any
 func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Duration) (subscriptionsList []*SubscribedTopic, moreSubscriptionsNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1243,10 +1246,10 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 			if p, e := conv.ParseByKey(aws.StringValue(v.Protocol)); e == nil {
 				subscriptionsList = append(subscriptionsList, &SubscribedTopic{
 					SubscriptionArn: aws.StringValue(v.SubscriptionArn),
-					TopicArn: aws.StringValue(v.TopicArn),
-					Endpoint: aws.StringValue(v.Endpoint),
-					Owner: aws.StringValue(v.Owner),
-					Protocol: p,
+					TopicArn:        aws.StringValue(v.TopicArn),
+					Endpoint:        aws.StringValue(v.Endpoint),
+					Owner:           aws.StringValue(v.Owner),
+					Protocol:        p,
 				})
 			}
 		}
@@ -1259,14 +1262,14 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 // with optional nextToken for retrieving more list from a prior call
 //
 // Parameters:
-//		1) topicArn = required, list subscriptions based on this topic ARN
-//		2) nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
-//		3) timeOutDuration = optional, indicates timeout value for context
+//  1. topicArn = required, list subscriptions based on this topic ARN
+//  2. nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
+//  3. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) subscriptionsList = *SubscribedTopic slice containing subscriptions along with its related topic, nil if not set
-//		2) moreSubscriptionsNextToken = if there are more subscriptions, this token is filled, to query more, use the token as input parameter, blank if no more
-//		3) err = error info if any
+//  1. subscriptionsList = *SubscribedTopic slice containing subscriptions along with its related topic, nil if not set
+//  2. moreSubscriptionsNextToken = if there are more subscriptions, this token is filled, to query more, use the token as input parameter, blank if no more
+//  3. err = error info if any
 func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOutDuration ...time.Duration) (subscriptionsList []*SubscribedTopic, moreSubscriptionsNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1341,10 +1344,10 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 			if p, e := conv.ParseByKey(aws.StringValue(v.Protocol)); e == nil {
 				subscriptionsList = append(subscriptionsList, &SubscribedTopic{
 					SubscriptionArn: aws.StringValue(v.SubscriptionArn),
-					TopicArn: aws.StringValue(v.TopicArn),
-					Endpoint: aws.StringValue(v.Endpoint),
-					Owner: aws.StringValue(v.Owner),
-					Protocol: p,
+					TopicArn:        aws.StringValue(v.TopicArn),
+					Endpoint:        aws.StringValue(v.Endpoint),
+					Owner:           aws.StringValue(v.Owner),
+					Protocol:        p,
 				})
 			}
 		}
@@ -1356,30 +1359,30 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 // GetSubscriptionAttributes will retrieve all subscription attributes for a specific subscription based on subscriptionArn
 //
 // Parameters:
-//		1) subscriptionArn = required, the subscriptionArn for which attributes are retrieved from
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. subscriptionArn = required, the subscriptionArn for which attributes are retrieved from
+//  2. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) attributes = map of sns get subscription attributes in key value pairs
-//		2) err = error info if any
+//  1. attributes = map of sns get subscription attributes in key value pairs
+//  2. err = error info if any
 //
 // Subscription Attributes: (Key = Expected Value)
-//		1) ConfirmationWasAuthenticated = true if the subscription confirmation request was authenticated
-// 		2) DeliveryPolicy = The JSON serialization of the subscription's delivery policy (See Subscribe Notes)
-//   	3) EffectiveDeliveryPolicy = The JSON serialization of the effective delivery policy that takes into account the topic delivery policy,
-//  							 	 and account system defaults (See Subscribe Notes for DeliveryPolicy Json format)
-//   	4) FilterPolicy = The filter policy JSON that is assigned to the subscription (See Subscribe Notes)
-//   	5) Owner = The AWS account ID of the subscription's owner
-//   	6) PendingConfirmation = true if the subscription hasn't been confirmed,
-//   							 To confirm a pending subscription, call the ConfirmSubscription action with a confirmation token
-//   	7) RawMessageDelivery = true if raw message delivery is enabled for the subscription.
-//								Raw messages are free of JSON formatting and can be sent to HTTP/S and Amazon SQS endpoints
-// 		8) RedrivePolicy = When specified, sends undeliverable messages to the specified Amazon SQS dead-letter queue.
-//						   Messages that can't be delivered due to client errors (for example, when the subscribed endpoint is unreachable),
-//						   or server errors (for example, when the service that powers the subscribed endpoint becomes unavailable)
-//						   are held in the dead-letter queue for further analysis or reprocessing (See Subscribe Notes)
-//  	9) SubscriptionArn = The subscription's ARN
-// 		10) TopicArn = The topic ARN that the subscription is associated with
+//  1. ConfirmationWasAuthenticated = true if the subscription confirmation request was authenticated
+//  2. DeliveryPolicy = The JSON serialization of the subscription's delivery policy (See Subscribe Notes)
+//  3. EffectiveDeliveryPolicy = The JSON serialization of the effective delivery policy that takes into account the topic delivery policy,
+//     and account system defaults (See Subscribe Notes for DeliveryPolicy Json format)
+//  4. FilterPolicy = The filter policy JSON that is assigned to the subscription (See Subscribe Notes)
+//  5. Owner = The AWS account ID of the subscription's owner
+//  6. PendingConfirmation = true if the subscription hasn't been confirmed,
+//     To confirm a pending subscription, call the ConfirmSubscription action with a confirmation token
+//  7. RawMessageDelivery = true if raw message delivery is enabled for the subscription.
+//     Raw messages are free of JSON formatting and can be sent to HTTP/S and Amazon SQS endpoints
+//  8. RedrivePolicy = When specified, sends undeliverable messages to the specified Amazon SQS dead-letter queue.
+//     Messages that can't be delivered due to client errors (for example, when the subscribed endpoint is unreachable),
+//     or server errors (for example, when the service that powers the subscribed endpoint becomes unavailable)
+//     are held in the dead-letter queue for further analysis or reprocessing (See Subscribe Notes)
+//  9. SubscriptionArn = The subscription's ARN
+//  10. TopicArn = The topic ARN that the subscription is associated with
 func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration ...time.Duration) (attributes map[snsgetsubscriptionattribute.SNSGetSubscriptionAttribute]string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1446,9 +1449,9 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 // SetSubscriptionAttribute will set or update a subscription attribute,
 // For attribute value or Json format, see corresponding notes in Subscribe where applicable
 func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
-									   attributeName snssubscribeattribute.SNSSubscribeAttribute,
-									   attributeValue string,
-									   timeOutDuration ...time.Duration) (err error) {
+	attributeName snssubscribeattribute.SNSSubscribeAttribute,
+	attributeValue string,
+	timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1489,8 +1492,8 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 	// create input object
 	input := &sns.SetSubscriptionAttributesInput{
 		SubscriptionArn: aws.String(subscriptionArn),
-		AttributeName: aws.String(attributeName.Key()),
-		AttributeValue: aws.String(attributeValue),
+		AttributeName:   aws.String(attributeName.Key()),
+		AttributeValue:  aws.String(attributeValue),
 	}
 
 	// perform action
@@ -1524,44 +1527,44 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 // upon publish completed, the messageId is returned
 //
 // Parameters:
-//		1) topicArn = required but mutually exclusive, either topicArn or targetArn must be set (but NOT BOTH)
-//		2) targetArn = required but mutually exclusive, either topicArn or targetArn must be set (but NOT BOTH)
-//		3) message = required, the message to publish, up to 256KB
-//		4) subject = optional, only for email endpoints, up to 100 characters
-//		5) attributes = optional, message attributes
-//						a) Other than defining Endpoint attributes as indicated in note below,
-//						b) attributes can also contain Message specific attributes for use for Subscriber Filter Policy and etc,
-//							   *) For example, custom attribute name and value for the message can be defined in this map as metadata,
-//								  so that when Subscriber receives it can apply filter policy etc (See Subscribe method Filter Policy for more info)
-//								  i.e attributes["customer_interests"] = "rugby"
-//								  i.e attributes["price_usd"] = 100
-//		6) timeOutDuration = optional, indicates timeout value for context
+//  1. topicArn = required but mutually exclusive, either topicArn or targetArn must be set (but NOT BOTH)
+//  2. targetArn = required but mutually exclusive, either topicArn or targetArn must be set (but NOT BOTH)
+//  3. message = required, the message to publish, up to 256KB
+//  4. subject = optional, only for email endpoints, up to 100 characters
+//  5. attributes = optional, message attributes
+//     a) Other than defining Endpoint attributes as indicated in note below,
+//     b) attributes can also contain Message specific attributes for use for Subscriber Filter Policy and etc,
+//     *) For example, custom attribute name and value for the message can be defined in this map as metadata,
+//     so that when Subscriber receives it can apply filter policy etc (See Subscribe method Filter Policy for more info)
+//     i.e attributes["customer_interests"] = "rugby"
+//     i.e attributes["price_usd"] = 100
+//  6. timeOutDuration = optional, indicates timeout value for context
 //
 // Message Attribute Keys:
-//		1) ADM
-//			a) AWS.SNS.MOBILE.ADM.TTL
-//		2) APNs
-//			a) AWS.SNS.MOBILE.APNS_MDM.TTL
-//			b) AWS.SNS.MOBILE.APNS_MDM_SANDBOX.TTL
-//			c) AWS.SNS.MOBILE.APNS_PASSBOOK.TTL
-//			d) AWS.SNS.MOBILE.APNS_PASSBOOK_SANDBOX.TTL
-//			e) AWS.SNS.MOBILE.APNS_SANDBOX.TTL
-//			f) AWS.SNS.MOBILE.APNS_VOIP.TTL
-//			g) AWS.SNS.MOBILE.APNS_VOIP_SANDBOX.TTL
-//			h) AWS.SNS.MOBILE.APNS.COLLAPSE_ID
-//			i) AWS.SNS.MOBILE.APNS.PRIORITY
-//			j) AWS.SNS.MOBILE.APNS.PUSH_TYPE
-//			k) AWS.SNS.MOBILE.APNS.TOPIC
-//			l) AWS.SNS.MOBILE.APNS.TTL
-//			m) AWS.SNS.MOBILE.PREFERRED_AUTHENTICATION_METHOD
-//		3) Custom Message Attribute Key Value Pairs
-//			a) For Use Against Subscriber Filter Policy Matching
+//  1. ADM
+//     a) AWS.SNS.MOBILE.ADM.TTL
+//  2. APNs
+//     a) AWS.SNS.MOBILE.APNS_MDM.TTL
+//     b) AWS.SNS.MOBILE.APNS_MDM_SANDBOX.TTL
+//     c) AWS.SNS.MOBILE.APNS_PASSBOOK.TTL
+//     d) AWS.SNS.MOBILE.APNS_PASSBOOK_SANDBOX.TTL
+//     e) AWS.SNS.MOBILE.APNS_SANDBOX.TTL
+//     f) AWS.SNS.MOBILE.APNS_VOIP.TTL
+//     g) AWS.SNS.MOBILE.APNS_VOIP_SANDBOX.TTL
+//     h) AWS.SNS.MOBILE.APNS.COLLAPSE_ID
+//     i) AWS.SNS.MOBILE.APNS.PRIORITY
+//     j) AWS.SNS.MOBILE.APNS.PUSH_TYPE
+//     k) AWS.SNS.MOBILE.APNS.TOPIC
+//     l) AWS.SNS.MOBILE.APNS.TTL
+//     m) AWS.SNS.MOBILE.PREFERRED_AUTHENTICATION_METHOD
+//  3. Custom Message Attribute Key Value Pairs
+//     a) For Use Against Subscriber Filter Policy Matching
 func (s *SNS) Publish(topicArn string,
-					  targetArn string,
-					  message string,
-					  subject string,
-					  attributes map[string]*sns.MessageAttributeValue,
-					  timeOutDuration ...time.Duration) (messageId string, err error) {
+	targetArn string,
+	message string,
+	subject string,
+	attributes map[string]*sns.MessageAttributeValue,
+	timeOutDuration ...time.Duration) (messageId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1664,31 +1667,31 @@ func (s *SNS) Publish(topicArn string,
 // upon sms successfully sent, the messageId is returned
 //
 // Parameters:
-//		1) phoneNumber = required, phone number to deliver an SMS message. Use E.164 format (+12095551212 where +1 is country code)
-//		2) message = required, the message to publish; max is 140 ascii characters (70 characters when in UCS-2 encoding)
-//		3) timeOutDuration = optional, indicates timeout value for context
+//  1. phoneNumber = required, phone number to deliver an SMS message. Use E.164 format (+12095551212 where +1 is country code)
+//  2. message = required, the message to publish; max is 140 ascii characters (70 characters when in UCS-2 encoding)
+//  3. timeOutDuration = optional, indicates timeout value for context
 //
 // Fixed Message Attributes Explained:
-//		1) AWS.SNS.SMS.SenderID = A custom ID that contains 3-11 alphanumeric characters, including at least one letter and no spaces.
-//								  The sender ID is displayed as the message sender on the receiving device.
-//								  For example, you can use your business brand to make the message source easier to recognize.
-//								  Support for sender IDs varies by country and/or region.
-//							      For example, messages delivered to U.S. phone numbers will not display the sender ID.
-//								  For the countries and regions that support sender IDs, see Supported Regions and countries.
-//								  If you do not specify a sender ID, the message will display a long code as the sender ID in supported countries and regions.
-//								  For countries or regions that require an alphabetic sender ID, the message displays NOTICE as the sender ID.
-//								  This message-level attribute overrides the account-level attribute DefaultSenderID, which you set using the SetSMSAttributes request.
-//		2) AWS.SNS.SMS.SMSType = The type of message that you are sending:
-//								    a) Promotional = (default) – Noncritical messages, such as marketing messages.
-//															   Amazon SNS optimizes the message delivery to incur the lowest cost.
-//									b) Transactional = Critical messages that support customer transactions,
-//													   such as one-time passcodes for multi-factor authentication.
-//													   Amazon SNS optimizes the message delivery to achieve the highest reliability.
-//													   This message-level attribute overrides the account-level attribute DefaultSMSType,
-//													   which you set using the SetSMSAttributes request.
+//  1. AWS.SNS.SMS.SenderID = A custom ID that contains 3-11 alphanumeric characters, including at least one letter and no spaces.
+//     The sender ID is displayed as the message sender on the receiving device.
+//     For example, you can use your business brand to make the message source easier to recognize.
+//     Support for sender IDs varies by country and/or region.
+//     For example, messages delivered to U.S. phone numbers will not display the sender ID.
+//     For the countries and regions that support sender IDs, see Supported Regions and countries.
+//     If you do not specify a sender ID, the message will display a long code as the sender ID in supported countries and regions.
+//     For countries or regions that require an alphabetic sender ID, the message displays NOTICE as the sender ID.
+//     This message-level attribute overrides the account-level attribute DefaultSenderID, which you set using the SetSMSAttributes request.
+//  2. AWS.SNS.SMS.SMSType = The type of message that you are sending:
+//     a) Promotional = (default) – Noncritical messages, such as marketing messages.
+//     Amazon SNS optimizes the message delivery to incur the lowest cost.
+//     b) Transactional = Critical messages that support customer transactions,
+//     such as one-time passcodes for multi-factor authentication.
+//     Amazon SNS optimizes the message delivery to achieve the highest reliability.
+//     This message-level attribute overrides the account-level attribute DefaultSMSType,
+//     which you set using the SetSMSAttributes request.
 func (s *SNS) SendSMS(phoneNumber string,
-					  message string,
-					  timeOutDuration ...time.Duration) (messageId string, err error) {
+	message string,
+	timeOutDuration ...time.Duration) (messageId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1748,8 +1751,8 @@ func (s *SNS) SendSMS(phoneNumber string,
 
 	// create input object
 	input := &sns.PublishInput{
-		PhoneNumber: aws.String(phoneNumber),
-		Message: aws.String(message),
+		PhoneNumber:       aws.String(phoneNumber),
+		Message:           aws.String(message),
 		MessageAttributes: m,
 	}
 
@@ -1783,8 +1786,8 @@ func (s *SNS) SendSMS(phoneNumber string,
 // returns nil if successful, otherwise error info is returned
 //
 // Parameters:
-//		1) phoneNumber = required, phone number to opt in. Use E.164 format (+12095551212 where +1 is country code)
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. phoneNumber = required, phone number to opt in. Use E.164 format (+12095551212 where +1 is country code)
+//  2. timeOutDuration = optional, indicates timeout value for context
 func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1847,12 +1850,12 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 // CheckIfPhoneNumberIsOptedOut will verify if a phone number is opted out of message reception
 //
 // Parameters:
-//		1) phoneNumber = required, phone number to check if opted out. Use E.164 format (+12095551212 where +1 is country code)
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. phoneNumber = required, phone number to check if opted out. Use E.164 format (+12095551212 where +1 is country code)
+//  2. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) optedOut = bool indicating if the given phone via input parameter was opted out (true), or not (false)
-//		2) err = error info if any
+//  1. optedOut = bool indicating if the given phone via input parameter was opted out (true), or not (false)
+//  2. err = error info if any
 func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration ...time.Duration) (optedOut bool, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1919,13 +1922,13 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 // ListPhoneNumbersOptedOut will list opted out phone numbers, with optional nextToken for retrieving more list from a prior call
 //
 // Parameters:
-//		1) nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
+//  2. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) phonesList = string slice of opted out phone numbers, nil if not set
-//		2) morePhonesNextToken = if there are more opted out phone numbers, this token is filled, to query more, use the token as input parameter, blank if no more
-//		3) err = error info if any
+//  1. phonesList = string slice of opted out phone numbers, nil if not set
+//  2. morePhonesNextToken = if there are more opted out phone numbers, this token is filled, to query more, use the token as input parameter, blank if no more
+//  3. err = error info if any
 func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time.Duration) (phonesList []string, morePhonesNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -2006,35 +2009,35 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 // Once application exists, then for each device that needs to receive SNS notification, create the appropriate Endpoint via CreatePlatformEndpoint
 //
 // Parameters:
-//		1) name = required, platform application name
-//		2) platform = required, the sns platform association with this application, such as APNS, FCM etc.
-//		3) attributes = required, map of platform application attributes that defines specific values related to the chosen platform (see notes below)
-//		4) timeOutDuration = optional, indicates timeout value for context
+//  1. name = required, platform application name
+//  2. platform = required, the sns platform association with this application, such as APNS, FCM etc.
+//  3. attributes = required, map of platform application attributes that defines specific values related to the chosen platform (see notes below)
+//  4. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) platformApplicationArn = the created platform application's ARN
-//		2) err = error info if any
+//  1. platformApplicationArn = the created platform application's ARN
+//  2. err = error info if any
 //
 // Platform Application Attributes: (Key = Expected Value)
-//		1) PlatformCredential = The credential received from the notification service,
-//								For APNS and APNS_SANDBOX, PlatformCredential is the private key
-//								For GCM (Firebase Cloud Messaging), PlatformCredential is API key
-//								For ADM, PlatformCredential is client secret
-//		2) PlatformPrincipal = The principal received from the notification service,
-//							   For APNS and APNS_SANDBOX, PlatformPrincipal is SSL certificate
-//							   For GCM (Firebase Cloud Messaging), there is no PlatformPrincipal
-//							   For ADM, PlatformPrincipal is client id
-//		3) EventEndpointCreated = Topic ARN to which EndpointCreated event notifications are sent
-//		4) EventEndpointDeleted = Topic ARN to which EndpointDeleted event notifications are sent
-//		5) EventEndpointUpdated = Topic ARN to which EndpointUpdate event notifications are sent
-//		6) EventDeliveryFailure = Topic ARN to which DeliveryFailure event notifications are sent upon Direct Publish delivery failure (permanent) to one of the application's endpoints
-//		7) SuccessFeedbackRoleArn = IAM role ARN used to give Amazon SNS write access to use CloudWatch Logs on your behalf
-//		8) FailureFeedbackRoleArn = IAM role ARN used to give Amazon SNS write access to use CloudWatch Logs on your behalf
-//		9) SuccessFeedbackSampleRate = Sample rate percentage (0-100) of successfully delivered messages
+//  1. PlatformCredential = The credential received from the notification service,
+//     For APNS and APNS_SANDBOX, PlatformCredential is the private key
+//     For GCM (Firebase Cloud Messaging), PlatformCredential is API key
+//     For ADM, PlatformCredential is client secret
+//  2. PlatformPrincipal = The principal received from the notification service,
+//     For APNS and APNS_SANDBOX, PlatformPrincipal is SSL certificate
+//     For GCM (Firebase Cloud Messaging), there is no PlatformPrincipal
+//     For ADM, PlatformPrincipal is client id
+//  3. EventEndpointCreated = Topic ARN to which EndpointCreated event notifications are sent
+//  4. EventEndpointDeleted = Topic ARN to which EndpointDeleted event notifications are sent
+//  5. EventEndpointUpdated = Topic ARN to which EndpointUpdate event notifications are sent
+//  6. EventDeliveryFailure = Topic ARN to which DeliveryFailure event notifications are sent upon Direct Publish delivery failure (permanent) to one of the application's endpoints
+//  7. SuccessFeedbackRoleArn = IAM role ARN used to give Amazon SNS write access to use CloudWatch Logs on your behalf
+//  8. FailureFeedbackRoleArn = IAM role ARN used to give Amazon SNS write access to use CloudWatch Logs on your behalf
+//  9. SuccessFeedbackSampleRate = Sample rate percentage (0-100) of successfully delivered messages
 func (s *SNS) CreatePlatformApplication(name string,
-										platform snsapplicationplatform.SNSApplicationPlatform,
-										attributes map[snsplatformapplicationattribute.SNSPlatformApplicationAttribute]string,
-										timeOutDuration ...time.Duration) (platformApplicationArn string, err error) {
+	platform snsapplicationplatform.SNSApplicationPlatform,
+	attributes map[snsplatformapplicationattribute.SNSPlatformApplicationAttribute]string,
+	timeOutDuration ...time.Duration) (platformApplicationArn string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2080,8 +2083,8 @@ func (s *SNS) CreatePlatformApplication(name string,
 
 	// create input object
 	input := &sns.CreatePlatformApplicationInput{
-		Name: aws.String(name),
-		Platform: aws.String(platform.Key()),
+		Name:       aws.String(name),
+		Platform:   aws.String(platform.Key()),
 		Attributes: s.toAwsPlatformApplicationAttributes(attributes),
 	}
 
@@ -2115,8 +2118,8 @@ func (s *SNS) CreatePlatformApplication(name string,
 // returns nil if successful, otherwise error info is returned
 //
 // Parameters:
-//		1) platformApplicationArn = the platform application to delete via platform application ARN specified
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. platformApplicationArn = the platform application to delete via platform application ARN specified
+//  2. timeOutDuration = optional, indicates timeout value for context
 func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -2179,13 +2182,13 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 // ListPlatformApplications will list platform application ARNs, with optional nextToken for retrieving more list from a prior call
 //
 // Parameters:
-//		1) nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
+//  2. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) platformApplicationArnsList = string slice of platform application ARNs, nil if not set
-//		2) moreAppArnsNextToken = if there are more platform application ARNs, this token is filled, to query more, use the token as input parameter, blank if no more
-//		3) err = error info if any
+//  1. platformApplicationArnsList = string slice of platform application ARNs, nil if not set
+//  2. moreAppArnsNextToken = if there are more platform application ARNs, this token is filled, to query more, use the token as input parameter, blank if no more
+//  3. err = error info if any
 func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time.Duration) (platformApplicationArnsList []string, moreAppArnsNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -2259,12 +2262,12 @@ func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time
 // GetPlatformApplicationAttributes will retrieve application attributes based on a specific platform application ARN
 //
 // Parameters:
-//		1) platformApplicationArn = required, the platform application ARN used to retrieve related application attributes
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. platformApplicationArn = required, the platform application ARN used to retrieve related application attributes
+//  2. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) attributes = map of sns platform application attributes related to the given platform application ARN
-//		2) err = error info if any
+//  1. attributes = map of sns platform application attributes related to the given platform application ARN
+//  2. err = error info if any
 func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, timeOutDuration ...time.Duration) (attributes map[snsplatformapplicationattribute.SNSPlatformApplicationAttribute]string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -2331,8 +2334,8 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 // SetPlatformApplicationAttributes will set or update platform application attributes,
 // For attribute value or Json format, see corresponding notes in CreatePlatformApplication where applicable
 func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
-											   attributes map[snsplatformapplicationattribute.SNSPlatformApplicationAttribute]string,
-											   timeOutDuration ...time.Duration) (err error) {
+	attributes map[snsplatformapplicationattribute.SNSPlatformApplicationAttribute]string,
+	timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2371,7 +2374,7 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 	// create input
 	input := &sns.SetPlatformApplicationAttributesInput{
 		PlatformApplicationArn: aws.String(platformApplicationArn),
-		Attributes: s.toAwsPlatformApplicationAttributes(attributes),
+		Attributes:             s.toAwsPlatformApplicationAttributes(attributes),
 	}
 
 	// perform action
@@ -2401,22 +2404,22 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 // this is the endpoint that will receive SNS notifications via defined protocol such as APNS or FCM
 //
 // Parameters:
-//		1) platformApplicationArn = required, Plaform application ARN that was created, endpoint is added to this platform application
-//		2) token = Unique identifier created by the notification service for an app on a device,
-//				   The specific name for Token will vary, depending on which notification service is being used,
-//				   For example, when using APNS as the notification service, you need the device token,
-//				   Alternatively, when using FCM or ADM, the device token equivalent is called the registration ID
-//		3) customUserData = optional, Arbitrary user data to associate with the endpoint,
-//							Amazon SNS does not use this data. The data must be in UTF-8 format and less than 2KB
-//		4) timeOutDuration = optional, indicates timeout value for context
+//  1. platformApplicationArn = required, Plaform application ARN that was created, endpoint is added to this platform application
+//  2. token = Unique identifier created by the notification service for an app on a device,
+//     The specific name for Token will vary, depending on which notification service is being used,
+//     For example, when using APNS as the notification service, you need the device token,
+//     Alternatively, when using FCM or ADM, the device token equivalent is called the registration ID
+//  3. customUserData = optional, Arbitrary user data to associate with the endpoint,
+//     Amazon SNS does not use this data. The data must be in UTF-8 format and less than 2KB
+//  4. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) endpointArn = the created endpoint ARN
-//		2) err = the error info if any
+//  1. endpointArn = the created endpoint ARN
+//  2. err = the error info if any
 func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
-									 token string,
-									 customUserData string,
-									 timeOutDuration ...time.Duration) (endpointArn string, err error) {
+	token string,
+	customUserData string,
+	timeOutDuration ...time.Duration) (endpointArn string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2458,7 +2461,7 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 	// create input object
 	input := &sns.CreatePlatformEndpointInput{
 		PlatformApplicationArn: aws.String(platformApplicationArn),
-		Token: aws.String(token),
+		Token:                  aws.String(token),
 	}
 
 	if util.LenTrim(customUserData) > 0 {
@@ -2495,8 +2498,8 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 // returns nil if successful, otherwise error info is returned
 //
 // Parameters:
-//		1) endpointArn = required, the endpoint to delete
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. endpointArn = required, the endpoint to delete
+//  2. timeOutDuration = optional, indicates timeout value for context
 func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -2559,17 +2562,17 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 // ListEndpointsByPlatformApplication will list endpoints by platform application, with optional nextToken for retrieving more list from a prior call
 //
 // Parameters:
-//		1) platformApplicationArn = required, the platform application to filter for its related endpoints to retrieve
-//		2) nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
-//		3) timeOutDuration = optional, indicates timeout value for context
+//  1. platformApplicationArn = required, the platform application to filter for its related endpoints to retrieve
+//  2. nextToken = optional, if prior call returned more...token, pass in here to retrieve the related list
+//  3. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) endpointArnsList = string slice of endpoint ARNs under the given platform application ARN, nil if not set
-//		2) moreEndpointArnsNextToken = if there are more endpoints to load, this token is filled, to query more, use the token as input parameter, blank if no more
-//		3) err = error info if any
+//  1. endpointArnsList = string slice of endpoint ARNs under the given platform application ARN, nil if not set
+//  2. moreEndpointArnsNextToken = if there are more endpoints to load, this token is filled, to query more, use the token as input parameter, blank if no more
+//  3. err = error info if any
 func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
-												 nextToken string,
-												 timeOutDuration ...time.Duration) (endpointArnsList []string, moreEndpointArnsNextToken string, err error) {
+	nextToken string,
+	timeOutDuration ...time.Duration) (endpointArnsList []string, moreEndpointArnsNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2650,23 +2653,23 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 // GetPlatformEndpointAttributes will retrieve endpoint attributes based on a specific endpoint ARN
 //
 // Parameters:
-//		1) endpointArn = required, the endpoint ARN used to retrieve related endpoint attributes
-//		2) timeOutDuration = optional, indicates timeout value for context
+//  1. endpointArn = required, the endpoint ARN used to retrieve related endpoint attributes
+//  2. timeOutDuration = optional, indicates timeout value for context
 //
 // Return Values:
-//		1) attributes = map of sns endpoint attributes related to the given endpoint ARN
-//		2) err = error info if any
+//  1. attributes = map of sns endpoint attributes related to the given endpoint ARN
+//  2. err = error info if any
 //
 // Endpoint Attributes: (Key = Expected Value)
-//		1) CustomUserData = arbitrary user data to associate with the endpoint.
-//   						Amazon SNS does not use this data.
-//							The data must be in UTF-8 format and less than 2KB.
-//   	2) Enabled = flag that enables/disables delivery to the endpoint. Amazon
-//   				 SNS will set this to false when a notification service indicates to Amazon SNS that the endpoint is invalid.
-//					 Users can set it back to true, typically after updating Token.
-//   	3) Token = device token, also referred to as a registration id, for an app and mobile device.
-//				   This is returned from the notification service when an app and mobile device are registered with the notification service.
-//				   The device token for the iOS platform is returned in lowercase.
+//  1. CustomUserData = arbitrary user data to associate with the endpoint.
+//     Amazon SNS does not use this data.
+//     The data must be in UTF-8 format and less than 2KB.
+//  2. Enabled = flag that enables/disables delivery to the endpoint. Amazon
+//     SNS will set this to false when a notification service indicates to Amazon SNS that the endpoint is invalid.
+//     Users can set it back to true, typically after updating Token.
+//  3. Token = device token, also referred to as a registration id, for an app and mobile device.
+//     This is returned from the notification service when an app and mobile device are registered with the notification service.
+//     The device token for the iOS platform is returned in lowercase.
 func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration ...time.Duration) (attributes map[snsendpointattribute.SNSEndpointAttribute]string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -2733,8 +2736,8 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 // SetPlatformEndpointAttributes will set or update platform endpoint attributes,
 // For attribute value or Json format, see corresponding notes in CreatePlatformEndpoint where applicable
 func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
-											attributes map[snsendpointattribute.SNSEndpointAttribute]string,
-											timeOutDuration ...time.Duration) (err error) {
+	attributes map[snsendpointattribute.SNSEndpointAttribute]string,
+	timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2774,7 +2777,7 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 	// create input
 	input := &sns.SetEndpointAttributesInput{
 		EndpointArn: aws.String(endpointArn),
-		Attributes: s.toAwsEndpointAttributes(attributes),
+		Attributes:  s.toAwsEndpointAttributes(attributes),
 	}
 
 	// perform action

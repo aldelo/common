@@ -1,7 +1,7 @@
 package helper
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -139,14 +139,14 @@ func GenerateNewUniqueInt32(oldIntVal int) int {
 	seed1 := GenerateRandomNumber(999)
 	seed2 := GenerateRandomNumber(99)
 
-	buf := Right(Itoa(oldIntVal), 5) + Padding(Itoa(seed2), 2, false, "0") + Padding(Itoa(seed1),3, false, "0")
+	buf := Right(Itoa(oldIntVal), 5) + Padding(Itoa(seed2), 2, false, "0") + Padding(Itoa(seed1), 3, false, "0")
 
 	val, ok := ParseInt32(buf)
 
 	if !ok {
-		return oldIntVal*-1
+		return oldIntVal * -1
 	} else {
-		return val*-1
+		return val * -1
 	}
 }
 
@@ -159,14 +159,14 @@ func GenerateNewUniqueNullInt32(oldIntVal sql.NullInt32) sql.NullInt32 {
 	seed1 := GenerateRandomNumber(999)
 	seed2 := GenerateRandomNumber(99)
 
-	buf := Right(Itoa(FromNullInt(oldIntVal)), 5) + Padding(Itoa(seed2), 2, false, "0") + Padding(Itoa(seed1),3, false, "0")
+	buf := Right(Itoa(FromNullInt(oldIntVal)), 5) + Padding(Itoa(seed2), 2, false, "0") + Padding(Itoa(seed1), 3, false, "0")
 
 	val, ok := ParseInt32(buf)
 
 	if !ok {
-		return ToNullInt(int(oldIntVal.Int32) *-1, true)
+		return ToNullInt(int(oldIntVal.Int32)*-1, true)
 	} else {
-		return ToNullInt(val *-1, true)
+		return ToNullInt(val*-1, true)
 	}
 }
 
@@ -175,14 +175,14 @@ func GenerateNewUniqueInt64(oldIntVal int64) int64 {
 	seed1 := GenerateRandomNumber(999)
 	seed2 := GenerateRandomNumber(999)
 
-	buf := Right(Int64ToString(oldIntVal), 13) + Padding(Itoa(seed2), 3, false, "0") + Padding(Itoa(seed1),3, false, "0")
+	buf := Right(Int64ToString(oldIntVal), 13) + Padding(Itoa(seed2), 3, false, "0") + Padding(Itoa(seed1), 3, false, "0")
 
 	val, ok := ParseInt64(buf)
 
 	if !ok {
-		return oldIntVal*-1
+		return oldIntVal * -1
 	} else {
-		return val*-1
+		return val * -1
 	}
 }
 
@@ -195,7 +195,7 @@ func GenerateNewUniqueNullInt64(oldIntVal sql.NullInt64) sql.NullInt64 {
 	seed1 := GenerateRandomNumber(999)
 	seed2 := GenerateRandomNumber(999)
 
-	buf := Right(Int64ToString(FromNullInt64(oldIntVal)), 13) + Padding(Itoa(seed2), 3, false, "0") + Padding(Itoa(seed1),3, false, "0")
+	buf := Right(Int64ToString(FromNullInt64(oldIntVal)), 13) + Padding(Itoa(seed2), 3, false, "0") + Padding(Itoa(seed1), 3, false, "0")
 
 	val, ok := ParseInt64(buf)
 
@@ -211,7 +211,8 @@ func GenerateNewUniqueNullInt64(oldIntVal sql.NullInt64) sql.NullInt64 {
 // ================================================================================================================
 
 // GenerateNewUniqueString will take in old value and return new unique value with randomized seed
-// 		stringLimit = 0 no limit, > 0 has limit
+//
+//	stringLimit = 0 no limit, > 0 has limit
 func GenerateNewUniqueString(oldStrVal string, stringLimit int) string {
 	seed1 := Padding(Itoa(GenerateRandomNumber(999)), 3, false, "0")
 	seed2 := GenerateRandomChar()
@@ -225,9 +226,9 @@ func GenerateNewUniqueString(oldStrVal string, stringLimit int) string {
 			buf = Right(buf, stringLimit)
 		} else {
 			if stringLimit >= 3 {
-				buf = Left(seed2 + seed3 + seed4 + seed1, stringLimit)
+				buf = Left(seed2+seed3+seed4+seed1, stringLimit)
 			} else {
-				buf = Left(seed2 + seed3, stringLimit)
+				buf = Left(seed2+seed3, stringLimit)
 			}
 		}
 	}
@@ -236,7 +237,8 @@ func GenerateNewUniqueString(oldStrVal string, stringLimit int) string {
 }
 
 // GenerateNewUniqueNullString will take in old value and return new unique value with randomized seed
-// 		stringLimit = 0 no limit, > 0 has limit
+//
+//	stringLimit = 0 no limit, > 0 has limit
 func GenerateNewUniqueNullString(oldStrVal sql.NullString, stringLimit int) sql.NullString {
 	if !oldStrVal.Valid {
 		return oldStrVal
@@ -254,9 +256,9 @@ func GenerateNewUniqueNullString(oldStrVal sql.NullString, stringLimit int) sql.
 			buf = Right(buf, stringLimit)
 		} else {
 			if stringLimit >= 3 {
-				buf = Left(seed2 + seed3 + seed4 + seed1, stringLimit)
+				buf = Left(seed2+seed3+seed4+seed1, stringLimit)
 			} else {
-				buf = Left(seed2 + seed3, stringLimit)
+				buf = Left(seed2+seed3, stringLimit)
 			}
 		}
 	}

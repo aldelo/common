@@ -1,7 +1,7 @@
 package viper
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,16 +32,16 @@ import (
 // UseConfig... = indicates config file search pattern
 type ViperConf struct {
 	// define config properties
-	ConfigName string
+	ConfigName                 string
 	SpecificConfigFileFullPath string
 
-	UseYAML bool
+	UseYAML            bool
 	UseAutomaticEnvVar bool
 
-	AppName string
-	UseConfigPathEtcAppName bool
+	AppName                  string
+	UseConfigPathEtcAppName  bool
 	UseConfigPathHomeAppName bool
-	CustomConfigPath string
+	CustomConfigPath         string
 
 	// cache viper config object
 	viperClient *viper.Viper
@@ -144,12 +144,13 @@ func (v *ViperConf) Default(key string, value interface{}) *ViperConf {
 //
 // struct tag use `mapstructure:""`
 // if struct tag refers to sub element of yaml, define struct to contain the sub elements
-//  	for example:
-//			parentkey:
-//				childkey: abc
-//				childkey_2: xyz
-//		type Child struct { ChildKey string `mapstructure:"childkey"`  ChildKey2 string `mapstructure:"childkey_2"` }
-//		type Parent struct { ChildData Child `mapstructure:"parentkey"`}
+//
+//	 	for example:
+//				parentkey:
+//					childkey: abc
+//					childkey_2: xyz
+//			type Child struct { ChildKey string `mapstructure:"childkey"`  ChildKey2 string `mapstructure:"childkey_2"` }
+//			type Parent struct { ChildData Child `mapstructure:"parentkey"`}
 func (v *ViperConf) Unmarshal(outputStructPtr interface{}, key ...string) error {
 	if v.viperClient == nil {
 		return errors.New("Unmarshal Config To Struct Failed: " + "Config Object Needs Initialized")
@@ -179,17 +180,17 @@ func (v *ViperConf) SubConf(key string) *ViperConf {
 	if v.viperClient != nil {
 		subViper := v.viperClient.Sub(key)
 
-		if subViper	!= nil {
+		if subViper != nil {
 			return &ViperConf{
-				ConfigName: v.ConfigName,
+				ConfigName:                 v.ConfigName,
 				SpecificConfigFileFullPath: v.SpecificConfigFileFullPath,
-				UseYAML: v.UseYAML,
-				UseAutomaticEnvVar: v.UseAutomaticEnvVar,
-				AppName: v.AppName,
-				UseConfigPathEtcAppName: v.UseConfigPathEtcAppName,
-				UseConfigPathHomeAppName: v.UseConfigPathHomeAppName,
-				CustomConfigPath: v.CustomConfigPath,
-				viperClient: subViper,
+				UseYAML:                    v.UseYAML,
+				UseAutomaticEnvVar:         v.UseAutomaticEnvVar,
+				AppName:                    v.AppName,
+				UseConfigPathEtcAppName:    v.UseConfigPathEtcAppName,
+				UseConfigPathHomeAppName:   v.UseConfigPathHomeAppName,
+				CustomConfigPath:           v.CustomConfigPath,
+				viperClient:                subViper,
 			}
 		} else {
 			return nil

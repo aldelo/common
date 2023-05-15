@@ -8,7 +8,7 @@ import (
 )
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -210,9 +210,10 @@ func SliceSeekElement(slice []interface{}, filterFunc func(input interface{}, fi
 // note: this method does not preserve element ordering, this is in order to achieve faster call performance
 //
 // removalIndex = positive number indicates element removal index position (0-based index)
-//				  negative number indicates element removal index from right,
-//					-1 = last element to remove; -2 = second to the last to remove, and so on
-//				  positive / negative number out of bound = returns original slice unchanged
+//
+//	  negative number indicates element removal index from right,
+//		-1 = last element to remove; -2 = second to the last to remove, and so on
+//	  positive / negative number out of bound = returns original slice unchanged
 //
 // if resultSlice is nil, then no slice remain
 func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interface{}) {
@@ -239,7 +240,7 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 	}
 
 	rm := sliceObj.Index(removalIndex)
-	last := sliceObj.Index(sliceObj.Len()-1)
+	last := sliceObj.Index(sliceObj.Len() - 1)
 
 	if rm.CanSet() {
 		rm.Set(last)

@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,7 +59,7 @@ func XRayMiddleware() gin.HandlerFunc {
 
 				w := &ResponseBodyWriterInterceptor{
 					ResponseWriter: c.Writer,
-					RespBody: &bytes.Buffer{},
+					RespBody:       &bytes.Buffer{},
 				}
 				c.Writer = w
 
@@ -191,7 +191,7 @@ func getAmznTraceHeader(req *http.Request, seg *awsxray.Segment) string {
 		if len(kv) > 1 {
 			v = util.Trim(kv[1])
 		}
-		trace[k]=v
+		trace[k] = v
 	}
 
 	if util.LenTrim(trace["Root"]) > 0 {

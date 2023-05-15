@@ -1,7 +1,7 @@
 package ratelimit
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import (
 // RateLimitPerson = 0 = unlimited = no rate limit
 type RateLimiter struct {
 	// configuration options
-	RateLimitPerSecond int
+	RateLimitPerSecond     int
 	InitializeWithoutSlack bool
 
 	// rate limiter client

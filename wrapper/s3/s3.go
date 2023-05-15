@@ -1,7 +1,7 @@
 package s3
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -154,8 +154,8 @@ func (s *S3) connectInternal() error {
 	// establish aws session connection and keep session object in struct
 	if sess, err := session.NewSession(
 		&aws.Config{
-			Region:      aws.String(s.AwsRegion.Key()),
-			HTTPClient:  httpCli,
+			Region:     aws.String(s.AwsRegion.Key()),
+			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error
 		return errors.New("Connect To S3 Failed: (AWS Session Error) " + err.Error())
@@ -203,14 +203,16 @@ func (s *S3) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 // UploadFile will upload the specified file to S3 in the bucket name defined within S3 struct
 //
 // Parameters:
-//		timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
-//		sourceFilePath = fully qualified source file path and name to upload
-//		targetKey = the actual key name without any parts with / indicating folder
-//		targetFolder = if the upload position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
+//
+//	timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
+//	sourceFilePath = fully qualified source file path and name to upload
+//	targetKey = the actual key name without any parts with / indicating folder
+//	targetFolder = if the upload position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
 //
 // Return Values:
-// 		location = value indicating the location where upload was persisted to on s3 bucket
-//		err = error encountered while attempting to upload
+//
+//	location = value indicating the location where upload was persisted to on s3 bucket
+//	err = error encountered while attempting to upload
 func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, targetKey string, targetFolder ...string) (location string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -291,22 +293,22 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 
 			output, err = s.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
 				Bucket: aws.String(s.BucketName),
-				Key: aws.String(key),
-				Body: f,
+				Key:    aws.String(key),
+				Body:   f,
 			})
 		} else {
 			if segCtxSet {
 				output, err = s.uploader.UploadWithContext(segCtx,
 					&s3manager.UploadInput{
 						Bucket: aws.String(s.BucketName),
-						Key: aws.String(key),
-						Body: f,
-				})
+						Key:    aws.String(key),
+						Body:   f,
+					})
 			} else {
 				output, err = s.uploader.Upload(&s3manager.UploadInput{
 					Bucket: aws.String(s.BucketName),
-					Key: aws.String(key),
-					Body: f,
+					Key:    aws.String(key),
+					Body:   f,
 				})
 			}
 		}
@@ -327,14 +329,16 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 // Upload will upload the specified bytes to S3 in the bucket name defined within S3 struct
 //
 // Parameters:
-//		timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
-//		data = slice of bytes to upload to s3
-//		targetKey = the actual key name without any parts with / indicating folder
-//		targetFolder = if the upload position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
+//
+//	timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
+//	data = slice of bytes to upload to s3
+//	targetKey = the actual key name without any parts with / indicating folder
+//	targetFolder = if the upload position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
 //
 // Return Values:
-// 		location = value indicating the location where upload was persisted to on s3 bucket
-//		err = error encountered while attempting to upload
+//
+//	location = value indicating the location where upload was persisted to on s3 bucket
+//	err = error encountered while attempting to upload
 func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey string, targetFolder ...string) (location string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -408,22 +412,22 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 
 		output, err = s.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
 			Bucket: aws.String(s.BucketName),
-			Key: aws.String(key),
-			Body: r,
+			Key:    aws.String(key),
+			Body:   r,
 		})
 	} else {
 		if segCtxSet {
 			output, err = s.uploader.UploadWithContext(segCtx,
 				&s3manager.UploadInput{
 					Bucket: aws.String(s.BucketName),
-					Key: aws.String(key),
-					Body: r,
-			})
+					Key:    aws.String(key),
+					Body:   r,
+				})
 		} else {
 			output, err = s.uploader.Upload(&s3manager.UploadInput{
 				Bucket: aws.String(s.BucketName),
-				Key: aws.String(key),
-				Body: r,
+				Key:    aws.String(key),
+				Body:   r,
 			})
 		}
 	}
@@ -443,15 +447,17 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 // DownloadFile will download an object from S3 bucket by key and persist into file on disk
 //
 // Parameters:
-//		timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
-// 		writeToFilePath = file path that will save the file containing s3 object content
-//		targetKey = the actual key name without any parts with / indicating folder
-//		targetFolder = if the download position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
+//
+//	timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
+//	writeToFilePath = file path that will save the file containing s3 object content
+//	targetKey = the actual key name without any parts with / indicating folder
+//	targetFolder = if the download position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
 //
 // Return Values:
-// 		location = local disk file path where downloaded content is stored into
-// 		notFound = key was not found in s3 bucket
-//		err = error encountered while attempting to download
+//
+//	location = local disk file path where downloaded content is stored into
+//	notFound = key was not found in s3 bucket
+//	err = error encountered while attempting to download
 func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string, targetKey string, targetFolder ...string) (location string, notFound bool, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -529,18 +535,18 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 
 		bytesCount, err = s.downloader.DownloadWithContext(ctx, f, &s3.GetObjectInput{
 			Bucket: aws.String(s.BucketName),
-			Key: aws.String(key),
+			Key:    aws.String(key),
 		})
 	} else {
 		if segCtxSet {
 			bytesCount, err = s.downloader.DownloadWithContext(segCtx, f, &s3.GetObjectInput{
 				Bucket: aws.String(s.BucketName),
-				Key: aws.String(key),
+				Key:    aws.String(key),
 			})
 		} else {
 			bytesCount, err = s.downloader.Download(f, &s3.GetObjectInput{
 				Bucket: aws.String(s.BucketName),
-				Key: aws.String(key),
+				Key:    aws.String(key),
 			})
 		}
 	}
@@ -567,14 +573,16 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 // Download will download an object from S3 bucket by key and return via byte slice
 //
 // Parameters:
-//		timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
-//		targetKey = the actual key name without any parts with / indicating folder
-//		targetFolder = if the download position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
+//
+//	timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
+//	targetKey = the actual key name without any parts with / indicating folder
+//	targetFolder = if the download position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
 //
 // Return Values:
-// 		data = byte slice of object downloaded from s3 bucket by key
-// 		notFound = key was not found in s3 bucket
-//		err = error encountered while attempting to download
+//
+//	data = byte slice of object downloaded from s3 bucket by key
+//	notFound = key was not found in s3 bucket
+//	err = error encountered while attempting to download
 func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFolder ...string) (data []byte, notFound bool, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -638,18 +646,18 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 
 		bytesCount, err = s.downloader.DownloadWithContext(ctx, buf, &s3.GetObjectInput{
 			Bucket: aws.String(s.BucketName),
-			Key: aws.String(key),
+			Key:    aws.String(key),
 		})
 	} else {
 		if segCtxSet {
 			bytesCount, err = s.downloader.DownloadWithContext(segCtx, buf, &s3.GetObjectInput{
 				Bucket: aws.String(s.BucketName),
-				Key: aws.String(key),
+				Key:    aws.String(key),
 			})
 		} else {
 			bytesCount, err = s.downloader.Download(buf, &s3.GetObjectInput{
 				Bucket: aws.String(s.BucketName),
-				Key: aws.String(key),
+				Key:    aws.String(key),
 			})
 		}
 	}
@@ -676,13 +684,15 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 // Delete will delete an object from S3 bucket by key
 //
 // Parameters:
-//		timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
-//		targetKey = the actual key name without any parts with / indicating folder
-//		targetFolder = if the delete position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
+//
+//	timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
+//	targetKey = the actual key name without any parts with / indicating folder
+//	targetFolder = if the delete position is under one or more 'folder' sub-hierarchy, then specify the target folder names from left to right
 //
 // Return Values:
-//		deleteSuccess = true if delete was successfully completed; false if delete failed to perform, check error if any
-//		err = error encountered while attempting to download
+//
+//	deleteSuccess = true if delete was successfully completed; false if delete failed to perform, check error if any
+//	err = error encountered while attempting to download
 func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFolder ...string) (deleteSuccess bool, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -741,18 +751,18 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 
 		_, err = s.s3Obj.DeleteObjectWithContext(ctx, &s3.DeleteObjectInput{
 			Bucket: aws.String(s.BucketName),
-			Key: aws.String(key),
+			Key:    aws.String(key),
 		})
 	} else {
 		if segCtxSet {
 			_, err = s.s3Obj.DeleteObjectWithContext(segCtx, &s3.DeleteObjectInput{
 				Bucket: aws.String(s.BucketName),
-				Key: aws.String(key),
+				Key:    aws.String(key),
 			})
 		} else {
 			_, err = s.s3Obj.DeleteObject(&s3.DeleteObjectInput{
 				Bucket: aws.String(s.BucketName),
-				Key: aws.String(key),
+				Key:    aws.String(key),
 			})
 		}
 	}
@@ -768,5 +778,3 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 		return deleteSuccess, nil
 	}
 }
-
-

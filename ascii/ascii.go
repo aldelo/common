@@ -1,7 +1,7 @@
 package ascii
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,43 +25,43 @@ import (
 // ascii definition
 // use string(...) to convert the const into string value
 const (
-	NUL = 0x00 		// '\0' Null
-	SOH = 0x01 		//      Start of Header
-	STX = 0x02 		//      Start of Text
-	ETX = 0x03 		//      End of Text
-	EOT = 0x04 		//      End of Transmission
-	ENQ = 0x05 		//      Enquiry
-	ACK = 0x06 		//      Acknowledgement
-	BEL = 0x07 		// '\a' Bell
-	BS  = 0x08 		// '\b' Backspace
-	HT  = 0x09 		// '\t' Horizontal Tab
-	LF  = 0x0A 		// '\n' Line Feed
-	VT  = 0x0B 		// '\v' Vertical Tab
-	FF  = 0x0C 		// '\f' Form Feed
-	CR  = 0x0D 		// '\r' Carriage Return
-	SO  = 0x0E 		//      Shift Out
-	SI  = 0x0F 		//      Shift In
-	DLE = 0x10 		//      Device Idle
-	DC1 = 0x11 		//      Device Control 1
-	DC2 = 0x12 		//      Device Control 2
-	DC3 = 0x13 		//      Device Control 3
-	DC4 = 0x14 		//      Device Control 4
-	NAK = 0x15 		//      Negative Ack
-	SYN = 0x16 		//      Synchronize
-	ETB = 0x17 		//      End of Transmission Block
-	CAN = 0x18 		//      Cancel
-	EM  = 0x19 		//      End of Medium
-	SUB = 0x1A 		//      Substitute
-	ESC = 0x1B 		// '\e' Escape
-	FS  = 0x1C 		//      Field Separator
-	GS  = 0x1D 		//      Group Separator
-	RS  = 0x1E 		//      Record Separator
-	US  = 0x1F 		//      Unit Separator
-	SP  = 0x20 		//      Space
-	DEL = 0x7F 		//      Delete
-	COMMA = 0x2C	// Comma
-	COLON = 0x3A	// Colon
-	PIPE = 0x7C		// Pipe
+	NUL   = 0x00 // '\0' Null
+	SOH   = 0x01 //      Start of Header
+	STX   = 0x02 //      Start of Text
+	ETX   = 0x03 //      End of Text
+	EOT   = 0x04 //      End of Transmission
+	ENQ   = 0x05 //      Enquiry
+	ACK   = 0x06 //      Acknowledgement
+	BEL   = 0x07 // '\a' Bell
+	BS    = 0x08 // '\b' Backspace
+	HT    = 0x09 // '\t' Horizontal Tab
+	LF    = 0x0A // '\n' Line Feed
+	VT    = 0x0B // '\v' Vertical Tab
+	FF    = 0x0C // '\f' Form Feed
+	CR    = 0x0D // '\r' Carriage Return
+	SO    = 0x0E //      Shift Out
+	SI    = 0x0F //      Shift In
+	DLE   = 0x10 //      Device Idle
+	DC1   = 0x11 //      Device Control 1
+	DC2   = 0x12 //      Device Control 2
+	DC3   = 0x13 //      Device Control 3
+	DC4   = 0x14 //      Device Control 4
+	NAK   = 0x15 //      Negative Ack
+	SYN   = 0x16 //      Synchronize
+	ETB   = 0x17 //      End of Transmission Block
+	CAN   = 0x18 //      Cancel
+	EM    = 0x19 //      End of Medium
+	SUB   = 0x1A //      Substitute
+	ESC   = 0x1B // '\e' Escape
+	FS    = 0x1C //      Field Separator
+	GS    = 0x1D //      Group Separator
+	RS    = 0x1E //      Record Separator
+	US    = 0x1F //      Unit Separator
+	SP    = 0x20 //      Space
+	DEL   = 0x7F //      Delete
+	COMMA = 0x2C // Comma
+	COLON = 0x3A // Colon
+	PIPE  = 0x7C // Pipe
 
 )
 
@@ -73,10 +73,12 @@ func AsciiToString(i int) string {
 // returns blank LRC to indicate error condition (see error for reason)
 //
 // parameters:
-// 		data = includes the STX and ETX but not LRC if exists
+//
+//	data = includes the STX and ETX but not LRC if exists
 //
 // returns:
-// 		string = LRC string value
+//
+//	string = LRC string value
 func GetLRC(data string) (string, error) {
 	if len(strings.Trim(data, " ")) <= 1 {
 		return "", fmt.Errorf("Data is Required for LRC Calculation")
@@ -171,13 +173,13 @@ func IsCreditCardMod10Valid(cardNumber string) (bool, error) {
 	multiplier = result % 10
 
 	if multiplier > 0 {
-		multiplier = result / 10 + 1
+		multiplier = result/10 + 1
 	} else {
 		multiplier = result / 10
 	}
 
 	// get check digit
-	result = multiplier * 10 - result
+	result = multiplier*10 - result
 
 	if chk, err := strconv.Atoi(checkDigit); err != nil {
 		return false, fmt.Errorf("Convert Check Digit Failed: %s", err)
@@ -394,37 +396,37 @@ func EscapeNonPrintable(data string) string {
 // UnescapeNonPrintable converts pseudo escaped back to non printable form
 func UnescapeNonPrintable(data string) string {
 	data = strings.Replace(data, "[NUL_00]", AsciiToString(NUL), -1)
-	data = strings.Replace(data,  "[SOH_01]", AsciiToString(SOH),-1)
-	data = strings.Replace(data,  "[STX_02]", AsciiToString(STX),-1)
-	data = strings.Replace(data,  "[ETX_03]", AsciiToString(ETX),-1)
-	data = strings.Replace(data,  "[EOT_04]", AsciiToString(EOT),-1)
-	data = strings.Replace(data,  "[ENQ_05]", AsciiToString(ENQ),-1)
-	data = strings.Replace(data,  "[ACK_06]", AsciiToString(ACK),-1)
-	data = strings.Replace(data,  "[BEL_07]", AsciiToString(BEL),-1)
-	data = strings.Replace(data,  "[BS_08]", AsciiToString(BS),-1)
-	data = strings.Replace(data,  "[HT_09]", AsciiToString(HT),-1)
-	data = strings.Replace(data,  "[LF_0A]", AsciiToString(LF),-1)
-	data = strings.Replace(data,  "[VT_0B]", AsciiToString(VT),-1)
-	data = strings.Replace(data,  "[FF_0C]", AsciiToString(FF),-1)
-	data = strings.Replace(data,  "[CR_0D]", AsciiToString(CR),-1)
-	data = strings.Replace(data,  "[SO_0E]", AsciiToString(SO),-1)
-	data = strings.Replace(data,  "[SI_0F]", AsciiToString(SI),-1)
-	data = strings.Replace(data,  "[DLE_10]", AsciiToString(DLE),-1)
-	data = strings.Replace(data,  "[DC1_11]", AsciiToString(DC1),-1)
-	data = strings.Replace(data,  "[DC2_12]", AsciiToString(DC2),-1)
-	data = strings.Replace(data,  "[DC3_13]", AsciiToString(DC3),-1)
-	data = strings.Replace(data,  "[DC4_14]", AsciiToString(DC4),-1)
-	data = strings.Replace(data,  "[NAK_15]", AsciiToString(NAK),-1)
-	data = strings.Replace(data,  "[SYN_16]", AsciiToString(SYN),-1)
-	data = strings.Replace(data,  "[ETB_17]", AsciiToString(ETB),-1)
-	data = strings.Replace(data,  "[CAN_18]", AsciiToString(CAN),-1)
-	data = strings.Replace(data,  "[EM_19]", AsciiToString(EM),-1)
-	data = strings.Replace(data,  "[SUB_1A]", AsciiToString(SUB),-1)
-	data = strings.Replace(data,  "[ESC_1B]", AsciiToString(ESC),-1)
-	data = strings.Replace(data,  "[CR_1C]", AsciiToString(CR),-1)
-	data = strings.Replace(data,  "[FS_1D]", AsciiToString(FS),-1)
-	data = strings.Replace(data,  "[RS_1E]", AsciiToString(RS),-1)
-	data = strings.Replace(data,  "[US_1F]", AsciiToString(US),-1)
+	data = strings.Replace(data, "[SOH_01]", AsciiToString(SOH), -1)
+	data = strings.Replace(data, "[STX_02]", AsciiToString(STX), -1)
+	data = strings.Replace(data, "[ETX_03]", AsciiToString(ETX), -1)
+	data = strings.Replace(data, "[EOT_04]", AsciiToString(EOT), -1)
+	data = strings.Replace(data, "[ENQ_05]", AsciiToString(ENQ), -1)
+	data = strings.Replace(data, "[ACK_06]", AsciiToString(ACK), -1)
+	data = strings.Replace(data, "[BEL_07]", AsciiToString(BEL), -1)
+	data = strings.Replace(data, "[BS_08]", AsciiToString(BS), -1)
+	data = strings.Replace(data, "[HT_09]", AsciiToString(HT), -1)
+	data = strings.Replace(data, "[LF_0A]", AsciiToString(LF), -1)
+	data = strings.Replace(data, "[VT_0B]", AsciiToString(VT), -1)
+	data = strings.Replace(data, "[FF_0C]", AsciiToString(FF), -1)
+	data = strings.Replace(data, "[CR_0D]", AsciiToString(CR), -1)
+	data = strings.Replace(data, "[SO_0E]", AsciiToString(SO), -1)
+	data = strings.Replace(data, "[SI_0F]", AsciiToString(SI), -1)
+	data = strings.Replace(data, "[DLE_10]", AsciiToString(DLE), -1)
+	data = strings.Replace(data, "[DC1_11]", AsciiToString(DC1), -1)
+	data = strings.Replace(data, "[DC2_12]", AsciiToString(DC2), -1)
+	data = strings.Replace(data, "[DC3_13]", AsciiToString(DC3), -1)
+	data = strings.Replace(data, "[DC4_14]", AsciiToString(DC4), -1)
+	data = strings.Replace(data, "[NAK_15]", AsciiToString(NAK), -1)
+	data = strings.Replace(data, "[SYN_16]", AsciiToString(SYN), -1)
+	data = strings.Replace(data, "[ETB_17]", AsciiToString(ETB), -1)
+	data = strings.Replace(data, "[CAN_18]", AsciiToString(CAN), -1)
+	data = strings.Replace(data, "[EM_19]", AsciiToString(EM), -1)
+	data = strings.Replace(data, "[SUB_1A]", AsciiToString(SUB), -1)
+	data = strings.Replace(data, "[ESC_1B]", AsciiToString(ESC), -1)
+	data = strings.Replace(data, "[CR_1C]", AsciiToString(CR), -1)
+	data = strings.Replace(data, "[FS_1D]", AsciiToString(FS), -1)
+	data = strings.Replace(data, "[RS_1E]", AsciiToString(RS), -1)
+	data = strings.Replace(data, "[US_1F]", AsciiToString(US), -1)
 
 	return data
 }

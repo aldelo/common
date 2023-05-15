@@ -9,7 +9,7 @@ import (
 )
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,9 +108,10 @@ func ReflectTypeRegistryGet(customFullTypeName string) reflect.Type {
 // and return the found tag value and reflect type,
 // if reflect type or struct tag is not found, a notFound is returned
 // [ Parameters ]
-//		structObj = struct object variable
-// 		structFieldName = struct's field name (CASE SENSITIVE)
-//		structTagName = struct's tag name (the left side of struct tag - the key portion) (CASE SENSITIVE)
+//
+//	structObj = struct object variable
+//	structFieldName = struct's field name (CASE SENSITIVE)
+//	structTagName = struct's tag name (the left side of struct tag - the key portion) (CASE SENSITIVE)
 func GetStructTagValueByObject(structObj interface{}, structFieldName string, structTagName string) (notFound bool, tagValue string, t reflect.Type) {
 	// get reflect type from struct object
 	t = reflect.TypeOf(structObj)
@@ -137,9 +138,10 @@ func GetStructTagValueByObject(structObj interface{}, structFieldName string, st
 // if struct tag value is not found, a notFound is returned,
 // if the reflect type is nil, then not found is returned too
 // [ Parameters ]
-//		t = reflect type of a struct object (obtained via GetStructTagValueByObject)
-// 		structFieldName = struct's field name (CASE SENSITIVE)
-//		structTagName = struct's tag name (the left side of struct tag - the key portion) (CASE SENSITIVE)
+//
+//	t = reflect type of a struct object (obtained via GetStructTagValueByObject)
+//	structFieldName = struct's field name (CASE SENSITIVE)
+//	structTagName = struct's tag name (the left side of struct tag - the key portion) (CASE SENSITIVE)
 func GetStructTagValueByType(t reflect.Type, structFieldName string, structTagName string) (notFound bool, tagValue string) {
 	// check if reflect type is valid
 	if t == nil {
@@ -208,13 +210,14 @@ func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) 
 // zeroBlank = will blank the value if it is 0, 0.00, or time.IsZero
 //
 // timeFormat:
-// 		2006, 06 = year,
-//		01, 1, Jan, January = month,
-//		02, 2, _2 = day (_2 = width two, right justified)
-//		03, 3, 15 = hour (15 = 24 hour format)
-//		04, 4 = minute
-//		05, 5 = second
-//		PM pm = AM PM
+//
+//	2006, 06 = year,
+//	01, 1, Jan, January = month,
+//	02, 2, _2 = day (_2 = width two, right justified)
+//	03, 3, 15 = hour (15 = 24 hour format)
+//	04, 4 = minute
+//	05, 5 = second
+//	PM pm = AM PM
 func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, skipBlank bool, skipZero bool, timeFormat string, zeroBlank bool) (valueStr string, skip bool, err error) {
 	buf := ""
 
@@ -581,13 +584,14 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 // ReflectStringToField accepts string value and reflects into reflect.Value field based on the field data type
 //
 // timeFormat:
-// 		2006, 06 = year,
-//		01, 1, Jan, January = month,
-//		02, 2, _2 = day (_2 = width two, right justified)
-//		03, 3, 15 = hour (15 = 24 hour format)
-//		04, 4 = minute
-//		05, 5 = second
-//		PM pm = AM PM
+//
+//	2006, 06 = year,
+//	01, 1, Jan, January = month,
+//	02, 2, _2 = day (_2 = width two, right justified)
+//	03, 3, 15 = hour (15 = 24 hour format)
+//	04, 4 = minute
+//	05, 5 = second
+//	PM pm = AM PM
 func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 	switch o.Kind() {
 	case reflect.String:

@@ -1,7 +1,7 @@
 package ses
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -106,7 +106,7 @@ type Email struct {
 
 	// additional config info
 	ReturnPath string
-	ReplyTo []string
+	ReplyTo    []string
 
 	// defaults to UTF-8 if left blank
 	Charset string
@@ -114,9 +114,9 @@ type Email struct {
 
 // SendQuota struct encapsulates the ses send quota definition
 type SendQuota struct {
-	Max24HourSendLimit int
+	Max24HourSendLimit    int
 	MaxPerSecondSendLimit int
-	SentLast24Hours int
+	SentLast24Hours       int
 }
 
 // EmailTarget defines a single email target contact for use with SendTemplateEmail or SendBulkTemplateEmail methods
@@ -137,9 +137,9 @@ type EmailTarget struct {
 // BulkEmailMessageResult contains result of a bulk email
 type BulkEmailMessageResult struct {
 	MessageId string
-	Status string
+	Status    string
 	ErrorInfo string
-	Success bool
+	Success   bool
 }
 
 // ================================================================================================================
@@ -208,8 +208,8 @@ func (s *SES) connectInternal() error {
 	// establish aws session connection and keep session object in struct
 	if sess, err := session.NewSession(
 		&aws.Config{
-			Region:      aws.String(s.AwsRegion.Key()),
-			HTTPClient:  httpCli,
+			Region:     aws.String(s.AwsRegion.Key()),
+			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error
 		return errors.New("Connect To SES Failed: (AWS Session Error) " + err.Error())
@@ -243,11 +243,12 @@ func (s *SES) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 // Initial sets new email message
 //
 // parameters:
-//		from = email sender from address
-//		to = email sender to address
-// 		subject = email subject text
-//		bodyText = email body content in text (both bodyText and bodyHtml may be set at the same time)
-//		bodyHtml = email body content in html (both bodyText and bodyHtml may be set at the same time)
+//
+//	from = email sender from address
+//	to = email sender to address
+//	subject = email subject text
+//	bodyText = email body content in text (both bodyText and bodyHtml may be set at the same time)
+//	bodyHtml = email body content in html (both bodyText and bodyHtml may be set at the same time)
 func (e *Email) Initial(from string, to string, subject string, bodyText string, bodyHtml ...string) *Email {
 	// set fields
 	e.From = from
@@ -357,7 +358,7 @@ func (e *Email) GenerateSendEmailInput() (*ses.SendEmailInput, error) {
 		},
 		Message: &ses.Message{
 			Subject: &ses.Content{
-				Data: aws.String(e.Subject),
+				Data:    aws.String(e.Subject),
 				Charset: aws.String(e.Charset),
 			},
 		},
@@ -462,7 +463,7 @@ func (e *Email) GenerateSendRawEmailInput(attachmentFileName string, attachmentC
 
 	h.Set("Subject", e.Subject)
 	h.Set("Content-Language", "en-US")
-	h.Set("Content-Type", "multipart/mixed; boundary=\"" + writer.Boundary() + "\"")
+	h.Set("Content-Type", "multipart/mixed; boundary=\""+writer.Boundary()+"\"")
 	h.Set("MIME-Version", "1.0")
 
 	if _, err := writer.CreatePart(h); err != nil {
@@ -479,7 +480,7 @@ func (e *Email) GenerateSendRawEmailInput(attachmentFileName string, attachmentC
 	if util.LenTrim(e.BodyText) > 0 {
 		h = make(textproto.MIMEHeader)
 		h.Set("Content-Transfer-Encoding", "quoted-printable")
-		h.Set("Content-Type", "text/plain; charset=" + charset)
+		h.Set("Content-Type", "text/plain; charset="+charset)
 		part, err := writer.CreatePart(h)
 		if err != nil {
 			return nil, err
@@ -494,7 +495,7 @@ func (e *Email) GenerateSendRawEmailInput(attachmentFileName string, attachmentC
 	if util.LenTrim(e.BodyHtml) > 0 {
 		h = make(textproto.MIMEHeader)
 		h.Set("Content-Transfer-Encoding", "quoted-printable")
-		h.Set("Content-Type", "text/html; charset=" + charset)
+		h.Set("Content-Type", "text/html; charset="+charset)
 		partH, err := writer.CreatePart(h)
 		if err != nil {
 			return nil, err
@@ -511,9 +512,9 @@ func (e *Email) GenerateSendRawEmailInput(attachmentFileName string, attachmentC
 
 		h = make(textproto.MIMEHeader)
 		// h.Set("Content-Disposition", "attachment; filename="+fn)
-		h.Set("Content-Type", attachmentContentType + "; name=\"" + fn + "\"")
+		h.Set("Content-Type", attachmentContentType+"; name=\""+fn+"\"")
 		h.Set("Content-Description", fn)
-		h.Set("Content-Disposition", "attachment; filename=\"" + fn + "\"; size=" + util.Itoa(len(attachmentData)) + ";")
+		h.Set("Content-Disposition", "attachment; filename=\""+fn+"\"; size="+util.Itoa(len(attachmentData))+";")
 		h.Set("Content-Transfer-Encoding", "base64")
 
 		partA, err := writer.CreatePart(h)
@@ -548,8 +549,8 @@ func (e *Email) GenerateSendRawEmailInput(attachmentFileName string, attachmentC
 	// assemble SendRawEmailInput object
 	input := &ses.SendRawEmailInput{
 		Destinations: aws.StringSlice(e.To),
-		Source: aws.String(e.From),
-		RawMessage: &raw,
+		Source:       aws.String(e.From),
+		RawMessage:   &raw,
 	}
 
 	// return result
@@ -667,9 +668,9 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 	}
 
 	sq = &SendQuota{
-		Max24HourSendLimit: util.Float64ToInt(*output.Max24HourSend),
+		Max24HourSendLimit:    util.Float64ToInt(*output.Max24HourSend),
 		MaxPerSecondSendLimit: util.Float64ToInt(*output.MaxSendRate),
-		SentLast24Hours: util.Float64ToInt(*output.SentLast24Hours),
+		SentLast24Hours:       util.Float64ToInt(*output.SentLast24Hours),
 	}
 
 	return sq, nil
@@ -765,7 +766,7 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 //
 // attachmentContentType = See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
 func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentContentType string,
-						   timeOutDuration ...time.Duration) (messageId string, err error) {
+	timeOutDuration ...time.Duration) (messageId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -810,7 +811,7 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 
 	if util.LenTrim(attachmentFileName) > 0 {
 		if attachmentData, err = util.FileReadBytes(attachmentFileName); err != nil {
-			err = fmt.Errorf("SendRawEmail Failed: (Load Attachment File '" + attachmentFileName + "' Error)", err)
+			err = fmt.Errorf("SendRawEmail Failed: (Load Attachment File '"+attachmentFileName+"' Error)", err)
 			return "", err
 		} else {
 			if len(attachmentData) == 0 {
@@ -882,21 +883,21 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 // CreateTemplate will create an email template for use with SendTemplateEmail and SendBulkTemplateEmail methods
 //
 // parameters:
-//		1) templateName = name of the template, must be unique
-//		2) subjectPart = subject text with tag name value replacements
-//		3) textPart = body text with tag name value replacements
-// 		4) htmlPart = body html with tag name value replacements
-//		5) timeOutDuration = optional time out value to use in context
+//  1. templateName = name of the template, must be unique
+//  2. subjectPart = subject text with tag name value replacements
+//  3. textPart = body text with tag name value replacements
+//  4. htmlPart = body html with tag name value replacements
+//  5. timeOutDuration = optional time out value to use in context
 //
 // template tokens:
-//		1) subjectPart, textPart, htmlPart = may contain Tag Names for personalization
-//		2) Tag Name = using {{tagName}} within the string defined above in #1
-//		3) example:
-//				a) Greetings, {{name}}
-//				b) <h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p>
-//				c) <html><head></head><body><h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p></body></html>
-//		4) when sending template mail, the Tag Name values are replaced via key-Value pairs within TemplateData in SendTemplateEmail and SendBulkTemplateEmail methods:
-//				a) { "name":"Harry", "dayOfWeek":"Monday" }
+//  1. subjectPart, textPart, htmlPart = may contain Tag Names for personalization
+//  2. Tag Name = using {{tagName}} within the string defined above in #1
+//  3. example:
+//     a) Greetings, {{name}}
+//     b) <h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p>
+//     c) <html><head></head><body><h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p></body></html>
+//  4. when sending template mail, the Tag Name values are replaced via key-Value pairs within TemplateData in SendTemplateEmail and SendBulkTemplateEmail methods:
+//     a) { "name":"Harry", "dayOfWeek":"Monday" }
 func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart string, htmlPart string, timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -945,7 +946,7 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 	input := &ses.CreateTemplateInput{
 		Template: &ses.Template{
 			TemplateName: aws.String(templateName),
-			SubjectPart: aws.String(subjectPart),
+			SubjectPart:  aws.String(subjectPart),
 		},
 	}
 
@@ -985,21 +986,21 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 // UpdateTemplate will update an existing email template for use with SendTemplateEmail and SendBulkTemplateEmail methods
 //
 // parameters:
-//		1) templateName = name of the template, must be unique
-//		2) subjectPart = subject text with tag name value replacements
-//		3) textPart = body text with tag name value replacements
-// 		4) htmlPart = body html with tag name value replacements
-//		5) timeOutDuration = optional time out value to use in context
+//  1. templateName = name of the template, must be unique
+//  2. subjectPart = subject text with tag name value replacements
+//  3. textPart = body text with tag name value replacements
+//  4. htmlPart = body html with tag name value replacements
+//  5. timeOutDuration = optional time out value to use in context
 //
 // template tokens:
-//		1) subjectPart, textPart, htmlPart = may contain Tag Names for personalization
-//		2) Tag Name = using {{tagName}} within the string defined above in #1
-//		3) example:
-//				a) Greetings, {{name}}
-//				b) <h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p>
-//				c) <html><head></head><body><h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p></body></html>
-//		4) when sending template mail, the Tag Name values are replaced via key-Value pairs within TemplateData in SendTemplateEmail and SendBulkTemplateEmail methods:
-//				a) { "name":"Harry", "dayOfWeek":"Monday" }
+//  1. subjectPart, textPart, htmlPart = may contain Tag Names for personalization
+//  2. Tag Name = using {{tagName}} within the string defined above in #1
+//  3. example:
+//     a) Greetings, {{name}}
+//     b) <h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p>
+//     c) <html><head></head><body><h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p></body></html>
+//  4. when sending template mail, the Tag Name values are replaced via key-Value pairs within TemplateData in SendTemplateEmail and SendBulkTemplateEmail methods:
+//     a) { "name":"Harry", "dayOfWeek":"Monday" }
 func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart string, htmlPart string, timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1048,7 +1049,7 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 	input := &ses.UpdateTemplateInput{
 		Template: &ses.Template{
 			TemplateName: aws.String(templateName),
-			SubjectPart: aws.String(subjectPart),
+			SubjectPart:  aws.String(subjectPart),
 		},
 	}
 
@@ -1088,8 +1089,8 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 // DeleteTemplate will delete an existing email template
 //
 // parameters:
-//		1) templateName = name of the template to delete
-//		2) timeOutDuration = optional time out value to use in context
+//  1. templateName = name of the template to delete
+//  2. timeOutDuration = optional time out value to use in context
 func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1154,37 +1155,38 @@ func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Durati
 // SendTemplateEmail will send out email via ses using template
 //
 // parameters:
-//		1) senderEmail = sender's email address
-//		2) returnPath = optional, email return path address
-//		3) replyTo = optional, email reply to address
-//		4) templateName = the name of the template to use for sending out template emails
-//		5) emailTarget = pointer to email target object defining where the email is sent to, along with template data key value pairs in json
-//		6) timeOutDuration = optional, time out value to use in context
+//  1. senderEmail = sender's email address
+//  2. returnPath = optional, email return path address
+//  3. replyTo = optional, email reply to address
+//  4. templateName = the name of the template to use for sending out template emails
+//  5. emailTarget = pointer to email target object defining where the email is sent to, along with template data key value pairs in json
+//  6. timeOutDuration = optional, time out value to use in context
 //
 // template tokens:
-//		1) subjectPart, textPart, htmlPart = may contain Tag Names for personalization
-//		2) Tag Name = using {{tagName}} within the string defined above in #1
-//		3) example:
-//				a) Greetings, {{name}}
-//				b) <h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p>
-//				c) <html><head></head><body><h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p></body></html>
-//		4) when sending template mail, the Tag Name values are replaced via key-Value pairs within TemplateData in SendTemplateEmail and SendBulkTemplateEmail methods:
-//				a) { "name":"Harry", "dayOfWeek":"Monday" }
+//  1. subjectPart, textPart, htmlPart = may contain Tag Names for personalization
+//  2. Tag Name = using {{tagName}} within the string defined above in #1
+//  3. example:
+//     a) Greetings, {{name}}
+//     b) <h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p>
+//     c) <html><head></head><body><h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p></body></html>
+//  4. when sending template mail, the Tag Name values are replaced via key-Value pairs within TemplateData in SendTemplateEmail and SendBulkTemplateEmail methods:
+//     a) { "name":"Harry", "dayOfWeek":"Monday" }
 //
 // notes:
-//		a) Template = name of template to apply to the email
-//		b) TemplateData = json string holding key-value pair of Tag Name and Tag Value (see below about template tokens)
-//		c) Source = email address of sender
-//		d) ReturnPath = return email address (usually same as source)
-//		e) ReplyToAddresses = list of email addresses for email reply to
-//		f) Destination = email send to destination
-//		g) ConfigurationSetName = if ses has a set defined, and need to be used herein
+//
+//	a) Template = name of template to apply to the email
+//	b) TemplateData = json string holding key-value pair of Tag Name and Tag Value (see below about template tokens)
+//	c) Source = email address of sender
+//	d) ReturnPath = return email address (usually same as source)
+//	e) ReplyToAddresses = list of email addresses for email reply to
+//	f) Destination = email send to destination
+//	g) ConfigurationSetName = if ses has a set defined, and need to be used herein
 func (s *SES) SendTemplateEmail(senderEmail string,
-								returnPath string,
-								replyTo string,
-								templateName string,
-								emailTarget *EmailTarget,
-								timeOutDuration ...time.Duration) (messageId string, err error) {
+	returnPath string,
+	replyTo string,
+	templateName string,
+	emailTarget *EmailTarget,
+	timeOutDuration ...time.Duration) (messageId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1243,7 +1245,7 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 	// create input object
 	input := &ses.SendTemplatedEmailInput{
 		Template: aws.String(templateName),
-		Source: aws.String(senderEmail),
+		Source:   aws.String(senderEmail),
 	}
 
 	// set additional input values
@@ -1254,9 +1256,9 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 	}
 
 	if util.LenTrim(replyTo) > 0 {
-		input.ReplyToAddresses = []*string{ aws.String(replyTo) }
+		input.ReplyToAddresses = []*string{aws.String(replyTo)}
 	} else {
-		input.ReplyToAddresses = []*string{ aws.String(senderEmail) }
+		input.ReplyToAddresses = []*string{aws.String(senderEmail)}
 	}
 
 	if input.Destination == nil {
@@ -1312,43 +1314,44 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 // SendBulkTemplateEmail will send out bulk email via ses using template
 //
 // parameters:
-//		1) senderEmail = sender's email address
-//		2) returnPath = optional, email return path address
-//		3) replyTo = optional, email reply to address
-//		4) templateName = the name of the template to use for sending out template emails
-//		5) defaultTemplateDataJson = the default template data key value pairs in json, to be used if emailTarget did not define a template data json
-//		6) emailTargetList = slice of pointer to email target object defining where the email is sent to, along with template data key value pairs in json
-//		7) timeOutDuration = optional, time out value to use in context
+//  1. senderEmail = sender's email address
+//  2. returnPath = optional, email return path address
+//  3. replyTo = optional, email reply to address
+//  4. templateName = the name of the template to use for sending out template emails
+//  5. defaultTemplateDataJson = the default template data key value pairs in json, to be used if emailTarget did not define a template data json
+//  6. emailTargetList = slice of pointer to email target object defining where the email is sent to, along with template data key value pairs in json
+//  7. timeOutDuration = optional, time out value to use in context
 //
 // template tokens:
-//		1) subjectPart, textPart, htmlPart = may contain Tag Names for personalization
-//		2) Tag Name = using {{tagName}} within the string defined above in #1
-//		3) example:
-//				a) Greetings, {{name}}
-//				b) <h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p>
-//				c) <html><head></head><body><h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p></body></html>
-//		4) when sending template mail, the Tag Name values are replaced via key-Value pairs within TemplateData in SendTemplateEmail and SendBulkTemplateEmail methods:
-//				a) { "name":"Harry", "dayOfWeek":"Monday" }
+//  1. subjectPart, textPart, htmlPart = may contain Tag Names for personalization
+//  2. Tag Name = using {{tagName}} within the string defined above in #1
+//  3. example:
+//     a) Greetings, {{name}}
+//     b) <h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p>
+//     c) <html><head></head><body><h1>hello {{name}}, how are you</h1><p>Today is {{dayOfWeek}}</p></body></html>
+//  4. when sending template mail, the Tag Name values are replaced via key-Value pairs within TemplateData in SendTemplateEmail and SendBulkTemplateEmail methods:
+//     a) { "name":"Harry", "dayOfWeek":"Monday" }
 //
 // notes:
-//		a) Template = name of template to apply to the email
-//		b) DefaultTemplateData = json string holding key-value pair of Tag Name and Tag Value (see below about template tokens)
-//   							 acting as a catch all default in case destination level replacement template data is not set
-//		c) Source = email address of sender
-//		d) ReturnPath = return email address (usually same as source)
-//		e) ReplyToAddresses = list of email addresses for email reply to
-//		f) Destinations = one or more Destinations, each defining target, and replacement template data for that specific destination
-//		g) ConfigurationSetName = if ses has a set defined, and need to be used herein
+//
+//			a) Template = name of template to apply to the email
+//			b) DefaultTemplateData = json string holding key-value pair of Tag Name and Tag Value (see below about template tokens)
+//	  							 acting as a catch all default in case destination level replacement template data is not set
+//			c) Source = email address of sender
+//			d) ReturnPath = return email address (usually same as source)
+//			e) ReplyToAddresses = list of email addresses for email reply to
+//			f) Destinations = one or more Destinations, each defining target, and replacement template data for that specific destination
+//			g) ConfigurationSetName = if ses has a set defined, and need to be used herein
 //
 // limits:
-//		1) bulk is limited to 50 destinations per single call (subject to aws ses limits on account)
+//  1. bulk is limited to 50 destinations per single call (subject to aws ses limits on account)
 func (s *SES) SendBulkTemplateEmail(senderEmail string,
-									returnPath string,
-									replyTo string,
-									templateName string,
-									defaultTemplateDataJson string,
-									emailTargetList []*EmailTarget,
-									timeOutDuration ...time.Duration) (resultList []*BulkEmailMessageResult, failedCount int, err error) {
+	returnPath string,
+	replyTo string,
+	templateName string,
+	defaultTemplateDataJson string,
+	emailTargetList []*EmailTarget,
+	timeOutDuration ...time.Duration) (resultList []*BulkEmailMessageResult, failedCount int, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1398,7 +1401,7 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 	// create input object
 	input := &ses.SendBulkTemplatedEmailInput{
 		Template: aws.String(templateName),
-		Source: aws.String(senderEmail),
+		Source:   aws.String(senderEmail),
 	}
 
 	if util.LenTrim(defaultTemplateDataJson) > 0 {
@@ -1412,9 +1415,9 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 	}
 
 	if util.LenTrim(replyTo) > 0 {
-		input.ReplyToAddresses = []*string{ aws.String(replyTo) }
+		input.ReplyToAddresses = []*string{aws.String(replyTo)}
 	} else {
-		input.ReplyToAddresses = []*string{ aws.String(senderEmail) }
+		input.ReplyToAddresses = []*string{aws.String(senderEmail)}
 	}
 
 	if input.Destinations == nil {
@@ -1489,9 +1492,9 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 
 		resultList = append(resultList, &BulkEmailMessageResult{
 			MessageId: aws.StringValue(v.MessageId),
-			Status: aws.StringValue(v.Status),
+			Status:    aws.StringValue(v.Status),
 			ErrorInfo: aws.StringValue(v.Error),
-			Success: success,
+			Success:   success,
 		})
 	}
 
@@ -1505,20 +1508,20 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 // CreateCustomVerificationEmailTemplate will create a template for use with custom verification of email address
 //
 // parameters:
-//		1) templateName = the name of the template, must be unique
-//		2) templateSubject = the subject of the verification email (note that there is no tag name value replacement here)
-//		3) templateContent = the body of the email, can be html or text (note that there is no tag name value replacement here)
-//		4) fromEmailAddress = the email address that the verification email is sent from (must be email address)
-// 		5) successRedirectionURL = the url that users are sent to if their email addresses are successfully verified
-//		6) failureRedirectionURL = the url that users are sent to if their email addresses are not successfully verified
-//		7) timeOutDuration = optional time out value to use in context
+//  1. templateName = the name of the template, must be unique
+//  2. templateSubject = the subject of the verification email (note that there is no tag name value replacement here)
+//  3. templateContent = the body of the email, can be html or text (note that there is no tag name value replacement here)
+//  4. fromEmailAddress = the email address that the verification email is sent from (must be email address)
+//  5. successRedirectionURL = the url that users are sent to if their email addresses are successfully verified
+//  6. failureRedirectionURL = the url that users are sent to if their email addresses are not successfully verified
+//  7. timeOutDuration = optional time out value to use in context
 func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
-													templateSubject string,
-													templateContent string,
-													fromEmailAddress string,
-													successRedirectionURL string,
-													failureRedirectionURL string,
-												    timeOutDuration ...time.Duration) (err error) {
+	templateSubject string,
+	templateContent string,
+	fromEmailAddress string,
+	successRedirectionURL string,
+	failureRedirectionURL string,
+	timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1581,10 +1584,10 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 
 	// create input object
 	input := &ses.CreateCustomVerificationEmailTemplateInput{
-		TemplateName: aws.String(templateName),
-		TemplateSubject: aws.String(templateSubject),
-		TemplateContent: aws.String(templateContent),
-		FromEmailAddress: aws.String(fromEmailAddress),
+		TemplateName:          aws.String(templateName),
+		TemplateSubject:       aws.String(templateSubject),
+		TemplateContent:       aws.String(templateContent),
+		FromEmailAddress:      aws.String(fromEmailAddress),
 		SuccessRedirectionURL: aws.String(successRedirectionURL),
 		FailureRedirectionURL: aws.String(failureRedirectionURL),
 	}
@@ -1617,20 +1620,20 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 // UpdateCustomVerificationEmailTemplate will update a template for use with custom verification of email address
 //
 // parameters:
-//		1) templateName = the name of the template, must be unique
-//		2) templateSubject = the subject of the verification email (note that there is no tag name value replacement here)
-//		3) templateContent = the body of the email, can be html or text (note that there is no tag name value replacement here)
-//		4) fromEmailAddress = the email address that the verification email is sent from (must be email address)
-// 		5) successRedirectionURL = the url that users are sent to if their email addresses are successfully verified
-//		6) failureRedirectionURL = the url that users are sent to if their email addresses are not successfully verified
-//		7) timeOutDuration = optional time out value to use in context
+//  1. templateName = the name of the template, must be unique
+//  2. templateSubject = the subject of the verification email (note that there is no tag name value replacement here)
+//  3. templateContent = the body of the email, can be html or text (note that there is no tag name value replacement here)
+//  4. fromEmailAddress = the email address that the verification email is sent from (must be email address)
+//  5. successRedirectionURL = the url that users are sent to if their email addresses are successfully verified
+//  6. failureRedirectionURL = the url that users are sent to if their email addresses are not successfully verified
+//  7. timeOutDuration = optional time out value to use in context
 func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
-													templateSubject string,
-													templateContent string,
-													fromEmailAddress string,
-													successRedirectionURL string,
-													failureRedirectionURL string,
-													timeOutDuration ...time.Duration) (err error) {
+	templateSubject string,
+	templateContent string,
+	fromEmailAddress string,
+	successRedirectionURL string,
+	failureRedirectionURL string,
+	timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1693,10 +1696,10 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 
 	// create input object
 	input := &ses.UpdateCustomVerificationEmailTemplateInput{
-		TemplateName: aws.String(templateName),
-		TemplateSubject: aws.String(templateSubject),
-		TemplateContent: aws.String(templateContent),
-		FromEmailAddress: aws.String(fromEmailAddress),
+		TemplateName:          aws.String(templateName),
+		TemplateSubject:       aws.String(templateSubject),
+		TemplateContent:       aws.String(templateContent),
+		FromEmailAddress:      aws.String(fromEmailAddress),
 		SuccessRedirectionURL: aws.String(successRedirectionURL),
 		FailureRedirectionURL: aws.String(failureRedirectionURL),
 	}
@@ -1729,8 +1732,8 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 // DeleteCustomVerificationEmailTemplate will delete a custom verification email template
 //
 // parameters:
-//		1) templateName = name of the template to delete
-//		2) timeOutDuration = optional time out value to use in context
+//  1. templateName = name of the template to delete
+//  2. timeOutDuration = optional time out value to use in context
 func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1793,9 +1796,9 @@ func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOut
 // SendCustomVerificationEmail will send out a custom verification email to recipient
 //
 // parameters:
-//		1) templateName = name of the template to use for the verification email
-//		2) toEmailAddress = the email address to send verification to
-//		3) timeOutDuration = optional time out value to use in context
+//  1. templateName = name of the template to use for the verification email
+//  2. toEmailAddress = the email address to send verification to
+//  3. timeOutDuration = optional time out value to use in context
 func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress string, timeOutDuration ...time.Duration) (messageId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false

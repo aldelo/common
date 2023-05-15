@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,10 +37,10 @@ import (
 // AuthenticateBindingType = (required) AuthenticateBindingType defines the binding type to use for login form field data
 func NewGinJwtMiddleware(realm string, identityKey string, signingSecretKey string, authenticateBindingType ginbindtype.GinBindType) *GinJwt {
 	return &GinJwt{
-		Realm: realm,
-		IdentityKey: identityKey,
-		SigningSecretKey: signingSecretKey,
-		SigningAlgorithm: ginjwtsignalgorithm.HS256,
+		Realm:                   realm,
+		IdentityKey:             identityKey,
+		SigningSecretKey:        signingSecretKey,
+		SigningAlgorithm:        ginjwtsignalgorithm.HS256,
 		AuthenticateBindingType: authenticateBindingType,
 	}
 }
@@ -56,22 +56,26 @@ func NewGinJwtMiddleware(realm string, identityKey string, signingSecretKey stri
 // PublicKeyFile = (optional) Public key file for asymmetric algorithms
 // TokenValidDuration = (required) Duration that a jwt token is valid. Optional, defaults to one hour. (aka Timeout)
 // TokenMaxRefreshDuration = (required) This field allows clients to refresh their token until MaxRefresh has passed,
-//										Note that clients can refresh their token in the last moment of MaxRefresh,
-//										This means that the maximum validity timespan for a token is TokenTime + MaxRefresh,
-//										Optional, defaults to 0 meaning not refreshable
+//
+//	Note that clients can refresh their token in the last moment of MaxRefresh,
+//	This means that the maximum validity timespan for a token is TokenTime + MaxRefresh,
+//	Optional, defaults to 0 meaning not refreshable
+//
 // SendAuthorization = (optional) SendAuthorization allow return authorization header for every request, default = false
 // DisableAbort = (optional) Disable abort() of context, default = false
 // TokenLookup = (optional) TokenLookup is a string in the form of "<source>:<name>" that is used to extract token from the request,
-//							Optional. Default value = "header: Authorization",
-//							Possible values:
-// 								- "header:<name>"
-//								- "query:<name>"
-//								- "cookie:<name>"
-//								- "param:<name>"
-//							Examples:
-//								TokenLookup: "header: Authorization, query: token, cookie: jwt",
-//								TokenLookup: "query:token",
-//								TokenLookup: "cookie:token",
+//
+//	Optional. Default value = "header: Authorization",
+//	Possible values:
+//		- "header:<name>"
+//		- "query:<name>"
+//		- "cookie:<name>"
+//		- "param:<name>"
+//	Examples:
+//		TokenLookup: "header: Authorization, query: token, cookie: jwt",
+//		TokenLookup: "query:token",
+//		TokenLookup: "cookie:token",
+//
 // TokenHeadName = (optional) TokenHeadName is a string in the header. Default value = "Bearer"
 //
 // *** Cookie Setup ***
@@ -82,7 +86,8 @@ func NewGinJwtMiddleware(realm string, identityKey string, signingSecretKey stri
 // CookieDomain = (optional) Allow cookie domain change for development, default = ""
 // CookieName = (optional) CookieName allow cookie name change for development, default = ""
 // CookieSameSite = (optional) CookieSameSite allow use http.SameSite cookie param, default = SameSiteDefaultMode
-//							   values = default, lax, strict, none
+//
+//	values = default, lax, strict, none
 //
 // *** Authentication Setup ***
 // AuthenticateBindingType = (required) AuthenticateBindingType defines the binding type to use for login form field data
@@ -91,39 +96,51 @@ func NewGinJwtMiddleware(realm string, identityKey string, signingSecretKey stri
 // LogoutRoutePath = (optional) LogoutRoutePath defines the relative path to the gin jwt middleware's built-in LogoutHandler action, sets up as POST
 // RefreshTokenRoutePath = (optional) RefreshTokenRoutePath defines the relative path to the middleware's built-in RefreshHandler action, sets up as GET
 // AuthenticateHandler = (required) AuthenticateHandler func is called by Authenticator,
-//							 		receives loginRequestDataPtr for authentication use,
-//							 		if authentication succeeds, returns the loggedInCredentialPtr object
-//							 		(which typically is a user object containing user information logged in)
+//
+//	receives loginRequestDataPtr for authentication use,
+//	if authentication succeeds, returns the loggedInCredentialPtr object
+//	(which typically is a user object containing user information logged in)
+//
 // AddClaimsHandler = (optional) LoggedInMapClaimsHandler func is called during Authenticator action upon success,
-//								 so that this handler when coded can insert jwt additional payload data,
-//								    - loggedInCredentialPtr = the returning loggedInCredentialPtr from LoginHandler,
-//								    - identityKeyValue = string value for the named identityKey defined within the struct
+//
+//	so that this handler when coded can insert jwt additional payload data,
+//	   - loggedInCredentialPtr = the returning loggedInCredentialPtr from LoginHandler,
+//	   - identityKeyValue = string value for the named identityKey defined within the struct
+//
 // GetIdentityHandler = (optional) GetIdentityHandler func is called when IdentityHandler is triggered,
-//								   field values from claims will be parsed and returned via object by the implementation code
+//
+//	field values from claims will be parsed and returned via object by the implementation code
+//
 // LoginResponseHandler = (optional) Callback function to handle custom login response
 // LogoutResponseHandler = (optional) Callback function to handle custom logout response
 // RefreshTokenResponseHandler = (optional) Callback function to handle custom token refresh response
 //
 // *** Authorization Setup ***
 // AuthorizerHandler = (optional) AuthorizerHandler func is called during authorization after authentication,
+//
 //								  to validate if the current credential has access rights to certain parts of the target site,
 //	 							  the loggedInCredentialPtr is the object that LoginHandler returns upon successful authentication,
 //								     - return value of true indicates authorization success,
 //								     - return value of false indicates authorization failure
+//
 // UnauthorizedHandler = (optional) UnauthorizedHandler func is called when the authorization is not authorized,
-//									this handler will return the unauthorized message content to caller,
-//									such as via c.JSON, c.HTML, etc as dictated by the handler implementation process,
-//									   - c *gin.Context = context used to return the unauthorized access content
-//									   - code / message = unauthorized code and message as given by the web server to respond back to the caller
+//
+//	this handler will return the unauthorized message content to caller,
+//	such as via c.JSON, c.HTML, etc as dictated by the handler implementation process,
+//	   - c *gin.Context = context used to return the unauthorized access content
+//	   - code / message = unauthorized code and message as given by the web server to respond back to the caller
 //
 // *** Other Handlers ***
 // TimeHandler = (optional) TimeHandler provides the current time,
-//							override it to use another time value,
-//							useful for testing or if server uses a different time zone than the tokens,
-//							default = time.Now()
+//
+//	override it to use another time value,
+//	useful for testing or if server uses a different time zone than the tokens,
+//	default = time.Now()
+//
 // NoRouteHandler = (optional) Defines the route handler to execute when no route is encountered
 // MiddlewareErrorEvaluator = (optional) HTTP Status messages for when something in the JWT middleware fails,
-//										 Check error (e) to determine the appropriate error message
+//
+//	Check error (e) to determine the appropriate error message
 type GinJwt struct {
 	// -----------------------------------------------------------------------------------------------------------------
 	// gin jwt setup fields
@@ -181,12 +198,12 @@ type GinJwt struct {
 	// -----------------------------------------------------------------------------------------------------------------
 	// cookie setup
 	// -----------------------------------------------------------------------------------------------------------------
-	SendCookie bool
-	CookieMaxAge time.Duration
-	SecureCookie *bool
+	SendCookie     bool
+	CookieMaxAge   time.Duration
+	SecureCookie   *bool
 	CookieHTTPOnly *bool
-	CookieDomain string
-	CookieName string
+	CookieDomain   string
+	CookieName     string
 	CookieSameSite *http.SameSite
 
 	// -----------------------------------------------------------------------------------------------------------------
@@ -313,18 +330,18 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 
 	// the jwt middleware
 	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
-		Realm: j.Realm,
-		IdentityKey: j.IdentityKey,
-		Key: []byte(j.SigningSecretKey),
-		SigningAlgorithm: j.SigningAlgorithm.Key(),
-		PrivKeyFile: j.PrivateKeyFile,
-		PubKeyFile: j.PublicKeyFile,
-		Timeout: j.TokenValidDuration,
-		MaxRefresh: j.TokenMaxRefreshDuration,
+		Realm:             j.Realm,
+		IdentityKey:       j.IdentityKey,
+		Key:               []byte(j.SigningSecretKey),
+		SigningAlgorithm:  j.SigningAlgorithm.Key(),
+		PrivKeyFile:       j.PrivateKeyFile,
+		PubKeyFile:        j.PublicKeyFile,
+		Timeout:           j.TokenValidDuration,
+		MaxRefresh:        j.TokenMaxRefreshDuration,
 		SendAuthorization: j.SendAuthorization,
-		DisabledAbort: j.DisableAbort,
-		TokenLookup: j.TokenLookup,
-		TokenHeadName: j.TokenHeadName,
+		DisabledAbort:     j.DisableAbort,
+		TokenLookup:       j.TokenLookup,
+		TokenHeadName:     j.TokenHeadName,
 
 		// TimeFunc provides the current time.
 		// override it to use another time value.
@@ -378,7 +395,7 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 				j.UnauthorizedHandler(c, code, message)
 			} else {
 				c.JSON(code, gin.H{
-					"code": code,
+					"code":    code,
 					"message": message,
 				})
 			}
@@ -571,10 +588,11 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 // for all route path defined within the same router group
 //
 // For example:
-//		ginJwt := <Gin Jwt Struct Object Obtained>
-//		authGroup := g.Group("/auth")
-//		authGroup.Use(ginJwt.AuthMiddleware())
-//		authGroup.GET("/hello", ...) // route path within this auth group now secured by AuthMiddleware
+//
+//	ginJwt := <Gin Jwt Struct Object Obtained>
+//	authGroup := g.Group("/auth")
+//	authGroup.Use(ginJwt.AuthMiddleware())
+//	authGroup.GET("/hello", ...) // route path within this auth group now secured by AuthMiddleware
 func (j *GinJwt) AuthMiddleware() gin.HandlerFunc {
 	if j._ginJwtMiddleware != nil {
 		return j._ginJwtMiddleware.MiddlewareFunc()
@@ -592,46 +610,38 @@ func (j *GinJwt) ExtractClaims(c *gin.Context) map[string]interface{} {
 // Identity Helper Structs
 // =====================================================================================================================
 
-//
 // UserLogin is a helper struct for use in authentication,
 // this struct represents a common use case for user based login request data,
 // however, any other custom struct can be used instead as desired
-//
 type UserLogin struct {
-	Username string		`form:"username" json:"username" binding:"required"`
-	Password string		`form:"password" json:"password" binding:"required"`
+	Username string `form:"username" json:"username" binding:"required"`
+	Password string `form:"password" json:"password" binding:"required"`
 }
 
-//
 // SystemLogin is a helper struct for use in authentication,
 // this struct represents a common use case for system based login request data,
 // however, any other custom struct can be used instead as desired
-//
 type SystemLogin struct {
-	AccessID string		`form:"accessid" json:"accessid" binding:"required"`
-	SecretKey string	`form:"secretkey" json:"secretkey" binding:"required"`
+	AccessID  string `form:"accessid" json:"accessid" binding:"required"`
+	SecretKey string `form:"secretkey" json:"secretkey" binding:"required"`
 }
 
-//
 // UserInfo is a helper struct for use in authentication, authorization and identity,
 // this struct represents a common use case for user based identity info,
 // however, any other custom struct can be used instead as desired
-//
 type UserInfo struct {
-	UserName string
+	UserName  string
 	FirstName string
-	LastName string
-	Scopes []string
+	LastName  string
+	Scopes    []string
 }
 
-//
 // SystemInfo is a helper struct for use in authentication, authorization, and identity,
 // this struct represents a common use case for system based identity info,
 // however, any other custom struct can be used instead as desired
-//
 type SystemInfo struct {
 	SystemName string
-	Scopes []string
+	Scopes     []string
 }
 
 /*

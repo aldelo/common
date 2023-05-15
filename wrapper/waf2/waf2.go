@@ -12,7 +12,7 @@ import (
 )
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,8 +105,8 @@ func (w *WAF2) Connect() error {
 	// establish aws session connection and keep session object in struct
 	if sess, err := session.NewSession(
 		&aws.Config{
-			Region:      aws.String(w.AwsRegion.Key()),
-			HTTPClient:  httpCli,
+			Region:     aws.String(w.AwsRegion.Key()),
+			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error
 		return fmt.Errorf("Connect To WAF2 Failed: (AWS Session Error) " + err.Error())
@@ -151,8 +151,8 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	var addrList []string
 
 	if getOutput, err := w.waf2Obj.GetIPSet(&wafv2.GetIPSetInput{
-		Name: aws.String(ipsetName),
-		Id: aws.String(ipsetId),
+		Name:  aws.String(ipsetName),
+		Id:    aws.String(ipsetId),
 		Scope: aws.String(scope),
 	}); err != nil {
 		// error
@@ -168,9 +168,9 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	}
 
 	if _, err := w.waf2Obj.UpdateIPSet(&wafv2.UpdateIPSetInput{
-		Name: aws.String(ipsetName),
-		Id: aws.String(ipsetId),
-		Scope: aws.String(scope),
+		Name:      aws.String(ipsetName),
+		Id:        aws.String(ipsetId),
+		Scope:     aws.String(scope),
 		Addresses: aws.StringSlice(addrList),
 		LockToken: lockToken,
 	}); err != nil {
@@ -189,7 +189,8 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 // newRegexPatterns = regex patterns to add to regex pattern set
 //
 // NOTE = AWS limits to 10 regex expressions per regex set, and max of 10 regex sets
-//        this method will take the newest regex pattern to replace the older patterns
+//
+//	this method will take the newest regex pattern to replace the older patterns
 func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSetId string, scope string, newRegexPatterns []string) error {
 	if util.LenTrim(regexPatternSetName) == 0 {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: regexPatternSetName is Required")
@@ -211,8 +212,8 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 	var patternsList []*wafv2.Regex
 
 	if getOutput, err := w.waf2Obj.GetRegexPatternSet(&wafv2.GetRegexPatternSetInput{
-		Name: aws.String(regexPatternSetName),
-		Id: aws.String(regexPatternSetId),
+		Name:  aws.String(regexPatternSetName),
+		Id:    aws.String(regexPatternSetId),
 		Scope: aws.String(scope),
 	}); err != nil {
 		// error
@@ -227,7 +228,7 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 
 		if len(patternsList) > 0 {
 			for _, v := range patternsList {
-				oldList	= append(oldList, aws.StringValue(v.RegexString))
+				oldList = append(oldList, aws.StringValue(v.RegexString))
 			}
 		}
 
@@ -253,11 +254,11 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 	}
 
 	if _, err := w.waf2Obj.UpdateRegexPatternSet(&wafv2.UpdateRegexPatternSetInput{
-		Name: aws.String(regexPatternSetName),
-		Id: aws.String(regexPatternSetId),
-		Scope: aws.String(scope),
+		Name:                  aws.String(regexPatternSetName),
+		Id:                    aws.String(regexPatternSetId),
+		Scope:                 aws.String(scope),
 		RegularExpressionList: patternsList,
-		LockToken: lockToken,
+		LockToken:             lockToken,
 	}); err != nil {
 		// error encountered
 		return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
@@ -266,4 +267,3 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		return nil
 	}
 }
-

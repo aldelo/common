@@ -1,7 +1,7 @@
 package dynamodb
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,9 +68,9 @@ import (
 // DynamoDB struct encapsulates the AWS DynamoDB access functionality
 //
 // Notes:
-//		1) to use dax, must be within vpc with dax cluster subnet pointing to private ip subnet of the vpc
-//		2) dax is not accessible outside of vpc
-// 		3) on ec2 or container within vpc, also need aws credential via aws cli too = aws configure
+//  1. to use dax, must be within vpc with dax cluster subnet pointing to private ip subnet of the vpc
+//  2. dax is not accessible outside of vpc
+//  3. on ec2 or container within vpc, also need aws credential via aws cli too = aws configure
 type DynamoDB struct {
 	// define the AWS region that dynamodb is serviced from
 	AwsRegion awsregion.AWSRegion
@@ -119,7 +119,8 @@ func (e *DynamoDBError) Error() string {
 // DynamoDBTableKeys struct defines the PK and SK fields to be used in key search (Always PK and SK)
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
 // ResultItemPtr = optional, used with TransactionGetItems() to denote output unmarshal object target
 type DynamoDBTableKeys struct {
@@ -141,7 +142,8 @@ type DynamoDBUnprocessedItemsAndKeys struct {
 // UnmarshalPutItems will convert struct's PutItems into target slice of struct objects
 //
 // notes:
-//		resultItemsPtr interface{} = Input is Slice of Actual Struct Objects
+//
+//	resultItemsPtr interface{} = Input is Slice of Actual Struct Objects
 func (u *DynamoDBUnprocessedItemsAndKeys) UnmarshalPutItems(resultItemsPtr interface{}) error {
 	if u == nil {
 		return errors.New("UnmarshalPutItems Failed: (Validate) " + "DynamoDBUnprocessedItemsAndKeys Object Nil")
@@ -162,63 +164,65 @@ func (u *DynamoDBUnprocessedItemsAndKeys) UnmarshalPutItems(resultItemsPtr inter
 // DynamoDBUpdateItemInput defines a single item update instruction
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
 // parameters:
-//		pkValue = required, value of partition key to seek
-//		skValue = optional, value of sort key to seek; set to blank if value not provided
 //
-//		updateExpression = required, ATTRIBUTES ARE CASE SENSITIVE; set remove add or delete action expression, see Rules URL for full detail
-//			Rules:
-//				1) https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.UpdateExpressions.html
+//	pkValue = required, value of partition key to seek
+//	skValue = optional, value of sort key to seek; set to blank if value not provided
+//
+//	updateExpression = required, ATTRIBUTES ARE CASE SENSITIVE; set remove add or delete action expression, see Rules URL for full detail
+//		Rules:
+//			1) https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.UpdateExpressions.html
+//		Usage Syntax:
+//			1) Action Keywords are: set, add, remove, delete
+//			2) Each Action Keyword May Appear in UpdateExpression Only Once
+//			3) Each Action Keyword Grouping May Contain One or More Actions, Such as 'set price=:p, age=:age, etc' (each action separated by comma)
+//			4) Each Action Keyword Always Begin with Action Keyword itself, such as 'set ...', 'add ...', etc
+//			5) If Attribute is Numeric, Action Can Perform + or - Operation in Expression, such as 'set age=age-:newAge, price=price+:price, etc'
+//			6) If Attribute is Slice, Action Can Perform Slice Element Operation in Expression, such as 'set age[2]=:newData, etc'
+//			7) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
+//				a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
+//			8) When Attribute is a List, Use list_append(a, b, ...) in Expression to append elements (list_append() is case sensitive)
+//				a) set #ri = list_append(#ri, :vals) where :vals represents one or more of elements to add as in L
+//			9) if_not_exists(path, value)
+//				a) Avoids existing attribute if already exists
+//				b) set price = if_not_exists(price, :p)
+//				c) if_not_exists is case sensitive; path is the existing attribute to check
+//			10) Action Type Purposes
+//				a) SET = add one or more attributes to an item; overrides existing attributes in item with new values; if attribute is number, able to perform + or - operations
+//				b) REMOVE = remove one or more attributes from an item, to remove multiple attributes, separate by comma; remove element from list use xyz[1] index notation
+//				c) ADD = adds a new attribute and its values to an item; if attribute is number and already exists, value will add up or subtract
+//				d) DELETE = supports only on set data types; deletes one or more elements from a set, such as 'delete color :c'
+//			11) Example
+//				a) set age=:age, name=:name, etc
+//				b) set age=age-:age, num=num+:num, etc
+//
+//	conditionExpress = optional, ATTRIBUTES ARE CASE SENSITIVE; sets conditions for this condition expression, set to blank if not used
 //			Usage Syntax:
-//				1) Action Keywords are: set, add, remove, delete
-//				2) Each Action Keyword May Appear in UpdateExpression Only Once
-//				3) Each Action Keyword Grouping May Contain One or More Actions, Such as 'set price=:p, age=:age, etc' (each action separated by comma)
-//				4) Each Action Keyword Always Begin with Action Keyword itself, such as 'set ...', 'add ...', etc
-//				5) If Attribute is Numeric, Action Can Perform + or - Operation in Expression, such as 'set age=age-:newAge, price=price+:price, etc'
-//				6) If Attribute is Slice, Action Can Perform Slice Element Operation in Expression, such as 'set age[2]=:newData, etc'
-//				7) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
-//					a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
-//				8) When Attribute is a List, Use list_append(a, b, ...) in Expression to append elements (list_append() is case sensitive)
-//					a) set #ri = list_append(#ri, :vals) where :vals represents one or more of elements to add as in L
-//				9) if_not_exists(path, value)
-//					a) Avoids existing attribute if already exists
-//					b) set price = if_not_exists(price, :p)
-//					c) if_not_exists is case sensitive; path is the existing attribute to check
-//				10) Action Type Purposes
-//					a) SET = add one or more attributes to an item; overrides existing attributes in item with new values; if attribute is number, able to perform + or - operations
-//					b) REMOVE = remove one or more attributes from an item, to remove multiple attributes, separate by comma; remove element from list use xyz[1] index notation
-//					c) ADD = adds a new attribute and its values to an item; if attribute is number and already exists, value will add up or subtract
-//					d) DELETE = supports only on set data types; deletes one or more elements from a set, such as 'delete color :c'
-//				11) Example
-//					a) set age=:age, name=:name, etc
-//					b) set age=age-:age, num=num+:num, etc
+//				1) "size(info.actors) >= :num"
+//					a) When Length of Actors Attribute Value is Equal or Greater Than :num, ONLY THEN UpdateExpression is Performed
+//				2) ExpressionAttributeName and ExpressionAttributeValue is Still Defined within ExpressionAttributeNames and ExpressionAttributeValues Where Applicable
 //
-//		conditionExpress = optional, ATTRIBUTES ARE CASE SENSITIVE; sets conditions for this condition expression, set to blank if not used
-//				Usage Syntax:
-//					1) "size(info.actors) >= :num"
-//						a) When Length of Actors Attribute Value is Equal or Greater Than :num, ONLY THEN UpdateExpression is Performed
-//					2) ExpressionAttributeName and ExpressionAttributeValue is Still Defined within ExpressionAttributeNames and ExpressionAttributeValues Where Applicable
+//	expressionAttributeNames = optional, ATTRIBUTES ARE CASE SENSITIVE; set nil if not used, must define for attribute names that are reserved keywords such as year, data etc. using #xyz
+//		Usage Syntax:
+//			1) map[string]*string: where string is the #xyz, and *string is the original xyz attribute name
+//				a) map[string]*string { "#xyz": aws.String("Xyz"), }
+//			2) Add to Map
+//				a) m := make(map[string]*string)
+//				b) m["#xyz"] = aws.String("Xyz")
 //
-//		expressionAttributeNames = optional, ATTRIBUTES ARE CASE SENSITIVE; set nil if not used, must define for attribute names that are reserved keywords such as year, data etc. using #xyz
-//			Usage Syntax:
-//				1) map[string]*string: where string is the #xyz, and *string is the original xyz attribute name
-//					a) map[string]*string { "#xyz": aws.String("Xyz"), }
-//				2) Add to Map
-//					a) m := make(map[string]*string)
-//					b) m["#xyz"] = aws.String("Xyz")
-//
-//		expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
-//			Usage Syntax:
-//				1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
-//					a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
-//				2) Add to Map
-//					a) m := make(map[string]*dynamodb.AttributeValue)
-//					b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
-//				3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
-//					a) av, err := dynamodbattribute.MarshalList(xyzSlice)
-//					b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
+//	expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
+//		Usage Syntax:
+//			1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
+//				a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
+//			2) Add to Map
+//				a) m := make(map[string]*dynamodb.AttributeValue)
+//				b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
+//			3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
+//				a) av, err := dynamodbattribute.MarshalList(xyzSlice)
+//				b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
 type DynamoDBUpdateItemInput struct {
 	PK                        string
 	SK                        string
@@ -231,9 +235,10 @@ type DynamoDBUpdateItemInput struct {
 // DynamoDBTransactionWrites defines one or more items to put, update or delete
 //
 // notes
-//		PutItems interface{} = is Slice of PutItems: []Xyz
-//			a) We use interface{} because []interface{} will require each element conversion (instead we will handle conversion by internal code)
-//			b) PutItems ALWAYS Slice of Struct (Value), NOT pointers to Structs
+//
+//	PutItems interface{} = is Slice of PutItems: []Xyz
+//		a) We use interface{} because []interface{} will require each element conversion (instead we will handle conversion by internal code)
+//		b) PutItems ALWAYS Slice of Struct (Value), NOT pointers to Structs
 type DynamoDBTransactionWrites struct {
 	PutItems          interface{}
 	UpdateItems       []*DynamoDBUpdateItemInput
@@ -301,7 +306,8 @@ type DynamoDBTransactionReads struct {
 // and to advise if retry, immediate retry, suppress error etc error handling advisory
 //
 // notes:
-//		RetryNeedsBackOff = true indicates when doing retry, must wait an arbitrary time duration before retry; false indicates immediate is ok
+//
+//	RetryNeedsBackOff = true indicates when doing retry, must wait an arbitrary time duration before retry; false indicates immediate is ok
 func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError {
 	if err != nil {
 		prefix := ""
@@ -977,18 +983,20 @@ func (d *DynamoDB) TimeOutDuration(timeOutSeconds uint) *time.Duration {
 // PutItem will add or update a new item into dynamodb table
 //
 // parameters:
-//		item = required, must be a struct object; ALWAYS SINGLE STRUCT OBJECT, NEVER SLICE
-//			   must start with fields 'pk string', 'sk string', and 'data string' before any other attributes
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//
+//	item = required, must be a struct object; ALWAYS SINGLE STRUCT OBJECT, NEVER SLICE
+//		   must start with fields 'pk string', 'sk string', and 'data string' before any other attributes
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
 //
 // notes:
-//		item struct tags
-//			use `json:"" dynamodbav:""`
-//				json = sets the name used in json
-//				dynamodbav = sets the name used in dynamodb
-//			reference child element
-//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
-//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
 	if xray.XRayServiceOn() {
 		return d.putItemWithTrace(item, timeOutDuration)
@@ -1174,74 +1182,77 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 // UpdateItem requires using Primary Key attributes, and limited to TWO key attributes in condition maximum;
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
 // parameters:
-//		pkValue = required, value of partition key to seek
-//		skValue = optional, value of sort key to seek; set to blank if value not provided
 //
-//		updateExpression = required, ATTRIBUTES ARE CASE SENSITIVE; set remove add or delete action expression, see Rules URL for full detail
-//			Rules:
-//				1) https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.UpdateExpressions.html
+//	pkValue = required, value of partition key to seek
+//	skValue = optional, value of sort key to seek; set to blank if value not provided
+//
+//	updateExpression = required, ATTRIBUTES ARE CASE SENSITIVE; set remove add or delete action expression, see Rules URL for full detail
+//		Rules:
+//			1) https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.UpdateExpressions.html
+//		Usage Syntax:
+//			1) Action Keywords are: set, add, remove, delete
+//			2) Each Action Keyword May Appear in UpdateExpression Only Once
+//			3) Each Action Keyword Grouping May Contain One or More Actions, Such as 'set price=:p, age=:age, etc' (each action separated by comma)
+//			4) Each Action Keyword Always Begin with Action Keyword itself, such as 'set ...', 'add ...', etc
+//			5) If Attribute is Numeric, Action Can Perform + or - Operation in Expression, such as 'set age=age-:newAge, price=price+:price, etc'
+//			6) If Attribute is Slice, Action Can Perform Slice Element Operation in Expression, such as 'set age[2]=:newData, etc'
+//			7) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
+//				a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
+//			8) When Attribute is a List, Use list_append(a, b, ...) in Expression to append elements (list_append() is case sensitive)
+//				a) set #ri = list_append(#ri, :vals) where :vals represents one or more of elements to add as in L
+//			9) if_not_exists(path, value)
+//				a) Avoids existing attribute if already exists
+//				b) set price = if_not_exists(price, :p)
+//				c) if_not_exists is case sensitive; path is the existing attribute to check
+//			10) Action Type Purposes
+//				a) SET = add one or more attributes to an item; overrides existing attributes in item with new values; if attribute is number, able to perform + or - operations
+//				b) REMOVE = remove one or more attributes from an item, to remove multiple attributes, separate by comma; remove element from list use xyz[1] index notation
+//				c) ADD = adds a new attribute and its values to an item; if attribute is number and already exists, value will add up or subtract
+//				d) DELETE = supports only on set data types; deletes one or more elements from a set, such as 'delete color :c'
+//			11) Example
+//				a) set age=:age, name=:name, etc
+//				b) set age=age-:age, num=num+:num, etc
+//
+//	conditionExpress = optional, ATTRIBUTES ARE CASE SENSITIVE; sets conditions for this condition expression, set to blank if not used
 //			Usage Syntax:
-//				1) Action Keywords are: set, add, remove, delete
-//				2) Each Action Keyword May Appear in UpdateExpression Only Once
-//				3) Each Action Keyword Grouping May Contain One or More Actions, Such as 'set price=:p, age=:age, etc' (each action separated by comma)
-//				4) Each Action Keyword Always Begin with Action Keyword itself, such as 'set ...', 'add ...', etc
-//				5) If Attribute is Numeric, Action Can Perform + or - Operation in Expression, such as 'set age=age-:newAge, price=price+:price, etc'
-//				6) If Attribute is Slice, Action Can Perform Slice Element Operation in Expression, such as 'set age[2]=:newData, etc'
-//				7) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
-//					a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
-//				8) When Attribute is a List, Use list_append(a, b, ...) in Expression to append elements (list_append() is case sensitive)
-//					a) set #ri = list_append(#ri, :vals) where :vals represents one or more of elements to add as in L
-//				9) if_not_exists(path, value)
-//					a) Avoids existing attribute if already exists
-//					b) set price = if_not_exists(price, :p)
-//					c) if_not_exists is case sensitive; path is the existing attribute to check
-//				10) Action Type Purposes
-//					a) SET = add one or more attributes to an item; overrides existing attributes in item with new values; if attribute is number, able to perform + or - operations
-//					b) REMOVE = remove one or more attributes from an item, to remove multiple attributes, separate by comma; remove element from list use xyz[1] index notation
-//					c) ADD = adds a new attribute and its values to an item; if attribute is number and already exists, value will add up or subtract
-//					d) DELETE = supports only on set data types; deletes one or more elements from a set, such as 'delete color :c'
-//				11) Example
-//					a) set age=:age, name=:name, etc
-//					b) set age=age-:age, num=num+:num, etc
+//				1) "size(info.actors) >= :num"
+//					a) When Length of Actors Attribute Value is Equal or Greater Than :num, ONLY THEN UpdateExpression is Performed
+//				2) ExpressionAttributeName and ExpressionAttributeValue is Still Defined within ExpressionAttributeNames and ExpressionAttributeValues Where Applicable
 //
-//		conditionExpress = optional, ATTRIBUTES ARE CASE SENSITIVE; sets conditions for this condition expression, set to blank if not used
-//				Usage Syntax:
-//					1) "size(info.actors) >= :num"
-//						a) When Length of Actors Attribute Value is Equal or Greater Than :num, ONLY THEN UpdateExpression is Performed
-//					2) ExpressionAttributeName and ExpressionAttributeValue is Still Defined within ExpressionAttributeNames and ExpressionAttributeValues Where Applicable
+//	expressionAttributeNames = optional, ATTRIBUTES ARE CASE SENSITIVE; set nil if not used, must define for attribute names that are reserved keywords such as year, data etc. using #xyz
+//		Usage Syntax:
+//			1) map[string]*string: where string is the #xyz, and *string is the original xyz attribute name
+//				a) map[string]*string { "#xyz": aws.String("Xyz"), }
+//			2) Add to Map
+//				a) m := make(map[string]*string)
+//				b) m["#xyz"] = aws.String("Xyz")
 //
-//		expressionAttributeNames = optional, ATTRIBUTES ARE CASE SENSITIVE; set nil if not used, must define for attribute names that are reserved keywords such as year, data etc. using #xyz
-//			Usage Syntax:
-//				1) map[string]*string: where string is the #xyz, and *string is the original xyz attribute name
-//					a) map[string]*string { "#xyz": aws.String("Xyz"), }
-//				2) Add to Map
-//					a) m := make(map[string]*string)
-//					b) m["#xyz"] = aws.String("Xyz")
+//	expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
+//		Usage Syntax:
+//			1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
+//				a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
+//			2) Add to Map
+//				a) m := make(map[string]*dynamodb.AttributeValue)
+//				b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
+//			3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
+//				a) av, err := dynamodbattribute.MarshalList(xyzSlice)
+//				b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
 //
-//		expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
-//			Usage Syntax:
-//				1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
-//					a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
-//				2) Add to Map
-//					a) m := make(map[string]*dynamodb.AttributeValue)
-//					b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
-//				3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
-//					a) av, err := dynamodbattribute.MarshalList(xyzSlice)
-//					b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
-//
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
 //
 // notes:
-//		item struct tags
-//			use `json:"" dynamodbav:""`
-//				json = sets the name used in json
-//				dynamodbav = sets the name used in dynamodb
-//			reference child element
-//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
-//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) UpdateItem(pkValue string, skValue string,
 	updateExpression string,
 	conditionExpression string,
@@ -1536,12 +1547,14 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 // DeleteItem will delete an existing item from dynamodb table, using primary key values (PK and SK)
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
 // parameters:
-//		pkValue = required, value of partition key to seek
-//		skValue = optional, value of sort key to seek; set to blank if value not provided
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//
+//	pkValue = required, value of partition key to seek
+//	skValue = optional, value of sort key to seek; set to blank if value not provided
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
 func (d *DynamoDB) DeleteItem(pkValue string, skValue string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
 	if xray.XRayServiceOn() {
 		return d.deleteItemWithTrace(pkValue, skValue, timeOutDuration)
@@ -1758,30 +1771,34 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 // GetItem will find an existing item from dynamodb table
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
 // warning
-//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
+//	projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 //
 // parameters:
-//		resultItemPtr = required, pointer to item object for return value to unmarshal into; if projected attributes less than struct fields, unmatched is defaulted
-//			a) MUST BE STRUCT OBJECT; NEVER A SLICE
-//		pkValue = required, value of partition key to seek
-//		skValue = optional, value of sort key to seek; set to blank if value not provided
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
-//		consistentRead = optional, scan uses consistent read or eventual consistent read, default is eventual consistent read
-//		projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
-//						      attribute names must match struct field name or struct tag's json / dynamodbav tag values,
-//							  if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
+//	resultItemPtr = required, pointer to item object for return value to unmarshal into; if projected attributes less than struct fields, unmatched is defaulted
+//		a) MUST BE STRUCT OBJECT; NEVER A SLICE
+//	pkValue = required, value of partition key to seek
+//	skValue = optional, value of sort key to seek; set to blank if value not provided
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	consistentRead = optional, scan uses consistent read or eventual consistent read, default is eventual consistent read
+//	projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
+//					      attribute names must match struct field name or struct tag's json / dynamodbav tag values,
+//						  if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 //
 // notes:
-//		item struct tags
-//			use `json:"" dynamodbav:""`
-//				json = sets the name used in json
-//				dynamodbav = sets the name used in dynamodb
-//			reference child element
-//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
-//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) GetItem(resultItemPtr interface{},
 	pkValue string, skValue string,
 	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
@@ -2082,7 +2099,8 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 // GetItemWithRetry handles dynamodb retries in case action temporarily fails
 //
 // warning
-//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
+//	projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 	resultItemPtr interface{}, pkValue string, skValue string,
 	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) *DynamoDBError {
@@ -2151,78 +2169,83 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 // QueryItems requires using Key attributes, and limited to TWO key attributes in condition maximum;
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search without GSI/LSI, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search without GSI/LSI, MUST use PK and SK together or error will trigger
 //
 // warning
-//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
+//	projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 //
 // parameters:
-//		resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
-//		consistentRead = optional, scan uses consistent read or eventual consistent read, default is eventual consistent read
-//		indexName = optional, global secondary index or local secondary index name to help in query operation
-//		pageLimit = optional, scan page limit if set, this limits number of items examined per page during scan operation, allowing scan to work better for RCU
-//		pagedQuery = optional, indicates if query is page based or not; if true, query will be performed via pages, this helps overcome 1 MB limit of each query result
-//		pagedQueryPageCountLimit = optional, indicates how many pages to query during paged query action
-//		exclusiveStartKey = optional, if using pagedQuery and starting the query from prior results
 //
-//		keyConditionExpression = required, ATTRIBUTES ARE CASE SENSITIVE; either the primary key (PK SK for example) or global secondary index (SK Data for example) or another secondary index (secondary index must be named)
-//			Usage Syntax:
-//				1) Max 2 Attribute Fields
-//				2) First Field must be Partition Key (Must Evaluate to True or False)
-//					a) = ONLY
-//				3) Second Field is Sort Key (May Evaluate to True or False or Range)
-//					a) =, <, <=, >, >=, BETWEEN, begins_with()
-//				4) Combine Two Fields with AND
-//				5) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
-//					a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
-//				6) Example
-//					a) partitionKeyName = :partitionKeyVal
-//					b) partitionKeyName = :partitionKeyVal AND sortKeyName = :sortKeyVal
-//					c) #yr = :year
-//				7) If Using GSI / Local Index
-//					a) When Using, Must Specify the IndexName
-//					b) First Field is the GSI's Partition Key, such as SK (Evals to True/False), While Second Field is the GSI's SortKey (Range)
+//	resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	consistentRead = optional, scan uses consistent read or eventual consistent read, default is eventual consistent read
+//	indexName = optional, global secondary index or local secondary index name to help in query operation
+//	pageLimit = optional, scan page limit if set, this limits number of items examined per page during scan operation, allowing scan to work better for RCU
+//	pagedQuery = optional, indicates if query is page based or not; if true, query will be performed via pages, this helps overcome 1 MB limit of each query result
+//	pagedQueryPageCountLimit = optional, indicates how many pages to query during paged query action
+//	exclusiveStartKey = optional, if using pagedQuery and starting the query from prior results
 //
-//		expressionAttributeNames = optional, ATTRIBUTES ARE CASE SENSITIVE; set nil if not used, must define for attribute names that are reserved keywords such as year, data etc. using #xyz
-//			Usage Syntax:
-//				1) map[string]*string: where string is the #xyz, and *string is the original xyz attribute name
-//					a) map[string]*string { "#xyz": aws.String("Xyz"), }
-//				2) Add to Map
-//					a) m := make(map[string]*string)
-//					b) m["#xyz"] = aws.String("Xyz")
+//	keyConditionExpression = required, ATTRIBUTES ARE CASE SENSITIVE; either the primary key (PK SK for example) or global secondary index (SK Data for example) or another secondary index (secondary index must be named)
+//		Usage Syntax:
+//			1) Max 2 Attribute Fields
+//			2) First Field must be Partition Key (Must Evaluate to True or False)
+//				a) = ONLY
+//			3) Second Field is Sort Key (May Evaluate to True or False or Range)
+//				a) =, <, <=, >, >=, BETWEEN, begins_with()
+//			4) Combine Two Fields with AND
+//			5) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
+//				a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
+//			6) Example
+//				a) partitionKeyName = :partitionKeyVal
+//				b) partitionKeyName = :partitionKeyVal AND sortKeyName = :sortKeyVal
+//				c) #yr = :year
+//			7) If Using GSI / Local Index
+//				a) When Using, Must Specify the IndexName
+//				b) First Field is the GSI's Partition Key, such as SK (Evals to True/False), While Second Field is the GSI's SortKey (Range)
 //
-//		expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
-//			Usage Syntax:
-//				1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
-//					a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
-//				2) Add to Map
-//					a) m := make(map[string]*dynamodb.AttributeValue)
-//					b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
-//				3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
-//					a) av, err := dynamodbattribute.MarshalList(xyzSlice)
-//					b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
+//	expressionAttributeNames = optional, ATTRIBUTES ARE CASE SENSITIVE; set nil if not used, must define for attribute names that are reserved keywords such as year, data etc. using #xyz
+//		Usage Syntax:
+//			1) map[string]*string: where string is the #xyz, and *string is the original xyz attribute name
+//				a) map[string]*string { "#xyz": aws.String("Xyz"), }
+//			2) Add to Map
+//				a) m := make(map[string]*string)
+//				b) m["#xyz"] = aws.String("Xyz")
 //
-//		filterConditionExpression = optional; ATTRIBUTES ARE CASE SENSITIVE; once query on key conditions returned, this filter condition further restricts return data before output to caller;
-//			Usage Syntax:
-//				1) &expression.Name(xyz).Equals(expression.Value(abc))
-//				2) &expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//	expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
+//		Usage Syntax:
+//			1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
+//				a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
+//			2) Add to Map
+//				a) m := make(map[string]*dynamodb.AttributeValue)
+//				b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
+//			3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
+//				a) av, err := dynamodbattribute.MarshalList(xyzSlice)
+//				b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
 //
-//		projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
-//						      attribute names must match struct field name or struct tag's json / dynamodbav tag values
+//	filterConditionExpression = optional; ATTRIBUTES ARE CASE SENSITIVE; once query on key conditions returned, this filter condition further restricts return data before output to caller;
+//		Usage Syntax:
+//			1) &expression.Name(xyz).Equals(expression.Value(abc))
+//			2) &expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//
+//	projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
+//					      attribute names must match struct field name or struct tag's json / dynamodbav tag values
 //
 // Return Values:
-//		prevEvalKey = if paged query, the last evaluate key returned, to be used in subsequent query via exclusiveStartKey; otherwise always nil is returned
-//					  prevEvalkey map is set into exclusiveStartKey field if more data to load
+//
+//	prevEvalKey = if paged query, the last evaluate key returned, to be used in subsequent query via exclusiveStartKey; otherwise always nil is returned
+//				  prevEvalkey map is set into exclusiveStartKey field if more data to load
 //
 // notes:
-//		item struct tags
-//			use `json:"" dynamodbav:""`
-//				json = sets the name used in json
-//				dynamodbav = sets the name used in dynamodb
-//			reference child element
-//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
-//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
 	timeOutDuration *time.Duration,
 	consistentRead *bool,
@@ -2651,7 +2674,8 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 // QueryItemsWithRetry handles dynamodb retries in case action temporarily fails
 //
 // warning
-//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
+//	projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
 	resultItemsPtr interface{},
 	timeOutDuration *time.Duration,
@@ -2738,67 +2762,71 @@ func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
 // QueryItems requires using Key attributes, and limited to TWO key attributes in condition maximum;
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search without GSI/LSI, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search without GSI/LSI, MUST use PK and SK together or error will trigger
 //
 // parameters:
-// 		pagedSlicePtr = required, identifies the actual slice pointer for use during paged query
-//						(this parameter is not the output of result, actual result is returned via return variable returnItemsList)
-//		resultSlicePtr = required, pointer to working items list struct to contain queried result;
-//						 i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted;
-//						 (this parameter is not the output of result, actual result is returned via return variable returnItemsList)
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
-//		consistentRead = (always set to false for paged query internally)
-//		indexName = optional, global secondary index or local secondary index name to help in query operation
-//		pageLimit = (always set to 100 internally)
-//		pagedQuery = (always set to true internally)
-//		pagedQueryPageCountLimit = (always set to 25 internally)
-//		exclusiveStartKey = (set internally by the paged query loop if any exists)
-//		keyConditionExpression = required, ATTRIBUTES ARE CASE SENSITIVE; either the primary key (PK SK for example) or global secondary index (SK Data for example) or another secondary index (secondary index must be named)
-//			Usage Syntax:
-//				1) Max 2 Attribute Fields
-//				2) First Field must be Partition Key (Must Evaluate to True or False)
-//					a) = ONLY
-//				3) Second Field is Sort Key (May Evaluate to True or False or Range)
-//					a) =, <, <=, >, >=, BETWEEN, begins_with()
-//				4) Combine Two Fields with AND
-//				5) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
-//					a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
-//				6) Example
-//					a) partitionKeyName = :partitionKeyVal
-//					b) partitionKeyName = :partitionKeyVal AND sortKeyName = :sortKeyVal
-//					c) #yr = :year
-//				7) If Using GSI / Local Index
-//					a) When Using, Must Specify the IndexName
-//					b) First Field is the GSI's Partition Key, such as SK (Evals to True/False), While Second Field is the GSI's SortKey (Range)
-//		expressionAttributeNames = (always nil internally, not used in paged query)
-//		expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
-//			Usage Syntax:
-//				1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
-//					a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
-//				2) Add to Map
-//					a) m := make(map[string]*dynamodb.AttributeValue)
-//					b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
-//				3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
-//					a) av, err := dynamodbattribute.MarshalList(xyzSlice)
-//					b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
-//		filterConditionExpression = optional; ATTRIBUTES ARE CASE SENSITIVE; once query on key conditions returned, this filter condition further restricts return data before output to caller;
-//			Usage Syntax:
-//				1) &expression.Name(xyz).Equals(expression.Value(abc))
-//				2) &expression.Name(xyz).Equals(expression.Value(abc)).And(...)
-//		projectedAttributes = (always nil internally for paged query)
+//
+//	pagedSlicePtr = required, identifies the actual slice pointer for use during paged query
+//					(this parameter is not the output of result, actual result is returned via return variable returnItemsList)
+//	resultSlicePtr = required, pointer to working items list struct to contain queried result;
+//					 i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted;
+//					 (this parameter is not the output of result, actual result is returned via return variable returnItemsList)
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	consistentRead = (always set to false for paged query internally)
+//	indexName = optional, global secondary index or local secondary index name to help in query operation
+//	pageLimit = (always set to 100 internally)
+//	pagedQuery = (always set to true internally)
+//	pagedQueryPageCountLimit = (always set to 25 internally)
+//	exclusiveStartKey = (set internally by the paged query loop if any exists)
+//	keyConditionExpression = required, ATTRIBUTES ARE CASE SENSITIVE; either the primary key (PK SK for example) or global secondary index (SK Data for example) or another secondary index (secondary index must be named)
+//		Usage Syntax:
+//			1) Max 2 Attribute Fields
+//			2) First Field must be Partition Key (Must Evaluate to True or False)
+//				a) = ONLY
+//			3) Second Field is Sort Key (May Evaluate to True or False or Range)
+//				a) =, <, <=, >, >=, BETWEEN, begins_with()
+//			4) Combine Two Fields with AND
+//			5) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
+//				a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
+//			6) Example
+//				a) partitionKeyName = :partitionKeyVal
+//				b) partitionKeyName = :partitionKeyVal AND sortKeyName = :sortKeyVal
+//				c) #yr = :year
+//			7) If Using GSI / Local Index
+//				a) When Using, Must Specify the IndexName
+//				b) First Field is the GSI's Partition Key, such as SK (Evals to True/False), While Second Field is the GSI's SortKey (Range)
+//	expressionAttributeNames = (always nil internally, not used in paged query)
+//	expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
+//		Usage Syntax:
+//			1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
+//				a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
+//			2) Add to Map
+//				a) m := make(map[string]*dynamodb.AttributeValue)
+//				b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
+//			3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
+//				a) av, err := dynamodbattribute.MarshalList(xyzSlice)
+//				b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
+//	filterConditionExpression = optional; ATTRIBUTES ARE CASE SENSITIVE; once query on key conditions returned, this filter condition further restricts return data before output to caller;
+//		Usage Syntax:
+//			1) &expression.Name(xyz).Equals(expression.Value(abc))
+//			2) &expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//	projectedAttributes = (always nil internally for paged query)
 //
 // Return Values:
-//		returnItemsList = interface{} of return slice, use assert to cast to target type
-//		err = error info if error is encountered
+//
+//	returnItemsList = interface{} of return slice, use assert to cast to target type
+//	err = error info if error is encountered
 //
 // notes:
-//		item struct tags
-//			use `json:"" dynamodbav:""`
-//				json = sets the name used in json
-//				dynamodbav = sets the name used in dynamodb
-//			reference child element
-//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
-//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 	pagedSlicePtr interface{},
 	resultSlicePtr interface{},
@@ -2881,38 +2909,42 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 // >>> DO NOT USE SCAN IF POSSIBLE - SCAN IS NOT EFFICIENT ON RCU <<<
 //
 // warning
-//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
+//	projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 //
 // parameters:
-//		resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
-//		consistentRead = optional, scan uses consistent read or eventual consistent read, default is eventual consistent read
-//		indexName = optional, global secondary index or local secondary index name to help in scan operation
-//		pageLimit = optional, scan page limit if set, this limits number of items examined per page during scan operation, allowing scan to work better for RCU
-//		pagedQuery = optional, indicates if query is page based or not; if true, query will be performed via pages, this helps overcome 1 MB limit of each query result
-//		pagedQueryPageCountLimit = optional, indicates how many pages to query during paged query action
-//		exclusiveStartKey = optional, if using pagedQuery and starting the query from prior results
 //
-//		filterConditionExpression = required; ATTRIBUTES ARE CASE SENSITIVE; sets the scan filter condition;
-//			Usage Syntax:
-//				1) expFilter := expression.Name(xyz).Equals(expression.Value(abc))
-//				2) expFilter := expression.Name(xyz).Equals(expression.Value(abc)).And(...)
-//				3) Assign expFilter into filterConditionExpression
+//	resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	consistentRead = optional, scan uses consistent read or eventual consistent read, default is eventual consistent read
+//	indexName = optional, global secondary index or local secondary index name to help in scan operation
+//	pageLimit = optional, scan page limit if set, this limits number of items examined per page during scan operation, allowing scan to work better for RCU
+//	pagedQuery = optional, indicates if query is page based or not; if true, query will be performed via pages, this helps overcome 1 MB limit of each query result
+//	pagedQueryPageCountLimit = optional, indicates how many pages to query during paged query action
+//	exclusiveStartKey = optional, if using pagedQuery and starting the query from prior results
 //
-//		projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
-//						      attribute names must match struct field name or struct tag's json / dynamodbav tag values
+//	filterConditionExpression = required; ATTRIBUTES ARE CASE SENSITIVE; sets the scan filter condition;
+//		Usage Syntax:
+//			1) expFilter := expression.Name(xyz).Equals(expression.Value(abc))
+//			2) expFilter := expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//			3) Assign expFilter into filterConditionExpression
+//
+//	projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
+//					      attribute names must match struct field name or struct tag's json / dynamodbav tag values
 //
 // Return Values:
-//		prevEvalKey = if paged query, the last evaluate key returned, to be used in subsequent query via exclusiveStartKey; otherwise always nil is returned
+//
+//	prevEvalKey = if paged query, the last evaluate key returned, to be used in subsequent query via exclusiveStartKey; otherwise always nil is returned
 //
 // notes:
-//		item struct tags
-//			use `json:"" dynamodbav:""`
-//				json = sets the name used in json
-//				dynamodbav = sets the name used in dynamodb
-//			reference child element
-//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
-//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
 	timeOutDuration *time.Duration,
 	consistentRead *bool,
@@ -3232,7 +3264,8 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 // ScanItemsWithRetry handles dynamodb retries in case action temporarily fails
 //
 // warning
-//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
+//	projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
 	resultItemsPtr interface{},
 	timeOutDuration *time.Duration,
@@ -3312,37 +3345,40 @@ func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
 // >>> DO NOT USE SCAN IF POSSIBLE - SCAN IS NOT EFFICIENT ON RCU <<<
 //
 // parameters:
-//		maxRetries = required, max number of auto retries per paged query
-//		pagedSlicePtr = required, working variable to store paged query (actual return items list is via return variable)
-//		resultSlicePtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
-//		consistentRead = (always false)
-//		indexName = optional, global secondary index or local secondary index name to help in scan operation
-//		pageLimit = (always 100)
-//		pagedQuery = (always true)
-//		pagedQueryPageCountLimit = (always 25)
-//		exclusiveStartKey = (always internally controlled during paged query)
 //
-//		filterConditionExpression = required; ATTRIBUTES ARE CASE SENSITIVE; sets the scan filter condition;
-//			Usage Syntax:
-//				1) expFilter := expression.Name(xyz).Equals(expression.Value(abc))
-//				2) expFilter := expression.Name(xyz).Equals(expression.Value(abc)).And(...)
-//				3) Assign expFilter into filterConditionExpression
+//	maxRetries = required, max number of auto retries per paged query
+//	pagedSlicePtr = required, working variable to store paged query (actual return items list is via return variable)
+//	resultSlicePtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	consistentRead = (always false)
+//	indexName = optional, global secondary index or local secondary index name to help in scan operation
+//	pageLimit = (always 100)
+//	pagedQuery = (always true)
+//	pagedQueryPageCountLimit = (always 25)
+//	exclusiveStartKey = (always internally controlled during paged query)
 //
-//		projectedAttributes = (always project all attributes)
+//	filterConditionExpression = required; ATTRIBUTES ARE CASE SENSITIVE; sets the scan filter condition;
+//		Usage Syntax:
+//			1) expFilter := expression.Name(xyz).Equals(expression.Value(abc))
+//			2) expFilter := expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//			3) Assign expFilter into filterConditionExpression
+//
+//	projectedAttributes = (always project all attributes)
 //
 // Return Values:
-//		returnItemsList = interface of slice returned, representing the items found during scan
-//		err = error if encountered
+//
+//	returnItemsList = interface of slice returned, representing the items found during scan
+//	err = error if encountered
 //
 // notes:
-//		item struct tags
-//			use `json:"" dynamodbav:""`
-//				json = sets the name used in json
-//				dynamodbav = sets the name used in dynamodb
-//			reference child element
-//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
-//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
 	pagedSlicePtr interface{},
 	resultSlicePtr interface{},
@@ -3421,31 +3457,35 @@ func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
 // To update items, use UpdateItem instead for each item needing to be updated instead, BatchWriteItems does not support update items
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
 // parameters:
-//		putItems = slice of item struct objects to add to table (combine of putItems and deleteItems cannot exceed 25)
-//			1) Each element of slice is an struct object to be added, struct object must have PK, SK or another named primary key for example, and other attributes as needed
-//			2) putItems interface{} = Expects SLICE of STRUCT OBJECTS
 //
-//		deleteKeys = slice of search keys (as defined by DynamoDBTableKeys struct) to remove from table (combine of putItems and deleteKeys cannot exceed 25)
-//			1) Each element of slice is an struct object of DynamoDBTableKeys
+//	putItems = slice of item struct objects to add to table (combine of putItems and deleteItems cannot exceed 25)
+//		1) Each element of slice is an struct object to be added, struct object must have PK, SK or another named primary key for example, and other attributes as needed
+//		2) putItems interface{} = Expects SLICE of STRUCT OBJECTS
 //
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	deleteKeys = slice of search keys (as defined by DynamoDBTableKeys struct) to remove from table (combine of putItems and deleteKeys cannot exceed 25)
+//		1) Each element of slice is an struct object of DynamoDBTableKeys
+//
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
 //
 // return values:
-//		successCount = total number of item actions succeeded
-//		unprocessedItems = any item actions did not succeed is returned; nil means all processed
-//		err = if method call failed, error is returned
+//
+//	successCount = total number of item actions succeeded
+//	unprocessedItems = any item actions did not succeed is returned; nil means all processed
+//	err = if method call failed, error is returned
 //
 // notes:
-//		item struct tags
-//			use `json:"" dynamodbav:""`
-//				json = sets the name used in json
-//				dynamodbav = sets the name used in dynamodb
-//			reference child element
-//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
-//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) BatchWriteItems(putItems interface{},
 	deleteKeys []DynamoDBTableKeys,
 	timeOutDuration *time.Duration) (successCount int, unprocessedItems *DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
@@ -3900,31 +3940,36 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 // BatchGetItems accepts a slice of search keys (of DynamoDBSearchKeys struct object), optionally define attribute projections, and return found result items;
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
 // warning
-//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
+//	projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 //
 // parameters:
-//		resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
-//		searchKeys = required, slice of DynamoDBTableKeys struct objects to perform search against
-//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
-//		consistentRead = optional, indicates if the read operation requires consistent read status
-//		projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
-//						      attribute names must match struct field name or struct tag's json / dynamodbav tag values
+//
+//	resultItemsPtr = required, pointer to items list struct to contain queried result; i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted
+//	searchKeys = required, slice of DynamoDBTableKeys struct objects to perform search against
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	consistentRead = optional, indicates if the read operation requires consistent read status
+//	projectedAttributes = optional; ATTRIBUTES ARE CASE SENSITIVE; variadic list of attribute names that this query will project into result items;
+//					      attribute names must match struct field name or struct tag's json / dynamodbav tag values
 //
 // return values:
-//		notFound = true if no items found; if error encountered, this field returns false with error field filled
-//		err = if error is encountered, this field will be filled; otherwise nil
+//
+//	notFound = true if no items found; if error encountered, this field returns false with error field filled
+//	err = if error is encountered, this field will be filled; otherwise nil
 //
 // notes:
-//		item struct tags
-//			use `json:"" dynamodbav:""`
-//				json = sets the name used in json
-//				dynamodbav = sets the name used in dynamodb
-//			reference child element
-//				if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
-//					Info in parent struct with struct tag as info; to reach child element: info.xyz
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) BatchGetItems(resultItemsPtr interface{},
 	searchKeys []DynamoDBTableKeys,
 	timeOutDuration *time.Duration,
@@ -4282,7 +4327,8 @@ func (d *DynamoDB) batchGetItemsNormal(resultItemsPtr interface{},
 // BatchGetItemsWithRetry handles dynamodb retries in case action temporarily fails
 //
 // warning
-//		projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
+//
+//	projectedAttributes = if specified, must include PartitionKey (Hash key) typically "PK" as the first attribute in projected attributes
 func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint,
 	resultItemsPtr interface{},
 	searchKeys []DynamoDBTableKeys,
@@ -4405,7 +4451,8 @@ func (d *DynamoDB) BatchDeleteItemsWithRetry(maxRetries uint,
 // Total Items Count in a Single Transaction for All transItems combined (inner elements) cannot exceed 25
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
 	if xray.XRayServiceOn() {
 		return d.transactionWriteItemsWithTrace(timeOutDuration, tranItems...)
@@ -4844,23 +4891,24 @@ func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 // The PK (required) and SK (optional) is used for search, while ResultItemPtr interface{} receives pointer to the output object, so that once query completes the appropriate item data will unmarshal into object
 //
 // important
-//		if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
+//
+//	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 //
 // setting result item ptr info
-//		1) Each DynamoDBTableKeys struct object must set pointer of output struct object to ResultItemPtr
-//		2) In the external calling code, must define slice of struct object pointers to receive such unmarshaled results
-//			a) output := []*MID{
-//							&MID{},
-//							&MID{},
-//						 }
-//			b) Usage
-//				Passing each element of output to ResultItemPtr within DynamoDBTableKeys struct object
+//  1. Each DynamoDBTableKeys struct object must set pointer of output struct object to ResultItemPtr
+//  2. In the external calling code, must define slice of struct object pointers to receive such unmarshaled results
+//     a) output := []*MID{
+//     &MID{},
+//     &MID{},
+//     }
+//     b) Usage
+//     Passing each element of output to ResultItemPtr within DynamoDBTableKeys struct object
 //
 // notes:
-//		1) transKeys' must contain at laest one object
-//		2) within transKeys object, at least one object of DynamoDBTableKeys must exist for search
-//		3) no more than total of 25 search keys allowed across all variadic objects
-//		4) the ResultItemPtr in all DynamoDBTableKeys objects within all variadic objects MUST BE SET
+//  1. transKeys' must contain at laest one object
+//  2. within transKeys object, at least one object of DynamoDBTableKeys must exist for search
+//  3. no more than total of 25 search keys allowed across all variadic objects
+//  4. the ResultItemPtr in all DynamoDBTableKeys objects within all variadic objects MUST BE SET
 func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, tranKeys ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
 	if xray.XRayServiceOn() {
 		return d.transactionGetItemsWithTrace(timeOutDuration, tranKeys...)

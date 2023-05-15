@@ -1,7 +1,7 @@
 package redisdatatype
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,6 @@ const (
 	Int64   RedisDataType = 4
 	Float64 RedisDataType = 5
 	Bytes   RedisDataType = 6
-	Json	RedisDataType = 7
-	Time 	RedisDataType = 8
+	Json    RedisDataType = 7
+	Time    RedisDataType = 8
 )

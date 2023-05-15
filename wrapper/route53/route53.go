@@ -1,7 +1,7 @@
 package route53
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -129,7 +129,7 @@ func (r *Route53) connectInternal() error {
 	// establish aws session connection and keep session object in struct
 	if sess, err := session.NewSession(
 		&aws.Config{
-			HTTPClient:  httpCli,
+			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error
 		return errors.New("Connect To Route53 Failed: (AWS Session Error) " + err.Error())
@@ -240,7 +240,7 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 								Value: aws.String(ip),
 							},
 						},
-						TTL: aws.Int64(int64(ttl)),
+						TTL:  aws.Int64(int64(ttl)),
 						Type: aws.String(recordType),
 					},
 				},
@@ -339,7 +339,7 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 								Value: aws.String(ip),
 							},
 						},
-						TTL: aws.Int64(int64(ttl)),
+						TTL:  aws.Int64(int64(ttl)),
 						Type: aws.String(recordType),
 					},
 				},

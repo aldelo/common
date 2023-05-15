@@ -1,7 +1,7 @@
 package tlsconfig
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import (
 	"strings"
 )
 
-type TlsConfig struct {}
+type TlsConfig struct{}
 
 // GetServerTlsConfig returns *tls.config configured for server TLS or mTLS based on parameters
 //
@@ -32,8 +32,8 @@ type TlsConfig struct {}
 // serverKeyPemPath = (required) path and file name to the server key pem (unencrypted version)
 // clientCaCertPath = (optional) one or more client ca cert path and file name, in case tls.config is for mTLS
 func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
-									   serverKeyPemPath string,
-									   clientCaCertPemPath []string) (*tls.Config, error) {
+	serverKeyPemPath string,
+	clientCaCertPemPath []string) (*tls.Config, error) {
 	if len(strings.TrimSpace(serverCertPemPath)) == 0 || len(strings.TrimSpace(serverKeyPemPath)) == 0 {
 		return nil, fmt.Errorf("Server TLS Config Requires Server Certificate and Key Pem Path")
 	}
@@ -108,8 +108,8 @@ func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
 // clientCertPemPath = (optional) for mTLS setup, path and file name to the client cert pem (unencrypted version)
 // clientKeyPemPath = (optional) for mTLS setup, path and file name to the client key pem (unencrypted version)
 func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
-									   clientCertPemPath string,
-									   clientKeyPemPath string) (*tls.Config, error) {
+	clientCertPemPath string,
+	clientKeyPemPath string) (*tls.Config, error) {
 	if len(serverCaCertPemPath) == 0 {
 		return nil, fmt.Errorf("Client TLS Config Requires Server CA Certificate Pem Path")
 	}

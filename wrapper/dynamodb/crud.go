@@ -1,7 +1,7 @@
 package dynamodb
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -140,7 +140,8 @@ func (c *Crud) CreatePKValue(pkApp string, pkService string, pkScope string, pkI
 
 // Get retrieves data from dynamodb table with given pk and sk values,
 // resultDataPtr refers to pointer to struct of the target dynamodb table record
-//		result struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
+//
+//	result struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
 //
 // warning: projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
 func (c *Crud) Get(pkValue string, skValue string, resultDataPtr interface{}, consistentRead bool, projectedAttributes ...string) (err error) {
@@ -227,7 +228,8 @@ func (c *Crud) TransactionGet(transReads ...*DynamoDBTransactionReads) (successC
 // Set persists data to dynamodb table with given pointer struct that represents the target dynamodb table record,
 // pk value within pointer struct is created using CreatePKValue func
 // dataPtr refers to pointer to struct of the target dynamodb table record
-//		data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
+//
+//	data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
 func (c *Crud) Set(dataPtr interface{}) (err error) {
 	if c._ddb == nil {
 		return fmt.Errorf("Set To Data Store Failed: (Validater 1) Connection Not Established")
@@ -324,11 +326,16 @@ func (c *Crud) TransactionSet(transWrites ...*DynamoDBTransactionWrites) (succes
 
 // Query retrieves data from dynamodb table with given pk and sk values, or via LSI / GSI using index name,
 // pagedDataPtrSlice refers to pointer slice of data struct pointers for use during paged query, that each data struct represents the underlying dynamodb table record,
-//		&[]*xyz{}
+//
+//	&[]*xyz{}
+//
 // resultDataPtrSlice refers to pointer slice of data struct pointers to contain the paged query results (this is the working variable, not the returning result),
-//		&[]*xyz{}
+//
+//	&[]*xyz{}
+//
 // both pagedDataPtrSlice and resultDataPtrSlice have the same data types, but they will be contained in separate slice ptr vars,
-//		data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav, ie: &[]*exampleDataStruct
+//
+//	data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav, ie: &[]*exampleDataStruct
 //
 // responseDataPtrSlice, is the slice ptr result to caller, expects caller to assert to target slice ptr objects, ie: results.([]*xyz)
 func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface{}, resultDataPtrSlice interface{}) (responseDataPtrSlice interface{}, err error) {
@@ -433,37 +440,37 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 // Update will update a specific dynamodb record based on PK and SK, with given update expression, condition, and attribute values,
 // attribute values controls the actual values going to be updated into the record
 //
-//		updateExpression = required, ATTRIBUTES ARE CASE SENSITIVE; set remove add or delete action expression, see Rules URL for full detail
-//			Rules:
-//				1) https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.UpdateExpressions.html
-//			Usage Syntax:
-//				1) Action Keywords are: set, add, remove, delete
-//				2) Each Action Keyword May Appear in UpdateExpression Only Once
-//				3) Each Action Keyword Grouping May Contain One or More Actions, Such as 'set price=:p, age=:age, etc' (each action separated by comma)
-//				4) Each Action Keyword Always Begin with Action Keyword itself, such as 'set ...', 'add ...', etc
-//				5) If Attribute is Numeric, Action Can Perform + or - Operation in Expression, such as 'set age=age-:newAge, price=price+:price, etc'
-//				6) If Attribute is Slice, Action Can Perform Slice Element Operation in Expression, such as 'set age[2]=:newData, etc'
-//				7) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
-//					a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
-//				8) When Attribute is a List, Use list_append(a, b, ...) in Expression to append elements (list_append() is case sensitive)
-//					a) set #ri = list_append(#ri, :vals) where :vals represents one or more of elements to add as in L
-//				9) if_not_exists(path, value)
-//					a) Avoids existing attribute if already exists
-//					b) set price = if_not_exists(price, :p)
-//					c) if_not_exists is case sensitive; path is the existing attribute to check
-//				10) Action Type Purposes
-//					a) SET = add one or more attributes to an item; overrides existing attributes in item with new values; if attribute is number, able to perform + or - operations
-//					b) REMOVE = remove one or more attributes from an item, to remove multiple attributes, separate by comma; remove element from list use xyz[1] index notation
-//					c) ADD = adds a new attribute and its values to an item; if attribute is number and already exists, value will add up or subtract
-//					d) DELETE = supports only on set data types; deletes one or more elements from a set, such as 'delete color :c'
-//				11) Example
-//					a) set age=:age, name=:name, etc
-//					b) set age=age-:age, num=num+:num, etc
+//	updateExpression = required, ATTRIBUTES ARE CASE SENSITIVE; set remove add or delete action expression, see Rules URL for full detail
+//		Rules:
+//			1) https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.UpdateExpressions.html
+//		Usage Syntax:
+//			1) Action Keywords are: set, add, remove, delete
+//			2) Each Action Keyword May Appear in UpdateExpression Only Once
+//			3) Each Action Keyword Grouping May Contain One or More Actions, Such as 'set price=:p, age=:age, etc' (each action separated by comma)
+//			4) Each Action Keyword Always Begin with Action Keyword itself, such as 'set ...', 'add ...', etc
+//			5) If Attribute is Numeric, Action Can Perform + or - Operation in Expression, such as 'set age=age-:newAge, price=price+:price, etc'
+//			6) If Attribute is Slice, Action Can Perform Slice Element Operation in Expression, such as 'set age[2]=:newData, etc'
+//			7) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
+//				a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
+//			8) When Attribute is a List, Use list_append(a, b, ...) in Expression to append elements (list_append() is case sensitive)
+//				a) set #ri = list_append(#ri, :vals) where :vals represents one or more of elements to add as in L
+//			9) if_not_exists(path, value)
+//				a) Avoids existing attribute if already exists
+//				b) set price = if_not_exists(price, :p)
+//				c) if_not_exists is case sensitive; path is the existing attribute to check
+//			10) Action Type Purposes
+//				a) SET = add one or more attributes to an item; overrides existing attributes in item with new values; if attribute is number, able to perform + or - operations
+//				b) REMOVE = remove one or more attributes from an item, to remove multiple attributes, separate by comma; remove element from list use xyz[1] index notation
+//				c) ADD = adds a new attribute and its values to an item; if attribute is number and already exists, value will add up or subtract
+//				d) DELETE = supports only on set data types; deletes one or more elements from a set, such as 'delete color :c'
+//			11) Example
+//				a) set age=:age, name=:name, etc
+//				b) set age=age-:age, num=num+:num, etc
 //
-//		conditionExpress = optional, ATTRIBUTES ARE CASE SENSITIVE; sets conditions for this condition expression, set to blank if not used
-//				Usage Syntax:
-//					1) "size(info.actors) >= :num"
-//						a) When Length of Actors Attribute Value is Equal or Greater Than :num, ONLY THEN UpdateExpression is Performed
+//	conditionExpress = optional, ATTRIBUTES ARE CASE SENSITIVE; sets conditions for this condition expression, set to blank if not used
+//			Usage Syntax:
+//				1) "size(info.actors) >= :num"
+//					a) When Length of Actors Attribute Value is Equal or Greater Than :num, ONLY THEN UpdateExpression is Performed
 func (c *Crud) Update(pkValue string, skValue string, updateExpression string, conditionExpression string, attributeValues []*AttributeValue) (err error) {
 	if c._ddb == nil {
 		return fmt.Errorf("Update To Data Store Failed: (Validater 1) Connection Not Established")
@@ -972,9 +979,10 @@ func (c *Crud) supportGlobalTable(region awsregion.AWSRegion) bool {
 // stream = enabled, with old and new images
 //
 // global table supported regions:
-//		us-east-1 (nvirginia), us-east-2 (ohio), us-west-1 (california), us-west-2 (oregon)
-//		eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
-//		ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
+//
+//	us-east-1 (nvirginia), us-east-2 (ohio), us-west-1 (california), us-west-2 (oregon)
+//	eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
+//	ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
 //
 // warning: do not first create the original table, this function creates the primary automatically
 func (c *Crud) CreateGlobalTable(tableName string,
@@ -1096,9 +1104,10 @@ func (c *Crud) CreateGlobalTable(tableName string,
 // if update is to delete existing global table regional replicas, the regional table will be removed from global replication, and actual table deleted
 //
 // global table supported regions:
-//		us-east-1 (nvirginia), us-east-2 (ohio), us-west-1 (california), us-west-2 (oregon)
-//		eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
-//		ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
+//
+//	us-east-1 (nvirginia), us-east-2 (ohio), us-west-1 (california), us-west-2 (oregon)
+//	eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
+//	ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
 //
 // warning: do not first create the new replica table when adding to global table, this function creates all the new replica tables automatically
 func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWSRegion, deleteRegions []awsregion.AWSRegion) error {
@@ -1296,9 +1305,10 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 // ListGlobalTables will return list of all dynamodb global table names
 //
 // global table supported regions:
-//		us-east-1 (nvirginia), us-east-2 (ohio), us-west-1 (california), us-west-2 (oregon)
-//		eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
-//		ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
+//
+//	us-east-1 (nvirginia), us-east-2 (ohio), us-west-1 (california), us-west-2 (oregon)
+//	eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
+//	ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
 func (c *Crud) ListGlobalTables(filterRegion ...awsregion.AWSRegion) ([]*GlobalTableInfo, error) {
 	outputData := new([]*GlobalTableInfo)
 

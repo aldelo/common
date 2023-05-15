@@ -6,7 +6,7 @@ import (
 )
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,10 @@ import (
  */
 
 type EmvTlvTag struct {
-	TagName string
+	TagName          string
 	TagHexValueCount int
-	TagHexValue string
-	TagDecodedValue string
+	TagHexValue      string
+	TagDecodedValue  string
 }
 
 // getEmvTags returns list of emv tags used by this helper,
@@ -45,12 +45,13 @@ func getEmvTags() []string {
 // the expected emvTlvTagsPayload is tag hex + tag value len in hex + tag value in hex, data is composed without any other delimiters
 //
 // Reference Info:
-// 		EMVLab Emv Tag Search = http://www.emvlab.org/emvtags/
-// 		EMVLab Emv Tags Decode Sample = http://www.emvlab.org/tlvutils/?data=6F2F840E325041592E5359532E4444463031A51DBF0C1A61184F07A0000000031010500A564953412044454249548701019000
-// 		Hex To String Decoder = http://www.convertstring.com/EncodeDecode/HexDecode
-// 		---
-// 		Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
-// 		Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
+//
+//	EMVLab Emv Tag Search = http://www.emvlab.org/emvtags/
+//	EMVLab Emv Tags Decode Sample = http://www.emvlab.org/tlvutils/?data=6F2F840E325041592E5359532E4444463031A51DBF0C1A61184F07A0000000031010500A564953412044454249548701019000
+//	Hex To String Decoder = http://www.convertstring.com/EncodeDecode/HexDecode
+//	---
+//	Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
+//	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err error) {
 	// validate
 	emvTlvTagsPayload, _ = ExtractAlphaNumeric(Replace(emvTlvTagsPayload, " ", ""))
@@ -60,7 +61,7 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be 6 Digits or More")
 	}
 
-	if len(emvTlvTagsPayload) % 2 != 0 {
+	if len(emvTlvTagsPayload)%2 != 0 {
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be Formatted as Double HEX")
 	}
 
@@ -159,23 +160,23 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 					emvTlvTagsPayload = Right(emvTlvTagsPayload, len(emvTlvTagsPayload)-tagLenRemove)
 
 					// get tag value hex
-					tagValHex = Left(emvTlvTagsPayload, tagValLen * 2)
+					tagValHex = Left(emvTlvTagsPayload, tagValLen*2)
 
 					if tagValDecoded, err = HexToString(tagValHex); err != nil {
 						return nil, err
 					}
 
 					// remove tag value from payload
-					emvTlvTagsPayload = Right(emvTlvTagsPayload, len(emvTlvTagsPayload)-tagValLen * 2)
+					emvTlvTagsPayload = Right(emvTlvTagsPayload, len(emvTlvTagsPayload)-tagValLen*2)
 
 					// matched, finalize tag found
 					matchFound = true
 
 					foundList = append(foundList, &EmvTlvTag{
-						TagName: t,
+						TagName:          t,
 						TagHexValueCount: tagValLen,
-						TagHexValue: tagValHex,
-						TagDecodedValue: tagValDecoded,
+						TagHexValue:      tagValHex,
+						TagDecodedValue:  tagValDecoded,
 					})
 
 					processedTags = append(processedTags, t)
@@ -199,12 +200,13 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 // the expected emvTlvTagsPayload is tag hex names appended one after another, without delimiters, no other tag values in the string
 //
 // Reference Info:
-// 		EMVLab Emv Tag Search = http://www.emvlab.org/emvtags/
-// 		EMVLab Emv Tags Decode Sample = http://www.emvlab.org/tlvutils/?data=6F2F840E325041592E5359532E4444463031A51DBF0C1A61184F07A0000000031010500A564953412044454249548701019000
-// 		Hex To String Decoder = http://www.convertstring.com/EncodeDecode/HexDecode
-// 		---
-// 		Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
-// 		Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
+//
+//	EMVLab Emv Tag Search = http://www.emvlab.org/emvtags/
+//	EMVLab Emv Tags Decode Sample = http://www.emvlab.org/tlvutils/?data=6F2F840E325041592E5359532E4444463031A51DBF0C1A61184F07A0000000031010500A564953412044454249548701019000
+//	Hex To String Decoder = http://www.convertstring.com/EncodeDecode/HexDecode
+//	---
+//	Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
+//	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEmvTlvTagNamesOnly(emvTlvTagNamesPayload string) (foundList []string, err error) {
 	// validate
 	emvTlvTagNamesPayload, _ = ExtractAlphaNumeric(Replace(emvTlvTagNamesPayload, " ", ""))
@@ -214,7 +216,7 @@ func ParseEmvTlvTagNamesOnly(emvTlvTagNamesPayload string) (foundList []string, 
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be 2 Digits or More")
 	}
 
-	if len(emvTlvTagNamesPayload) % 2 != 0 {
+	if len(emvTlvTagNamesPayload)%2 != 0 {
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be Formatted as Double HEX")
 	}
 
@@ -257,7 +259,9 @@ func ParseEmvTlvTagNamesOnly(emvTlvTagNamesPayload string) (foundList []string, 
 }
 
 // cn = compressed numeric data element, consists of 2 numeric digits in hex 0 - 9,
-//      left justified, padded with trailing F
+//
+//	left justified, padded with trailing F
+//
 // ---
 // DFA001 = PAN key entered (cn)
 // DFA002 = CVV/CID (cn)
@@ -288,12 +292,13 @@ func getEncryptedTlvTagsAscii() []string {
 // the expected encryptedTlvTagsPayload is tag hex + tag value len in hex + tag value in hex, data is composed without any other delimiters
 //
 // Reference Info:
-// 		EMVLab Emv Tag Search = http://www.emvlab.org/emvtags/
-// 		EMVLab Emv Tags Decode Sample = http://www.emvlab.org/tlvutils/?data=6F2F840E325041592E5359532E4444463031A51DBF0C1A61184F07A0000000031010500A564953412044454249548701019000
-// 		Hex To String Decoder = http://www.convertstring.com/EncodeDecode/HexDecode
-// 		---
-// 		Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
-// 		Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
+//
+//	EMVLab Emv Tag Search = http://www.emvlab.org/emvtags/
+//	EMVLab Emv Tags Decode Sample = http://www.emvlab.org/tlvutils/?data=6F2F840E325041592E5359532E4444463031A51DBF0C1A61184F07A0000000031010500A564953412044454249548701019000
+//	Hex To String Decoder = http://www.convertstring.com/EncodeDecode/HexDecode
+//	---
+//	Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
+//	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvTag, err error) {
 	// validate
 	if LenTrim(encryptedTlvTagsPayload) < 6 {
@@ -423,14 +428,14 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 					// get tag value hex
 					if !StringSliceContains(&asciiTags, t) {
 						// hex
-						tagValHex = Left(encryptedTlvTagsPayload, tagValLen * 2)
+						tagValHex = Left(encryptedTlvTagsPayload, tagValLen*2)
 
 						if tagValDecoded, err = HexToString(tagValHex); err != nil {
 							return nil, err
 						}
 
 						// remove tag value from payload
-						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-tagValLen * 2)
+						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-tagValLen*2)
 					} else {
 						// ascii
 						tagValHex = Left(encryptedTlvTagsPayload, tagValLen)
@@ -444,10 +449,10 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 					matchFound = true
 
 					foundList = append(foundList, &EmvTlvTag{
-						TagName: t,
+						TagName:          t,
 						TagHexValueCount: tagValLen,
-						TagHexValue: tagValHex,
-						TagDecodedValue: tagValDecoded,
+						TagHexValue:      tagValHex,
+						TagDecodedValue:  tagValDecoded,
 					})
 
 					processedTags = append(processedTags, t)

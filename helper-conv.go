@@ -8,26 +8,27 @@
 // + /rest = helper types and/or functions related to http rest api GET, POST, PUT, DELETE actions invoked from client side.
 // + /tcp = helper types providing wrapped tcp client and tcp server logic.
 // - /wrapper = wrappers provides a simpler usage path to third party packages, as well as adding additional enhancements.
-//	 	+ /aws = contains aws sdk helper types and functions.
-//		+ /cloudmap = wrapper for aws cloudmap service discovery.
-//		+ /dynamodb = wrapper for aws dynamodb data access and manipulations.
-//		+ /gin = wrapper for gin-gonic web server, and important middleware, into a ready to use solution.
-//		+ /hystrixgo = wrapper for circuit breaker logic.
-//		+ /kms = wrapper for aws key management services.
-//		+ /mysql = wrapper for mysql + sqlx data access and manipulation.
-//		+ /ratelimit = wrapper for ratelimit logic.
-//		+ /redis = wrapper for redis data access and manipulation, using go-redis.
-//		+ /s3 = wrapper for aws s3 data access and manipulation.
-//		+ /ses = wrapper for aws simple email services.
-//		+ /sns = wrapper for aws simple notification services.
-//		+ /sqlite = wrapper for sqlite + sqlx data access and manipulation.
-//		+ /sqlserver = wrapper for sqlserver + sqlx data access and manipulation.
-//		+ /sqs = wrapper for aws simple queue services.
-//		+ /systemd = wrapper for kardianos service to support systemd, windows, launchd service creations.
-//		+ /viper = wrapper for viper config.
-//		+ /waf2 = wrapper for aws waf2 (web application firewall v2).
-//		+ /xray = wrapper for aws xray distributed tracing.
-//		+ /zap = wrapper for zap logging.
+//   - /aws = contains aws sdk helper types and functions.
+//   - /cloudmap = wrapper for aws cloudmap service discovery.
+//   - /dynamodb = wrapper for aws dynamodb data access and manipulations.
+//   - /gin = wrapper for gin-gonic web server, and important middleware, into a ready to use solution.
+//   - /hystrixgo = wrapper for circuit breaker logic.
+//   - /kms = wrapper for aws key management services.
+//   - /mysql = wrapper for mysql + sqlx data access and manipulation.
+//   - /ratelimit = wrapper for ratelimit logic.
+//   - /redis = wrapper for redis data access and manipulation, using go-redis.
+//   - /s3 = wrapper for aws s3 data access and manipulation.
+//   - /ses = wrapper for aws simple email services.
+//   - /sns = wrapper for aws simple notification services.
+//   - /sqlite = wrapper for sqlite + sqlx data access and manipulation.
+//   - /sqlserver = wrapper for sqlserver + sqlx data access and manipulation.
+//   - /sqs = wrapper for aws simple queue services.
+//   - /systemd = wrapper for kardianos service to support systemd, windows, launchd service creations.
+//   - /viper = wrapper for viper config.
+//   - /waf2 = wrapper for aws waf2 (web application firewall v2).
+//   - /xray = wrapper for aws xray distributed tracing.
+//   - /zap = wrapper for zap logging.
+//
 // /helper-conv.go = helpers for data conversion operations.
 // /helper-db.go = helpers for database data type operations.
 // /helper-emv.go = helpers for emv chip card related operations.
@@ -44,7 +45,7 @@
 package helper
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

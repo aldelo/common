@@ -1,7 +1,7 @@
 package hystrixgo
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,22 +32,22 @@ import (
 // CircuitBreaker defines one specific circuit breaker by command name
 //
 // Config Properties:
-//		1) Timeout = how long to wait for command to complete, in milliseconds, default = 1000
-//		2) MaxConcurrentRequests = how many commands of the same type can run at the same time, default = 10
-//		3) RequestVolumeThreshold = minimum number of requests needed before a circuit can be tripped due to health, default = 20
-//		4) SleepWindow = how long to wait after a circuit opens before testing for recovery, in milliseconds, default = 5000
-//		5) ErrorPercentThreshold = causes circuits to open once the rolling measure of errors exceeds this percent of requests, default = 50
-//		6) Logger = indicates the logger that will be used in the Hystrix package, default = logs nothing
+//  1. Timeout = how long to wait for command to complete, in milliseconds, default = 1000
+//  2. MaxConcurrentRequests = how many commands of the same type can run at the same time, default = 10
+//  3. RequestVolumeThreshold = minimum number of requests needed before a circuit can be tripped due to health, default = 20
+//  4. SleepWindow = how long to wait after a circuit opens before testing for recovery, in milliseconds, default = 5000
+//  5. ErrorPercentThreshold = causes circuits to open once the rolling measure of errors exceeds this percent of requests, default = 50
+//  6. Logger = indicates the logger that will be used in the Hystrix package, default = logs nothing
 type CircuitBreaker struct {
 	// circuit breaker command name for this instance
 	CommandName string
 
 	// config fields
-	TimeOut int
-	MaxConcurrentRequests int
+	TimeOut                int
+	MaxConcurrentRequests  int
 	RequestVolumeThreshold int
-	SleepWindow int
-	ErrorPercentThreshold int
+	SleepWindow            int
+	ErrorPercentThreshold  int
 
 	// config logger
 	Logger *data.ZapLog
@@ -98,11 +98,11 @@ func (c *CircuitBreaker) Init() error {
 
 	// setup circuit breaker for the given command name
 	hystrix.ConfigureCommand(c.CommandName, hystrix.CommandConfig{
-		Timeout: c.TimeOut,
-		MaxConcurrentRequests: c.MaxConcurrentRequests,
+		Timeout:                c.TimeOut,
+		MaxConcurrentRequests:  c.MaxConcurrentRequests,
 		RequestVolumeThreshold: c.RequestVolumeThreshold,
-		SleepWindow: c.SleepWindow,
-		ErrorPercentThreshold: c.ErrorPercentThreshold,
+		SleepWindow:            c.SleepWindow,
+		ErrorPercentThreshold:  c.ErrorPercentThreshold,
 	})
 
 	// setup logger
@@ -151,11 +151,11 @@ func (c *CircuitBreaker) UpdateConfig() {
 
 	// setup circuit breaker for the given command name
 	hystrix.ConfigureCommand(c.CommandName, hystrix.CommandConfig{
-		Timeout: c.TimeOut,
-		MaxConcurrentRequests: c.MaxConcurrentRequests,
+		Timeout:                c.TimeOut,
+		MaxConcurrentRequests:  c.MaxConcurrentRequests,
 		RequestVolumeThreshold: c.RequestVolumeThreshold,
-		SleepWindow: c.SleepWindow,
-		ErrorPercentThreshold: c.ErrorPercentThreshold,
+		SleepWindow:            c.SleepWindow,
+		ErrorPercentThreshold:  c.ErrorPercentThreshold,
 	})
 }
 
@@ -172,15 +172,15 @@ func (c *CircuitBreaker) UpdateLogger() {
 // Go will execute async with circuit breaker
 //
 // Parameters:
-// 		1) run = required, defines either inline or external function to be executed,
-//				 it is meant for a self contained function and accepts no parameter, returns error
-// 		2) fallback = optional, defines either inline or external function to be executed as fallback when run fails,
-//					  it is meat for a self contained function and accepts only error parameter, returns error,
-//					  set to nil if fallback is not specified
-//		3) dataIn = optional, input parameter to run and fallback func, may be nil if not needed
+//  1. run = required, defines either inline or external function to be executed,
+//     it is meant for a self contained function and accepts no parameter, returns error
+//  2. fallback = optional, defines either inline or external function to be executed as fallback when run fails,
+//     it is meat for a self contained function and accepts only error parameter, returns error,
+//     set to nil if fallback is not specified
+//  3. dataIn = optional, input parameter to run and fallback func, may be nil if not needed
 func (c *CircuitBreaker) Go(run RunLogic,
-						    fallback FallbackLogic,
-						    dataIn interface{}) (interface{}, error) {
+	fallback FallbackLogic,
+	dataIn interface{}) (interface{}, error) {
 	// validate
 	if util.LenTrim(c.CommandName) <= 0 {
 		return nil, errors.New("Exec Async Failed: " + "CircuitBreaker Command Name is Required")
@@ -198,52 +198,52 @@ func (c *CircuitBreaker) Go(run RunLogic,
 		result := make(chan interface{})
 
 		errChan := hystrix.Go(c.CommandName,
-							  func() error{
-							  		//
-							  		// run func
-							  		//
-							  		outInf, outErr := run(dataIn)
+			func() error {
+				//
+				// run func
+				//
+				outInf, outErr := run(dataIn)
 
-							  		if outErr != nil {
-							  			// pass error back
-							  			return outErr
-									} else {
-										// pass result back
-										if outInf != nil {
-											result <- outInf
-										} else {
-											result <- true
-										}
+				if outErr != nil {
+					// pass error back
+					return outErr
+				} else {
+					// pass result back
+					if outInf != nil {
+						result <- outInf
+					} else {
+						result <- true
+					}
 
-										return nil
-									}
-							  },
-							  func(er error) error {
-							  		//
-							  		// fallback func
-							  		//
-							  		if fallback != nil {
-							  			// fallback is defined
-							  			outInf, outErr := fallback(dataIn, er)
+					return nil
+				}
+			},
+			func(er error) error {
+				//
+				// fallback func
+				//
+				if fallback != nil {
+					// fallback is defined
+					outInf, outErr := fallback(dataIn, er)
 
-										if outErr != nil {
-											// pass error back
-											return outErr
-										} else {
-											// pass result back
-											if outInf != nil {
-												result <- outInf
-											} else {
-												result <- true
-											}
+					if outErr != nil {
+						// pass error back
+						return outErr
+					} else {
+						// pass result back
+						if outInf != nil {
+							result <- outInf
+						} else {
+							result <- true
+						}
 
-											return nil
-										}
-									} else {
-										// fallback is not defined
-										return er
-									}
-							  })
+						return nil
+					}
+				} else {
+					// fallback is not defined
+					return er
+				}
+			})
 
 		var err error
 		var output interface{}
@@ -275,17 +275,17 @@ func (c *CircuitBreaker) Go(run RunLogic,
 // GoC will execute async with circuit breaker in given context
 //
 // Parameters:
-//		1) ctx = required, defines the context in which this method is to be run under
-// 		2) run = required, defines either inline or external function to be executed,
-//				 it is meant for a self contained function and accepts context.Context parameter, returns error
-// 		3) fallback = optional, defines either inline or external function to be executed as fallback when run fails,
-//					  it is meat for a self contained function and accepts context.Context and error parameters, returns error,
-//					  set to nil if fallback is not specified
-//		4) dataIn = optional, input parameter to run and fallback func, may be nil if not needed
+//  1. ctx = required, defines the context in which this method is to be run under
+//  2. run = required, defines either inline or external function to be executed,
+//     it is meant for a self contained function and accepts context.Context parameter, returns error
+//  3. fallback = optional, defines either inline or external function to be executed as fallback when run fails,
+//     it is meat for a self contained function and accepts context.Context and error parameters, returns error,
+//     set to nil if fallback is not specified
+//  4. dataIn = optional, input parameter to run and fallback func, may be nil if not needed
 func (c *CircuitBreaker) GoC(ctx context.Context,
-							 run RunLogic,
-							 fallback FallbackLogic,
-							 dataIn interface{}) (interface{}, error) {
+	run RunLogic,
+	fallback FallbackLogic,
+	dataIn interface{}) (interface{}, error) {
 	// validate
 	if util.LenTrim(c.CommandName) <= 0 {
 		return nil, errors.New("Exec with Context Async Failed: " + "CircuitBreaker Command Name is Required")
@@ -307,7 +307,7 @@ func (c *CircuitBreaker) GoC(ctx context.Context,
 		result := make(chan interface{})
 
 		errChan := hystrix.GoC(ctx, c.CommandName,
-			func(ct context.Context) error{
+			func(ct context.Context) error {
 				//
 				// run func
 				//
@@ -384,12 +384,12 @@ func (c *CircuitBreaker) GoC(ctx context.Context,
 // Do will execute synchronous with circuit breaker
 //
 // Parameters:
-// 		1) run = required, defines either inline or external function to be executed,
-//				 it is meant for a self contained function and accepts no parameter, returns error
-// 		2) fallback = optional, defines either inline or external function to be executed as fallback when run fails,
-//					  it is meat for a self contained function and accepts only error parameter, returns error,
-//					  set to nil if fallback is not specified
-//		3) dataIn = optional, input parameter to run and fallback func, may be nil if not needed
+//  1. run = required, defines either inline or external function to be executed,
+//     it is meant for a self contained function and accepts no parameter, returns error
+//  2. fallback = optional, defines either inline or external function to be executed as fallback when run fails,
+//     it is meat for a self contained function and accepts only error parameter, returns error,
+//     set to nil if fallback is not specified
+//  3. dataIn = optional, input parameter to run and fallback func, may be nil if not needed
 func (c *CircuitBreaker) Do(run RunLogic, fallback FallbackLogic, dataIn interface{}) (interface{}, error) {
 	// validate
 	if util.LenTrim(c.CommandName) <= 0 {
@@ -406,48 +406,48 @@ func (c *CircuitBreaker) Do(run RunLogic, fallback FallbackLogic, dataIn interfa
 		var result interface{}
 
 		if err := hystrix.Do(c.CommandName,
-							 func() error {
-							 	// run func
-								outInf, outErr := run(dataIn)
+			func() error {
+				// run func
+				outInf, outErr := run(dataIn)
 
-								 if outErr != nil {
-									 // pass error back
-									 return outErr
-								 } else {
-									 // pass result back
-									 if outInf != nil {
-										 result = outInf
-									 } else {
-										 result = true
-									 }
+				if outErr != nil {
+					// pass error back
+					return outErr
+				} else {
+					// pass result back
+					if outInf != nil {
+						result = outInf
+					} else {
+						result = true
+					}
 
-									 return nil
-								 }
-							 },
-							 func(er error) error {
-							 	// fallback func
-								 if fallback != nil {
-									 // fallback is defined
-									 outInf, outErr := fallback(dataIn, er)
+					return nil
+				}
+			},
+			func(er error) error {
+				// fallback func
+				if fallback != nil {
+					// fallback is defined
+					outInf, outErr := fallback(dataIn, er)
 
-									 if outErr != nil {
-										 // pass error back
-										 return outErr
-									 } else {
-										 // pass result back
-										 if outInf != nil {
-											 result = outInf
-										 } else {
-											 result = true
-										 }
+					if outErr != nil {
+						// pass error back
+						return outErr
+					} else {
+						// pass result back
+						if outInf != nil {
+							result = outInf
+						} else {
+							result = true
+						}
 
-										 return nil
-									 }
-								 } else {
-									 // fallback is not defined
-									 return er
-								 }
-							 }); err != nil {
+						return nil
+					}
+				} else {
+					// fallback is not defined
+					return er
+				}
+			}); err != nil {
 			return nil, errors.New("Exec Synchronous for '" + c.CommandName + "' Failed: (Do Action) " + err.Error())
 		} else {
 			return result, nil
@@ -465,13 +465,13 @@ func (c *CircuitBreaker) Do(run RunLogic, fallback FallbackLogic, dataIn interfa
 // DoC will execute synchronous with circuit breaker in given context
 //
 // Parameters:
-//		1) ctx = required, defines the context in which this method is to be run under
-// 		2) run = required, defines either inline or external function to be executed,
-//				 it is meant for a self contained function and accepts context.Context parameter, returns error
-// 		3) fallback = optional, defines either inline or external function to be executed as fallback when run fails,
-//					  it is meant for a self contained function and accepts context.Context and error parameters, returns error,
-//					  set to nil if fallback is not specified
-//		4) dataIn = optional, input parameter to run and fallback func, may be nil if not needed
+//  1. ctx = required, defines the context in which this method is to be run under
+//  2. run = required, defines either inline or external function to be executed,
+//     it is meant for a self contained function and accepts context.Context parameter, returns error
+//  3. fallback = optional, defines either inline or external function to be executed as fallback when run fails,
+//     it is meant for a self contained function and accepts context.Context and error parameters, returns error,
+//     set to nil if fallback is not specified
+//  4. dataIn = optional, input parameter to run and fallback func, may be nil if not needed
 func (c *CircuitBreaker) DoC(ctx context.Context, run RunLogic, fallback FallbackLogic, dataIn interface{}) (interface{}, error) {
 	// validate
 	if util.LenTrim(c.CommandName) <= 0 {
@@ -492,48 +492,48 @@ func (c *CircuitBreaker) DoC(ctx context.Context, run RunLogic, fallback Fallbac
 		var result interface{}
 
 		if err := hystrix.DoC(ctx, c.CommandName,
-							 func(ct context.Context) error {
-								 // run func
-								 outInf, outErr := run(dataIn, ct)
+			func(ct context.Context) error {
+				// run func
+				outInf, outErr := run(dataIn, ct)
 
-								 if outErr != nil {
-									 // pass error back
-									 return outErr
-								 } else {
-									 // pass result back
-									 if outInf != nil {
-										 result = outInf
-									 } else {
-										 result = true
-									 }
+				if outErr != nil {
+					// pass error back
+					return outErr
+				} else {
+					// pass result back
+					if outInf != nil {
+						result = outInf
+					} else {
+						result = true
+					}
 
-									 return nil
-								 }
-							 },
-							 func(ct context.Context, er error) error {
-								 // fallback func
-								 if fallback != nil {
-									 // fallback is defined
-									 outInf, outErr := fallback(dataIn, er, ct)
+					return nil
+				}
+			},
+			func(ct context.Context, er error) error {
+				// fallback func
+				if fallback != nil {
+					// fallback is defined
+					outInf, outErr := fallback(dataIn, er, ct)
 
-									 if outErr != nil {
-									 	 // pass error back
-										 return outErr
-									 } else {
-										 // pass result back
-										 if outInf != nil {
-											 result = outInf
-										 } else {
-											 result = true
-										 }
+					if outErr != nil {
+						// pass error back
+						return outErr
+					} else {
+						// pass result back
+						if outInf != nil {
+							result = outInf
+						} else {
+							result = true
+						}
 
-										 return nil
-									 }
-								 } else {
-									 // fallback is not defined
-									 return er
-								 }
-							 }); err != nil {
+						return nil
+					}
+				} else {
+					// fallback is not defined
+					return er
+				}
+			}); err != nil {
 			return nil, errors.New("Exec with Context Synchronous for '" + c.CommandName + "' Failed: (DoC Action) " + err.Error())
 		} else {
 			return result, nil
@@ -551,7 +551,7 @@ func (c *CircuitBreaker) DoC(ctx context.Context, run RunLogic, fallback Fallbac
 // StartStreamHttpServer will start a simple HTTP server on local host with given port,
 // this will launch in goroutine, and return immediately
 //
-// This method call is on entire hystrixgo package, not just the current circuit breaker struct
+// # This method call is on entire hystrixgo package, not just the current circuit breaker struct
 //
 // To view stream data, launch browser, point to http://localhost:port
 //
@@ -583,19 +583,22 @@ func (c *CircuitBreaker) StopStreamHttpServer() {
 // each action from hystrixgo will be tracked into metrics and pushed into statsd via udp
 //
 // Parameters:
-//		1) appName = name of the app working with hystrixgo
-//		2) statsdIp = IP address of statsd service host
-//		3) statsdPort = Port of statsd service host
+//  1. appName = name of the app working with hystrixgo
+//  2. statsdIp = IP address of statsd service host
+//  3. statsdPort = Port of statsd service host
 //
 // statsd and graphite is a service that needs to be running on a host, either localhost or another reachable host in linux,
 // the easiest way to deploy statsd and graphite is via docker image:
-// 		see full docker install info at = https://github.com/graphite-project/docker-graphite-statsd
+//
+//	see full docker install info at = https://github.com/graphite-project/docker-graphite-statsd
 //
 // docker command to run statsd and graphite as a unit as follows:
-//		docker run -d --name graphite --restart=always -p 80:80 -p 2003-2004:2003-2004 -p 2023-2024:2023-2024 -p 8125:8125/udp -p 8126:8126 graphiteapp/graphite-statsd
+//
+//	docker run -d --name graphite --restart=always -p 80:80 -p 2003-2004:2003-2004 -p 2023-2024:2023-2024 -p 8125:8125/udp -p 8126:8126 graphiteapp/graphite-statsd
 //
 // once docker image is running, to view graphite:
-//		http://localhost/dashboard
+//
+//	http://localhost/dashboard
 func (c *CircuitBreaker) StartStatsdCollector(appName string, statsdIp string, statsdPort ...int) error {
 	// validate
 	if util.LenTrim(appName) <= 0 {
@@ -618,7 +621,7 @@ func (c *CircuitBreaker) StartStatsdCollector(appName string, statsdIp string, s
 	// compose statsd collection
 	sdc, err := plugins.InitializeStatsdCollector(&plugins.StatsdCollectorConfig{
 		StatsdAddr: ip + ":" + strconv.Itoa(p),
-		Prefix: appName + ".hystrixgo",
+		Prefix:     appName + ".hystrixgo",
 	})
 
 	// register statsd

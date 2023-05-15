@@ -1,7 +1,7 @@
 package helper
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,7 +86,7 @@ func Mid(s string, start int, l int) string {
 		return s
 	}
 
-	return s[start:l+start]
+	return s[start : l+start]
 }
 
 // Reverse a string
@@ -606,17 +606,19 @@ func XMLFromEscaped(data string) string {
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***
 //
 // special struct field:
-//    XMLName xml.Name `xml:"ElementName"`
+//
+//	XMLName xml.Name `xml:"ElementName"`
 //
 // struct xml tags:
-//    `xml:"AttributeName,attr"` or `xml:",attr"` 		<<< Attribute Instead of Element
-//    `xml:"ElementName"`								<<< XML Element Name
-//    `xml:"OuterElementName>InnerElementName"` 		<<< Outer XML Grouping By OuterElementName
-//    `xml:",cdata"`									<<< <![CDATA[...]]
-//    `xml:",innerxml"`								    <<< Write as Inner XML Verbatim and Not Subject to Marshaling
-//    `xml:",comment"`									<<< Write as Comment, and Not Contain "--" Within Value
-//    `xml:"...,omitempty"`								<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
-//    `xml:"-"` <<< Omit From XML Marshal
+//
+//	`xml:"AttributeName,attr"` or `xml:",attr"` 		<<< Attribute Instead of Element
+//	`xml:"ElementName"`								<<< XML Element Name
+//	`xml:"OuterElementName>InnerElementName"` 		<<< Outer XML Grouping By OuterElementName
+//	`xml:",cdata"`									<<< <![CDATA[...]]
+//	`xml:",innerxml"`								    <<< Write as Inner XML Verbatim and Not Subject to Marshaling
+//	`xml:",comment"`									<<< Write as Comment, and Not Contain "--" Within Value
+//	`xml:"...,omitempty"`								<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
+//	`xml:"-"` <<< Omit From XML Marshal
 func MarshalXMLCompact(v interface{}) (string, error) {
 	if v == nil {
 		return "", fmt.Errorf("Object For XML Marshal Must Not Be Nil")
@@ -636,17 +638,19 @@ func MarshalXMLCompact(v interface{}) (string, error) {
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***
 //
 // special struct field:
-//    XMLName xml.Name `xml:"ElementName"`
+//
+//	XMLName xml.Name `xml:"ElementName"`
 //
 // struct xml tags:
-//    `xml:"AttributeName,attr"` or `xml:",attr"` 		<<< Attribute Instead of Element
-//    `xml:"ElementName"`								<<< XML Element Name
-//    `xml:"OuterElementName>InnerElementName"` 		<<< Outer XML Grouping By OuterElementName
-//    `xml:",cdata"`									<<< <![CDATA[...]]
-//    `xml:",innerxml"`								    <<< Write as Inner XML Verbatim and Not Subject to Marshaling
-//    `xml:",comment"`									<<< Write as Comment, and Not Contain "--" Within Value
-//    `xml:"...,omitempty"`								<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
-//    `xml:"-"` <<< Omit From XML Marshal
+//
+//	`xml:"AttributeName,attr"` or `xml:",attr"` 		<<< Attribute Instead of Element
+//	`xml:"ElementName"`								<<< XML Element Name
+//	`xml:"OuterElementName>InnerElementName"` 		<<< Outer XML Grouping By OuterElementName
+//	`xml:",cdata"`									<<< <![CDATA[...]]
+//	`xml:",innerxml"`								    <<< Write as Inner XML Verbatim and Not Subject to Marshaling
+//	`xml:",comment"`									<<< Write as Comment, and Not Contain "--" Within Value
+//	`xml:"...,omitempty"`								<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
+//	`xml:"-"` <<< Omit From XML Marshal
 func MarshalXMLIndent(v interface{}) (string, error) {
 	if v == nil {
 		return "", fmt.Errorf("Object For XML Marshal Must Not Be Nil")
@@ -722,9 +726,10 @@ func JsonFromEscaped(data string) string {
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***
 //
 // struct json tags:
-//    `json:"ElementName"`								<<< JSON Element Name
-//    `json:"...,omitempty"`							<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
-//    `json:"-"` <<< Omit From JSON Marshal
+//
+//	`json:"ElementName"`								<<< JSON Element Name
+//	`json:"...,omitempty"`							<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
+//	`json:"-"` <<< Omit From JSON Marshal
 func MarshalJSONCompact(v interface{}) (string, error) {
 	if v == nil {
 		return "", fmt.Errorf("Object For JSON Marshal Must Not Be Nil")
@@ -744,9 +749,10 @@ func MarshalJSONCompact(v interface{}) (string, error) {
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***
 //
 // struct json tags:
-//    `json:"ElementName"`								<<< JSON Element Name
-//    `json:"...,omitempty"`							<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
-//    `json:"-"` <<< Omit From JSON Marshal
+//
+//	`json:"ElementName"`								<<< JSON Element Name
+//	`json:"...,omitempty"`							<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
+//	`json:"-"` <<< Omit From JSON Marshal
 func MarshalJSONIndent(v interface{}) (string, error) {
 	if v == nil {
 		return "", fmt.Errorf("Object For JSON Marshal Must Not Be Nil")

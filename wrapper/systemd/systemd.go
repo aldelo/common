@@ -1,7 +1,7 @@
 package systemd
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -112,15 +112,13 @@ import (
 	func stopHandler() {
 		// place applicatipn clean up code here
 	}
- */
+*/
 
 // ---------------------------------------------------------------------------------------------------------------------
 // service base definition
 // ---------------------------------------------------------------------------------------------------------------------
 
-//
 // define service logger
-//
 var logger service.Logger
 
 // ServiceProgram defines service program
@@ -129,9 +127,9 @@ type ServiceProgram struct {
 	DisplayName string
 	Description string
 
-	Port int
+	Port                int
 	StartServiceHandler func(port int)
-	StopServiceHandler func()
+	StopServiceHandler  func()
 }
 
 // Launch will initialize and start the service for operations
@@ -142,7 +140,7 @@ func (p *ServiceProgram) Launch() {
 	// define service configuration
 	//
 	svcConfig := &service.Config{
-		Name: p.ServiceName,
+		Name:        p.ServiceName,
 		DisplayName: p.DisplayName,
 		Description: p.Description,
 	}
@@ -175,18 +173,14 @@ func (p *ServiceProgram) Launch() {
 	}
 }
 
-//
 // Start the service
-//
 func (p *ServiceProgram) Start(s service.Service) error {
 	// start service - do not block, actual work should be done async
 	go p.run()
 	return nil
 }
 
-//
 // run is async goroutine to handle service code
-//
 func (p *ServiceProgram) run() {
 	// do actual work async in this go-routine
 	log.Println("Starting Service Program...")
@@ -202,9 +196,7 @@ func (p *ServiceProgram) run() {
 	}
 }
 
-//
 // Stop will stop the service
-//
 func (p *ServiceProgram) Stop(s service.Service) error {
 	// stop the service, should not block
 	log.Println("Stopping Service Program...")

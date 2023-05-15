@@ -1,7 +1,7 @@
 package tcp
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,21 +37,21 @@ import (
 // WriteDeadLineDuration = default: 0, duration value used to control write timeouts, this value is added to current time during write timeout set action
 type TCPClient struct {
 	// tcp server targets
-	ServerIP string
+	ServerIP   string
 	ServerPort uint
 
 	ReceiveHandler func(data []byte)
-	ErrorHandler func(err error, socketCloseFunc func())
+	ErrorHandler   func(err error, socketCloseFunc func())
 
-	ReadBufferSize uint
+	ReadBufferSize      uint
 	ReaderYieldDuration time.Duration
 
-	ReadDeadLineDuration time.Duration
+	ReadDeadLineDuration  time.Duration
 	WriteDeadLineDuration time.Duration
 
 	// tcp connection
-	_tcpConn net.Conn
-	_readerEnd chan bool
+	_tcpConn       net.Conn
+	_readerEnd     chan bool
 	_readerStarted bool
 }
 
@@ -167,7 +167,7 @@ func (c *TCPClient) StartReader() error {
 
 	yield := 25 * time.Millisecond
 
-	if c.ReaderYieldDuration > 0 && c.ReaderYieldDuration <= 1000 * time.Millisecond {
+	if c.ReaderYieldDuration > 0 && c.ReaderYieldDuration <= 1000*time.Millisecond {
 		yield = c.ReaderYieldDuration
 	}
 

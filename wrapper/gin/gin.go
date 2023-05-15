@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,15 +46,18 @@ import (
 // Port = (required) tcp port that this web server will run on
 // TlsCertPemFile / TlsCertKeyFile = (optional) when both are set, web server runs secured mode using tls cert; path to pem and key file
 // Routes = (required) map of http route handlers to be registered, middleware to be configured,
-//					   for gin engine or route groups,
-//					   key = * indicates base gin engine routes, otherwise key refers to routeGroup to be created
+//
+//	for gin engine or route groups,
+//	key = * indicates base gin engine routes, otherwise key refers to routeGroup to be created
+//
 // SessionMiddleware = (optional) defines the cookie or redis session middleware to setup for the gin engine
 // CsrfMiddleware = (optional) defines the csrf middleware to setup for the gin engine (requires SessionMiddleware setup)
 //
 // AWS-XRay Tracing = Passing Parent SegmentID and TraceID to Handler via Gin Context
-//		Using Headers:
-//			"X-Amzn-Seg-Id" = Parent XRay Segment ID to pass into Headers
-//			"X-Amzn-Tr-Id" = Parent XRay Trace ID to pass into Headers
+//
+//	Using Headers:
+//		"X-Amzn-Seg-Id" = Parent XRay Segment ID to pass into Headers
+//		"X-Amzn-Tr-Id" = Parent XRay Trace ID to pass into Headers
 type Gin struct {
 	// web server descriptive name (used for display and logging only)
 	Name string
@@ -86,15 +89,15 @@ type Gin struct {
 	HttpStatusErrorHandler func(status int, trace string, c *gin.Context)
 
 	// web server instance
-	_ginEngine *gin.Engine
-	_ginJwtAuth *GinJwt
+	_ginEngine    *gin.Engine
+	_ginJwtAuth   *GinJwt
 	_limiterCache *cache.Cache
 }
 
 // RouteDefinition struct contains per route group or gin engine's handlers and middleware
 //
 // Note:
-//		1) route definition's map key = * means gin engine; key named refers to Route Group
+//  1. route definition's map key = * means gin engine; key named refers to Route Group
 //
 // Routes = (required) one or more route handlers defined for current route group or base engine
 // CorsMiddleware = (optional) current cors middleware to use if setup for current route group or base engine
@@ -105,12 +108,12 @@ type Gin struct {
 type RouteDefinition struct {
 	Routes []*Route
 
-	CorsMiddleware *cors.Config
-	MaxLimitMiddleware *int
+	CorsMiddleware         *cors.Config
+	MaxLimitMiddleware     *int
 	PerClientQpsMiddleware *PerClientQps
-	GZipMiddleware *GZipConfig
-	UseAuthMiddleware bool
-	CustomMiddleware []gin.HandlerFunc
+	GZipMiddleware         *GZipConfig
+	UseAuthMiddleware      bool
+	CustomMiddleware       []gin.HandlerFunc
 }
 
 // Route struct defines each http route handler endpoint
@@ -120,9 +123,9 @@ type RouteDefinition struct {
 // Binding = (optional) various input data binding to target type option
 // BindingInputPtr = (conditional) binding input object pointer, required if binding type is set
 // Handler = (required) function handler to be executed per method defined (actual logic goes inside handler)
-//		1) gin.Context Value Return Helpers:
-//		      a) c.String(), c.HTML(), c.JSON(), c.JSONP(), c.PureJSON(), c.AsciiJSON(), c.SecureJSON(), c.XML(), c.YAML(),
-//		         c.ProtoBuf(), c.Redirect(), c.Data(), c.DataFromReader(), c.Render()
+//  1. gin.Context Value Return Helpers:
+//     a) c.String(), c.HTML(), c.JSON(), c.JSONP(), c.PureJSON(), c.AsciiJSON(), c.SecureJSON(), c.XML(), c.YAML(),
+//     c.ProtoBuf(), c.Redirect(), c.Data(), c.DataFromReader(), c.Render()
 type Route struct {
 	// relative path to the endpoint for the route to handle
 	RelativePath string
@@ -143,16 +146,16 @@ type Route struct {
 
 // PerClientQps defines options for the PerClientQps based rate limit middleware
 type PerClientQps struct {
-	Qps int
+	Qps   int
 	Burst int
-	TTL time.Duration
+	TTL   time.Duration
 }
 
 // GZipConfig defines options for the GZip middleware
 type GZipConfig struct {
-	Compression gingzipcompression.GinGZipCompression
+	Compression        gingzipcompression.GinGZipCompression
 	ExcludedExtensions []string
-	ExcludedPaths []string
+	ExcludedPaths      []string
 	ExcludedPathsRegex []string
 }
 
@@ -205,22 +208,23 @@ func (gz *GZipConfig) GetGZipExcludedPathsRegex() gzip.Option {
 // RedisHostAndPort = (optional) the redis endpoint host name and port, in host:port format (if not set, then cookie session is assumed)
 //
 // To Use Sessions in Handler:
-//		[Single Session]
-//			session := sessions.Default(c)
-//			v := session.Get("xyz")
-//			session.Set("xyz", xyz)
-//			session.Save()
-//		[Multiple Sessions]
-// 			sessionA := sessions.DefaultMany(c, "a")
-// 			sessionB := sessions.DefaultMany(c, "b")
-// 			sessionA.Get("xyz")
-//			sessionA.Set("xyz", xyz)
-//			sessionA.Save()
+//
+//	[Single Session]
+//		session := sessions.Default(c)
+//		v := session.Get("xyz")
+//		session.Set("xyz", xyz)
+//		session.Save()
+//	[Multiple Sessions]
+//		sessionA := sessions.DefaultMany(c, "a")
+//		sessionB := sessions.DefaultMany(c, "b")
+//		sessionA.Get("xyz")
+//		sessionA.Set("xyz", xyz)
+//		sessionA.Save()
 type SessionConfig struct {
-	SecretKey string
-	SessionNames []string
+	SecretKey               string
+	SessionNames            []string
 	RedisMaxIdleConnections int
-	RedisHostAndPort string
+	RedisHostAndPort        string
 }
 
 // CsrfConfig defines csrf protection middleware options
@@ -228,14 +232,15 @@ type SessionConfig struct {
 // Secret = (required) csrf secret key used for csrf protection
 // ErrorFunc = (required) csrf invalid token error handler
 // TokenGetter = (optional) csrf get token action override from default (in case implementation not using default keys)
-//						    default gets token from:
-//							   - FormValue("_csrf")
-//							   - Url.Query().Get("_csrf")
-//							   - Header.Get("X-CSRF-TOKEN")
-//							   - Header.Get("X-XSRF-TOKEN")
+//
+//	    default gets token from:
+//		   - FormValue("_csrf")
+//		   - Url.Query().Get("_csrf")
+//		   - Header.Get("X-CSRF-TOKEN")
+//		   - Header.Get("X-XSRF-TOKEN")
 type CsrfConfig struct {
-	Secret string
-	ErrorFunc func(c *gin.Context)
+	Secret      string
+	ErrorFunc   func(c *gin.Context)
 	TokenGetter func(c *gin.Context) string
 }
 
@@ -263,12 +268,12 @@ func NewServer(name string, port uint, releaseMode bool, customRecovery bool, cu
 	gin.SetMode(mode)
 
 	gw := &Gin{
-		Name: name,
-		Port: port,
+		Name:                   name,
+		Port:                   port,
 		HttpStatusErrorHandler: customHttpErrorHandler,
-		_ginEngine: nil,
-		_ginJwtAuth: nil,
-		_limiterCache: cache.New(5*time.Minute, 10*time.Minute),
+		_ginEngine:             nil,
+		_ginJwtAuth:            nil,
+		_limiterCache:          cache.New(5*time.Minute, 10*time.Minute),
 	}
 
 	if z != nil && util.LenTrim(z.LogName) > 0 {
@@ -613,7 +618,7 @@ func (g *Gin) setupRoutes() int {
 			rg = g._ginEngine.Group(k)
 		}
 
-		routeFn := func() gin.IRoutes{
+		routeFn := func() gin.IRoutes {
 			if rg == nil {
 				return g._ginEngine
 			} else {
@@ -657,7 +662,7 @@ func (g *Gin) setupRoutes() int {
 		//
 		// setup route handlers
 		//
-		for _, h := range v.Routes{
+		for _, h := range v.Routes {
 			log.Println("Setting Up Route Handler: " + h.RelativePath)
 
 			if !h.Method.Valid() || h.Method == ginhttpmethod.UNKNOWN {
@@ -706,7 +711,7 @@ func (g *Gin) setupRoutes() int {
 // if we define the route handler within the loop in Route Setup, the handler func were reused (not desired effect),
 // however, using closure ensures each relative path uses its own route func
 func (g *Gin) newRouteFunc(relativePath string, method string, bindingType ginbindtype.GinBindType, bindingInputPtr interface{},
-						   handler func(c *gin.Context, bindingInputPtr interface{})) func(context *gin.Context) {
+	handler func(c *gin.Context, bindingInputPtr interface{})) func(context *gin.Context) {
 	return func(c *gin.Context) {
 		if util.LenTrim(g.GoogleRecaptchaSecret) > 0 {
 			c.Set("google_recaptcha_secret", g.GoogleRecaptchaSecret)
@@ -857,8 +862,8 @@ func (g *Gin) setupMaxLimitMiddleware(rg gin.IRoutes, maxLimit int) {
 func (g *Gin) setupPerClientIpQpsMiddleware(rg gin.IRoutes, qps int, burst int, ttl time.Duration) {
 	if rg != nil && g._limiterCache != nil && qps > 0 && qps <= 1000000 && burst > 0 && ttl > 0 {
 		fn := func(key func(c *gin.Context) string,
-				   createLimiter func(c *gin.Context) (*rate.Limiter, time.Duration),
-				   abort func(c *gin.Context)) gin.HandlerFunc{
+			createLimiter func(c *gin.Context) (*rate.Limiter, time.Duration),
+			abort func(c *gin.Context)) gin.HandlerFunc {
 			return func(cc *gin.Context) {
 				k := key(cc)
 				limiter, ok := g._limiterCache.Get(k)
@@ -1375,5 +1380,3 @@ func method_descriptions_only() {
 	*) Server Send Event (SSE):
 			https://github.com/gin-contrib/sse
 */
-
-

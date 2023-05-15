@@ -1,7 +1,7 @@
 package aws
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -122,9 +122,11 @@ func (h2 *AwsHttp2Client) ConnectTimeout(v time.Duration) {
 }
 
 // ExpectContinueTimeout sets Transport.ExpectContinueTimeout: maximum amount of time to wait for a server's first response headers after fully writing the request headers,
-// 		if the response has an "Expect: 100-continue" header,
-//		this time does not include the time to send the request header,
-//		the http client sends its payload after this timeout is exhausted
+//
+//	if the response has an "Expect: 100-continue" header,
+//	this time does not include the time to send the request header,
+//	the http client sends its payload after this timeout is exhausted
+//
 // default = 1 second; set to 0 for no timeout and send request payload without waiting
 func (h2 *AwsHttp2Client) ExpectContinueTimeout(v time.Duration) {
 	h2.Options.ExpectContinue = &v
@@ -137,22 +139,28 @@ func (h2 *AwsHttp2Client) IdleConnTimeout(v time.Duration) {
 }
 
 // MaxAllIdleConns sets Transport.MaxIdleConns: maximum number of idle (keep-alive) connections across all hosts,
-// 		use case: increasing this value when many connections in a short period from same clients
+//
+//	use case: increasing this value when many connections in a short period from same clients
+//
 // default = 0 means no limit
 func (h2 *AwsHttp2Client) MaxAllIdleConns(v int) {
 	h2.Options.MaxAllIdleConns = &v
 }
 
 // MaxHostIdleConns sets Transport.MaxIdleConnsPerHost: maximum number of idle (keep-alive) connections to keep per-host,
-//		use case: increasing this value when many connections in a short period from same clients
+//
+//	use case: increasing this value when many connections in a short period from same clients
+//
 // default = 0 means 2 idle connections per host
 func (h2 *AwsHttp2Client) MaxHostIdleConns(v int) {
 	h2.Options.MaxHostIdleConns = &v
 }
 
 // ResponseHeaderTimeout sets Transport.ResponseHeaderTimeout: maximum amount of time to wait for a client to read the response header,
-//		if the client isn't able to read the response's header within this duration, the request fails with a timeout error,
-//		warning: when using long-running lambda functions, as the operation does not return any response headers until the lambda has finished or timeout
+//
+//	if the client isn't able to read the response's header within this duration, the request fails with a timeout error,
+//	warning: when using long-running lambda functions, as the operation does not return any response headers until the lambda has finished or timeout
+//
 // default = no timeout, waits forever
 func (h2 *AwsHttp2Client) ResponseHeaderTimeout(v time.Duration) {
 	h2.Options.ResponseHeader = &v

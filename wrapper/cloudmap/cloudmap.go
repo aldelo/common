@@ -1,7 +1,7 @@
 package cloudmap
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,33 +78,40 @@ type CloudMap struct {
 
 // DnsConf represents a dns config option to be used by CreateService
 // for this project we will only use:
-//		1) ipv4 - dns record type A
-//		2) srv
+//  1. ipv4 - dns record type A
+//  2. srv
 //
 // TTL = dns record time to live in seconds
 // MultiValue = true: route 53 returns up to 8 healthy targets if health check is enabled (otherwise, all targets assumed healthy)
-//				false: route 53 uses WEIGHTED to return a random healthy target if health check is enabled (if no healthy target found, then any random target is used)
+//
+//	false: route 53 uses WEIGHTED to return a random healthy target if health check is enabled (if no healthy target found, then any random target is used)
+//
 // SRV = true: dns use SRV; false: dns use A
 type DnsConf struct {
-	TTL int64
+	TTL        int64
 	MultiValue bool
-	SRV bool
+	SRV        bool
 }
 
 // HealthCheckConf represents target health check configuration
 //
 // Custom = true: use HealthCheckCustomConfig (for Http, Public Dns, Private Dns namespaces)
-//		    false: use HealthCheckConfig (for Public Dns namespace only)
+//
+//	false: use HealthCheckConfig (for Public Dns namespace only)
+//
 // FailureThreshold = if Custom is true:
-//							*) number of 30-second intervals that cloud map waits after
-//							   UpdateInstanceCustomHealthStatus is executed,
-//							   before changing the target health status
-//					  if Custom is false:
-//							*) number of consecutive times health checks of target
-//							   must pass or fail for route 53 to consider healthy or unhealthy
+//
+//			*) number of 30-second intervals that cloud map waits after
+//			   UpdateInstanceCustomHealthStatus is executed,
+//			   before changing the target health status
+//	  if Custom is false:
+//			*) number of consecutive times health checks of target
+//			   must pass or fail for route 53 to consider healthy or unhealthy
+//
 // PubDns_HealthCheck_Type = for public dns namespace only: the endpoint protocol type used for health check
 // PubDns_HealthCheck_Path = for public dns namespace only: (Http and Https type ONLY),
-//							 path to service that responds to health check, that returns http status 2xx or 3xx as healthy
+//
+//	path to service that responds to health check, that returns http status 2xx or 3xx as healthy
 type HealthCheckConf struct {
 	Custom                  bool
 	FailureThreshold        int64
@@ -178,8 +185,8 @@ func (sd *CloudMap) connectInternal() error {
 	// establish aws session connection
 	if sess, err := session.NewSession(
 		&aws.Config{
-			Region: aws.String(sd.AwsRegion.Key()),
-			HTTPClient:  httpCli,
+			Region:     aws.String(sd.AwsRegion.Key()),
+			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error
 		return errors.New("Connect To CloudMap Failed: (AWS Session Error) " + err.Error())
@@ -205,7 +212,7 @@ func (sd *CloudMap) toTags(tagsMap map[string]string) (t []*servicediscovery.Tag
 	if tagsMap != nil {
 		for k, v := range tagsMap {
 			t = append(t, &servicediscovery.Tag{
-				Key: aws.String(k),
+				Key:   aws.String(k),
 				Value: aws.String(v),
 			})
 		}
@@ -225,23 +232,24 @@ func (sd *CloudMap) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 // CreateHttpNamespace creates an http namespace for AWS cloud map
 //
 // Service instances registered to http namespace can be discovered using DiscoverInstances(),
-// 		however, service instances cannot be discovered via dns
+//
+//	however, service instances cannot be discovered via dns
 //
 // Parameters:
-//		1) name = (required) name of the http namespace to create
-//		2) creatorRequestId = (required) random and unique string to identify this create namespace action (such as uuid)
-// 		3) description = (optional) http namespace description
-//		4) tags = (optional) one or more key value pairs to store as namespace tags
-//		5) timeOutDuration = (optional) maximum time before timeout via context
+//  1. name = (required) name of the http namespace to create
+//  2. creatorRequestId = (required) random and unique string to identify this create namespace action (such as uuid)
+//  3. description = (optional) http namespace description
+//  4. tags = (optional) one or more key value pairs to store as namespace tags
+//  5. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) operationId = string representing the identifier to be used to check on operation status at a later time
-//		2) err = contains error info if error was encountered
+//  1. operationId = string representing the identifier to be used to check on operation status at a later time
+//  2. err = contains error info if error was encountered
 func (sd *CloudMap) CreateHttpNamespace(name string,
-										creatorRequestId string,
-										description string,
-										tags map[string]string,
-										timeOutDuration ...time.Duration) (operationId string, err error) {
+	creatorRequestId string,
+	description string,
+	tags map[string]string,
+	timeOutDuration ...time.Duration) (operationId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -281,7 +289,7 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 
 	// define input
 	input := &servicediscovery.CreateHttpNamespaceInput{
-		Name: aws.String(name),
+		Name:             aws.String(name),
 		CreatorRequestId: aws.String(creatorRequestId),
 	}
 
@@ -328,28 +336,29 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 }
 
 // CreatePrivateDnsNamespace creates a private dns based namespace, visible only inside a specified aws vpc,
-//		this namespace defines service naming scheme,
-//		for example:
-//			if namespace is named as 'example.com', and service is named as 'xyz-service',
-//			the resulting dns name for the service will be 'xyz-service.example.com'
+//
+//	this namespace defines service naming scheme,
+//	for example:
+//		if namespace is named as 'example.com', and service is named as 'xyz-service',
+//		the resulting dns name for the service will be 'xyz-service.example.com'
 //
 // Parameters:
-//		1) name = (required) name of the private dns namespace to create
-//		2) creatorRequestId = (required) random and unique string to identify this create namespace action (such as uuid)
-//		3) vpc = (required) aws vpc id that this private dns associated with
-// 		4) description = (optional) private dns namespace description
-//		5) tags = (optional) one or more key value pairs to store as namespace tags
-//		6) timeOutDuration = (optional) maximum time before timeout via context
+//  1. name = (required) name of the private dns namespace to create
+//  2. creatorRequestId = (required) random and unique string to identify this create namespace action (such as uuid)
+//  3. vpc = (required) aws vpc id that this private dns associated with
+//  4. description = (optional) private dns namespace description
+//  5. tags = (optional) one or more key value pairs to store as namespace tags
+//  6. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) operationId = string representing the identifier to be used to check on operation status at a later time
-//		2) err = contains error info if error was encountered
+//  1. operationId = string representing the identifier to be used to check on operation status at a later time
+//  2. err = contains error info if error was encountered
 func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
-											  creatorRequestId string,
-											  vpc string,
-											  description string,
-											  tags map[string]string,
-											  timeOutDuration ...time.Duration) (operationId string, err error) {
+	creatorRequestId string,
+	vpc string,
+	description string,
+	tags map[string]string,
+	timeOutDuration ...time.Duration) (operationId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -395,9 +404,9 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 
 	// define input
 	input := &servicediscovery.CreatePrivateDnsNamespaceInput{
-		Name: aws.String(name),
+		Name:             aws.String(name),
 		CreatorRequestId: aws.String(creatorRequestId),
-		Vpc: aws.String(vpc),
+		Vpc:              aws.String(vpc),
 	}
 
 	if util.LenTrim(description) > 0 {
@@ -443,26 +452,27 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 }
 
 // CreatePublicDnsNamespace creates a public dns based namespace, accessible via the public internet,
-//		this namespace defines service naming scheme,
-//		for example:
-//			if namespace is named as 'example.com', and service is named as 'xyz-service',
-//			the resulting dns name for the service will be 'xyz-service.example.com'
+//
+//	this namespace defines service naming scheme,
+//	for example:
+//		if namespace is named as 'example.com', and service is named as 'xyz-service',
+//		the resulting dns name for the service will be 'xyz-service.example.com'
 //
 // Parameters:
-//		1) name = (required) name of the public dns namespace to create
-//		2) creatorRequestId = (required) random and unique string to identify this create namespace action (such as uuid)
-// 		3) description = (optional) public dns namespace description
-//		4) tags = (optional) one or more key value pairs to store as namespace tags
-//		5) timeOutDuration = (optional) maximum time before timeout via context
+//  1. name = (required) name of the public dns namespace to create
+//  2. creatorRequestId = (required) random and unique string to identify this create namespace action (such as uuid)
+//  3. description = (optional) public dns namespace description
+//  4. tags = (optional) one or more key value pairs to store as namespace tags
+//  5. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) operationId = string representing the identifier to be used to check on operation status at a later time
-//		2) err = contains error info if error was encountered
+//  1. operationId = string representing the identifier to be used to check on operation status at a later time
+//  2. err = contains error info if error was encountered
 func (sd *CloudMap) CreatePublicDnsNamespace(name string,
-											 creatorRequestId string,
-											 description string,
-											 tags map[string]string,
-											 timeOutDuration ...time.Duration) (operationId string, err error) {
+	creatorRequestId string,
+	description string,
+	tags map[string]string,
+	timeOutDuration ...time.Duration) (operationId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -502,7 +512,7 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 
 	// define input
 	input := &servicediscovery.CreatePublicDnsNamespaceInput{
-		Name: aws.String(name),
+		Name:             aws.String(name),
 		CreatorRequestId: aws.String(creatorRequestId),
 	}
 
@@ -551,12 +561,12 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 // GetNamespace gets the information about a specific namespace
 //
 // Parameters:
-//		1) namespaceId = (required) namespace id used for search
-//		2) timeOutDuration = (optional) maximum time before timeout via context
+//  1. namespaceId = (required) namespace id used for search
+//  2. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) namespace = sd namespace object found
-//		2) err = error info if any
+//  1. namespace = sd namespace object found
+//  2. err = error info if any
 func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Duration) (namespace *servicediscovery.Namespace, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -622,19 +632,19 @@ func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Dur
 // ListNamespaces gets summary information about namespaces created already
 //
 // Parameters:
-//		1) filter = (optional) specifies namespace filter options
-//		2) maxResults = (optional) specifies maximum count to return
-//		3) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		4) timeOutDuration = (optional) maximum time before timeout via context
+//  1. filter = (optional) specifies namespace filter options
+//  2. maxResults = (optional) specifies maximum count to return
+//  3. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  4. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) namespaces = slice of sd namespace summary objects
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. namespaces = slice of sd namespace summary objects
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
-								   maxResults *int64,
-								   nextToken *string,
-								   timeOutDuration ...time.Duration) (namespaces []*servicediscovery.NamespaceSummary, moreNextToken string, err error) {
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (namespaces []*servicediscovery.NamespaceSummary, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -740,19 +750,19 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 // (issues multiple page requests until max results is met or all data is retrieved)
 //
 // Parameters:
-//		1) filter = (optional) specifies namespace filter options
-//		2) maxResults = (optional) specifies maximum count to return
-//		3) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		4) timeOutDuration = (optional) maximum time before timeout via context
+//  1. filter = (optional) specifies namespace filter options
+//  2. maxResults = (optional) specifies maximum count to return
+//  3. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  4. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) namespaces = slice of sd namespace summary objects
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. namespaces = slice of sd namespace summary objects
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFilter,
-										maxResults *int64,
-										nextToken *string,
-										timeOutDuration ...time.Duration) (namespaces []*servicediscovery.NamespaceSummary, moreNextToken string, err error) {
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (namespaces []*servicediscovery.NamespaceSummary, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -864,11 +874,11 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 // DeleteNamespace deletes an existing namespace, however if namespace still has attached services, then action will fail
 //
 // Parameters:
-//		1) namespaceId = (required) namespace id to delete
+//  1. namespaceId = (required) namespace id to delete
 //
 // Return Values:
-//		1) operationId = represents the operation to be used for status check on this action via GetOperation()
-//		2) err = error info if any
+//  1. operationId = represents the operation to be used for status check on this action via GetOperation()
+//  2. err = error info if any
 func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.Duration) (operationId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -937,29 +947,29 @@ func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.
 
 // CreateService creates a service under a specific namespace
 //
-// After service is created, use RegisterInstance() to register an instance for the given service
+// # After service is created, use RegisterInstance() to register an instance for the given service
 //
 // Parameters:
-//		1) name = (required) name of the service to create, under the given namespaceId
-//		2) creatorRequestId = (required) random and unique string to identify this create service action (such as uuid)
-//		3) namespaceId = (required) namespace that this service be created under
-//		4) dnsConf = (conditional) required for public and private dns namespaces, configures the dns parameters for this service
-//		5) healthCheckConf = (optional) nil will not set health check, otherwise sets a health check condition for this services' instances
-// 		6) description = (optional) public dns namespace description
-//		7) tags = (optional) one or more key value pairs to store as namespace tags
-//		8) timeOutDuration = (optional) maximum time before timeout via context
+//  1. name = (required) name of the service to create, under the given namespaceId
+//  2. creatorRequestId = (required) random and unique string to identify this create service action (such as uuid)
+//  3. namespaceId = (required) namespace that this service be created under
+//  4. dnsConf = (conditional) required for public and private dns namespaces, configures the dns parameters for this service
+//  5. healthCheckConf = (optional) nil will not set health check, otherwise sets a health check condition for this services' instances
+//  6. description = (optional) public dns namespace description
+//  7. tags = (optional) one or more key value pairs to store as namespace tags
+//  8. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) service = service object that was created
-//		2) err = contains error info if error was encountered
+//  1. service = service object that was created
+//  2. err = contains error info if error was encountered
 func (sd *CloudMap) CreateService(name string,
-								  creatorRequestId string,
-								  namespaceId string,
-								  dnsConf *DnsConf,
-								  healthCheckConf *HealthCheckConf,
-								  description string,
-								  tags map[string]string,
-								  timeOutDuration ...time.Duration) (service *servicediscovery.Service, err error) {
+	creatorRequestId string,
+	namespaceId string,
+	dnsConf *DnsConf,
+	healthCheckConf *HealthCheckConf,
+	description string,
+	tags map[string]string,
+	timeOutDuration ...time.Duration) (service *servicediscovery.Service, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1045,9 +1055,9 @@ func (sd *CloudMap) CreateService(name string,
 
 	// define input
 	input := &servicediscovery.CreateServiceInput{
-		Name: aws.String(name),
+		Name:             aws.String(name),
 		CreatorRequestId: aws.String(creatorRequestId),
-		NamespaceId: aws.String(namespaceId),
+		NamespaceId:      aws.String(namespaceId),
 	}
 
 	if util.LenTrim(description) > 0 {
@@ -1084,7 +1094,7 @@ func (sd *CloudMap) CreateService(name string,
 			RoutingPolicy: aws.String(routingPolicy),
 			DnsRecords: []*servicediscovery.DnsRecord{
 				{
-					TTL: aws.Int64(dnsConf.TTL),
+					TTL:  aws.Int64(dnsConf.TTL),
 					Type: aws.String(dnsType),
 				},
 			},
@@ -1101,7 +1111,7 @@ func (sd *CloudMap) CreateService(name string,
 			// public dns health config
 			input.HealthCheckConfig = &servicediscovery.HealthCheckConfig{
 				FailureThreshold: aws.Int64(healthCheckConf.FailureThreshold),
-				Type: aws.String(healthCheckConf.PubDns_HealthCheck_Type.Key()),
+				Type:             aws.String(healthCheckConf.PubDns_HealthCheck_Type.Key()),
 			}
 
 			if util.LenTrim(healthCheckConf.PubDns_HealthCheck_Path) > 0 {
@@ -1136,35 +1146,35 @@ func (sd *CloudMap) CreateService(name string,
 }
 
 // UpdateService submits request for the following operations:
-//		1) update the TTL for existing dnsRecords configurations
-//		2) add, update, or delete HealthCheckConfig for a specified service,
-//		   HealthCheckCustomConfig cannot be added, updated or deleted via UpdateService action
+//  1. update the TTL for existing dnsRecords configurations
+//  2. add, update, or delete HealthCheckConfig for a specified service,
+//     HealthCheckCustomConfig cannot be added, updated or deleted via UpdateService action
 //
 // Notes:
-//		1) public and private dns namespaces,
-//				a) if any existing dnsRecords or healthCheckConfig configurations are omitted from the UpdateService request,
-//				   those omitted configurations ARE deleted from the service
-//				b) if any existing HealthCheckCustomConfig configurations are omitted from the UpdateService request,
-//				   the omitted configurations ARE NOT deleted from the service
-//		2) when settings are updated for a service,
-//				aws cloud map also updates the corresponding settings in all the records and health checks,
-//				that were created by the given service
+//  1. public and private dns namespaces,
+//     a) if any existing dnsRecords or healthCheckConfig configurations are omitted from the UpdateService request,
+//     those omitted configurations ARE deleted from the service
+//     b) if any existing HealthCheckCustomConfig configurations are omitted from the UpdateService request,
+//     the omitted configurations ARE NOT deleted from the service
+//  2. when settings are updated for a service,
+//     aws cloud map also updates the corresponding settings in all the records and health checks,
+//     that were created by the given service
 //
 // Parameters:
-//		1) serviceId = (required) service to update
-//		2) dnsConfUpdate = (required) update dns config to this value, if nil, existing dns configuration will be removed from service
-//		3) healthCheckConf = (optional) update health check config to this value, if nil, existing health check config will be removed from service
-//		4) descriptionUpdate = (optional) service description to update, if nil, existing description will be removed from service
-//		5) timeOutDuration = (optional) maximum time before timeout via context
+//  1. serviceId = (required) service to update
+//  2. dnsConfUpdate = (required) update dns config to this value, if nil, existing dns configuration will be removed from service
+//  3. healthCheckConf = (optional) update health check config to this value, if nil, existing health check config will be removed from service
+//  4. descriptionUpdate = (optional) service description to update, if nil, existing description will be removed from service
+//  5. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) operationId = this action's operation id to be used in GetOperation for status check
-//		2) err = contains error info if error was encountered
+//  1. operationId = this action's operation id to be used in GetOperation for status check
+//  2. err = contains error info if error was encountered
 func (sd *CloudMap) UpdateService(serviceId string,
-								  dnsConfUpdate *DnsConf,
-								  healthCheckConfUpdate *HealthCheckConf,
-								  descriptionUpdate *string,
-								  timeOutDuration ...time.Duration) (operationId string, err error) {
+	dnsConfUpdate *DnsConf,
+	healthCheckConfUpdate *HealthCheckConf,
+	descriptionUpdate *string,
+	timeOutDuration ...time.Duration) (operationId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1267,7 +1277,7 @@ func (sd *CloudMap) UpdateService(serviceId string,
 		// update public dns health config
 		input.Service.HealthCheckConfig = &servicediscovery.HealthCheckConfig{
 			FailureThreshold: aws.Int64(healthCheckConfUpdate.FailureThreshold),
-			Type: aws.String(healthCheckConfUpdate.PubDns_HealthCheck_Type.Key()),
+			Type:             aws.String(healthCheckConfUpdate.PubDns_HealthCheck_Type.Key()),
 		}
 
 		if util.LenTrim(healthCheckConfUpdate.PubDns_HealthCheck_Path) > 0 {
@@ -1303,12 +1313,12 @@ func (sd *CloudMap) UpdateService(serviceId string,
 // GetService gets a specified service's settings
 //
 // Parameters:
-//		1) serviceId = (required) get service based on this service id
-//		2) timeOutDuration = (optional) maximum time before timeout via context
+//  1. serviceId = (required) get service based on this service id
+//  2. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) service = service object found based on the provided serviceId
-//		2) err = contains error info if error was encountered
+//  1. service = service object found based on the provided serviceId
+//  2. err = contains error info if error was encountered
 func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duration) (service *servicediscovery.Service, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1374,19 +1384,19 @@ func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duratio
 // ListServices lists summary information about all the services associated with one or more namespaces
 //
 // Parameters:
-//		1) filter = (optional) filter by namespace(s) as specified, slice of namespaceId to filter
-//		2) maxResults = (optional) specifies maximum count to return
-//		3) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		4) timeOutDuration = (optional) maximum time before timeout via context
+//  1. filter = (optional) filter by namespace(s) as specified, slice of namespaceId to filter
+//  2. maxResults = (optional) specifies maximum count to return
+//  3. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  4. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) services = slice of sd service summary objects
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. services = slice of sd service summary objects
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) ListServices(filter []string,
-								 maxResults *int64,
-								 nextToken *string,
-								 timeOutDuration ...time.Duration) (services []*servicediscovery.ServiceSummary, moreNextToken string, err error) {
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (services []*servicediscovery.ServiceSummary, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1429,7 +1439,7 @@ func (sd *CloudMap) ListServices(filter []string,
 	if len(filter) == 1 {
 		input.Filters = []*servicediscovery.ServiceFilter{
 			{
-				Name: aws.String("NAMESPACE_ID"),
+				Name:      aws.String("NAMESPACE_ID"),
 				Condition: aws.String("EQ"),
 				Values: []*string{
 					aws.String(filter[0]),
@@ -1439,7 +1449,7 @@ func (sd *CloudMap) ListServices(filter []string,
 	} else if len(filter) > 1 {
 		input.Filters = []*servicediscovery.ServiceFilter{
 			{
-				Name: aws.String("NAMESPACE_ID"),
+				Name:      aws.String("NAMESPACE_ID"),
 				Condition: aws.String("IN"),
 			},
 		}
@@ -1492,19 +1502,19 @@ func (sd *CloudMap) ListServices(filter []string,
 // (issues multiple page requests until max results is met or all data is retrieved)
 //
 // Parameters:
-//		1) filter = (optional) filter by namespace(s) as specified, slice of namespaceId to filter
-//		2) maxResults = (optional) specifies maximum count to return
-//		3) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		4) timeOutDuration = (optional) maximum time before timeout via context
+//  1. filter = (optional) filter by namespace(s) as specified, slice of namespaceId to filter
+//  2. maxResults = (optional) specifies maximum count to return
+//  3. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  4. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) namespaces = slice of sd service summary objects
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. namespaces = slice of sd service summary objects
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) ListServicesPages(filter []string,
-									  maxResults *int64,
-									  nextToken *string,
-									  timeOutDuration ...time.Duration) (services []*servicediscovery.ServiceSummary, moreNextToken string, err error) {
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (services []*servicediscovery.ServiceSummary, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1547,7 +1557,7 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 	if len(filter) == 1 {
 		input.Filters = []*servicediscovery.ServiceFilter{
 			{
-				Name: aws.String("NAMESPACE_ID"),
+				Name:      aws.String("NAMESPACE_ID"),
 				Condition: aws.String("EQ"),
 				Values: []*string{
 					aws.String(filter[0]),
@@ -1557,7 +1567,7 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 	} else if len(filter) > 1 {
 		input.Filters = []*servicediscovery.ServiceFilter{
 			{
-				Name: aws.String("NAMESPACE_ID"),
+				Name:      aws.String("NAMESPACE_ID"),
 				Condition: aws.String("IN"),
 			},
 		}
@@ -1614,14 +1624,15 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 }
 
 // DeleteService deletes the specified service,
-// 		if the service still contains one or more registered instances, the delete action will fail
+//
+//	if the service still contains one or more registered instances, the delete action will fail
 //
 // Parameters:
-//		1) serviceId = (required) service to be deleted via the specified service id
-//		2) timeOutDuration = (optional) maximum time before timeout via context
+//  1. serviceId = (required) service to be deleted via the specified service id
+//  2. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) err = nil indicates success; contains error info if error was encountered
+//  1. err = nil indicates success; contains error info if error was encountered
 func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -1686,54 +1697,55 @@ func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Dura
 // ----------------------------------------------------------------------------------------------------------------
 
 // RegisterInstance creates or updates one or more records,
-//		and optionally creates a health check based on settings from the specified service
+//
+//	and optionally creates a health check based on settings from the specified service
 //
 // When RegisterInstance() request is submitted:
-//		1) for each dns record defined in the service as specified by ServiceId,
-//				a record is created or updated in the hosted zone that is associated with the corresponding namespace
-//		2) if the service includes HealthCheckConfig,
-//				a health check is created based on the settings in the health check configuration
-//		3) the health check is associated with each of the new or updated records (if applicable)
+//  1. for each dns record defined in the service as specified by ServiceId,
+//     a record is created or updated in the hosted zone that is associated with the corresponding namespace
+//  2. if the service includes HealthCheckConfig,
+//     a health check is created based on the settings in the health check configuration
+//  3. the health check is associated with each of the new or updated records (if applicable)
 //
-// One RegisterInstance() request must complete before another is submitted
+// # One RegisterInstance() request must complete before another is submitted
 //
 // When AWS cloud map receives a dns query for the specified dns name,
-//		1) if the health check is healthy, all records returned
-//		2) if the health check is unhealthy, applicable value for the last healthy instance is returned
-//		3) if health check configuration wasn't specified, then all records are returned regardless healthy or otherwise
+//  1. if the health check is healthy, all records returned
+//  2. if the health check is unhealthy, applicable value for the last healthy instance is returned
+//  3. if health check configuration wasn't specified, then all records are returned regardless healthy or otherwise
 //
 // Parameters:
-//		1) serviceId = (required) register instance to this serviceId
-//		2) instanceId = (required) unique value for this instance, if instanceId already exists, this action will update instead of new
-//		3) creatorRequestId = (required) unique request id to use in case of a failure (during fail-retry, use the same creatorRequestId
-//		4) attributes = (required) map of attributes to register for this instance with the given serviceId, keys are as follows:
-//				a) AWS_ALIAS_DNS_NAME = instruct cloud map to create route 53 alias record to route traffic to an ELB,
-//										set the dns name associated with the load balancer to this key,
-//										the associated service RoutingPolicy must be WEIGHTED,
-//										when this key is set, DO NOT set values to any other AWS_INSTANCE attributes
-//				b) AWS_EC2_INSTANCE_ID = for http namespace only, sets this instance's EC2 instance ID,
-//										 when this key is set, ONLY OTHER key allowed is AWS_INIT_HEALTH_STATUS,
-//										 when this key is set, the AWS_INSTANCE_IPV4 attribute will be filled with the primary private IPv4 address
-//				c) AWS_INIT_HEALTH_STATUS = if associated service includes HealthCheckCustomConfig,
-//											then this key may be optionally set to specify the initial status of custom health check: HEALTHY or UNHEALTHY,
-//											if this key is not set, then initial status is HEALTHY
-//				d) AWS_INSTANCE_IPV4 = if associated service dns record type is A, then set the IPv4 address to this key,
-//									   this key is required for service dns record type A
-//				e) AWS_INSTANCE_PORT = if associated service includes HealthCheckConfig,
-//									   set the port for this endpoint that route 53 will send health check request to,
-//									   this key is required for service having HealthCheckConfig set
-//				f) Custom Attributes = up to 30 custom attribute key value pairs,
-//									   key must not exceed 255 chars, value must not exceed 1024 chars,
-//									   total of all custom attribute key value pairs combined cannot exceed 5000 chars
+//  1. serviceId = (required) register instance to this serviceId
+//  2. instanceId = (required) unique value for this instance, if instanceId already exists, this action will update instead of new
+//  3. creatorRequestId = (required) unique request id to use in case of a failure (during fail-retry, use the same creatorRequestId
+//  4. attributes = (required) map of attributes to register for this instance with the given serviceId, keys are as follows:
+//     a) AWS_ALIAS_DNS_NAME = instruct cloud map to create route 53 alias record to route traffic to an ELB,
+//     set the dns name associated with the load balancer to this key,
+//     the associated service RoutingPolicy must be WEIGHTED,
+//     when this key is set, DO NOT set values to any other AWS_INSTANCE attributes
+//     b) AWS_EC2_INSTANCE_ID = for http namespace only, sets this instance's EC2 instance ID,
+//     when this key is set, ONLY OTHER key allowed is AWS_INIT_HEALTH_STATUS,
+//     when this key is set, the AWS_INSTANCE_IPV4 attribute will be filled with the primary private IPv4 address
+//     c) AWS_INIT_HEALTH_STATUS = if associated service includes HealthCheckCustomConfig,
+//     then this key may be optionally set to specify the initial status of custom health check: HEALTHY or UNHEALTHY,
+//     if this key is not set, then initial status is HEALTHY
+//     d) AWS_INSTANCE_IPV4 = if associated service dns record type is A, then set the IPv4 address to this key,
+//     this key is required for service dns record type A
+//     e) AWS_INSTANCE_PORT = if associated service includes HealthCheckConfig,
+//     set the port for this endpoint that route 53 will send health check request to,
+//     this key is required for service having HealthCheckConfig set
+//     f) Custom Attributes = up to 30 custom attribute key value pairs,
+//     key must not exceed 255 chars, value must not exceed 1024 chars,
+//     total of all custom attribute key value pairs combined cannot exceed 5000 chars
 //
 // Return Values:
-//		1) operationId = identifier to be used with GetOperation for status check (to verify completion of action)
-//		2) err = contains error info if any
+//  1. operationId = identifier to be used with GetOperation for status check (to verify completion of action)
+//  2. err = contains error info if any
 func (sd *CloudMap) RegisterInstance(serviceId string,
-									 instanceId string,
-									 creatorRequestId string,
-									 attributes map[string]string,
-									 timeOutDuration ...time.Duration) (operationId string, err error) {
+	instanceId string,
+	creatorRequestId string,
+	attributes map[string]string,
+	timeOutDuration ...time.Duration) (operationId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1790,10 +1802,10 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 
 	// define input
 	input := &servicediscovery.RegisterInstanceInput{
-		InstanceId: aws.String(instanceId),
+		InstanceId:       aws.String(instanceId),
 		CreatorRequestId: aws.String(creatorRequestId),
-		ServiceId: aws.String(serviceId),
-		Attributes: aws.StringMap(attributes),
+		ServiceId:        aws.String(serviceId),
+		Attributes:       aws.StringMap(attributes),
 	}
 
 	// invoke action
@@ -1822,26 +1834,29 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 }
 
 // UpdateInstanceCustomHealthStatus submits a request to change the health status of a custom health check,
-//		to healthy or unhealthy
+//
+//	to healthy or unhealthy
 //
 // This action works only with configuration of Custom Health Checks,
-//		which was defined using HealthCheckCustomConfig when creating a service
+//
+//	which was defined using HealthCheckCustomConfig when creating a service
 //
 // This action cannot be used to change the status of a route 53 health check,
-//		which was defined using HealthCheckConfig when creating a service
+//
+//	which was defined using HealthCheckConfig when creating a service
 //
 // Parameters:
-//		1) instanceId = (required) update healthy status to this instanceId
-//		2) serviceId = (required) the associated service
-//		3) isHealthy = specify the health status during this update action
-//		4) timeOutDuration = (optional) maximum time before timeout via context
+//  1. instanceId = (required) update healthy status to this instanceId
+//  2. serviceId = (required) the associated service
+//  3. isHealthy = specify the health status during this update action
+//  4. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) err = nil indicates success; otherwise error info is included
+//  1. err = nil indicates success; otherwise error info is included
 func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
-													 serviceId string,
-													 isHealthy bool,
-													 timeOutDuration ...time.Duration) (err error) {
+	serviceId string,
+	isHealthy bool,
+	timeOutDuration ...time.Duration) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1890,8 +1905,8 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 
 	input := &servicediscovery.UpdateInstanceCustomHealthStatusInput{
 		InstanceId: aws.String(instanceId),
-		ServiceId: aws.String(serviceId),
-		Status: aws.String(healthStatus),
+		ServiceId:  aws.String(serviceId),
+		Status:     aws.String(healthStatus),
 	}
 
 	// invoke action
@@ -1918,18 +1933,19 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 }
 
 // DeregisterInstance deletes the route 53 dns record and health check (if any),
-//		that was created by cloud map for the specified instance
+//
+//	that was created by cloud map for the specified instance
 //
 // Parameters:
-//		1) instanceId = (required) instance to deregister
-//		2) serviceId = (required) the associated service
+//  1. instanceId = (required) instance to deregister
+//  2. serviceId = (required) the associated service
 //
 // Return Values:
-//		1) operationId = operation identifier to be used with GetOperation for action completion status check
-//		2) err = error info if any
+//  1. operationId = operation identifier to be used with GetOperation for action completion status check
+//  2. err = error info if any
 func (sd *CloudMap) DeregisterInstance(instanceId string,
-									   serviceId string,
-									   timeOutDuration ...time.Duration) (operationId string, err error) {
+	serviceId string,
+	timeOutDuration ...time.Duration) (operationId string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -1970,7 +1986,7 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 	// define input
 	input := &servicediscovery.DeregisterInstanceInput{
 		InstanceId: aws.String(instanceId),
-		ServiceId: aws.String(serviceId),
+		ServiceId:  aws.String(serviceId),
 	}
 
 	// invoke action
@@ -2001,15 +2017,15 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 // GetInstance gets information about a specified instance
 //
 // Parameters:
-//		1) instanceId = (required) instance to get
-//		2) serviceId = (required) the associated service
+//  1. instanceId = (required) instance to get
+//  2. serviceId = (required) the associated service
 //
 // Return Values:
-//		1) instance = instance object retrieved
-// 		2) err = error info if any
+//  1. instance = instance object retrieved
+//  2. err = error info if any
 func (sd *CloudMap) GetInstance(instanceId string,
-								serviceId string,
-								timeOutDuration ...time.Duration) (instance *servicediscovery.Instance, err error) {
+	serviceId string,
+	timeOutDuration ...time.Duration) (instance *servicediscovery.Instance, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2050,7 +2066,7 @@ func (sd *CloudMap) GetInstance(instanceId string,
 	// define input
 	input := &servicediscovery.GetInstanceInput{
 		InstanceId: aws.String(instanceId),
-		ServiceId: aws.String(serviceId),
+		ServiceId:  aws.String(serviceId),
 	}
 
 	// invoke action
@@ -2079,26 +2095,27 @@ func (sd *CloudMap) GetInstance(instanceId string,
 }
 
 // GetInstancesHealthStatus gets the current health status (healthy, unhealthy, unknown) of one or more instances,
-//		that are associated with a specified service
 //
-// There is a brief delay between register an instance and when the health status for the instance is available
+//	that are associated with a specified service
+//
+// # There is a brief delay between register an instance and when the health status for the instance is available
 //
 // Parameters:
-//		1) serviceId = (required) service id assciated with the instances being checked
-//		2) instanceIds = (optional) list of instance ids to check health status on, if omitted, then all instances of given service is checked
-//		3) maxResults = (optional) specifies maximum count to return
-//		4) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		5) timeOutDuration = (optional) maximum time before timeout via context
+//  1. serviceId = (required) service id assciated with the instances being checked
+//  2. instanceIds = (optional) list of instance ids to check health status on, if omitted, then all instances of given service is checked
+//  3. maxResults = (optional) specifies maximum count to return
+//  4. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  5. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) status = map of instance status (key = instance id, value = health status 'healthy', 'unhealthy', 'unknown')
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. status = map of instance status (key = instance id, value = health status 'healthy', 'unhealthy', 'unknown')
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
-											 instanceIds []string,
-											 maxResults *int64,
-											 nextToken *string,
-											 timeOutDuration ...time.Duration) (status map[string]string, moreNextToken string, err error) {
+	instanceIds []string,
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (status map[string]string, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2181,27 +2198,28 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 }
 
 // GetInstancesHealthStatusPages gets the current health status (healthy, unhealthy, unknown) of one or more instances,
-//		that are associated with a specified service
-//		(issues multiple page requests until max results is met or all data is retrieved)
 //
-// There is a brief delay between register an instance and when the health status for the instance is available
+//	that are associated with a specified service
+//	(issues multiple page requests until max results is met or all data is retrieved)
+//
+// # There is a brief delay between register an instance and when the health status for the instance is available
 //
 // Parameters:
-//		1) serviceId = (required) service id assciated with the instances being checked
-//		2) instanceIds = (optional) list of instance ids to check health status on, if omitted, then all instances of given service is checked
-//		3) maxResults = (optional) specifies maximum count to return
-//		4) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		5) timeOutDuration = (optional) maximum time before timeout via context
+//  1. serviceId = (required) service id assciated with the instances being checked
+//  2. instanceIds = (optional) list of instance ids to check health status on, if omitted, then all instances of given service is checked
+//  3. maxResults = (optional) specifies maximum count to return
+//  4. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  5. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) status = map of instance status (key = instance id, value = health status 'healthy', 'unhealthy', 'unknown')
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. status = map of instance status (key = instance id, value = health status 'healthy', 'unhealthy', 'unknown')
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
-												  instanceIds []string,
-												  maxResults *int64,
-												  nextToken *string,
-												  timeOutDuration ...time.Duration) (status map[string]string, moreNextToken string, err error) {
+	instanceIds []string,
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (status map[string]string, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2301,28 +2319,28 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 // DiscoverInstances discovers registered instances for a specified namespace and service
 //
 // Notes:
-//		1) Used to discover instances for any type of namespace (http, private dns, public dns)
-//		2) For public and private dns namespaces,
-//				may also use dns queries to discover distances instead
+//  1. Used to discover instances for any type of namespace (http, private dns, public dns)
+//  2. For public and private dns namespaces,
+//     may also use dns queries to discover distances instead
 //
 // Parameters:
-//		1) namespaceName = (required) name of the namespace to be discovered
-//		2) serviceName = (required) name of the service to be discovered
-//		3) isHealthy = (required) discover healthy or unhealthy instances
-//		4) queryParameters = (optional) map of key value pairs, containing custom attributes registered during RegisterInstance,
-//							 if custom attributes is specified, all attributes in the queryParameters must match for the instance to discover
-//		5) maxResults = (optional) max count of discovered instances to return, if not specified, up to 100 is returned
-//		6) timeOutDuration = (optional) maximum time before timeout via context
+//  1. namespaceName = (required) name of the namespace to be discovered
+//  2. serviceName = (required) name of the service to be discovered
+//  3. isHealthy = (required) discover healthy or unhealthy instances
+//  4. queryParameters = (optional) map of key value pairs, containing custom attributes registered during RegisterInstance,
+//     if custom attributes is specified, all attributes in the queryParameters must match for the instance to discover
+//  5. maxResults = (optional) max count of discovered instances to return, if not specified, up to 100 is returned
+//  6. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) instances = slice of discovered instance objects
-//		2) err = error info if any
+//  1. instances = slice of discovered instance objects
+//  2. err = error info if any
 func (sd *CloudMap) DiscoverInstances(namespaceName string,
-									  serviceName string,
-									  isHealthy bool,
-									  queryParameters map[string]string,
-									  maxResults *int64,
-									  timeOutDuration ...time.Duration) (instances []*servicediscovery.HttpInstanceSummary, err error) {
+	serviceName string,
+	isHealthy bool,
+	queryParameters map[string]string,
+	maxResults *int64,
+	timeOutDuration ...time.Duration) (instances []*servicediscovery.HttpInstanceSummary, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2374,8 +2392,8 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 
 	input := &servicediscovery.DiscoverInstancesInput{
 		NamespaceName: aws.String(namespaceName),
-		ServiceName: aws.String(serviceName),
-		HealthStatus: aws.String(healthStatus),
+		ServiceName:   aws.String(serviceName),
+		HealthStatus:  aws.String(healthStatus),
 	}
 
 	if queryParameters != nil && len(queryParameters) > 0 {
@@ -2414,19 +2432,19 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 // ListInstances lists summary information about the instances registered using a specified service
 //
 // Parameters:
-//		1) serviceId = (required) service id assciated with the instances being checked
-//		2) maxResults = (optional) specifies maximum count to return
-//		3) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		4) timeOutDuration = (optional) maximum time before timeout via context
+//  1. serviceId = (required) service id assciated with the instances being checked
+//  2. maxResults = (optional) specifies maximum count to return
+//  3. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  4. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) instances = slice of sd instance summary objects
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. instances = slice of sd instance summary objects
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) ListInstances(serviceId string,
-								  maxResults *int64,
-								  nextToken *string,
-								  timeOutDuration ...time.Duration) (instances []*servicediscovery.InstanceSummary, moreNextToken string, err error){
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (instances []*servicediscovery.InstanceSummary, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2512,19 +2530,19 @@ func (sd *CloudMap) ListInstances(serviceId string,
 // (issues multiple page requests until max results is met or all data is retrieved)
 //
 // Parameters:
-//		1) serviceId = (required) service id assciated with the instances being checked
-//		2) maxResults = (optional) specifies maximum count to return
-//		3) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		4) timeOutDuration = (optional) maximum time before timeout via context
+//  1. serviceId = (required) service id assciated with the instances being checked
+//  2. maxResults = (optional) specifies maximum count to return
+//  3. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  4. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) instances = slice of sd instance summary objects
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. instances = slice of sd instance summary objects
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) ListInstancesPages(serviceId string,
-									   maxResults *int64,
-									   nextToken *string,
-									   timeOutDuration ...time.Duration) (instances []*servicediscovery.InstanceSummary, moreNextToken string, err error) {
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (instances []*servicediscovery.InstanceSummary, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2618,16 +2636,17 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 // ----------------------------------------------------------------------------------------------------------------
 
 // GetOperation gets information about any operation that returned an operationId in the response,
-//  	such as CreateHttpNamespace(), CreateService(), etc
+//
+//	such as CreateHttpNamespace(), CreateService(), etc
 //
 // Parameters:
-//		1) operationId = (required) the operation to retrieve, operationId is obtained during Create, and other related actions
-//		2) timeOutDuration = (optional) maximum time before timeout via context
+//  1. operationId = (required) the operation to retrieve, operationId is obtained during Create, and other related actions
+//  2. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) operation = operation object retrieved
-//				a) Targets = evaluate Targets to retrieve namespaceId, serviceId, InstanceId etc, using NAMESPACE, SERVICE, INSTANCE key names
-// 		2) err = error info any
+//  1. operation = operation object retrieved
+//     a) Targets = evaluate Targets to retrieve namespaceId, serviceId, InstanceId etc, using NAMESPACE, SERVICE, INSTANCE key names
+//  2. err = error info any
 func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Duration) (operation *servicediscovery.Operation, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
@@ -2693,23 +2712,23 @@ func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Dur
 // ListOperations lists operations that match the criteria specified in parameters
 //
 // Parameters:
-//		1) filter = (optional) map of filter operations (EQ_ filters allow single value per key)
-//				a) EQ_Status / IN_Status = Valid Values: SUBMITTED, PENDING, SUCCEED, FAIL
-//				b) EQ_Type / IN_Type = Valid Values: CREATE_NAMESPACE, DELETE_NAMESPACE, UPDATE_SERVICE, REGISTER_INSTANCE, DEREGISTER_INSTANCE
-//				c) BETWEEN_UpdateDate = begin and end in Unix DateTime in UTC
-//		2) maxResults = (optional) specifies maximum count to return
-//		3) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		4) timeOutDuration = (optional) maximum time before timeout via context
+//  1. filter = (optional) map of filter operations (EQ_ filters allow single value per key)
+//     a) EQ_Status / IN_Status = Valid Values: SUBMITTED, PENDING, SUCCEED, FAIL
+//     b) EQ_Type / IN_Type = Valid Values: CREATE_NAMESPACE, DELETE_NAMESPACE, UPDATE_SERVICE, REGISTER_INSTANCE, DEREGISTER_INSTANCE
+//     c) BETWEEN_UpdateDate = begin and end in Unix DateTime in UTC
+//  2. maxResults = (optional) specifies maximum count to return
+//  3. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  4. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) operations = slice of sd operation summary objects
-//				a) Targets = evaluate Targets to retrieve namespaceId, serviceId, InstanceId etc, using NAMESPACE, SERVICE, INSTANCE key names
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. operations = slice of sd operation summary objects
+//     a) Targets = evaluate Targets to retrieve namespaceId, serviceId, InstanceId etc, using NAMESPACE, SERVICE, INSTANCE key names
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilter][]string,
-								   maxResults *int64,
-								   nextToken *string,
-								   timeOutDuration ...time.Duration) (operations []*servicediscovery.OperationSummary, moreNextToken string, err error) {
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (operations []*servicediscovery.OperationSummary, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2759,57 +2778,57 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 			case sdoperationfilter.EQ_NameSpaceID:
 				if len(fv) == 1 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("NAMESPACE_ID"),
+						Name:      aws.String("NAMESPACE_ID"),
 						Condition: aws.String("EQ"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.EQ_ServiceID:
 				if len(fv) == 1 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("SERVICE_ID"),
+						Name:      aws.String("SERVICE_ID"),
 						Condition: aws.String("EQ"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.EQ_Status:
 				if len(fv) == 1 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("STATUS"),
+						Name:      aws.String("STATUS"),
 						Condition: aws.String("EQ"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.EQ_Type:
 				if len(fv) == 1 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("TYPE"),
+						Name:      aws.String("TYPE"),
 						Condition: aws.String("EQ"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.IN_Status:
 				if len(fv) > 0 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("STATUS"),
+						Name:      aws.String("STATUS"),
 						Condition: aws.String("IN"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.IN_Type:
 				if len(fv) > 0 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("TYPE"),
+						Name:      aws.String("TYPE"),
 						Condition: aws.String("IN"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.BETWEEN_UpdateDate:
 				if len(fv) == 2 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("UPDATE_DATE"),
+						Name:      aws.String("UPDATE_DATE"),
 						Condition: aws.String("BETWEEN"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			}
@@ -2863,23 +2882,23 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 // (issues multiple page requests until max results is met or all data is retrieved)
 //
 // Parameters:
-//		1) filter = (optional) map of filter operations (EQ_ filters allow single value per key)
-//				a) EQ_Status / IN_Status = Valid Values: SUBMITTED, PENDING, SUCCEED, FAIL
-//				b) EQ_Type / IN_Type = Valid Values: CREATE_NAMESPACE, DELETE_NAMESPACE, UPDATE_SERVICE, REGISTER_INSTANCE, DEREGISTER_INSTANCE
-//				c) BETWEEN_UpdateDate = begin and end in Unix DateTime in UTC
-//		2) maxResults = (optional) specifies maximum count to return
-//		3) nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
-//		4) timeOutDuration = (optional) maximum time before timeout via context
+//  1. filter = (optional) map of filter operations (EQ_ filters allow single value per key)
+//     a) EQ_Status / IN_Status = Valid Values: SUBMITTED, PENDING, SUCCEED, FAIL
+//     b) EQ_Type / IN_Type = Valid Values: CREATE_NAMESPACE, DELETE_NAMESPACE, UPDATE_SERVICE, REGISTER_INSTANCE, DEREGISTER_INSTANCE
+//     c) BETWEEN_UpdateDate = begin and end in Unix DateTime in UTC
+//  2. maxResults = (optional) specifies maximum count to return
+//  3. nextToken = (optional) if initial action, leave blank; if this is a subsequent action to get more, input the moreNextToken returned from a prior action
+//  4. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
-//		1) operations = slice of sd operation summary objects
-//				a) Targets = evaluate Targets to retrieve namespaceId, serviceId, InstanceId etc, using NAMESPACE, SERVICE, INSTANCE key names
-//		2) moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
-//		3) err = error info if any
+//  1. operations = slice of sd operation summary objects
+//     a) Targets = evaluate Targets to retrieve namespaceId, serviceId, InstanceId etc, using NAMESPACE, SERVICE, INSTANCE key names
+//  2. moreNextToken = if more data exists, this token can be used in a subsequent action via nextToken parameter
+//  3. err = error info if any
 func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperationFilter][]string,
-									    maxResults *int64,
-										nextToken *string,
-										timeOutDuration ...time.Duration) (operations []*servicediscovery.OperationSummary, moreNextToken string, err error) {
+	maxResults *int64,
+	nextToken *string,
+	timeOutDuration ...time.Duration) (operations []*servicediscovery.OperationSummary, moreNextToken string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -2929,57 +2948,57 @@ func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperation
 			case sdoperationfilter.EQ_NameSpaceID:
 				if len(fv) == 1 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("NAMESPACE_ID"),
+						Name:      aws.String("NAMESPACE_ID"),
 						Condition: aws.String("EQ"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.EQ_ServiceID:
 				if len(fv) == 1 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("SERVICE_ID"),
+						Name:      aws.String("SERVICE_ID"),
 						Condition: aws.String("EQ"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.EQ_Status:
 				if len(fv) == 1 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("STATUS"),
+						Name:      aws.String("STATUS"),
 						Condition: aws.String("EQ"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.EQ_Type:
 				if len(fv) == 1 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("TYPE"),
+						Name:      aws.String("TYPE"),
 						Condition: aws.String("EQ"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.IN_Status:
 				if len(fv) > 0 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("STATUS"),
+						Name:      aws.String("STATUS"),
 						Condition: aws.String("IN"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.IN_Type:
 				if len(fv) > 0 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("TYPE"),
+						Name:      aws.String("TYPE"),
 						Condition: aws.String("IN"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			case sdoperationfilter.BETWEEN_UpdateDate:
 				if len(fv) == 2 {
 					sdof = &servicediscovery.OperationFilter{
-						Name: aws.String("UPDATE_DATE"),
+						Name:      aws.String("UPDATE_DATE"),
 						Condition: aws.String("BETWEEN"),
-						Values: aws.StringSlice(fv),
+						Values:    aws.StringSlice(fv),
 					}
 				}
 			}

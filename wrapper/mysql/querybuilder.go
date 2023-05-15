@@ -1,7 +1,7 @@
 package mysql
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,10 @@ import (
 
 // QueryBuilder struct to help build sql queries (use named parameters instead of ordinal)
 type QueryBuilder struct {
-	buf bytes.Buffer					// internal buffer holder
-	output string						// internal output data based on buffer string()
-	paramsNamed map[string]interface{}	// internal map of named parameters
-	paramsOrdinal []interface{}			// internal slice of ordinal parameters
+	buf           bytes.Buffer           // internal buffer holder
+	output        string                 // internal output data based on buffer string()
+	paramsNamed   map[string]interface{} // internal map of named parameters
+	paramsOrdinal []interface{}          // internal slice of ordinal parameters
 }
 
 // ClearAll will reset the query builder internal fields to init status
@@ -51,14 +51,14 @@ func (q *QueryBuilder) ClearParams() {
 
 // Set will append a sqlPart to the query builder buffer
 // [ notes ]
-// 		1) Ordinal Params
-//			a) MySql, SQLite
-//				Params = ?
-//			b) SQLServer
-//				Params = @p1, @p2, ...@pN
-//		2) Named Params
-//			a) MySql, SQLite, SQLServer
-//				Params = :xyz1, :xyz2, ...:xyzN
+//  1. Ordinal Params
+//     a) MySql, SQLite
+//     Params = ?
+//     b) SQLServer
+//     Params = @p1, @p2, ...@pN
+//  2. Named Params
+//     a) MySql, SQLite, SQLServer
+//     Params = :xyz1, :xyz2, ...:xyzN
 func (q *QueryBuilder) Set(sqlPart string) {
 	q.buf.WriteString(sqlPart)
 }
@@ -104,5 +104,3 @@ func (q *QueryBuilder) ParamsMap() map[string]interface{} {
 func (q *QueryBuilder) ParamsSlice() []interface{} {
 	return q.paramsOrdinal
 }
-
-

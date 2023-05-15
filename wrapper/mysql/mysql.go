@@ -1,7 +1,7 @@
 package mysql
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -181,39 +181,40 @@ import (
 // ================================================================================================================
 
 // MySql struct encapsulates the MySql server database access functionality by wrapping Sqlx package with top level methods
-//    	Charset = utf8, utf8mb4 (< Default)
-//		Collation = utf8mb4_general_ci (< Default), utf8_general_ci
-//    	...Timeout = must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
 //
-//		MaxOpenConns = maximum open and idle connections for the connection pool, default is 0, which is unlimited (db *sqlx.DB internally is a connection pool object)
-//		MaxIdleConns = maximum number of idle connections to keep in the connection pool, default is 0 which is unlimited, this number should be equal or less than MaxOpenConns
-//		MaxConnIdleTime = maximum duration that an idle connection be kept in the connection pool, default is 0 which has no time limit, suggest 5 - 10 minutes if set
+//	   	Charset = utf8, utf8mb4 (< Default)
+//			Collation = utf8mb4_general_ci (< Default), utf8_general_ci
+//	   	...Timeout = must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
+//
+//			MaxOpenConns = maximum open and idle connections for the connection pool, default is 0, which is unlimited (db *sqlx.DB internally is a connection pool object)
+//			MaxIdleConns = maximum number of idle connections to keep in the connection pool, default is 0 which is unlimited, this number should be equal or less than MaxOpenConns
+//			MaxConnIdleTime = maximum duration that an idle connection be kept in the connection pool, default is 0 which has no time limit, suggest 5 - 10 minutes if set
 type MySql struct {
 	// MySql server connection properties
-	UserName  string
-	Password  string
+	UserName string
+	Password string
 
-	Host      string
-	Port      int
-	Database  string
+	Host     string
+	Port     int
+	Database string
 
-	Charset string			// utf8, utf8mb4
-	Collation string		// utf8mb4_general_ci, utf8_general_ci
-	ConnectTimeout  string	// must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
-	ReadTimeout string		// must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
-	WriteTimeout string		// must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
+	Charset        string // utf8, utf8mb4
+	Collation      string // utf8mb4_general_ci, utf8_general_ci
+	ConnectTimeout string // must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
+	ReadTimeout    string // must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
+	WriteTimeout   string // must be decimal number with unit suffix (ms, s, m, h), such as "30s", "0.5m", "1m30s"
 	RejectReadOnly bool
 
-	MaxOpenConns int
-	MaxIdleConns int
+	MaxOpenConns    int
+	MaxIdleConns    int
 	MaxConnIdleTime time.Duration
 
 	// mysql server state object
-	db *sqlx.DB
+	db    *sqlx.DB
 	txMap map[string]*MySqlTransaction
-	mux sync.RWMutex
+	mux   sync.RWMutex
 
-	lastPing time.Time
+	lastPing       time.Time
 	_parentSegment *xray.XRayParentSegment
 }
 
@@ -223,10 +224,10 @@ type MySql struct {
 //
 // each mysql transaction created will also register with MySql struct, so that during Close/Cleanup, all the related outstanding Transactions can rollback
 type MySqlTransaction struct {
-	id string
-	parent *MySql
-	tx *sqlx.Tx
-	closed bool
+	id         string
+	parent     *MySql
+	tx         *sqlx.Tx
+	closed     bool
 	_xrayTxSeg *xray.XSegment
 }
 
@@ -399,10 +400,10 @@ func (t *MySqlTransaction) ready() error {
 
 // MySqlResult defines sql action query result info
 // [ Notes ]
-//		1) NewlyInsertedID = ONLY FOR INSERT, ONLY IF AUTO_INCREMENT PRIMARY KEY (Custom PK ID Will Have This Field as 0 Always)
+//  1. NewlyInsertedID = ONLY FOR INSERT, ONLY IF AUTO_INCREMENT PRIMARY KEY (Custom PK ID Will Have This Field as 0 Always)
 type MySqlResult struct {
 	RowsAffected    int64
-	NewlyInsertedID int64	// ONLY FOR INSERT, ONLY IF AUTO_INCREMENT PRIMARY KEY (Custom PK ID Will Have This Field as 0 Always)
+	NewlyInsertedID int64 // ONLY FOR INSERT, ONLY IF AUTO_INCREMENT PRIMARY KEY (Custom PK ID Will Have This Field as 0 Always)
 	Err             error
 }
 
@@ -746,10 +747,10 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 		} else {
 			// begin succeeded, create MySqlTransaction and return result
 			myTx := &MySqlTransaction{
-				id: util.NewULID(),
-				parent: svr,
-				tx: tx,
-				closed: false,
+				id:         util.NewULID(),
+				parent:     svr,
+				tx:         tx,
+				closed:     false,
 				_xrayTxSeg: nil,
 			}
 			if svr.txMap == nil {
@@ -763,7 +764,7 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 		xseg := xray.NewSegment("MySql-Transaction", svr._parentSegment)
 		subXSeg := xseg.NewSubSegment("Begin-Transaction")
 
-		if tx, err := svr.db.BeginTxx(subXSeg.Ctx, &sql.TxOptions{ Isolation: 0, ReadOnly: false }); err != nil {
+		if tx, err := svr.db.BeginTxx(subXSeg.Ctx, &sql.TxOptions{Isolation: 0, ReadOnly: false}); err != nil {
 			// begin failed
 			_ = subXSeg.Seg.AddError(err)
 			_ = xseg.Seg.AddError(err)
@@ -773,10 +774,10 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 		} else {
 			// begin succeeded, create MySqlTransaction and return result
 			myTx := &MySqlTransaction{
-				id: util.NewULID(),
-				parent: svr,
-				tx: tx,
-				closed: false,
+				id:         util.NewULID(),
+				parent:     svr,
+				tx:         tx,
+				closed:     false,
 				_xrayTxSeg: xseg,
 			}
 			if svr.txMap == nil {
@@ -797,14 +798,17 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 // in essence, each row of data is marshaled into the given struct, and multiple struct form the slice,
 // such as: []Customer where each row represent a customer, and multiple customers being part of the slice
 // [ Parameters ]
-//		dest = pointer to the struct slice or address of struct slice, this is the result of rows to be marshaled into struct slice
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-// 		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	dest = pointer to the struct slice or address of struct slice, this is the result of rows to be marshaled into struct slice
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
-//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
+//  1. notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
+//
 // [ Notes ]
-//		1) if error == nil, and len(dest struct slice) == 0 then zero struct slice result
+//  1. if error == nil, and len(dest struct slice) == 0 then zero struct slice result
 func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -850,14 +854,17 @@ func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interfa
 // in essence, each row of data is marshaled into the given struct, and multiple struct form the slice,
 // such as: []Customer where each row represent a customer, and multiple customers being part of the slice
 // [ Parameters ]
-//		dest = pointer to the struct slice or address of struct slice, this is the result of rows to be marshaled into struct slice
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-// 		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	dest = pointer to the struct slice or address of struct slice, this is the result of rows to be marshaled into struct slice
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
-//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
+//  1. notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
+//
 // [ Notes ]
-//		1) if error == nil, and len(dest struct slice) == 0 then zero struct slice result
+//  1. if error == nil, and len(dest struct slice) == 0 then zero struct slice result
 func (t *MySqlTransaction) GetStructSlice(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
 	if retErr = t.ready(); retErr != nil {
 		return false, retErr
@@ -906,12 +913,14 @@ func (t *MySqlTransaction) GetStructSlice(dest interface{}, query string, args .
 // GetStruct performs query with optional variadic parameters, and unmarshal single result row into single target struct,
 // such as: Customer struct where one row of data represent a customer
 // [ Parameters ]
-//		dest = pointer to struct or address of struct, this is the result of row to be marshaled into this struct
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	dest = pointer to struct or address of struct, this is the result of row to be marshaled into this struct
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
-//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
+//  1. notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
 func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -956,12 +965,14 @@ func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{})
 // GetStruct performs query with optional variadic parameters, and unmarshal single result row into single target struct,
 // such as: Customer struct where one row of data represent a customer
 // [ Parameters ]
-//		dest = pointer to struct or address of struct, this is the result of row to be marshaled into this struct
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	dest = pointer to struct or address of struct, this is the result of row to be marshaled into this struct
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
-//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
+//  1. notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
 func (t *MySqlTransaction) GetStruct(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
 	if retErr = t.ready(); retErr != nil {
 		return false, retErr
@@ -1013,22 +1024,26 @@ func (t *MySqlTransaction) GetStruct(dest interface{}, query string, args ...int
 
 // GetRowsByOrdinalParams performs query with optional variadic parameters to get ROWS of result, and returns *sqlx.Rows
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
-// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//  1. *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//
 // [ Ranged Loop & Scan ]
-//		1) to loop, use:
-//				for {
-//						if !rows.Next() { break }
-//						rows.Scan(&x, &y, etc)
-//					}
-//		2) to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//  1. to loop, use:
+//     for {
+//     if !rows.Next() { break }
+//     rows.Scan(&x, &y, etc)
+//     }
+//  2. to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//
 // [ Continuous Loop & Scan ]
-//		1) Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
-//		2) ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
-//		3) ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
+//  1. Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
+//  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
+//  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sqlx.Rows, error) {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -1070,22 +1085,26 @@ func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sq
 
 // GetRowsByOrdinalParams performs query with optional variadic parameters to get ROWS of result, and returns *sqlx.Rows
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
-// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//  1. *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//
 // [ Ranged Loop & Scan ]
-//		1) to loop, use:
-//				for {
-//						if !rows.Next() { break }
-//						rows.Scan(&x, &y, etc)
-//					}
-//		2) to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//  1. to loop, use:
+//     for {
+//     if !rows.Next() { break }
+//     rows.Scan(&x, &y, etc)
+//     }
+//  2. to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//
 // [ Continuous Loop & Scan ]
-//		1) Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
-//		2) ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
-//		3) ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
+//  1. Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
+//  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
+//  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (t *MySqlTransaction) GetRowsByOrdinalParams(query string, args ...interface{}) (*sqlx.Rows, error) {
 	if err := t.ready(); err != nil {
 		return nil, err
@@ -1131,31 +1150,36 @@ func (t *MySqlTransaction) GetRowsByOrdinalParams(query string, args ...interfac
 
 // GetRowsByNamedMapParam performs query with named map containing parameters to get ROWS of result, and returns *sqlx.Rows
 // [ Syntax ]
-//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
-//		2) in go = setup a map variable: var p = make(map[string]interface{})
-//		3) in go = to set values into map variable: p["xyz"] = abc
-//				   where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
-//				   where abc is the value of the parameter value, whether string or other data types
-//				   note: in using map, just add additional map elements using the p["xyz"] = abc syntax
-//				   note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
-//		4) in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+//  1. in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//  2. in go = setup a map variable: var p = make(map[string]interface{})
+//  3. in go = to set values into map variable: p["xyz"] = abc
+//     where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
+//     where abc is the value of the parameter value, whether string or other data types
+//     note: in using map, just add additional map elements using the p["xyz"] = abc syntax
+//     note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
+//  4. in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+//
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
-//		args = required, the map variable of the named parameters
+//
+//	query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
+//	args = required, the map variable of the named parameters
+//
 // [ Return Values ]
-//		1) *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
-// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//  1. *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//
 // [ Ranged Loop & Scan ]
-//		1) to loop, use:
-//				for {
-//						if !rows.Next() { break }
-//						rows.Scan(&x, &y, etc)
-//					}
-//		2) to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//  1. to loop, use:
+//     for {
+//     if !rows.Next() { break }
+//     rows.Scan(&x, &y, etc)
+//     }
+//  2. to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//
 // [ Continuous Loop & Scan ]
-//		1) Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
-//		2) ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
-//		3) ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
+//  1. Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
+//  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
+//  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface{}) (*sqlx.Rows, error) {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -1197,31 +1221,36 @@ func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface
 
 // GetRowsByNamedMapParam performs query with named map containing parameters to get ROWS of result, and returns *sqlx.Rows
 // [ Syntax ]
-//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
-//		2) in go = setup a map variable: var p = make(map[string]interface{})
-//		3) in go = to set values into map variable: p["xyz"] = abc
-//				   where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
-//				   where abc is the value of the parameter value, whether string or other data types
-//				   note: in using map, just add additional map elements using the p["xyz"] = abc syntax
-//				   note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
-//		4) in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+//  1. in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//  2. in go = setup a map variable: var p = make(map[string]interface{})
+//  3. in go = to set values into map variable: p["xyz"] = abc
+//     where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
+//     where abc is the value of the parameter value, whether string or other data types
+//     note: in using map, just add additional map elements using the p["xyz"] = abc syntax
+//     note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
+//  4. in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+//
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
-//		args = required, the map variable of the named parameters
+//
+//	query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
+//	args = required, the map variable of the named parameters
+//
 // [ Return Values ]
-//		1) *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
-// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//  1. *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//
 // [ Ranged Loop & Scan ]
-//		1) to loop, use:
-//				for {
-//						if !rows.Next() { break }
-//						rows.Scan(&x, &y, etc)
-//					}
-//		2) to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//  1. to loop, use:
+//     for {
+//     if !rows.Next() { break }
+//     rows.Scan(&x, &y, etc)
+//     }
+//  2. to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//
 // [ Continuous Loop & Scan ]
-//		1) Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
-//		2) ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
-//		3) ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
+//  1. Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
+//  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
+//  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (t *MySqlTransaction) GetRowsByNamedMapParam(query string, args map[string]interface{}) (*sqlx.Rows, error) {
 	if err := t.ready(); err != nil {
 		return nil, err
@@ -1267,27 +1296,32 @@ func (t *MySqlTransaction) GetRowsByNamedMapParam(query string, args map[string]
 
 // GetRowsByStructParam performs query with a struct as parameter input to get ROWS of result, and returns *sqlx.Rows
 // [ Syntax ]
-//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
-//		2) in sql = important: the :xyz defined where xyz portion of parameter name must batch the struct tag's `db:"xyz"`
-//		3) in go = a struct containing struct tags that matches the named parameters will be set with values, and passed into this function's args parameter input
-//		4) in go = when calling this function passing the struct variable, simply pass the struct variable into the args parameter
+//  1. in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//  2. in sql = important: the :xyz defined where xyz portion of parameter name must batch the struct tag's `db:"xyz"`
+//  3. in go = a struct containing struct tags that matches the named parameters will be set with values, and passed into this function's args parameter input
+//  4. in go = when calling this function passing the struct variable, simply pass the struct variable into the args parameter
+//
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
-//		args = required, the struct variable where struct fields' struct tags match to the named parameters
+//
+//	query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
+//	args = required, the struct variable where struct fields' struct tags match to the named parameters
+//
 // [ Return Values ]
-//		1) *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
-// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//  1. *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//
 // [ Ranged Loop & Scan ]
-//		1) to loop, use:
-//				for {
-//						if !rows.Next() { break }
-//						rows.Scan(&x, &y, etc)
-//					}
-//		2) to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//  1. to loop, use:
+//     for {
+//     if !rows.Next() { break }
+//     rows.Scan(&x, &y, etc)
+//     }
+//  2. to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//
 // [ Continuous Loop & Scan ]
-//		1) Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
-//		2) ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
-//		3) ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
+//  1. Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
+//  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
+//  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Rows, error) {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -1329,27 +1363,32 @@ func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Ro
 
 // GetRowsByStructParam performs query with a struct as parameter input to get ROWS of result, and returns *sqlx.Rows
 // [ Syntax ]
-//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
-//		2) in sql = important: the :xyz defined where xyz portion of parameter name must batch the struct tag's `db:"xyz"`
-//		3) in go = a struct containing struct tags that matches the named parameters will be set with values, and passed into this function's args parameter input
-//		4) in go = when calling this function passing the struct variable, simply pass the struct variable into the args parameter
+//  1. in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//  2. in sql = important: the :xyz defined where xyz portion of parameter name must batch the struct tag's `db:"xyz"`
+//  3. in go = a struct containing struct tags that matches the named parameters will be set with values, and passed into this function's args parameter input
+//  4. in go = when calling this function passing the struct variable, simply pass the struct variable into the args parameter
+//
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
-//		args = required, the struct variable where struct fields' struct tags match to the named parameters
+//
+//	query = sql query, optionally having parameters marked as :xyz for each parameter name, where each represents a named parameter
+//	args = required, the struct variable where struct fields' struct tags match to the named parameters
+//
 // [ Return Values ]
-//		1) *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
-// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//  1. *sqlx.Rows = pointer to sqlx.Rows; or nil if no rows yielded
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and sqlx.Rows is returned as nil)
+//
 // [ Ranged Loop & Scan ]
-//		1) to loop, use:
-//				for {
-//						if !rows.Next() { break }
-//						rows.Scan(&x, &y, etc)
-//					}
-//		2) to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//  1. to loop, use:
+//     for {
+//     if !rows.Next() { break }
+//     rows.Scan(&x, &y, etc)
+//     }
+//  2. to scan, use: r.Scan(&x, &y, ...), where r is the row struct in loop, where &x &y etc are the scanned output value (scan in order of select columns sequence)
+//
 // [ Continuous Loop & Scan ]
-//		1) Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
-//		2) ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
-//		3) ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
+//  1. Continuous loop until endOfRows = true is yielded from ScanSlice() or ScanStruct()
+//  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
+//  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (t *MySqlTransaction) GetRowsByStructParam(query string, args interface{}) (*sqlx.Rows, error) {
 	if err := t.ready(); err != nil {
 		return nil, err
@@ -1402,11 +1441,13 @@ func (t *MySqlTransaction) GetRowsByStructParam(query string, args interface{}) 
 // this enables us to quickly retrieve a slice of current row column values without knowing how many columns or names or columns (columns appear in select columns sequence),
 // to loop thru all rows, use range, and loop until endOfRows = true; the dest is nil if no columns found; the dest is pointer of slice when columns exists
 // [ Parameters ]
-//		rows = *sqlx.Rows
-//		dest = pointer or address to slice, such as: variable to "*[]string", or variable to "&cList for declaration cList []string"
+//
+//	rows = *sqlx.Rows
+//	dest = pointer or address to slice, such as: variable to "*[]string", or variable to "&cList for declaration cList []string"
+//
 // [ Return Values ]
-//		1) endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop (rows will be closed automatically)
-//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
+//  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop (rows will be closed automatically)
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool, err error) {
 	// ensure rows pointer is set
 	if rows == nil {
@@ -1430,7 +1471,7 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 
 			if err != nil {
 				// has error
-				endOfRows = false	// although error but may not be at end of rows
+				endOfRows = false // although error but may not be at end of rows
 				dest = nil
 				return
 			}
@@ -1469,7 +1510,7 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 
 				if err != nil {
 					// has error
-					endOfRows = false	// although error but may not be at end of rows
+					endOfRows = false // although error but may not be at end of rows
 					dest = nil
 					return err
 				}
@@ -1489,7 +1530,7 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 			Meta: map[string]interface{}{
 				"Rows-To-Scan": rows,
 				"Slice-Result": dest,
-				"End-Of-Rows": endOfRows,
+				"End-Of-Rows":  endOfRows,
 			},
 		})
 	}
@@ -1504,11 +1545,13 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 // this enables us to quickly convert the row's columns into a defined struct automatically,
 // to loop thru all rows, use range, and loop until endOfRows = true; the dest is nil if no columns found; the dest is pointer of struct when mapping is complete
 // [ Parameters ]
-//		rows = *sqlx.Rows
-//		dest = pointer or address to struct, such as: variable to "*Customer", or variable to "&c for declaration c Customer"
+//
+//	rows = *sqlx.Rows
+//	dest = pointer or address to struct, such as: variable to "*Customer", or variable to "&c for declaration c Customer"
+//
 // [ Return Values ]
-//		1) endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop (rows will be closed automatically)
-//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
+//  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop (rows will be closed automatically)
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool, err error) {
 	// ensure rows pointer is set
 	if rows == nil {
@@ -1532,7 +1575,7 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 
 			if err != nil {
 				// has error
-				endOfRows = false	// although error but may not be at end of rows
+				endOfRows = false // although error but may not be at end of rows
 				dest = nil
 				return
 			}
@@ -1570,7 +1613,7 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 
 				if err != nil {
 					// has error
-					endOfRows = false	// although error but may not be at end of rows
+					endOfRows = false // although error but may not be at end of rows
 					dest = nil
 					return err
 				}
@@ -1587,9 +1630,9 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 			}
 		}, &xray.XTraceData{
 			Meta: map[string]interface{}{
-				"Rows-To-Scan": rows,
+				"Rows-To-Scan":  rows,
 				"Struct-Result": dest,
-				"End-Of-Rows": endOfRows,
+				"End-Of-Rows":   endOfRows,
 			},
 		})
 	}
@@ -1604,16 +1647,21 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 
 // GetSingleRow performs query with optional variadic parameters to get a single ROW of result, and returns *sqlx.Row (This function returns SINGLE ROW)
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) *sqlx.Row = pointer to sqlx.Row; or nil if no row yielded
-//		2) if error != nil, then error is encountered (if error = sql.ErrNoRows, then error is treated as nil, and sqlx.Row is returned as nil)
+//  1. *sqlx.Row = pointer to sqlx.Row; or nil if no row yielded
+//  2. if error != nil, then error is encountered (if error = sql.ErrNoRows, then error is treated as nil, and sqlx.Row is returned as nil)
+//
 // [ Scan Values ]
-//		1) Use row.Scan() and pass in pointer or address of variable to receive scanned value outputs (Scan is in the order of column sequences in select statement)
+//  1. Use row.Scan() and pass in pointer or address of variable to receive scanned value outputs (Scan is in the order of column sequences in select statement)
+//
 // [ WARNING !!! ]
-//		WHEN USING Scan(), MUST CHECK Scan Result Error for sql.ErrNoRow status
-//		SUGGESTED TO USE ScanColumnsByRow() Instead of Scan()
+//
+//	WHEN USING Scan(), MUST CHECK Scan Result Error for sql.ErrNoRow status
+//	SUGGESTED TO USE ScanColumnsByRow() Instead of Scan()
 func (svr *MySql) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, error) {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -1666,16 +1714,21 @@ func (svr *MySql) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, er
 
 // GetSingleRow performs query with optional variadic parameters to get a single ROW of result, and returns *sqlx.Row (This function returns SINGLE ROW)
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) *sqlx.Row = pointer to sqlx.Row; or nil if no row yielded
-//		2) if error != nil, then error is encountered (if error = sql.ErrNoRows, then error is treated as nil, and sqlx.Row is returned as nil)
+//  1. *sqlx.Row = pointer to sqlx.Row; or nil if no row yielded
+//  2. if error != nil, then error is encountered (if error = sql.ErrNoRows, then error is treated as nil, and sqlx.Row is returned as nil)
+//
 // [ Scan Values ]
-//		1) Use row.Scan() and pass in pointer or address of variable to receive scanned value outputs (Scan is in the order of column sequences in select statement)
+//  1. Use row.Scan() and pass in pointer or address of variable to receive scanned value outputs (Scan is in the order of column sequences in select statement)
+//
 // [ WARNING !!! ]
-//		WHEN USING Scan(), MUST CHECK Scan Result Error for sql.ErrNoRow status
-//		SUGGESTED TO USE ScanColumnsByRow() Instead of Scan()
+//
+//	WHEN USING Scan(), MUST CHECK Scan Result Error for sql.ErrNoRow status
+//	SUGGESTED TO USE ScanColumnsByRow() Instead of Scan()
 func (t *MySqlTransaction) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, error) {
 	if err := t.ready(); err != nil {
 		return nil, err
@@ -1737,11 +1790,13 @@ func (t *MySqlTransaction) GetSingleRow(query string, args ...interface{}) (*sql
 // ScanSliceByRow takes in *sqlx.Row as parameter, and marshals current row's column values into a pointer reference to a slice,
 // this enables us to quickly retrieve a slice of current row column values without knowing how many columns or names or columns (columns appear in select columns sequence)
 // [ Parameters ]
-//		row = *sqlx.Row
-//		dest = pointer or address to slice, such as: variable to "*[]string", or variable to "&cList for declaration cList []string"
+//
+//	row = *sqlx.Row
+//	dest = pointer or address to slice, such as: variable to "*[]string", or variable to "&cList for declaration cList []string"
+//
 // [ Return Values ]
-//		1) notFound = true if no row is found in current scan
-//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
+//  1. notFound = true if no row is found in current scan
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
 func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bool, err error) {
 	// if row is nil, treat as no row and not an error
 	if row == nil {
@@ -1762,7 +1817,7 @@ func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bo
 		if err != nil {
 			// has error
 			dest = nil
-			return false, err	// although error but may not be not found
+			return false, err // although error but may not be not found
 		}
 
 		notFound = false
@@ -1791,7 +1846,7 @@ func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bo
 				// has error
 				notFound = false
 				dest = nil
-				return err	// although error but may not be not found
+				return err // although error but may not be not found
 			}
 
 			notFound = false
@@ -1799,7 +1854,7 @@ func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bo
 			return nil
 		}, &xray.XTraceData{
 			Meta: map[string]interface{}{
-				"Row-To-Scan": row,
+				"Row-To-Scan":  row,
 				"Slice-Result": dest,
 			},
 		})
@@ -1814,11 +1869,13 @@ func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bo
 // this enables us to quickly convert the row's columns into a defined struct automatically,
 // the dest is nil if no columns found; the dest is pointer of struct when mapping is complete
 // [ Parameters ]
-//		row = *sqlx.Row
-//		dest = pointer or address to struct, such as: variable to "*Customer", or variable to "&c for declaration c Customer"
+//
+//	row = *sqlx.Row
+//	dest = pointer or address to struct, such as: variable to "*Customer", or variable to "&c for declaration c Customer"
+//
 // [ Return Values ]
-//		1) notFound = true if no row is found in current scan
-//		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
+//  1. notFound = true if no row is found in current scan
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
 func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound bool, err error) {
 	// if row is nil, treat as no row and not an error
 	if row == nil {
@@ -1839,7 +1896,7 @@ func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound boo
 		if err != nil {
 			// has error
 			dest = nil
-			return false, err	// although error but may not be not found
+			return false, err // although error but may not be not found
 		}
 
 		notFound = false
@@ -1868,7 +1925,7 @@ func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound boo
 				// has error
 				dest = nil
 				notFound = false
-				return err	// although error but may not be not found
+				return err // although error but may not be not found
 			}
 
 			notFound = false
@@ -1876,7 +1933,7 @@ func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound boo
 			return nil
 		}, &xray.XTraceData{
 			Meta: map[string]interface{}{
-				"Row-To-Scan": row,
+				"Row-To-Scan":   row,
 				"Struct-Result": dest,
 			},
 		})
@@ -1890,18 +1947,21 @@ func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound boo
 // this is different than ScanSliceByRow or ScanStructByRow because this function allows specific extraction of column values into target fields，
 // (note: this function must extra all row column values to dest variadic parameters as present in the row parameter)
 // [ Parameters ]
-//		row = *sqlx.Row representing the row containing columns to extract, note that this function MUST extract all columns from this row
-//		dest = MUST BE pointer (or &variable) to target variable to receive the column value, data type must match column data type value, and sequence of dest must be in the order of columns sequence
+//
+//	row = *sqlx.Row representing the row containing columns to extract, note that this function MUST extract all columns from this row
+//	dest = MUST BE pointer (or &variable) to target variable to receive the column value, data type must match column data type value, and sequence of dest must be in the order of columns sequence
+//
 // [ Return Values ]
-//		1) notFound = true if no row is found in current scan
-// 		2) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
+//  1. notFound = true if no row is found in current scan
+//  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
+//
 // [ Example ]
-//		1) assuming: Select CustomerID, CustomerName, Address FROM Customer Where CustomerPhone='123';
-//		2) assuming: row // *sqlx.Row derived from GetSingleRow() or specific row from GetRowsByOrdinalParams() / GetRowsByNamedMapParam() / GetRowsByStructParam()
-//		3) assuming: var CustomerID int64
-//					 var CustomerName string
-//					 var Address string
-//		4) notFound, err := svr.ScanColumnsByRow(row, &CustomerID, &CustomerName, &Address)
+//  1. assuming: Select CustomerID, CustomerName, Address FROM Customer Where CustomerPhone='123';
+//  2. assuming: row // *sqlx.Row derived from GetSingleRow() or specific row from GetRowsByOrdinalParams() / GetRowsByNamedMapParam() / GetRowsByStructParam()
+//  3. assuming: var CustomerID int64
+//     var CustomerName string
+//     var Address string
+//  4. notFound, err := svr.ScanColumnsByRow(row, &CustomerID, &CustomerName, &Address)
 func (svr *MySql) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound bool, err error) {
 	// if row is nil, treat as no row and not an error
 	if row == nil {
@@ -1919,7 +1979,7 @@ func (svr *MySql) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound
 
 		if err != nil {
 			// has error
-			return false, err	// although error but may not be not found
+			return false, err // although error but may not be not found
 		}
 
 		notFound = false
@@ -1946,7 +2006,7 @@ func (svr *MySql) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound
 			if err != nil {
 				// has error
 				notFound = false
-				return err	// although error but may not be not found
+				return err // although error but may not be not found
 			}
 
 			notFound = false
@@ -1954,7 +2014,7 @@ func (svr *MySql) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound
 			return nil
 		}, &xray.XTraceData{
 			Meta: map[string]interface{}{
-				"Row-To-Scan": row,
+				"Row-To-Scan":      row,
 				"Dest-Vars-Result": dest,
 			},
 		})
@@ -1970,12 +2030,14 @@ func (svr *MySql) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound
 
 // GetScalarString performs query with optional variadic parameters, and returns the first row and first column value in string data type
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) retVal = string value of scalar result, if no value, blank is returned
-//		2) retNotFound = now row found
-// 		3) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
+//  1. retVal = string value of scalar result, if no value, blank is returned
+//  2. retNotFound = now row found
+//  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
 func (svr *MySql) GetScalarString(query string, args ...interface{}) (retVal string, retNotFound bool, retErr error) {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -2036,12 +2098,14 @@ func (svr *MySql) GetScalarString(query string, args ...interface{}) (retVal str
 
 // GetScalarString performs query with optional variadic parameters, and returns the first row and first column value in string data type
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) retVal = string value of scalar result, if no value, blank is returned
-//		2) retNotFound = now row found
-// 		3) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
+//  1. retVal = string value of scalar result, if no value, blank is returned
+//  2. retNotFound = now row found
+//  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
 func (t *MySqlTransaction) GetScalarString(query string, args ...interface{}) (retVal string, retNotFound bool, retErr error) {
 	if err := t.ready(); err != nil {
 		return "", false, err
@@ -2106,12 +2170,14 @@ func (t *MySqlTransaction) GetScalarString(query string, args ...interface{}) (r
 
 // GetScalarNullString performs query with optional variadic parameters, and returns the first row and first column value in sql.NullString{} data type
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) retVal = string value of scalar result, if no value, sql.NullString{} is returned
-//		2) retNotFound = now row found
-// 		3) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
+//  1. retVal = string value of scalar result, if no value, sql.NullString{} is returned
+//  2. retNotFound = now row found
+//  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
 func (svr *MySql) GetScalarNullString(query string, args ...interface{}) (retVal sql.NullString, retNotFound bool, retErr error) {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -2173,12 +2239,14 @@ func (svr *MySql) GetScalarNullString(query string, args ...interface{}) (retVal
 
 // GetScalarNullString performs query with optional variadic parameters, and returns the first row and first column value in sql.NullString{} data type
 // [ Parameters ]
-//		query = sql query, optionally having parameters marked as ?, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	query = sql query, optionally having parameters marked as ?, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) retVal = string value of scalar result, if no value, sql.NullString{} is returned
-//		2) retNotFound = now row found
-// 		3) if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
+//  1. retVal = string value of scalar result, if no value, sql.NullString{} is returned
+//  2. retNotFound = now row found
+//  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
 func (t *MySqlTransaction) GetScalarNullString(query string, args ...interface{}) (retVal sql.NullString, retNotFound bool, retErr error) {
 	if err := t.ready(); err != nil {
 		return sql.NullString{}, false, err
@@ -2248,10 +2316,12 @@ func (t *MySqlTransaction) GetScalarNullString(query string, args ...interface{}
 
 // ExecByOrdinalParams executes action query string and parameters to return result, if error, returns error object within result
 // [ Parameters ]
-//		actionQuery = sql action query, optionally having parameters marked as ?1, ?2 .. ?N, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	actionQuery = sql action query, optionally having parameters marked as ?1, ?2 .. ?N, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) MySqlResult = represents the sql action result received (including error info if applicable)
+//  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) MySqlResult {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -2327,10 +2397,12 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 
 // ExecByOrdinalParams executes action query string and parameters to return result, if error, returns error object within result
 // [ Parameters ]
-//		actionQuery = sql action query, optionally having parameters marked as ?1, ?2 .. ?N, where each represents a parameter position
-//		args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
+//	actionQuery = sql action query, optionally having parameters marked as ?1, ?2 .. ?N, where each represents a parameter position
+//	args = conditionally required if positioned parameters are specified, must appear in the same order as the positional parameters
+//
 // [ Return Values ]
-//		1) MySqlResult = represents the sql action result received (including error info if applicable)
+//  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...interface{}) MySqlResult {
 	if err := t.ready(); err != nil {
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -2410,19 +2482,22 @@ func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...inter
 
 // ExecByNamedMapParam executes action query string with named map containing parameters to return result, if error, returns error object within result
 // [ Syntax ]
-//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
-//		2) in go = setup a map variable: var p = make(map[string]interface{})
-//		3) in go = to set values into map variable: p["xyz"] = abc
-//				   where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
-//				   where abc is the value of the parameter value, whether string or other data types
-//				   note: in using map, just add additional map elements using the p["xyz"] = abc syntax
-//				   note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
-//		4) in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+//  1. in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//  2. in go = setup a map variable: var p = make(map[string]interface{})
+//  3. in go = to set values into map variable: p["xyz"] = abc
+//     where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
+//     where abc is the value of the parameter value, whether string or other data types
+//     note: in using map, just add additional map elements using the p["xyz"] = abc syntax
+//     note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
+//  4. in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+//
 // [ Parameters ]
-//		actionQuery = sql action query, with named parameters using :xyz syntax
-//		args = required, the map variable of the named parameters
+//
+//	actionQuery = sql action query, with named parameters using :xyz syntax
+//	args = required, the map variable of the named parameters
+//
 // [ Return Values ]
-//		1) MySqlResult = represents the sql action result received (including error info if applicable)
+//  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interface{}) MySqlResult {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -2498,19 +2573,22 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 
 // ExecByNamedMapParam executes action query string with named map containing parameters to return result, if error, returns error object within result
 // [ Syntax ]
-//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
-//		2) in go = setup a map variable: var p = make(map[string]interface{})
-//		3) in go = to set values into map variable: p["xyz"] = abc
-//				   where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
-//				   where abc is the value of the parameter value, whether string or other data types
-//				   note: in using map, just add additional map elements using the p["xyz"] = abc syntax
-//				   note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
-//		4) in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+//  1. in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//  2. in go = setup a map variable: var p = make(map[string]interface{})
+//  3. in go = to set values into map variable: p["xyz"] = abc
+//     where xyz is the parameter name matching the sql :xyz (do not include : in go map "xyz")
+//     where abc is the value of the parameter value, whether string or other data types
+//     note: in using map, just add additional map elements using the p["xyz"] = abc syntax
+//     note: if parameter value can be a null, such as nullint, nullstring, use util.ToNullTime(), ToNullInt(), ToNullString(), etc.
+//  4. in go = when calling this function passing the map variable, simply pass the map variable p into the args parameter
+//
 // [ Parameters ]
-//		actionQuery = sql action query, with named parameters using :xyz syntax
-//		args = required, the map variable of the named parameters
+//
+//	actionQuery = sql action query, with named parameters using :xyz syntax
+//	args = required, the map variable of the named parameters
+//
 // [ Return Values ]
-//		1) MySqlResult = represents the sql action result received (including error info if applicable)
+//  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[string]interface{}) MySqlResult {
 	if err := t.ready(); err != nil {
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -2592,13 +2670,16 @@ func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[stri
 // ExecByStructParam executes action query string with struct containing parameters to return result, if error, returns error object within result,
 // the struct fields' struct tags must match the parameter names, such as: struct tag `db:"customerID"` must match parameter name in sql as ":customerID"
 // [ Syntax ]
-//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
-//		2) in go = using a struct to contain fields to match parameters, make sure struct tags match to the sql parameter names, such as struct tag `db:"customerID"` must match parameter name in sql as ":customerID" (the : is not part of the match)
+//  1. in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//  2. in go = using a struct to contain fields to match parameters, make sure struct tags match to the sql parameter names, such as struct tag `db:"customerID"` must match parameter name in sql as ":customerID" (the : is not part of the match)
+//
 // [ Parameters ]
-//		actionQuery = sql action query, with named parameters using :xyz syntax
-//		args = required, the struct variable, whose fields having struct tags matching sql parameter names
+//
+//	actionQuery = sql action query, with named parameters using :xyz syntax
+//	args = required, the struct variable, whose fields having struct tags matching sql parameter names
+//
 // [ Return Values ]
-//		1) MySqlResult = represents the sql action result received (including error info if applicable)
+//  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlResult {
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
@@ -2675,13 +2756,16 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 // ExecByStructParam executes action query string with struct containing parameters to return result, if error, returns error object within result,
 // the struct fields' struct tags must match the parameter names, such as: struct tag `db:"customerID"` must match parameter name in sql as ":customerID"
 // [ Syntax ]
-//		1) in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
-//		2) in go = using a struct to contain fields to match parameters, make sure struct tags match to the sql parameter names, such as struct tag `db:"customerID"` must match parameter name in sql as ":customerID" (the : is not part of the match)
+//  1. in sql = instead of defining ordinal parameters ?, each parameter in sql does not need to be ordinal, rather define with :xyz (must have : in front of param name), where xyz is name of parameter, such as :customerID
+//  2. in go = using a struct to contain fields to match parameters, make sure struct tags match to the sql parameter names, such as struct tag `db:"customerID"` must match parameter name in sql as ":customerID" (the : is not part of the match)
+//
 // [ Parameters ]
-//		actionQuery = sql action query, with named parameters using :xyz syntax
-//		args = required, the struct variable, whose fields having struct tags matching sql parameter names
+//
+//	actionQuery = sql action query, with named parameters using :xyz syntax
+//	args = required, the struct variable, whose fields having struct tags matching sql parameter names
+//
 // [ Return Values ]
-//		1) MySqlResult = represents the sql action result received (including error info if applicable)
+//  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (t *MySqlTransaction) ExecByStructParam(actionQuery string, args interface{}) MySqlResult {
 	if err := t.ready(); err != nil {
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}

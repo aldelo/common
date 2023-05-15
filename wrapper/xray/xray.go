@@ -1,7 +1,7 @@
 package xray
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,7 +85,7 @@ import (
 
 type XRayParentSegment struct {
 	SegmentID string
-	TraceID string
+	TraceID   string
 }
 
 // ================================================================================================================
@@ -110,7 +110,7 @@ func Init(daemonAddr string, serviceVersion string) error {
 	}
 
 	return xray.Configure(xray.Config{
-		DaemonAddr: daemonAddr,
+		DaemonAddr:     daemonAddr,
 		ServiceVersion: serviceVersion,
 	})
 }
@@ -198,14 +198,15 @@ type XSegment struct {
 
 // XTraceData contains maps of data to add during trace activity
 type XTraceData struct {
-	Meta map[string]interface{}
+	Meta        map[string]interface{}
 	Annotations map[string]interface{}
-	Errors map[string]error
+	Errors      map[string]error
 }
 
 // AddMeta adds xray metadata to trace,
 // metadata = key value pair with value of any type, including objects or lists, not indexed,
-// 			  used to record data that need to be stored in the trace, but don't need to be indexed for searching
+//
+//	used to record data that need to be stored in the trace, but don't need to be indexed for searching
 func (t *XTraceData) AddMeta(key string, data interface{}) {
 	if util.LenTrim(key) == 0 {
 		return
@@ -280,8 +281,8 @@ func NewSegment(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *X
 	}
 
 	return &XSegment{
-		Ctx: ctx,
-		Seg: seg,
+		Ctx:       ctx,
+		Seg:       seg,
 		_segReady: true,
 	}
 }
@@ -303,8 +304,8 @@ func NewSegmentNullable(serviceNameOrUrl string, parentSegment ...*XRayParentSeg
 func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegment {
 	if req == nil {
 		return &XSegment{
-			Ctx: context.Background(),
-			Seg: nil,
+			Ctx:       context.Background(),
+			Seg:       nil,
 			_segReady: false,
 		}
 	}
@@ -313,8 +314,8 @@ func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegmen
 
 	if util.LenTrim(name) == 0 {
 		return &XSegment{
-			Ctx: context.Background(),
-			Seg: nil,
+			Ctx:       context.Background(),
+			Seg:       nil,
 			_segReady: false,
 		}
 	}
@@ -323,8 +324,8 @@ func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegmen
 
 	if hdr == nil {
 		return &XSegment{
-			Ctx: context.Background(),
-			Seg: nil,
+			Ctx:       context.Background(),
+			Seg:       nil,
 			_segReady: false,
 		}
 	}
@@ -332,8 +333,8 @@ func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegmen
 	ctx, seg := xray.NewSegmentFromHeader(req.Context(), name, req, hdr)
 
 	return &XSegment{
-		Ctx: ctx,
-		Seg: seg,
+		Ctx:       ctx,
+		Seg:       seg,
 		_segReady: true,
 	}
 }
@@ -354,8 +355,8 @@ func (x *XSegment) SetParentSegment(parentID string, traceID string) {
 func (x *XSegment) NewSubSegment(subSegmentName string) *XSegment {
 	if !x._segReady {
 		return &XSegment{
-			Ctx: context.Background(),
-			Seg: nil,
+			Ctx:       context.Background(),
+			Seg:       nil,
 			_segReady: false,
 		}
 	}
@@ -367,8 +368,8 @@ func (x *XSegment) NewSubSegment(subSegmentName string) *XSegment {
 	ctx, seg := xray.BeginSubsegment(x.Ctx, subSegmentName)
 
 	return &XSegment{
-		Ctx: ctx,
-		Seg: seg,
+		Ctx:       ctx,
+		Seg:       seg,
 		_segReady: true,
 	}
 }
@@ -505,5 +506,3 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 		return nil
 	})
 }
-
-

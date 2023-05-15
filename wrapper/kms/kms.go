@@ -1,7 +1,7 @@
 package kms
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,8 +67,8 @@ type KMS struct {
 	HttpOptions *awshttp2.HttpClientSettings
 
 	// define kms key name
-	AesKmsKeyName string
-	RsaKmsKeyName string
+	AesKmsKeyName       string
+	RsaKmsKeyName       string
 	SignatureKmsKeyName string
 
 	// store aws session object
@@ -146,8 +146,8 @@ func (k *KMS) connectInternal() error {
 	// establish aws session connection and keep session object in struct
 	if sess, err := session.NewSession(
 		&aws.Config{
-			Region:      aws.String(k.AwsRegion.Key()),
-			HTTPClient:  httpCli,
+			Region:     aws.String(k.AwsRegion.Key()),
+			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error
 		return errors.New("Connect To KMS Failed: (AWS Session Error) " + err.Error())
@@ -240,7 +240,7 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 				EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
 				KeyId:               aws.String(keyId),
 				Plaintext:           []byte(plainText),
-		})
+			})
 	}
 
 	if e != nil {
@@ -315,21 +315,21 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 
 	if segCtx == nil {
 		reEncryptOutput, e = k.kmsClient.ReEncrypt(&kms.ReEncryptInput{
-			SourceEncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-			SourceKeyId: aws.String(keyId),
+			SourceEncryptionAlgorithm:      aws.String("SYMMETRIC_DEFAULT"),
+			SourceKeyId:                    aws.String(keyId),
 			DestinationEncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-			DestinationKeyId: aws.String("alias/" + targetKmsKeyName),
-			CiphertextBlob: cipherBytes,
+			DestinationKeyId:               aws.String("alias/" + targetKmsKeyName),
+			CiphertextBlob:                 cipherBytes,
 		})
 	} else {
 		reEncryptOutput, e = k.kmsClient.ReEncryptWithContext(segCtx,
 			&kms.ReEncryptInput{
-				SourceEncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				SourceKeyId: aws.String(keyId),
+				SourceEncryptionAlgorithm:      aws.String("SYMMETRIC_DEFAULT"),
+				SourceKeyId:                    aws.String(keyId),
 				DestinationEncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				DestinationKeyId: aws.String("alias/" + targetKmsKeyName),
-				CiphertextBlob: cipherBytes,
-		})
+				DestinationKeyId:               aws.String("alias/" + targetKmsKeyName),
+				CiphertextBlob:                 cipherBytes,
+			})
 	}
 
 	if e != nil {
@@ -397,16 +397,16 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 	if segCtx == nil {
 		decryptedOutput, e = k.kmsClient.Decrypt(&kms.DecryptInput{
 			EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-			KeyId: aws.String(keyId),
-			CiphertextBlob: cipherBytes,
+			KeyId:               aws.String(keyId),
+			CiphertextBlob:      cipherBytes,
 		})
 	} else {
 		decryptedOutput, e = k.kmsClient.DecryptWithContext(segCtx,
 			&kms.DecryptInput{
 				EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				KeyId: aws.String(keyId),
-				CiphertextBlob: cipherBytes,
-		})
+				KeyId:               aws.String(keyId),
+				CiphertextBlob:      cipherBytes,
+			})
 	}
 
 	if e != nil {
@@ -427,8 +427,8 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 // the cipherText can only be decrypted with the paired asymmetric rsa 2048 kms cmk private key
 //
 // *** To Encrypt using Public Key Outside of KMS ***
-//		1) Copy Public Key from AWS KMS for the given RSA CMK
-//		2) Using External RSA Public Key Crypto Encrypt Function with the given Public Key to Encrypt
+//  1. Copy Public Key from AWS KMS for the given RSA CMK
+//  2. Using External RSA Public Key Crypto Encrypt Function with the given Public Key to Encrypt
 func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err error) {
 	var segCtx context.Context
 	segCtx = nil
@@ -481,16 +481,16 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 	if segCtx == nil {
 		encryptedOutput, e = k.kmsClient.Encrypt(&kms.EncryptInput{
 			EncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-			KeyId: aws.String(keyId),
-			Plaintext: []byte(plainText),
+			KeyId:               aws.String(keyId),
+			Plaintext:           []byte(plainText),
 		})
 	} else {
 		encryptedOutput, e = k.kmsClient.EncryptWithContext(segCtx,
 			&kms.EncryptInput{
 				EncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-				KeyId: aws.String(keyId),
-				Plaintext: []byte(plainText),
-		})
+				KeyId:               aws.String(keyId),
+				Plaintext:           []byte(plainText),
+			})
 	}
 
 	if e != nil {
@@ -565,21 +565,21 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 
 	if segCtx == nil {
 		reEncryptOutput, e = k.kmsClient.ReEncrypt(&kms.ReEncryptInput{
-			SourceEncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-			SourceKeyId: aws.String(keyId),
+			SourceEncryptionAlgorithm:      aws.String("RSAES_OAEP_SHA_256"),
+			SourceKeyId:                    aws.String(keyId),
 			DestinationEncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-			DestinationKeyId: aws.String("alias/" + targetKmsKeyName),
-			CiphertextBlob: cipherBytes,
+			DestinationKeyId:               aws.String("alias/" + targetKmsKeyName),
+			CiphertextBlob:                 cipherBytes,
 		})
 	} else {
 		reEncryptOutput, e = k.kmsClient.ReEncryptWithContext(segCtx,
 			&kms.ReEncryptInput{
-				SourceEncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-				SourceKeyId: aws.String(keyId),
+				SourceEncryptionAlgorithm:      aws.String("RSAES_OAEP_SHA_256"),
+				SourceKeyId:                    aws.String(keyId),
 				DestinationEncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-				DestinationKeyId: aws.String("alias/" + targetKmsKeyName),
-				CiphertextBlob: cipherBytes,
-		})
+				DestinationKeyId:               aws.String("alias/" + targetKmsKeyName),
+				CiphertextBlob:                 cipherBytes,
+			})
 	}
 
 	if e != nil {
@@ -647,16 +647,16 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	if segCtx == nil {
 		decryptedOutput, e = k.kmsClient.Decrypt(&kms.DecryptInput{
 			EncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-			KeyId: aws.String(keyId),
-			CiphertextBlob: cipherBytes,
+			KeyId:               aws.String(keyId),
+			CiphertextBlob:      cipherBytes,
 		})
 	} else {
 		decryptedOutput, e = k.kmsClient.DecryptWithContext(segCtx,
 			&kms.DecryptInput{
 				EncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-				KeyId: aws.String(keyId),
-				CiphertextBlob: cipherBytes,
-		})
+				KeyId:               aws.String(keyId),
+				CiphertextBlob:      cipherBytes,
+			})
 	}
 
 	if e != nil {
@@ -720,19 +720,19 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 
 	if segCtx == nil {
 		signOutput, e = k.kmsClient.Sign(&kms.SignInput{
-			KeyId: aws.String(keyId),
+			KeyId:            aws.String(keyId),
 			SigningAlgorithm: aws.String("RSASSA_PKCS1_V1_5_SHA_256"),
-			MessageType: aws.String("RAW"),
-			Message: []byte(dataToSign),
+			MessageType:      aws.String("RAW"),
+			Message:          []byte(dataToSign),
 		})
 	} else {
 		signOutput, e = k.kmsClient.SignWithContext(segCtx,
 			&kms.SignInput{
-				KeyId: aws.String(keyId),
+				KeyId:            aws.String(keyId),
 				SigningAlgorithm: aws.String("RSASSA_PKCS1_V1_5_SHA_256"),
-				MessageType: aws.String("RAW"),
-				Message: []byte(dataToSign),
-		})
+				MessageType:      aws.String("RAW"),
+				Message:          []byte(dataToSign),
+			})
 	}
 
 	if e != nil {
@@ -750,8 +750,8 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 // signatureToVerify = prior signed signature in hex to verify against the dataToVerify parameter
 //
 // *** To Verify using Public Key Outside of KMS ***
-//		1) Copy Public Key from AWS KMS for the given RSA CMK
-//		2) Using External RSA Public Key Crypto Verify Function with the given Public Key to Verify
+//  1. Copy Public Key from AWS KMS for the given RSA CMK
+//  2. Using External RSA Public Key Crypto Verify Function with the given Public Key to Verify
 func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string) (signatureValid bool, err error) {
 	var segCtx context.Context
 	segCtx = nil
@@ -810,21 +810,21 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 
 	if segCtx == nil {
 		verifyOutput, e = k.kmsClient.Verify(&kms.VerifyInput{
-			KeyId: aws.String(keyId),
+			KeyId:            aws.String(keyId),
 			SigningAlgorithm: aws.String("RSASSA_PKCS1_V1_5_SHA_256"),
-			MessageType: aws.String("RAW"),
-			Message: []byte(dataToVerify),
-			Signature: signatureBytes,
+			MessageType:      aws.String("RAW"),
+			Message:          []byte(dataToVerify),
+			Signature:        signatureBytes,
 		})
 	} else {
 		verifyOutput, e = k.kmsClient.VerifyWithContext(segCtx,
 			&kms.VerifyInput{
-				KeyId: aws.String(keyId),
+				KeyId:            aws.String(keyId),
 				SigningAlgorithm: aws.String("RSASSA_PKCS1_V1_5_SHA_256"),
-				MessageType: aws.String("RAW"),
-				Message: []byte(dataToVerify),
-				Signature: signatureBytes,
-		})
+				MessageType:      aws.String("RAW"),
+				Message:          []byte(dataToVerify),
+				Signature:        signatureBytes,
+			})
 	}
 
 	if e != nil {
@@ -880,7 +880,7 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 	keyId := "alias/" + k.AesKmsKeyName
 	keySpec := "AES_256" // always use AES 256
 	dataKeyInput := kms.GenerateDataKeyWithoutPlaintextInput{
-		KeyId: aws.String(keyId),
+		KeyId:   aws.String(keyId),
 		KeySpec: aws.String(keySpec),
 	}
 
@@ -966,16 +966,16 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 	if segCtx == nil {
 		dataKeyOutput, e = k.kmsClient.Decrypt(&kms.DecryptInput{
 			EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-			KeyId: aws.String(keyId),
-			CiphertextBlob: cipherBytes,
+			KeyId:               aws.String(keyId),
+			CiphertextBlob:      cipherBytes,
 		})
 	} else {
 		dataKeyOutput, e = k.kmsClient.DecryptWithContext(segCtx,
 			&kms.DecryptInput{
 				EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				KeyId: aws.String(keyId),
-				CiphertextBlob: cipherBytes,
-		})
+				KeyId:               aws.String(keyId),
+				CiphertextBlob:      cipherBytes,
+			})
 	}
 
 	if e != nil {
@@ -1064,16 +1064,16 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	if segCtx == nil {
 		dataKeyOutput, e = k.kmsClient.Decrypt(&kms.DecryptInput{
 			EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-			KeyId: aws.String(keyId),
-			CiphertextBlob: cipherBytes,
+			KeyId:               aws.String(keyId),
+			CiphertextBlob:      cipherBytes,
 		})
 	} else {
 		dataKeyOutput, e = k.kmsClient.DecryptWithContext(segCtx,
 			&kms.DecryptInput{
 				EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				KeyId: aws.String(keyId),
-				CiphertextBlob: cipherBytes,
-		})
+				KeyId:               aws.String(keyId),
+				CiphertextBlob:      cipherBytes,
+			})
 	}
 
 	if e != nil {
@@ -1099,4 +1099,3 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	// return decrypted data
 	return plainText, nil
 }
-

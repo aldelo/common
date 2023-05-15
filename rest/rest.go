@@ -1,7 +1,7 @@
 package rest
 
 /*
- * Copyright 2020-2021 Aldelo, LP
+ * Copyright 2020-2023 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,17 +77,13 @@ func newClientTlsCAsConfig() error {
 	}
 }
 
-//
 // HeaderKeyValue is struct used for containing http header element key value pair
-//
 type HeaderKeyValue struct {
-	Key string
+	Key   string
 	Value string
 }
 
-//
 // GET sends url get request to host and retrieve the body response in string
-//
 func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	// create http client
 	var client *http.Client
@@ -149,13 +145,13 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	return statusCode, string(respBytes), nil
 }
 
-//
 // POST sends url post request to host and retrieve the body response in string
 //
 // Default Header = Content-Type: application/x-www-form-urlencoded
 //
 // JSON Content-Type Header:
-//		Content-Type: application/json
+//
+//	Content-Type: application/json
 func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	// create http client
 	var client *http.Client
@@ -226,13 +222,13 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	return statusCode, string(respBytes), nil
 }
 
-//
 // PUT sends url put request to host and retrieve the body response in string
 //
 // Default Header = Content-Type: application/x-www-form-urlencoded
 //
 // JSON Content-Type Header:
-//		Content-Type: application/json
+//
+//	Content-Type: application/json
 func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	// create http client
 	var client *http.Client
@@ -303,13 +299,13 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	return statusCode, string(respBytes), nil
 }
 
-//
 // DELETE sends url delete request to host and performs delete action (no body expected)
 //
 // Default Header = Content-Type: application/x-www-form-urlencoded
 //
 // JSON Content-Type Header:
-//		Content-Type: application/json
+//
+//	Content-Type: application/json
 func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	// create http client
 	var client *http.Client
@@ -371,11 +367,11 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	return statusCode, string(respBytes), nil
 }
 
-//
 // GETProtoBuf sends url get request to host, and retrieves response via protobuf object as an output pointer parameter
 //
 // default header if not specified:
-//		Content-Type: application/x-protobuf
+//
+//	Content-Type: application/x-protobuf
 func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	// create http client
 	var client *http.Client
@@ -463,12 +459,12 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	}
 }
 
-//
 // POSTProtoBuf sends url post request to host, with body content in protobuf pointer object,
 // and retrieves response in protobuf object as output pointer parameter
 //
 // default header if not specified:
-//		Content-Type: application/x-protobuf
+//
+//	Content-Type: application/x-protobuf
 func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	// create http client
 	var client *http.Client
@@ -568,12 +564,12 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	}
 }
 
-//
 // PUTProtoBuf sends url put request to host, with body content in protobuf pointer object,
 // and retrieves response in protobuf object as output pointer parameter
 //
 // default header if not specified:
-//		Content-Type: application/x-protobuf
+//
+//	Content-Type: application/x-protobuf
 func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	// create http client
 	var client *http.Client
@@ -673,11 +669,11 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	}
 }
 
-//
 // DELETEProtoBuf sends url delete request to host, and retrieves response via protobuf object as an output pointer parameter
 //
 // default header if not specified:
-//		Content-Type: application/x-protobuf
+//
+//	Content-Type: application/x-protobuf
 func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	// create http client
 	var client *http.Client

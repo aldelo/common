@@ -3,6 +3,7 @@ package helper
 import (
 	"fmt"
 	"reflect"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -369,4 +370,26 @@ func ConsolePromptAndAnswerFloat64(prompt string, preventNegative ...bool) float
 	}
 
 	return result
+}
+
+// ErrorMessage find the error cause time, file, code line number and error message
+func ErrorMessage(err error) string {
+
+	_, file, line, _ := runtime.Caller(1)
+	indexFunc := func(file string) string {
+		backup := "/" + file
+		lastSlashIndex := strings.LastIndex(backup, "/")
+		if lastSlashIndex < 0 {
+			return backup
+		}
+		secondLastSlashIndex := strings.LastIndex(backup[:lastSlashIndex], "/")
+		if secondLastSlashIndex < 0 {
+			return backup[lastSlashIndex+1:]
+		}
+		return backup[secondLastSlashIndex+1:]
+	}
+
+	logmessage := fmt.Sprintf("%v %v:%v:%v", time.Now().UTC().Format("2006-01-02 15:04:05.000"), indexFunc(file), line, err.Error())
+
+	return logmessage
 }

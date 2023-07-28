@@ -23,6 +23,7 @@ import (
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aws/aws-sdk-go/aws"
 	ddb "github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"strings"
 	"time"
 )
@@ -63,11 +64,16 @@ type PkSkValuePair struct {
 }
 
 type AttributeValue struct {
-	Name      string
-	Value     string
-	IsN       bool
-	IsBool    bool
-	ListValue []string
+	Name string
+
+	Value     string   // string value or string value representing number
+	IsN       bool     // treats Value as number, and ListValue as number slice
+	IsBool    bool     // treats Value as boolean, does not work with ListValue
+	ListValue []string // honors IsN to treat ListValue as either list of string or list of numbers
+
+	ComplexMap    interface{} // for map of custom type or custom type slice
+	ComplexList   interface{} // for custom type slice
+	ComplexObject interface{} // for custom type object
 }
 
 type GlobalTableInfo struct {
@@ -521,8 +527,36 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 				}
 			} else {
 				if len(v.ListValue) == 0 {
-					expressionAttributeValues[v.Name] = &ddb.AttributeValue{
-						S: aws.String(v.Value),
+					if v.ComplexMap == nil && v.ComplexList == nil && v.ComplexObject == nil {
+						// string value
+						expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+							S: aws.String(v.Value),
+						}
+					} else if v.ComplexMap != nil {
+						// map[string]*ddb.AttributeValue
+						if complexMap, err := dynamodbattribute.MarshalMap(v.ComplexMap); err != nil {
+							return fmt.Errorf("Update To Data Store Failed: (MarshalMap on ComplexMap) %s", err.Error())
+						} else {
+							expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+								M: complexMap,
+							}
+						}
+					} else if v.ComplexList != nil {
+						// []*ddb.AttributeValue
+						if complexList, err := dynamodbattribute.MarshalList(v.ComplexList); err != nil {
+							return fmt.Errorf("Update To Data Store Failed: (MarshalList on ComplexList) %s", err.Error())
+						} else {
+							expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+								L: complexList,
+							}
+						}
+					} else if v.ComplexObject != nil {
+						// *ddb.AttributeValue
+						if complexObject, err := dynamodbattribute.Marshal(v.ComplexObject); err != nil {
+							return fmt.Errorf("Update To Data Store Failed: (MarshalObject on ComplexObject) %s", err.Error())
+						} else {
+							expressionAttributeValues[v.Name] = complexObject
+						}
 					}
 				} else {
 					expressionAttributeValues[v.Name] = &ddb.AttributeValue{

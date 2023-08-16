@@ -202,3 +202,31 @@ func RoundFloat64(val float64, precision uint) float64 {
 	ratio := math.Pow(10, float64(precision))
 	return math.Round(val*ratio) / ratio
 }
+
+// RoundIntegerToNearestBlock returns conformed block size value where val fall into.
+// For example: if val is 3 and blockSize is 5, then return value is 5;
+// where as if val is 13 and blockSize is 5, then return value is 15;
+// val must be > 0
+func RoundIntegerToNearestBlock(val int, blockSize int) int {
+	if val < 0 {
+		return -1
+	}
+
+	if blockSize < 1 {
+		return -1
+	}
+
+	if val == 0 {
+		return blockSize
+	}
+
+	number := float64(val) / float64(blockSize)
+	whole := RoundFloat64(number, 0)
+	frac := number - whole
+
+	if frac <= 0 {
+		return int(whole) * blockSize
+	} else {
+		return (int(whole) + 1) * blockSize
+	}
+}

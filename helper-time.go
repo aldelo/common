@@ -413,6 +413,17 @@ func ParseDateFromMMDD(s string) time.Time {
 	return ParseDateTimeCustom(d, "01-02")
 }
 
+// ParseDateTimeFrom_ISO8601_RFC3339 from string value of RFC3339 date time format
+func ParseDateTimeFrom_ISO8601_RFC3339(s string) time.Time {
+	s = strings.TrimSpace(s)
+
+	if t, e := time.Parse(time.RFC3339, s); e != nil {
+		return time.Time{}
+	} else {
+		return t
+	}
+}
+
 // CurrentDate returns current date in yyyy-mm-dd format
 func CurrentDate() string {
 	return time.Now().Format("2006-01-02")
@@ -1001,6 +1012,19 @@ func IsDateTimeValidYYMMDDhhmm(s string) bool {
 	}
 
 	return true
+}
+
+// IsDateTimeValid_ISO8601_RFC3339 checks if input string value is a valid date time represented in the format of ISO8601 RFC3339 date time
+func IsDateTimeValid_ISO8601_RFC3339(s string) bool {
+	s = Trim(s)
+
+	if t, e := time.Parse(time.RFC3339, s); e != nil {
+		return false
+	} else if t.IsZero() {
+		return false
+	} else {
+		return true
+	}
 }
 
 // FormatDateTimeToYYYYMMDDhhmmss for the date time struct received

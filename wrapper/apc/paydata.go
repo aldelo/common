@@ -174,6 +174,13 @@ func (k *PaymentCryptoData) UpdateParentSegment(parentSegment *xray.XRayParentSe
 	k._parentSegment = parentSegment
 }
 
+func awsNilString(input string) *string {
+	if input == "" {
+		return nil
+	}
+	return aws.String(input)
+}
+
 // ----------------------------------------------------------------------------------------------------------------
 // PaymentCryptography Data encrypt/decrypt via RSA functions
 // ----------------------------------------------------------------------------------------------------------------
@@ -297,7 +304,7 @@ func (k *PaymentCryptoData) decrypt(cipherText string, decryptionAttributes *pyc
 func (k *PaymentCryptoData) encryptRSA(plainText string, paddingType string) (cipherText string, err error) {
 	encryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
 		Asymmetric: &pycryptoData.AsymmetricEncryptionAttributes{
-			PaddingType: aws.String(paddingType),
+			PaddingType: awsNilString(paddingType),
 		},
 	}
 	return k.encrypt(plainText, encryptionAttributes)
@@ -306,7 +313,7 @@ func (k *PaymentCryptoData) encryptRSA(plainText string, paddingType string) (ci
 func (k *PaymentCryptoData) decryptRSA(cipherText string, paddingType string) (plainText string, err error) {
 	decryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
 		Asymmetric: &pycryptoData.AsymmetricEncryptionAttributes{
-			PaddingType: aws.String(paddingType),
+			PaddingType: awsNilString(paddingType),
 		},
 	}
 	return k.decrypt(cipherText, decryptionAttributes)
@@ -369,7 +376,7 @@ func (k *PaymentCryptoData) DecryptViaRSAOEAPSHA128(cipherText string) (plainTex
 func (k *PaymentCryptoData) encryptAES(plainText string, iv, mode string) (cipherText string, err error) {
 	encryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
 		Symmetric: &pycryptoData.SymmetricEncryptionAttributes{
-			InitializationVector: aws.String(iv),
+			InitializationVector: awsNilString(iv),
 			Mode:                 aws.String(mode),
 			PaddingType:          nil,
 		},
@@ -380,7 +387,7 @@ func (k *PaymentCryptoData) encryptAES(plainText string, iv, mode string) (ciphe
 func (k *PaymentCryptoData) decryptAES(cipherText string, iv, mode string) (plainText string, err error) {
 	decryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
 		Symmetric: &pycryptoData.SymmetricEncryptionAttributes{
-			InitializationVector: aws.String(iv),
+			InitializationVector: awsNilString(iv),
 			Mode:                 aws.String(mode),
 			PaddingType:          nil,
 		},

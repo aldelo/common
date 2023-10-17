@@ -420,3 +420,21 @@ func (k *PaymentCryptoData) DecryptViaAesCFB(cipherText, iv string) (plainText s
 func (k *PaymentCryptoData) DecryptViaAesOFB(cipherText, iv string) (plainText string, err error) {
 	return k.decryptAES(cipherText, iv, pycryptoData.EncryptionModeOfb)
 }
+
+func (k *PaymentCryptoData) DecryptViaDUKPT(cipherText, ksn string) (plainText string, err error) {
+	decryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
+		Dukpt: &pycryptoData.DukptEncryptionAttributes{
+			KeySerialNumber: aws.String(ksn),
+		},
+	}
+	return k.decrypt(cipherText, decryptionAttributes)
+}
+
+func (k *PaymentCryptoData) EncryptViaDUKPT(plainText, ksn string) (cipherText string, err error) {
+	decryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
+		Dukpt: &pycryptoData.DukptEncryptionAttributes{
+			KeySerialNumber: aws.String(ksn),
+		},
+	}
+	return k.encrypt(plainText, decryptionAttributes)
+}

@@ -434,3 +434,250 @@ func (k *PaymentCryptography) SetKeyAlias(keyArn, KeyAliasName string) (respAlia
 
 	return respAliasName, nil
 }
+
+func (k *PaymentCryptography) ImportRootCAPublicKey(publicKey string) (keyArn string, err error) {
+
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("PaymentCryptography-ImportRootCAPublicKey", k._parentSegment)
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("ImportRootCAPublicKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return "", err
+	}
+
+	if publicKey == "" {
+		err = errors.New("ImportRootCAPublicKey with PaymentCryptography Failed: (publicKey is empty) ")
+		return
+	}
+
+	imInput := &pycrypto.ImportKeyInput{
+		Enabled:                aws.Bool(true),
+		KeyCheckValueAlgorithm: nil,
+		KeyMaterial: &pycrypto.ImportKeyMaterial{
+			RootCertificatePublicKey: &pycrypto.RootCertificatePublicKey{
+				KeyAttributes: &pycrypto.KeyAttributes{
+					KeyAlgorithm: aws.String(pycrypto.KeyAlgorithmRsa2048),
+					KeyClass:     aws.String(pycrypto.KeyClassPublicKey),
+					KeyModesOfUse: &pycrypto.KeyModesOfUse{
+						Verify: aws.Bool(true),
+					},
+					KeyUsage: aws.String(pycrypto.KeyUsageTr31S0AsymmetricKeyForDigitalSignature),
+				},
+				PublicKeyCertificate: aws.String(publicKey),
+			},
+		},
+		Tags: nil,
+	}
+	var imOutput *pycrypto.ImportKeyOutput
+	var e error
+	if segCtx == nil {
+		imOutput, e = k.pycClient.ImportKey(imInput)
+	} else {
+		imOutput, e = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+	}
+
+	if e != nil {
+		return "", e
+	}
+	if imOutput != nil {
+		if imOutput.Key != nil {
+			keyArn = aws.StringValue(imOutput.Key.KeyArn)
+		}
+	}
+
+	return
+}
+
+func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock, nonce string) (keyArn string, err error) {
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("PaymentCryptography-ImportKEKey", k._parentSegment)
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("ImportKEKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return "", err
+	}
+	if capkArn == "" || imToken == "" || signCA == "" || keyBlock == "" || nonce == "" {
+		err = errors.New("ImportKEKey with PaymentCryptography Failed: (one of capkArn, imToken, signCA, keyBlock, nonce is empty) ")
+		return
+	}
+
+	imInput := &pycrypto.ImportKeyInput{
+		Enabled:                aws.Bool(true),
+		KeyCheckValueAlgorithm: nil,
+		KeyMaterial: &pycrypto.ImportKeyMaterial{
+			RootCertificatePublicKey: nil,
+			Tr31KeyBlock:             nil,
+			Tr34KeyBlock: &pycrypto.ImportTr34KeyBlock{
+				CertificateAuthorityPublicKeyIdentifier: aws.String(capkArn), //import root ca
+				ImportToken:                             aws.String(imToken),
+				KeyBlockFormat:                          aws.String(pycrypto.Tr34KeyBlockFormatX9Tr342012),
+				RandomNonce:                             aws.String(signCA),
+				SigningKeyCertificate:                   aws.String(keyBlock), //public key ca for sign
+				WrappedKeyBlock:                         aws.String(nonce),    //TR-34.2012 non-CMS two pass format
+			},
+			TrustedCertificatePublicKey: nil,
+		},
+		Tags: nil,
+	}
+
+	var imOutput *pycrypto.ImportKeyOutput
+	var e error
+	if segCtx == nil {
+		imOutput, err = k.pycClient.ImportKey(imInput)
+	} else {
+		imOutput, err = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+	}
+
+	if e != nil {
+		return "", e
+	}
+
+	if imOutput != nil {
+		if imOutput.Key != nil {
+			keyArn = aws.StringValue(imOutput.Key.KeyArn)
+		}
+	}
+
+	return
+}
+
+func (k *PaymentCryptography) ImportTR31Key(keyBlock, warpKeyArn string) (keyArn string, err error) {
+
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("PaymentCryptography-ImportTR31Key", k._parentSegment)
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("ImportTR31Key with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return "", err
+	}
+	if keyBlock == "" {
+		err = errors.New("ImportTR31Key with PaymentCryptography Failed: (keyBlock is empty) ")
+		return
+	}
+	if warpKeyArn == "" {
+		err = errors.New("ImportTR31Key with PaymentCryptography Failed: (warpKeyArn is empty) ")
+		return
+	}
+
+	imInput := &pycrypto.ImportKeyInput{
+		Enabled:                aws.Bool(true),
+		KeyCheckValueAlgorithm: nil,
+		KeyMaterial: &pycrypto.ImportKeyMaterial{
+			RootCertificatePublicKey: nil,
+			Tr31KeyBlock: &pycrypto.ImportTr31KeyBlock{
+				WrappedKeyBlock:       aws.String(keyBlock),
+				WrappingKeyIdentifier: aws.String(warpKeyArn),
+			},
+		},
+		Tags: nil,
+	}
+
+	var imOutput *pycrypto.ImportKeyOutput
+	var e error
+	if segCtx == nil {
+		imOutput, err = k.pycClient.ImportKey(imInput)
+	} else {
+		imOutput, err = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+	}
+	if e != nil {
+		return "", e
+	}
+
+	if imOutput != nil {
+		if imOutput.Key != nil {
+			keyArn = aws.StringValue(imOutput.Key.KeyArn)
+		}
+	}
+
+	return
+}
+
+func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token string, err error) {
+
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("PaymentCryptography-GetParamsForImportKEKey", k._parentSegment)
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("GetParamsForImportKEKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return "", "", "", err
+	}
+
+	pmsInput := &pycrypto.GetParametersForImportInput{
+		KeyMaterialType:      aws.String(pycrypto.KeyMaterialTypeTr34KeyBlock),
+		WrappingKeyAlgorithm: aws.String(pycrypto.KeyAlgorithmRsa2048),
+	}
+
+	var pmsOutput *pycrypto.GetParametersForImportOutput
+	var e error
+	if segCtx == nil {
+		pmsOutput, e = k.pycClient.GetParametersForImport(pmsInput)
+	} else {
+		pmsOutput, e = k.pycClient.GetParametersForImportWithContext(segCtx, pmsInput)
+	}
+	if e != nil {
+		return "", "", "", e
+	}
+
+	if pmsOutput != nil {
+		token = aws.StringValue(pmsOutput.ImportToken)
+		cert = aws.StringValue(pmsOutput.WrappingKeyCertificate)
+		certChain = aws.StringValue(pmsOutput.WrappingKeyCertificateChain)
+	}
+	return
+}

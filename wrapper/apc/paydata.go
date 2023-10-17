@@ -213,7 +213,7 @@ func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycr
 		return "", err
 	}
 
-	// encrypt asymmetric using kms cmk
+	// encrypt asymmetric
 	var encryptedOutput *pycryptoData.EncryptDataOutput
 	var e error
 

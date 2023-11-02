@@ -48,7 +48,7 @@ func XRayMiddleware() gin.HandlerFunc {
 				parentSegID := c.GetHeader(X_AMZN_SEG_ID)
 				traceID := c.GetHeader(X_AMZN_TR_ID)
 
-				if util.LenTrim(parentSegID) > 0 && util.LenTrim(traceID) > 0 {
+				if util.LenTrim(parentSegID) > 0 || util.LenTrim(traceID) > 0 {
 					seg.SetParentSegment(parentSegID, traceID)
 				}
 

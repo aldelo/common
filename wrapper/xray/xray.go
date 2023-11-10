@@ -43,6 +43,7 @@ import (
 	"context"
 	"fmt"
 	util "github.com/aldelo/common"
+	"github.com/aws/aws-xray-sdk-go/awsplugins/ecs"
 	"github.com/aws/aws-xray-sdk-go/header"
 	"github.com/aws/aws-xray-sdk-go/xray"
 	"net/http"
@@ -97,6 +98,12 @@ var _xrayServiceOn bool
 
 // Init will configure xray daemon address and service version
 func Init(daemonAddr string, serviceVersion string) error {
+
+	// conditionally load plugin
+	if os.Getenv("ENVIRONMENT") == "ECS" {
+		ecs.Init()
+	}
+
 	if util.LenTrim(daemonAddr) == 0 {
 		// if daemon address is not set,
 		// use default value
@@ -260,6 +267,21 @@ func (t *XTraceData) AddError(key string, err error) {
 	}
 
 	t.Errors[key] = err
+}
+
+// NewSubSegmentFromContext begins a new subsegment under the parent segment context,
+// context can not be empty, and must contains parent segment info
+func NewSubSegmentFromContext(ctx context.Context, serviceNameOrUrl string) *XSegment {
+	if util.LenTrim(serviceNameOrUrl) == 0 {
+		serviceNameOrUrl = "no.service.name.defined"
+	}
+	subCtx, seg := xray.BeginSubsegment(ctx, serviceNameOrUrl)
+
+	return &XSegment{
+		Ctx:       subCtx,
+		Seg:       seg,
+		_segReady: true,
+	}
 }
 
 // NewSegment begins a new segment for a named service or url,

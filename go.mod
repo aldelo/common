@@ -6,7 +6,7 @@ require (
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
 	github.com/appleboy/gin-jwt/v2 v2.9.1
 	github.com/aws/aws-dax-go v1.2.12
-	github.com/aws/aws-sdk-go v1.44.262
+	github.com/aws/aws-sdk-go v1.45.25
 	github.com/aws/aws-xray-sdk-go v1.8.1
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/gin-contrib/cors v1.4.0

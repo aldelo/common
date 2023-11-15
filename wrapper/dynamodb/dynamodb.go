@@ -2873,6 +2873,10 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 	}
 
 	for {
+		// each time queried, we process up to 25 pages with each page up to 100 items,
+		// if there are more data, the prevEvalKey will contain value,
+		// so the for loop will continue query again until prevEvalKey is nil,
+		// this method will retrieve all filtered data from data store, but may take longer time if there are more data
 		if prevEvalKey, e = d.QueryItemsWithRetry(maxRetries, pagedSlicePtr, timeOutDuration, nil, indexNamePtr,
 			aws.Int64(pageLimit), true, aws.Int64(pagedQueryPageCountLimit), prevEvalKey,
 			keyConditionExpression, nil, expressionAttributeValues,
@@ -2903,6 +2907,130 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 	}
 
 	return resultSlicePtr, nil
+}
+
+// QueryPerPageItemsWithRetry will query dynamodb items in given table using primary key (PK, SK for example),
+// or one of Global/Local Secondary Keys (indexName must be defined if using GSI);
+//
+// *** This Query is used for pagination where each query returns a specified set of items, along with the prevEvalKey,
+// in the subsequent paged queries using this method, passing prevEvalKey to the exclusiveStartKey parameter will return
+// next page of items from the exclusiveStartKey position ***
+//
+// To query against non-key attributes, use Scan (bad for performance however)
+// QueryItems requires using Key attributes, and limited to TWO key attributes in condition maximum;
+//
+// important
+//
+//	if dynamodb table is defined as PK and SK together, then to search without GSI/LSI, MUST use PK and SK together or error will trigger
+//
+// parameters:
+//
+//	maxRetries = number of retries to attempt
+//	itemsPerPage = query per page items count, if < 0 = 25; if > 250 = 250; defaults to 25 if 0
+//	exclusiveStartKey = if query is continuation from prior pagination, then the prior query's prevEvalKey is passed into this field
+//	pagedSlicePtr = required, identifies the actual slice pointer for use during paged query
+//					i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted;
+//					(this parameter is not the output of result, actual result is returned via return variable returnItemsList)
+//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	indexName = optional, global secondary index or local secondary index name to help in query operation
+//	keyConditionExpression = required, ATTRIBUTES ARE CASE SENSITIVE; either the primary key (PK SK for example) or global secondary index (SK Data for example) or another secondary index (secondary index must be named)
+//		Usage Syntax:
+//			1) Max 2 Attribute Fields
+//			2) First Field must be Partition Key (Must Evaluate to True or False)
+//				a) = ONLY
+//			3) Second Field is Sort Key (May Evaluate to True or False or Range)
+//				a) =, <, <=, >, >=, BETWEEN, begins_with()
+//			4) Combine Two Fields with AND
+//			5) When Attribute Name is Reserved Keyword, Use ExpressionAttributeNames to Define #xyz to Alias
+//				a) Use the #xyz in the KeyConditionExpression such as #yr = :year (:year is Defined ExpressionAttributeValue)
+//			6) Example
+//				a) partitionKeyName = :partitionKeyVal
+//				b) partitionKeyName = :partitionKeyVal AND sortKeyName = :sortKeyVal
+//				c) #yr = :year
+//			7) If Using GSI / Local Index
+//				a) When Using, Must Specify the IndexName
+//				b) First Field is the GSI's Partition Key, such as SK (Evals to True/False), While Second Field is the GSI's SortKey (Range)
+//	expressionAttributeValues = required, ATTRIBUTES ARE CASE SENSITIVE; sets the value token and value actual to be used within the keyConditionExpression; this sets both compare token and compare value
+//		Usage Syntax:
+//			1) map[string]*dynamodb.AttributeValue: where string is the :xyz, and *dynamodb.AttributeValue is { S: aws.String("abc"), },
+//				a) map[string]*dynamodb.AttributeValue { ":xyz" : { S: aws.String("abc"), }, ":xyy" : { N: aws.String("123"), }, }
+//			2) Add to Map
+//				a) m := make(map[string]*dynamodb.AttributeValue)
+//				b) m[":xyz"] = &dynamodb.AttributeValue{ S: aws.String("xyz") }
+//			3) Slice of Strings -> CONVERT To Slice of *dynamodb.AttributeValue = []string -> []*dynamodb.AttributeValue
+//				a) av, err := dynamodbattribute.MarshalList(xyzSlice)
+//				b) ExpressionAttributeValue, Use 'L' To Represent the List for av defined in 3.a above
+//	filterConditionExpression = optional; ATTRIBUTES ARE CASE SENSITIVE; once query on key conditions returned, this filter condition further restricts return data before output to caller;
+//		Usage Syntax:
+//			1) &expression.Name(xyz).Equals(expression.Value(abc))
+//			2) &expression.Name(xyz).Equals(expression.Value(abc)).And(...)
+//
+// Return Values:
+//
+//	returnItemsList = interface{} of return slice, use assert to cast to target type
+//	prevEvalKey = map[string]*dynamodb.Attribute, if there are more pages, this value is then used in the subsequent query's exclusiveStartKey parameter
+//	err = error info if error is encountered
+//
+// notes:
+//
+//	item struct tags
+//		use `json:"" dynamodbav:""`
+//			json = sets the name used in json
+//			dynamodbav = sets the name used in dynamodb
+//		reference child element
+//			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
+//				Info in parent struct with struct tag as info; to reach child element: info.xyz
+func (d *DynamoDB) QueryPerPageItemsWithRetry(
+	maxRetries uint,
+	itemsPerPage int64,
+	exclusiveStartKey map[string]*dynamodb.AttributeValue,
+	pagedSlicePtr interface{},
+	timeOutDuration *time.Duration,
+	indexName string,
+	keyConditionExpression string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue,
+	filterConditionExpression *expression.ConditionBuilder) (returnItemsList interface{}, prevEvalKey map[string]*dynamodb.AttributeValue, err error) {
+
+	if pagedSlicePtr == nil {
+		return nil, nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Query and is Required")
+	} else {
+		if valPaged := reflect.ValueOf(pagedSlicePtr); valPaged.Kind() != reflect.Ptr {
+			return nil, nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Ptr)")
+		} else if valPaged.Elem().Kind() != reflect.Slice {
+			return nil, nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Slice)")
+		}
+	}
+
+	var e *DynamoDBError
+
+	if itemsPerPage <= 0 {
+		itemsPerPage = 25
+	} else if itemsPerPage > 250 {
+		itemsPerPage = 250
+	}
+
+	var indexNamePtr *string
+
+	if util.LenTrim(indexName) > 0 {
+		indexNamePtr = aws.String(indexName)
+	} else {
+		indexNamePtr = nil
+	}
+
+	if prevEvalKey, e = d.QueryItemsWithRetry(maxRetries, pagedSlicePtr, timeOutDuration, nil, indexNamePtr,
+		aws.Int64(itemsPerPage), true, aws.Int64(1), exclusiveStartKey,
+		keyConditionExpression, nil, expressionAttributeValues,
+		filterConditionExpression); e != nil {
+		// error
+		return nil, nil, fmt.Errorf("QueryPerPageItemsWithRetry Failed: %s", e)
+	} else {
+		// success
+		if len(prevEvalKey) == 0 {
+			prevEvalKey = nil
+		}
+
+		return reflect.ValueOf(pagedSlicePtr).Elem().Interface(), prevEvalKey, nil
+	}
 }
 
 // ScanItems will scan dynamodb items in given table, project results, using filter expression

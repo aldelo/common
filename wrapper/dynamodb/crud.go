@@ -18,6 +18,8 @@ package dynamodb
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -440,6 +442,179 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 	} else {
 		// query success
 		return dataList, nil
+	}
+}
+
+// lastEvalKeyToBase64 serializes last evaluated key to base 64 string
+func (c *Crud) lastEvalKeyToBase64(key map[string]*ddb.AttributeValue) (string, error) {
+	if key != nil {
+		lastEvalKey := map[string]interface{}{}
+
+		if err := dynamodbattribute.UnmarshalMap(key, &lastEvalKey); err != nil {
+			return "", fmt.Errorf("Base64 Encode LastEvalKey Failed: (Unmarshal Map Error) %s", err.Error())
+		} else {
+			if keyOutput, e := json.Marshal(lastEvalKey); e != nil {
+				return "", fmt.Errorf("Base64 Encode LastEvalKey Failed: (Json Marshal Error) %s", e.Error())
+			} else {
+				return base64.StdEncoding.EncodeToString(keyOutput), nil
+			}
+		}
+	} else {
+		return "", nil
+	}
+}
+
+// exclusiveStartKeyFromBase64 de-serializes last evaluated key base 64 string into map[string]*dynamodb.Attribute object
+func (c *Crud) exclusiveStartKeyFromBase64(key string) (map[string]*ddb.AttributeValue, error) {
+	if util.LenTrim(key) > 0 {
+		if byteJson, err := base64.StdEncoding.DecodeString(key); err != nil {
+			return nil, fmt.Errorf("Base64 Decode ExclusiveStartKey Failed: (Base64 DecodeString Error) %s", err.Error())
+		} else {
+			outputJson := map[string]interface{}{}
+
+			if err = json.Unmarshal(byteJson, &outputJson); err != nil {
+				return nil, fmt.Errorf("Base64 Decode ExclusiveStartKey Failed: (Json Unmarshal Error) %s", err.Error())
+			} else {
+				var outputKey map[string]*ddb.AttributeValue
+
+				if outputKey, err = dynamodbattribute.MarshalMap(outputJson); err != nil {
+					return nil, fmt.Errorf("Base64 Decode ExclusiveStartKey Failed: (Marshal Map Error) %s", err.Error())
+				} else {
+					return outputKey, nil
+				}
+			}
+		}
+	} else {
+		return nil, nil
+	}
+}
+
+// QueryByPage retrieves data from dynamodb table with given pk and sk values, or via LSI / GSI using index name on per page basis
+//
+// Parameters:
+//
+//		itemsPerPage = indicates total number of items per page to return in query, defaults to 25 if set to 0; max limit is 250
+//		exclusiveStartKey = if this is new query, set to ""; if this is continuation query (pagination), set the prior query's prevEvalKey in base64 string format
+//		keyExpression = query expression object
+//		pagedDataPtrSlice = refers to pointer slice of data struct pointers for use during paged query, that each data struct represents the underlying dynamodb table record
+//
+//	&[]*xyz{}
+//
+//	data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav, ie: &[]*exampleDataStruct
+//
+// responseDataPtrSlice, is the slice ptr result to caller, expects caller to assert to target slice ptr objects, ie: results.([]*xyz)
+func (c *Crud) QueryByPage(itemsPerPage int64, exclusiveStartKey string, keyExpression *QueryExpression, pagedDataPtrSlice interface{}) (responseDataPtrSlice interface{}, prevEvalKey string, err error) {
+	if c._ddb == nil {
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 1) Connection Not Established")
+	}
+
+	if keyExpression == nil {
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 2) Key Expression is Required")
+	}
+
+	if util.LenTrim(keyExpression.PKName) == 0 {
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 3) Key Expression Missing PK Name")
+	}
+
+	if util.LenTrim(keyExpression.PKValue) == 0 {
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 4) Key Expression Missing PK Value")
+	}
+
+	if keyExpression.UseSK {
+		if util.LenTrim(keyExpression.SKName) == 0 {
+			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 5) Key Expression Missing SK Name")
+		}
+
+		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
+			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 6) Key Expression Missing SK Comparer")
+		}
+
+		if util.LenTrim(keyExpression.SKValue) == 0 {
+			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 7) Key Expression Missing SK Value")
+		}
+	}
+
+	if pagedDataPtrSlice == nil {
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 8) Paged Data Slice Missing Ptr")
+	}
+
+	if itemsPerPage < 0 {
+		itemsPerPage = 25
+	} else if itemsPerPage > 250 {
+		itemsPerPage = 250
+	}
+
+	keyValues := map[string]*ddb.AttributeValue{}
+
+	keyCondition := keyExpression.PKName + "=:" + keyExpression.PKName
+	keyValues[":"+keyExpression.PKName] = &ddb.AttributeValue{
+		S: aws.String(keyExpression.PKValue),
+	}
+
+	if keyExpression.UseSK {
+		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 {
+			keyExpression.SKCompareSymbol = "="
+		}
+
+		keyCondition += " AND "
+		var isBetween bool
+
+		switch strings.TrimSpace(strings.ToUpper(keyExpression.SKCompareSymbol)) {
+		case "BETWEEN":
+			keyCondition += fmt.Sprintf("%s BETWEEN %s AND %s", keyExpression.SKName, ":"+keyExpression.SKName, ":"+keyExpression.SKName+"2")
+			isBetween = true
+		case "BEGINS_WITH":
+			keyCondition += fmt.Sprintf("begins_with(%s, %s)", keyExpression.SKName, ":"+keyExpression.SKName)
+		default:
+			keyCondition += keyExpression.SKName + keyExpression.SKCompareSymbol + ":" + keyExpression.SKName
+		}
+
+		if !keyExpression.SKIsNumber {
+			keyValues[":"+keyExpression.SKName] = &ddb.AttributeValue{
+				S: aws.String(keyExpression.SKValue),
+			}
+
+			if isBetween {
+				keyValues[":"+keyExpression.SKName+"2"] = &ddb.AttributeValue{
+					S: aws.String(keyExpression.SKValue2),
+				}
+			}
+		} else {
+			keyValues[":"+keyExpression.SKName] = &ddb.AttributeValue{
+				N: aws.String(keyExpression.SKValue),
+			}
+
+			if isBetween {
+				keyValues[":"+keyExpression.SKName+"2"] = &ddb.AttributeValue{
+					N: aws.String(keyExpression.SKValue2),
+				}
+			}
+		}
+	}
+
+	// query by page against dynamodb table
+	var esk map[string]*ddb.AttributeValue
+
+	esk, err = c.exclusiveStartKeyFromBase64(exclusiveStartKey)
+
+	if err != nil {
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (ESK From Base64 Error) %s", err.Error())
+	}
+
+	if dataList, prevKey, e := c._ddb.QueryPerPageItemsWithRetry(c._actionRetries, itemsPerPage, esk, pagedDataPtrSlice,
+		c._ddb.TimeOutDuration(c._timeout), keyExpression.IndexName,
+		keyCondition, keyValues, nil); e != nil {
+		// query error
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (QueryPaged) %s", e.Error())
+	} else {
+		// query success
+		var lek string
+
+		if lek, err = c.lastEvalKeyToBase64(prevKey); err != nil {
+			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (LEK To Base64 Error) %s", err.Error())
+		} else {
+			return dataList, lek, nil
+		}
 	}
 }
 

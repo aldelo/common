@@ -130,7 +130,7 @@ func (z *GinZap) NormalLogger() gin.HandlerFunc {
 					zap.String("path", path),
 					zap.String("header", hdr),
 					zap.String("query", query),
-					zap.String("ip", c.ClientIP()),
+					zap.String("ip", strings.ReplaceAll(strings.ReplaceAll(c.ClientIP(), "\n", ""), "\r", "")),
 					zap.String("user-agent", c.Request.UserAgent()),
 					zap.String("time", end.Format(z.TimeFormat)),
 					zap.Duration("latency", latency))
@@ -142,7 +142,7 @@ func (z *GinZap) NormalLogger() gin.HandlerFunc {
 				zap.String("path", path),
 				zap.String("header", hdr),
 				zap.String("query", query),
-				zap.String("ip", c.ClientIP()),
+				zap.String("ip", strings.ReplaceAll(strings.ReplaceAll(c.ClientIP(), "\n", ""), "\r", "")),
 				zap.String("user-agent", c.Request.UserAgent()),
 				zap.String("time", end.Format(z.TimeFormat)),
 				zap.Duration("latency", latency))

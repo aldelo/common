@@ -126,24 +126,24 @@ func (z *GinZap) NormalLogger() gin.HandlerFunc {
 		if len(c.Errors) > 0 {
 			for _, e := range c.Errors.Errors() {
 				z._zapLog.Error(e,
-					zap.String("method", c.Request.Method),
+					zap.String("method", strings.ReplaceAll(strings.ReplaceAll(c.Request.Method, "\n", ""), "\r", "")),
 					zap.String("path", path),
 					zap.String("header", hdr),
 					zap.String("query", query),
 					zap.String("ip", strings.ReplaceAll(strings.ReplaceAll(c.ClientIP(), "\n", ""), "\r", "")),
-					zap.String("user-agent", c.Request.UserAgent()),
+					zap.String("user-agent", strings.ReplaceAll(strings.ReplaceAll(c.Request.UserAgent(), "\n", ""), "\r", "")),
 					zap.String("time", end.Format(z.TimeFormat)),
 					zap.Duration("latency", latency))
 			}
 		} else {
 			z._zapLog.Info(path,
 				zap.Int("status", c.Writer.Status()),
-				zap.String("method", c.Request.Method),
+				zap.String("method", strings.ReplaceAll(strings.ReplaceAll(c.Request.Method, "\n", ""), "\r", "")),
 				zap.String("path", path),
 				zap.String("header", hdr),
 				zap.String("query", query),
 				zap.String("ip", strings.ReplaceAll(strings.ReplaceAll(c.ClientIP(), "\n", ""), "\r", "")),
-				zap.String("user-agent", c.Request.UserAgent()),
+				zap.String("user-agent", strings.ReplaceAll(strings.ReplaceAll(c.Request.UserAgent(), "\n", ""), "\r", "")),
 				zap.String("time", end.Format(z.TimeFormat)),
 				zap.Duration("latency", latency))
 		}

@@ -654,6 +654,60 @@ func (d *DynamoDB) do_GetItem(input *dynamodb.GetItemInput, ctx ...aws.Context) 
 	}
 }
 
+// do_Query_Pagination_Data is a helper that calls either dax or dynamodb based on dax availability, to get pagination data for the given query filter
+func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...aws.Context) (paginationData []map[string]*dynamodb.AttributeValue, err error) {
+	paginationData = make([]map[string]*dynamodb.AttributeValue, 0)
+
+	if d.cnDax != nil && !d.SkipDax {
+		// dax
+		fn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
+			if pageOutput != nil {
+				if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
+					if pageOutput.LastEvaluatedKey != nil {
+						paginationData = append(paginationData, pageOutput.LastEvaluatedKey)
+					}
+				}
+			}
+
+			return !lastPage
+		}
+
+		if len(ctx) <= 0 {
+			err = d.cnDax.QueryPages(input, fn)
+		} else {
+			err = d.cnDax.QueryPagesWithContext(ctx[0], input, fn)
+		}
+
+		return paginationData, err
+
+	} else if d.cn != nil {
+		// dynamodb
+		fn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
+			if pageOutput != nil {
+				if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
+					if pageOutput.LastEvaluatedKey != nil {
+						paginationData = append(paginationData, pageOutput.LastEvaluatedKey)
+					}
+				}
+			}
+
+			return !lastPage
+		}
+
+		if len(ctx) <= 0 {
+			err = d.cn.QueryPages(input, fn)
+		} else {
+			err = d.cn.QueryPagesWithContext(ctx[0], input, fn)
+		}
+
+		return paginationData, err
+
+	} else {
+		// connection error
+		return nil, errors.New("DynamoDB QueryPaginationData Failed: " + "No DynamoDB or Dax Connection Available")
+	}
+}
+
 // do_Query is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_Query(input *dynamodb.QueryInput, pagedQuery bool, pagedQueryPageCountLimit *int64, ctx ...aws.Context) (output *dynamodb.QueryOutput, err error) {
 	if d.cnDax != nil && !d.SkipDax {
@@ -2164,6 +2218,323 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 	}
 }
 
+// QueryPaginationDataWithRetry returns slice of ExclusiveStartKeys,
+// with first element always a nil to represent no exclusiveStartKey,
+// and each subsequent element starts from page 2 with its own exclusiveStartKey.
+//
+// if slice is nil or zero element, then it also indicates single page,
+// same as if slice is single element with nil indicating single page.
+//
+// Caller can use this info to pre-build the pagination buttons, so that clicking page 1 simply query using no exclusiveStartKey,
+// where as query page 2 uses the exclusiveStartKey from element 1 of the slice, and so on.
+func (d *DynamoDB) QueryPaginationDataWithRetry(
+	maxRetries uint,
+	timeOutDuration *time.Duration,
+	indexName *string,
+	itemsPerPage int64,
+	keyConditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue) (paginationData []map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 5 * time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 5*time.Second {
+		timeout = 5 * time.Second
+	} else if timeout > 15*time.Second {
+		timeout = 15 * time.Second
+	}
+
+	if paginationData, ddbErr = d.queryPaginationDataWrapper(util.DurationPtr(timeout), indexName, itemsPerPage, keyConditionExpression, expressionAttributeNames, expressionAttributeValues); ddbErr != nil {
+		// has error
+		if maxRetries > 0 {
+			if ddbErr.AllowRetry {
+				if ddbErr.RetryNeedsBackOff {
+					time.Sleep(500 * time.Millisecond)
+				} else {
+					time.Sleep(100 * time.Millisecond)
+				}
+
+				log.Println("QueryPaginationDataWithRetry Failed: " + ddbErr.ErrorMessage)
+				return d.QueryPaginationDataWithRetry(maxRetries-1, util.DurationPtr(timeout), indexName, itemsPerPage, keyConditionExpression, expressionAttributeNames, expressionAttributeValues)
+			} else {
+				if ddbErr.SuppressError {
+					log.Println("QueryPaginationDataWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return nil, nil
+				} else {
+					return nil, &DynamoDBError{
+						ErrorMessage:      "QueryPaginationDataWithRetry Failed: " + ddbErr.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if ddbErr.SuppressError {
+				log.Println("QueryPaginationDataWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return nil, nil
+			} else {
+				return nil, &DynamoDBError{
+					ErrorMessage:      "QueryPaginationDataWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		if paginationData == nil {
+			paginationData = make([]map[string]*dynamodb.AttributeValue, 1)
+		} else {
+			paginationData = append([]map[string]*dynamodb.AttributeValue{nil}, paginationData...)
+		}
+
+		return paginationData, nil
+	}
+}
+
+func (d *DynamoDB) queryPaginationDataWrapper(
+	timeOutDuration *time.Duration,
+	indexName *string,
+	itemsPerPage int64,
+	keyConditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue) (paginationData []map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if xray.XRayServiceOn() {
+		return d.queryPaginationDataWithTrace(timeOutDuration, indexName, itemsPerPage, keyConditionExpression, expressionAttributeNames, expressionAttributeValues)
+	} else {
+		return d.queryPaginationDataNormal(timeOutDuration, indexName, itemsPerPage, keyConditionExpression, expressionAttributeNames, expressionAttributeValues)
+	}
+}
+
+func (d *DynamoDB) queryPaginationDataWithTrace(
+	timeOutDuration *time.Duration,
+	indexName *string,
+	itemsPerPage int64,
+	keyConditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue) (paginationData []map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	trace := xray.NewSegment("DynamoDB-QueryPaginationDataWithTrace", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if ddbErr != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(ddbErr.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		ddbErr = d.handleError(errors.New("QueryPaginationDataWithTrace Failed: DynamoDB Connection is Required"))
+		return nil, ddbErr
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		ddbErr = d.handleError(errors.New("QueryPaginationDataWithTrace Failed: DynamoDB Table Name is Required"))
+		return nil, ddbErr
+	}
+
+	// validate additional input parameters
+	if util.LenTrim(keyConditionExpression) <= 0 {
+		ddbErr = d.handleError(errors.New("QueryPaginationDataWithTrace Failed: KeyConditionExpress is Required"))
+		return nil, ddbErr
+	}
+
+	if expressionAttributeValues == nil {
+		ddbErr = d.handleError(errors.New("QueryPaginationDataWithTrace Failed: ExpressionAttributeValues is Required"))
+		return nil, ddbErr
+	}
+
+	trace.Capture("QueryPaginationDataWithTrace", func() error {
+		// compose filter expression and projection if applicable
+		expr, err := expression.NewBuilder().WithProjection(expression.NamesList(expression.Name("PK"))).Build()
+
+		if err != nil {
+			ddbErr = d.handleError(err, "QueryPaginationDataWithTrace Failed: (Filter/Projection Expression Build)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		}
+
+		// build query input params
+		params := &dynamodb.QueryInput{
+			TableName:                 aws.String(d.TableName),
+			KeyConditionExpression:    aws.String(keyConditionExpression),
+			ExpressionAttributeValues: expressionAttributeValues,
+		}
+
+		if expressionAttributeNames != nil {
+			params.ExpressionAttributeNames = expressionAttributeNames
+		}
+
+		params.FilterExpression = expr.Filter()
+
+		if params.ExpressionAttributeNames == nil {
+			params.ExpressionAttributeNames = make(map[string]*string)
+		}
+
+		for k, v := range expr.Names() {
+			params.ExpressionAttributeNames[k] = v
+		}
+
+		for k, v := range expr.Values() {
+			params.ExpressionAttributeValues[k] = v
+		}
+
+		params.ProjectionExpression = expr.Projection()
+
+		if params.ExpressionAttributeNames == nil {
+			params.ExpressionAttributeNames = expr.Names()
+		} else {
+			for k1, v1 := range expr.Names() {
+				params.ExpressionAttributeNames[k1] = v1
+			}
+		}
+
+		if indexName != nil {
+			params.IndexName = indexName
+		}
+
+		params.Limit = aws.Int64(itemsPerPage)
+
+		// record params payload
+		d.LastExecuteParamsPayload = "QueryPaginationDataWithTrace = " + params.String()
+
+		subTrace := trace.NewSubSegment("QueryPaginationDataWithTrace_Do")
+		defer subTrace.Close()
+
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			paginationData, err = d.do_Query_Pagination_Data(params, ctx)
+		} else {
+			paginationData, err = d.do_Query_Pagination_Data(params, subTrace.Ctx)
+		}
+
+		if err != nil {
+			ddbErr = d.handleError(err, "QueryPaginationDataWithTrace Failed: (QueryPaginationDataWithTrace)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		}
+
+		return nil
+
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName":                 d.TableName,
+			"IndexName":                 aws.StringValue(indexName),
+			"KeyConditionExpression":    keyConditionExpression,
+			"ExpressionAttributeNames":  expressionAttributeNames,
+			"ExpressionAttributeValues": expressionAttributeValues,
+		},
+	})
+
+	// query items successful
+	return paginationData, ddbErr
+}
+
+func (d *DynamoDB) queryPaginationDataNormal(
+	timeOutDuration *time.Duration,
+	indexName *string,
+	itemsPerPage int64,
+	keyConditionExpression string,
+	expressionAttributeNames map[string]*string,
+	expressionAttributeValues map[string]*dynamodb.AttributeValue) (paginationData []map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d.cn == nil {
+		return nil, d.handleError(errors.New("QueryPaginationDataNormal Failed: DynamoDB Connection is Required"))
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		return nil, d.handleError(errors.New("QueryPaginationDataNormal Failed: DynamoDB Table Name is Required"))
+	}
+
+	// validate additional input parameters
+	if util.LenTrim(keyConditionExpression) <= 0 {
+		return nil, d.handleError(errors.New("QueryPaginationDataNormal Failed: KeyConditionExpress is Required"))
+	}
+
+	if expressionAttributeValues == nil {
+		return nil, d.handleError(errors.New("QueryPaginationDataNormal Failed: ExpressionAttributeValues is Required"))
+	}
+
+	// compose filter expression and projection if applicable
+	expr, err := expression.NewBuilder().WithProjection(expression.NamesList(expression.Name("PK"))).Build()
+
+	if err != nil {
+		return nil, d.handleError(err, "QueryPaginationDataNormal Failed: (Filter/Projection Expression Build)")
+	}
+
+	// build query input params
+	params := &dynamodb.QueryInput{
+		TableName:                 aws.String(d.TableName),
+		KeyConditionExpression:    aws.String(keyConditionExpression),
+		ExpressionAttributeValues: expressionAttributeValues,
+	}
+
+	if expressionAttributeNames != nil {
+		params.ExpressionAttributeNames = expressionAttributeNames
+	}
+
+	params.FilterExpression = expr.Filter()
+
+	if params.ExpressionAttributeNames == nil {
+		params.ExpressionAttributeNames = make(map[string]*string)
+	}
+
+	for k, v := range expr.Names() {
+		params.ExpressionAttributeNames[k] = v
+	}
+
+	for k, v := range expr.Values() {
+		params.ExpressionAttributeValues[k] = v
+	}
+
+	params.ProjectionExpression = expr.Projection()
+
+	if params.ExpressionAttributeNames == nil {
+		params.ExpressionAttributeNames = expr.Names()
+	} else {
+		for k1, v1 := range expr.Names() {
+			params.ExpressionAttributeNames[k1] = v1
+		}
+	}
+
+	if indexName != nil {
+		params.IndexName = indexName
+	}
+
+	params.Limit = aws.Int64(itemsPerPage)
+
+	// record params payload
+	d.LastExecuteParamsPayload = "QueryPaginationDataNormal = " + params.String()
+
+	if timeOutDuration != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
+		defer cancel()
+		paginationData, err = d.do_Query_Pagination_Data(params, ctx)
+	} else {
+		paginationData, err = d.do_Query_Pagination_Data(params)
+	}
+
+	if err != nil {
+		return nil, d.handleError(err, "QueryPaginationDataNormal Failed: (QueryPaginationDataNormal)")
+	}
+
+	if paginationData == nil {
+		return nil, d.handleError(err, "QueryPaginationDataNormal Failed: (QueryPaginationDataNormal)")
+	}
+
+	// query pagination data successful
+	return paginationData, nil
+}
+
 // QueryItems will query dynamodb items in given table using primary key (PK, SK for example), or one of Global/Local Secondary Keys (indexName must be defined if using GSI)
 // To query against non-key attributes, use Scan (bad for performance however)
 // QueryItems requires using Key attributes, and limited to TWO key attributes in condition maximum;
@@ -2926,7 +3297,7 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 // parameters:
 //
 //	maxRetries = number of retries to attempt
-//	itemsPerPage = query per page items count, if < 0 = 25; if > 250 = 250; defaults to 25 if 0
+//	itemsPerPage = query per page items count, if < 0 = 10; if > 500 = 500; defaults to 10 if 0
 //	exclusiveStartKey = if query is continuation from prior pagination, then the prior query's prevEvalKey is passed into this field
 //	pagedSlicePtr = required, identifies the actual slice pointer for use during paged query
 //					i.e. []Item{} where Item is struct; if projected attributes less than struct fields, unmatched is defaulted;
@@ -3004,9 +3375,9 @@ func (d *DynamoDB) QueryPerPageItemsWithRetry(
 	var e *DynamoDBError
 
 	if itemsPerPage <= 0 {
-		itemsPerPage = 25
-	} else if itemsPerPage > 250 {
-		itemsPerPage = 250
+		itemsPerPage = 10
+	} else if itemsPerPage > 500 {
+		itemsPerPage = 500
 	}
 
 	var indexNamePtr *string

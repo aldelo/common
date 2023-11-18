@@ -493,7 +493,7 @@ func (c *Crud) exclusiveStartKeyFromBase64(key string) (map[string]*ddb.Attribut
 //
 // Parameters:
 //
-//		itemsPerPage = indicates total number of items per page to return in query, defaults to 25 if set to 0; max limit is 250
+//		itemsPerPage = indicates total number of items per page to return in query, defaults to 10 if set to 0; max limit is 500
 //		exclusiveStartKey = if this is new query, set to ""; if this is continuation query (pagination), set the prior query's prevEvalKey in base64 string format
 //		keyExpression = query expression object
 //		pagedDataPtrSlice = refers to pointer slice of data struct pointers for use during paged query, that each data struct represents the underlying dynamodb table record
@@ -539,9 +539,9 @@ func (c *Crud) QueryByPage(itemsPerPage int64, exclusiveStartKey string, keyExpr
 	}
 
 	if itemsPerPage < 0 {
-		itemsPerPage = 25
-	} else if itemsPerPage > 250 {
-		itemsPerPage = 250
+		itemsPerPage = 10
+	} else if itemsPerPage > 500 {
+		itemsPerPage = 500
 	}
 
 	keyValues := map[string]*ddb.AttributeValue{}
@@ -614,6 +614,129 @@ func (c *Crud) QueryByPage(itemsPerPage int64, exclusiveStartKey string, keyExpr
 			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (LEK To Base64 Error) %s", err.Error())
 		} else {
 			return dataList, lek, nil
+		}
+	}
+}
+
+// QueryPaginationData returns pagination slice to be used for paging
+//
+// if paginationData is nil or zero length, then this is single page
+//
+// if paginationData is 1 or more elements, then element 0 (first element) is always page 1 and value is nil,
+// page 2 will be on element 1 and contains the exclusiveStartKey, and so on.
+//
+// each element contains base64 encoded value of exclusiveStartkey, therefore page 1 exclusiveStartKey is nil.
+//
+// for page 1 use exclusiveStartKey as nil
+// for page 2 and more use the exclusiveStartKey from paginationData slice
+func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpression) (paginationData []string, err error) {
+	if c._ddb == nil {
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 1) Connection Not Established")
+	}
+
+	if keyExpression == nil {
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 2) Key Expression is Required")
+	}
+
+	if util.LenTrim(keyExpression.PKName) == 0 {
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 3) Key Expression Missing PK Name")
+	}
+
+	if util.LenTrim(keyExpression.PKValue) == 0 {
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 4) Key Expression Missing PK Value")
+	}
+
+	if keyExpression.UseSK {
+		if util.LenTrim(keyExpression.SKName) == 0 {
+			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 5) Key Expression Missing SK Name")
+		}
+
+		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
+			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 6) Key Expression Missing SK Comparer")
+		}
+
+		if util.LenTrim(keyExpression.SKValue) == 0 {
+			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 7) Key Expression Missing SK Value")
+		}
+	}
+
+	if itemsPerPage <= 0 {
+		itemsPerPage = 10
+	} else if itemsPerPage > 500 {
+		itemsPerPage = 500
+	}
+
+	keyValues := map[string]*ddb.AttributeValue{}
+
+	keyCondition := keyExpression.PKName + "=:" + keyExpression.PKName
+	keyValues[":"+keyExpression.PKName] = &ddb.AttributeValue{
+		S: aws.String(keyExpression.PKValue),
+	}
+
+	if keyExpression.UseSK {
+		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 {
+			keyExpression.SKCompareSymbol = "="
+		}
+
+		keyCondition += " AND "
+		var isBetween bool
+
+		switch strings.TrimSpace(strings.ToUpper(keyExpression.SKCompareSymbol)) {
+		case "BETWEEN":
+			keyCondition += fmt.Sprintf("%s BETWEEN %s AND %s", keyExpression.SKName, ":"+keyExpression.SKName, ":"+keyExpression.SKName+"2")
+			isBetween = true
+		case "BEGINS_WITH":
+			keyCondition += fmt.Sprintf("begins_with(%s, %s)", keyExpression.SKName, ":"+keyExpression.SKName)
+		default:
+			keyCondition += keyExpression.SKName + keyExpression.SKCompareSymbol + ":" + keyExpression.SKName
+		}
+
+		if !keyExpression.SKIsNumber {
+			keyValues[":"+keyExpression.SKName] = &ddb.AttributeValue{
+				S: aws.String(keyExpression.SKValue),
+			}
+
+			if isBetween {
+				keyValues[":"+keyExpression.SKName+"2"] = &ddb.AttributeValue{
+					S: aws.String(keyExpression.SKValue2),
+				}
+			}
+		} else {
+			keyValues[":"+keyExpression.SKName] = &ddb.AttributeValue{
+				N: aws.String(keyExpression.SKValue),
+			}
+
+			if isBetween {
+				keyValues[":"+keyExpression.SKName+"2"] = &ddb.AttributeValue{
+					N: aws.String(keyExpression.SKValue2),
+				}
+			}
+		}
+	}
+
+	// query pagination data against dynamodb table
+	if pData, e := c._ddb.QueryPaginationDataWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), util.StringPtr(keyExpression.IndexName), itemsPerPage, keyCondition, nil, keyValues); e != nil {
+		// query error
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (QueryPaged) %s", e.Error())
+	} else {
+		// query success
+		if pData != nil && len(pData) > 0 {
+			paginationData = make([]string, 1)
+
+			for _, v := range pData {
+				if v != nil {
+					if lek, e := c.lastEvalKeyToBase64(v); e != nil {
+						return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (LEK To Base64 Error) %s", e.Error())
+					} else {
+						paginationData = append(paginationData, lek)
+					}
+				}
+			}
+
+			return paginationData, nil
+		} else {
+			// single page
+			return make([]string, 1), nil
 		}
 	}
 }

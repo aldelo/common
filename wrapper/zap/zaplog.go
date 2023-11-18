@@ -20,6 +20,7 @@ import (
 	"errors"
 	util "github.com/aldelo/common"
 	"go.uber.org/zap"
+	"strings"
 )
 
 // ZapLog is a wrapper for Zap logger package
@@ -118,6 +119,8 @@ func (z *ZapLog) Infof(logTemplateData string, args ...interface{}) {
 // Infow is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Infow(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.sugarLogger.Infow(logMessageData, keyValuePairs...)
 	}
 }
@@ -125,6 +128,8 @@ func (z *ZapLog) Infow(logMessageData string, keyValuePairs ...interface{}) {
 // Info is faster Logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Info(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.zapLogger.Info(logMessageData, fields...)
 	}
 }
@@ -139,6 +144,8 @@ func (z *ZapLog) Debugf(logTemplateData string, args ...interface{}) {
 // Debugw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Debugw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.sugarLogger.Debugw(logMessageData, keyValuePairs...)
 	}
 }
@@ -146,6 +153,8 @@ func (z *ZapLog) Debugw(logMessageData string, keyValuePairs ...interface{}) {
 // Debug is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Debug(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.zapLogger.Debug(logMessageData, fields...)
 	}
 }
@@ -160,6 +169,8 @@ func (z *ZapLog) Warnf(logTemplateData string, args ...interface{}) {
 // Warnw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Warnw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.sugarLogger.Warnw(logMessageData, keyValuePairs...)
 	}
 }
@@ -167,6 +178,8 @@ func (z *ZapLog) Warnw(logMessageData string, keyValuePairs ...interface{}) {
 // Warn is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Warn(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.zapLogger.Warn(logMessageData, fields...)
 	}
 }
@@ -181,6 +194,8 @@ func (z *ZapLog) Errorf(logTemplateData string, args ...interface{}) {
 // Errorw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Errorw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.sugarLogger.Errorw(logMessageData, keyValuePairs...)
 	}
 }
@@ -188,6 +203,8 @@ func (z *ZapLog) Errorw(logMessageData string, keyValuePairs ...interface{}) {
 // Error is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Error(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.zapLogger.Error(logMessageData, fields...)
 	}
 }
@@ -202,6 +219,8 @@ func (z *ZapLog) Panicf(logTemplateData string, args ...interface{}) {
 // Panicw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Panicw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.sugarLogger.Panicw(logMessageData, keyValuePairs...)
 	}
 }
@@ -209,6 +228,8 @@ func (z *ZapLog) Panicw(logMessageData string, keyValuePairs ...interface{}) {
 // Panic is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Panic(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.zapLogger.Panic(logMessageData, fields...)
 	}
 }
@@ -223,6 +244,8 @@ func (z *ZapLog) Fatalf(logTemplateData string, args ...interface{}) {
 // Fatalw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Fatalw(logMessageData string, keyValuePairs ...interface{}) {
 	if z.sugarLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.sugarLogger.Fatalw(logMessageData, keyValuePairs...)
 	}
 }
@@ -230,6 +253,8 @@ func (z *ZapLog) Fatalw(logMessageData string, keyValuePairs ...interface{}) {
 // Fatal is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Fatal(logMessageData string, fields ...zap.Field) {
 	if z.zapLogger != nil && !z.DisableLogger {
+		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
+		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
 		z.zapLogger.Fatal(logMessageData, fields...)
 	}
 }

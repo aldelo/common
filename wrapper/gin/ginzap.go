@@ -97,6 +97,13 @@ func (z *GinZap) NormalLogger() gin.HandlerFunc {
 
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
+
+		path = strings.ReplaceAll(path, "\n", "")
+		path = strings.ReplaceAll(path, "\r", "")
+
+		query = strings.ReplaceAll(query, "\n", "")
+		query = strings.ReplaceAll(query, "\r", "")
+		
 		c.Next()
 
 		end := time.Now()

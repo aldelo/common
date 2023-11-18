@@ -117,14 +117,18 @@ func ParseInt32(s string) (int, bool) {
 		s = SplitString(s, ".", 0)
 	}
 
-	var result int
+	var result int64
 	var err error
 
-	if result, err = strconv.Atoi(strings.TrimSpace(s)); err != nil {
+	if result, err = strconv.ParseInt(strings.TrimSpace(s), 10, 32); err != nil {
 		return 0, false
 	}
 
-	return result, true
+	if result >= math.MinInt && result <= math.MaxInt {
+		return int(result), true
+	} else {
+		return 0, false
+	}
 }
 
 // ParseInt64 tests and parses if input string is big integer (whole number greater 64 bits)

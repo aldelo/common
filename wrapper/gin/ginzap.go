@@ -103,7 +103,7 @@ func (z *GinZap) NormalLogger() gin.HandlerFunc {
 
 		query = strings.ReplaceAll(query, "\n", "")
 		query = strings.ReplaceAll(query, "\r", "")
-		
+
 		c.Next()
 
 		end := time.Now()
@@ -118,7 +118,7 @@ func (z *GinZap) NormalLogger() gin.HandlerFunc {
 		if c.Request.Header != nil {
 			for k, v := range c.Request.Header {
 				if len(v) >= 1 {
-					hdr += fmt.Sprintf("%s=%s, ", k, v[0])
+					hdr += fmt.Sprintf("%s=%s, ", k, strings.ReplaceAll(strings.ReplaceAll(v[0], "\n", ""), "\r", ""))
 				}
 			}
 		}

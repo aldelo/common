@@ -317,10 +317,17 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 		}
 
 		prefixType := ""
+		origError := ""
 
 		if aerr, ok := err.(awserr.Error); ok {
 			// aws errors
 			prefixType = "[AWS] "
+
+			if aerr.OrigErr() != nil {
+				origError = "OrigErr = " + aerr.OrigErr().Error()
+			} else {
+				origError = "OrigErr = Nil"
+			}
 
 			switch aerr.Code() {
 			case dynamodb.ErrCodeConditionalCheckFailedException:
@@ -364,7 +371,7 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			case dynamodb.ErrCodeTransactionInProgressException:
 				// show error + no retry
 				return &DynamoDBError{
-					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
@@ -375,7 +382,7 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			case dynamodb.ErrCodeLimitExceededException:
 				// show error + allow retry with backoff
 				return &DynamoDBError{
-					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
 					SuppressError:     false,
 					AllowRetry:        true,
 					RetryNeedsBackOff: true,
@@ -386,7 +393,7 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			case dynamodb.ErrCodeRequestLimitExceeded:
 				// no error + allow retry with backoff
 				return &DynamoDBError{
-					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
 					SuppressError:     true,
 					AllowRetry:        true,
 					RetryNeedsBackOff: true,
@@ -395,7 +402,7 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			case dynamodb.ErrCodeInternalServerError:
 				// no error + allow auto retry without backoff
 				return &DynamoDBError{
-					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
 					SuppressError:     true,
 					AllowRetry:        true,
 					RetryNeedsBackOff: false,
@@ -403,7 +410,7 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 
 			default:
 				return &DynamoDBError{
-					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message(),
+					ErrorMessage:      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
@@ -2398,7 +2405,7 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 			}
 		}
 
-		if indexName != nil {
+		if indexName != nil && util.LenTrim(*indexName) > 0 {
 			params.IndexName = indexName
 		}
 
@@ -2506,7 +2513,7 @@ func (d *DynamoDB) queryPaginationDataNormal(
 		}
 	}
 
-	if indexName != nil {
+	if indexName != nil && util.LenTrim(*indexName) > 0 {
 		params.IndexName = indexName
 	}
 
@@ -2796,7 +2803,7 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 			params.ConsistentRead = consistentRead
 		}
 
-		if indexName != nil {
+		if indexName != nil && util.LenTrim(*indexName) > 0 {
 			params.IndexName = indexName
 		}
 
@@ -3000,7 +3007,7 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 		params.ConsistentRead = consistentRead
 	}
 
-	if indexName != nil {
+	if indexName != nil && util.LenTrim(*indexName) > 0 {
 		params.IndexName = indexName
 	}
 
@@ -3565,7 +3572,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 			params.ConsistentRead = consistentRead
 		}
 
-		if indexName != nil {
+		if indexName != nil && util.LenTrim(*indexName) > 0 {
 			params.IndexName = indexName
 		}
 
@@ -3717,7 +3724,7 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 		params.ConsistentRead = consistentRead
 	}
 
-	if indexName != nil {
+	if indexName != nil && util.LenTrim(*indexName) > 0 {
 		params.IndexName = indexName
 	}
 

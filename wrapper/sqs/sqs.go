@@ -55,6 +55,7 @@ import (
 	awssqs "github.com/aws/aws-sdk-go/service/sqs"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -681,18 +682,26 @@ func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (q
 	// evaluate result
 	if err != nil {
 		if awshttp2.ToAwsError(err).Code() == awssqs.ErrCodeQueueDoesNotExist {
-			// queue does not exist
+			// queue does not exist - based on error code
 			notFound = true
 			return "", notFound, nil
+
+		} else if strings.Contains(strings.ToUpper(err.Error()), "THE SPECIFIED QUEUE DOES NOT EXIST") {
+			// queue does not exist - based on error message
+			notFound = true
+			return "", notFound, nil
+
 		} else {
 			// error
 			notFound = true
 			err = errors.New("GetQueueUrl Failed: (Get Action) " + err.Error())
 			return "", notFound, err
+
 		}
 	} else {
 		queueUrl = aws.StringValue(output.QueueUrl)
 		return queueUrl, false, nil
+
 	}
 }
 

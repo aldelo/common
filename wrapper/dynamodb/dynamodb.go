@@ -1537,6 +1537,182 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 	return ddbErr
 }
 
+// RemoveItemAttribute will remove attribute from dynamodb item in given table using primary key (PK, SK)
+func (d *DynamoDB) RemoveItemAttribute(pkValue string, skValue string, removeExpression string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	if xray.XRayServiceOn() {
+		return d.removeItemAttributeWithTrace(pkValue, skValue, removeExpression, timeOutDuration)
+	} else {
+		return d.removeItemAttributeNormal(pkValue, skValue, removeExpression, timeOutDuration)
+	}
+}
+
+func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, removeExpression string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	trace := xray.NewSegment("DynamoDB-RemoveItemAttribute", d._parentSegment)
+	defer trace.Close()
+	defer func() {
+		if ddbErr != nil {
+			_ = trace.Seg.AddError(fmt.Errorf(ddbErr.ErrorMessage))
+		}
+	}()
+
+	if d.cn == nil {
+		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB Table Name is Required"))
+		return ddbErr
+	}
+
+	// validate input parameters
+	if util.LenTrim(d.PKName) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB RemoveItemAttribute Failed: " + "PK Name is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(pkValue) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB RemoveItemAttribute Failed: " + "PK Value is Required"))
+		return ddbErr
+	}
+
+	if util.LenTrim(skValue) > 0 {
+		if util.LenTrim(d.SKName) <= 0 {
+			ddbErr = d.handleError(errors.New("DynamoDB RemoveItemAttribute Failed: " + "SK Name is Required"))
+			return ddbErr
+		}
+	}
+
+	if util.LenTrim(removeExpression) <= 0 {
+		ddbErr = d.handleError(errors.New("DynamoDB RemoveItemAttribute Failed: " + "RemoveExpression is Required"))
+		return ddbErr
+	}
+
+	trace.Capture("RemoveItemAttribute", func() error {
+		// define key
+		m := make(map[string]*dynamodb.AttributeValue)
+
+		m[d.PKName] = &dynamodb.AttributeValue{S: aws.String(pkValue)}
+
+		if util.LenTrim(skValue) > 0 {
+			m[d.SKName] = &dynamodb.AttributeValue{S: aws.String(skValue)}
+		}
+
+		// build update item input params for remove item attribute action
+		params := &dynamodb.UpdateItemInput{
+			TableName:        aws.String(d.TableName),
+			Key:              m,
+			UpdateExpression: aws.String(removeExpression),
+			ReturnValues:     aws.String(dynamodb.ReturnValueAllNew),
+		}
+
+		// record params payload
+		d.LastExecuteParamsPayload = "RemoveItemAttribute = " + params.String()
+
+		// execute dynamodb service
+		var err error
+
+		subTrace := trace.NewSubSegment("RemoveItemAttribute_Do")
+		defer subTrace.Close()
+
+		// create timeout context
+		if timeOutDuration != nil {
+			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			defer cancel()
+			_, err = d.do_UpdateItem(params, ctx)
+		} else {
+			_, err = d.do_UpdateItem(params, subTrace.Ctx)
+		}
+
+		if err != nil {
+			ddbErr = d.handleError(err, "DynamoDB RemoveItemAttribute Failed: (UpdateItem to RemoveItemAttribute)")
+			return fmt.Errorf(ddbErr.ErrorMessage)
+		} else {
+			return nil
+		}
+	}, &xray.XTraceData{
+		Meta: map[string]interface{}{
+			"TableName":        d.TableName,
+			"PK":               pkValue,
+			"SK":               skValue,
+			"RemoveExpression": removeExpression,
+		},
+	})
+
+	// remove item attribute successful
+	return ddbErr
+}
+
+func (d *DynamoDB) removeItemAttributeNormal(pkValue string, skValue string, removeExpression string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	if d.cn == nil {
+		return d.handleError(errors.New("DynamoDB Connection is Required"))
+	}
+
+	if util.LenTrim(d.TableName) <= 0 {
+		return d.handleError(errors.New("DynamoDB Table Name is Required"))
+	}
+
+	// validate input parameters
+	if util.LenTrim(d.PKName) <= 0 {
+		return d.handleError(errors.New("DynamoDB RemoveItemAttribute Failed: " + "PK Name is Required"))
+	}
+
+	if util.LenTrim(pkValue) <= 0 {
+		return d.handleError(errors.New("DynamoDB RemoveItemAttribute Failed: " + "PK Value is Required"))
+	}
+
+	if util.LenTrim(skValue) > 0 {
+		if util.LenTrim(d.SKName) <= 0 {
+			return d.handleError(errors.New("DynamoDB RemoveItemAttribute Failed: " + "SK Name is Required"))
+		}
+	}
+
+	if util.LenTrim(removeExpression) <= 0 {
+		return d.handleError(errors.New("DynamoDB RemoveItemAttribute Failed: " + "RemoveExpression is Required"))
+	}
+
+	// define key
+	m := make(map[string]*dynamodb.AttributeValue)
+
+	m[d.PKName] = &dynamodb.AttributeValue{S: aws.String(pkValue)}
+
+	if util.LenTrim(skValue) > 0 {
+		m[d.SKName] = &dynamodb.AttributeValue{S: aws.String(skValue)}
+	}
+
+	// build update item input params
+	params := &dynamodb.UpdateItemInput{
+		TableName:        aws.String(d.TableName),
+		Key:              m,
+		UpdateExpression: aws.String(removeExpression),
+		ReturnValues:     aws.String(dynamodb.ReturnValueAllNew),
+	}
+
+	// record params payload
+	d.LastExecuteParamsPayload = "RemoveItemAttribute = " + params.String()
+
+	// execute dynamodb service
+	var err error
+
+	// create timeout context
+	if timeOutDuration != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
+		defer cancel()
+		_, err = d.do_UpdateItem(params, ctx)
+	} else {
+		_, err = d.do_UpdateItem(params)
+	}
+
+	if err != nil {
+		ddbErr = d.handleError(err, "DynamoDB RemoveItemAttribute Failed: (UpdateItem to RemoveItemAttribute)")
+	} else {
+		ddbErr = nil
+	}
+
+	// remove item attribute successful
+	return ddbErr
+}
+
 // UpdateItemWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 	pkValue string, skValue string,
@@ -1593,6 +1769,68 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 			} else {
 				return &DynamoDBError{
 					ErrorMessage:      "UpdateItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					SuppressError:     false,
+					AllowRetry:        false,
+					RetryNeedsBackOff: false,
+				}
+			}
+		}
+	} else {
+		// no error
+		return nil
+	}
+}
+
+// RemoveItemAttributeWithRetry handles dynamodb retries in case action temporarily fails
+func (d *DynamoDB) RemoveItemAttributeWithRetry(maxRetries uint, pkValue string, skValue string, removeExpression string, timeOutDuration *time.Duration) *DynamoDBError {
+	if maxRetries > 10 {
+		maxRetries = 10
+	}
+
+	timeout := 10 * time.Second
+
+	if timeOutDuration != nil {
+		timeout = *timeOutDuration
+	}
+
+	if timeout < 10*time.Second {
+		timeout = 10 * time.Second
+	} else if timeout > 30*time.Second {
+		timeout = 30 * time.Second
+	}
+
+	if err := d.RemoveItemAttribute(pkValue, skValue, removeExpression, util.DurationPtr(timeout)); err != nil {
+		// has error
+		if maxRetries > 0 {
+			if err.AllowRetry {
+				if err.RetryNeedsBackOff {
+					time.Sleep(500 * time.Millisecond)
+				} else {
+					time.Sleep(100 * time.Millisecond)
+				}
+
+				log.Println("RemoveItemAttributeWithRetry Failed: " + err.ErrorMessage)
+				return d.RemoveItemAttributeWithRetry(maxRetries-1, pkValue, skValue, removeExpression, util.DurationPtr(timeout))
+			} else {
+				if err.SuppressError {
+					log.Println("RemoveItemAttributeWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
+					return nil
+				} else {
+					return &DynamoDBError{
+						ErrorMessage:      "RemoveItemAttributeWithRetry Failed: " + err.ErrorMessage,
+						SuppressError:     false,
+						AllowRetry:        false,
+						RetryNeedsBackOff: false,
+					}
+				}
+			}
+		} else {
+			if err.SuppressError {
+				log.Println("RemoveItemAttributeWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
+				return nil
+			} else {
+				return &DynamoDBError{
+					ErrorMessage:      "RemoveItemAttributeWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,

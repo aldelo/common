@@ -73,6 +73,24 @@ func NewULID() string {
 	return id
 }
 
+// GetULIDTimestamp will return the timestamp of the ulid string
+func GetULIDTimestamp(ulidStr string) (time.Time, error) {
+	if id, err := ulid.Parse(ulidStr); err != nil {
+		return time.Time{}, err
+	} else {
+		return time.UnixMilli(int64(id.Time())), nil
+	}
+}
+
+// IsULIDValid will check if the ulid string is valid
+func IsULIDValid(ulidStr string) bool {
+	if _, err := ulid.Parse(ulidStr); err != nil {
+		return false
+	} else {
+		return true
+	}
+}
+
 // ================================================================================================================
 // Random Number Generator
 // ================================================================================================================

@@ -681,3 +681,89 @@ func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token 
 	}
 	return
 }
+
+func (k *PaymentCryptography) ListAlias() (err error) {
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("ListAlias with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return err
+	}
+
+	// generate alias
+	var aliasInput *pycrypto.ListAliasesInput
+	//var aliasOutput *pycrypto.ListAliasesOutput
+	var e error
+
+	_, e = k.pycClient.ListAliases(aliasInput)
+
+	if e != nil {
+		err = errors.New("ListAlias with PaymentCryptography Failed: (ListAlias) " + e.Error())
+		return
+	}
+	//if aliasOutput != nil {
+	//	fmt.Println(aliasOutput.String())
+	//}
+	return nil
+}
+
+func (k *PaymentCryptography) StopKeyUsage(keyArn string) (err error) {
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("DisableKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return err
+	}
+
+	if keyArn == "" {
+		err = errors.New("DisableKey with PaymentCryptography Failed: " + "keyArn is Required")
+		return err
+	}
+
+	// generate alias
+	var reqInput = &pycrypto.StopKeyUsageInput{
+		KeyIdentifier: aws.String(keyArn),
+	}
+	//var respOutput *pycrypto.StopKeyUsageOutput
+	var e error
+
+	_, e = k.pycClient.StopKeyUsage(reqInput)
+
+	if e != nil {
+		err = errors.New("DisableKey with PaymentCryptography Failed: (DisableKey) " + e.Error())
+		return
+	}
+	//if respOutput != nil {
+	//	fmt.Println(respOutput.String())
+	//}
+	return nil
+}
+
+func (k *PaymentCryptography) StartKeyUsage(keyArn string) (err error) {
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("EnableKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return err
+	}
+
+	if keyArn == "" {
+		err = errors.New("EnableKey with PaymentCryptography Failed: " + "keyArn is Required")
+		return err
+	}
+
+	// generate alias
+	var reqInput = &pycrypto.StartKeyUsageInput{
+		KeyIdentifier: aws.String(keyArn),
+	}
+	//var respOutput *pycrypto.StartKeyUsageOutput
+	var e error
+
+	_, e = k.pycClient.StartKeyUsage(reqInput)
+
+	if e != nil {
+		err = errors.New("EnableKey with PaymentCryptography Failed: (StartKeyUsage) " + e.Error())
+		return
+	}
+	//if respOutput != nil {
+	//	fmt.Println(respOutput.String())
+	//}
+	return nil
+}

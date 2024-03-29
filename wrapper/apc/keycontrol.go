@@ -682,28 +682,46 @@ func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token 
 	return
 }
 
-func (k *PaymentCryptography) ListAlias() (err error) {
+func (k *PaymentCryptography) ListAlias() (output *pycrypto.ListAliasesOutput, err error) {
 	// validate
 	if k.pycClient == nil {
 		err = errors.New("ListAlias with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
-		return err
+		return nil, err
 	}
 
 	// generate alias
 	var aliasInput *pycrypto.ListAliasesInput
-	//var aliasOutput *pycrypto.ListAliasesOutput
+	var aliasOutput *pycrypto.ListAliasesOutput
 	var e error
 
-	_, e = k.pycClient.ListAliases(aliasInput)
+	aliasOutput, e = k.pycClient.ListAliases(aliasInput)
 
 	if e != nil {
 		err = errors.New("ListAlias with PaymentCryptography Failed: (ListAlias) " + e.Error())
 		return
 	}
-	//if aliasOutput != nil {
-	//	fmt.Println(aliasOutput.String())
-	//}
-	return nil
+	return aliasOutput, nil
+}
+
+func (k *PaymentCryptography) ListKeys() (output *pycrypto.ListKeysOutput, err error) {
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("ListKeys with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return nil, err
+	}
+
+	// generate alias
+	var aliasInput *pycrypto.ListKeysInput
+	var aliasOutput *pycrypto.ListKeysOutput
+	var e error
+
+	aliasOutput, e = k.pycClient.ListKeys(aliasInput)
+
+	if e != nil {
+		err = errors.New("ListKeys with PaymentCryptography Failed: (ListKeys) " + e.Error())
+		return
+	}
+	return aliasOutput, nil
 }
 
 func (k *PaymentCryptography) StopKeyUsage(keyArn string) (err error) {
@@ -765,5 +783,62 @@ func (k *PaymentCryptography) StartKeyUsage(keyArn string) (err error) {
 	//if respOutput != nil {
 	//	fmt.Println(respOutput.String())
 	//}
+	return nil
+}
+
+func (k *PaymentCryptography) DeleteKey(keyArn string) (err error) {
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("DeleteKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return err
+	}
+
+	if keyArn == "" {
+		err = errors.New("DeleteKey with PaymentCryptography Failed: " + "keyArn is Required")
+		return err
+	}
+
+	// generate alias
+	var reqInput = &pycrypto.DeleteKeyInput{
+		KeyIdentifier: aws.String(keyArn),
+	}
+	//var respOutput *pycrypto.DeleteKeyOutput
+	var e error
+
+	_, e = k.pycClient.DeleteKey(reqInput)
+
+	if e != nil {
+		err = errors.New("DeleteKey with PaymentCryptography Failed: (DeleteKey) " + e.Error())
+		return
+	}
+
+	return nil
+}
+
+func (k *PaymentCryptography) DeleteAlias(aliasName string) (err error) {
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("DeleteAlias with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return err
+	}
+
+	if aliasName == "" {
+		err = errors.New("DeleteAlias with PaymentCryptography Failed: " + "aliasName is Required")
+		return err
+	}
+
+	// generate alias
+	var reqInput = &pycrypto.DeleteAliasInput{
+		AliasName: aws.String(aliasName),
+	}
+
+	var e error
+
+	_, e = k.pycClient.DeleteAlias(reqInput)
+
+	if e != nil {
+		err = errors.New("DeleteAlias with PaymentCryptography Failed: (DeleteAlias) " + e.Error())
+		return
+	}
 	return nil
 }

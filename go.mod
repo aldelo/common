@@ -1,6 +1,6 @@
 module github.com/aldelo/common
 
-go 1.20
+go 1.22
 
 require (
 	github.com/afex/hystrix-go v0.0.0-20180502004556-fa1af6a1f4f5
@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-dax-go v1.2.13
 	github.com/aws/aws-sdk-go v1.49.13
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.11
+	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.8.0
 	github.com/aws/aws-sdk-go-v2/service/textract v1.30.5
 	github.com/aws/aws-xray-sdk-go v1.8.3
 	github.com/denisenkom/go-mssqldb v0.12.3
@@ -41,6 +41,8 @@ require (
 	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/antlr/antlr4 v0.0.0-20200820155224-be881fa6b91d // indirect
 	github.com/aws/aws-sdk-go-v2 v1.26.1 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.2 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.11 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.1 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.5 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.5 // indirect

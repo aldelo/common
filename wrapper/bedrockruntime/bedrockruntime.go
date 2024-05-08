@@ -177,7 +177,7 @@ func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (respon
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("BedrockRuntime-InvokeModel-IdentityFields", responseBody)
+			_ = seg.Seg.AddMetadata("BedrockRuntime-InvokeModel-ResponseBody", responseBody)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)

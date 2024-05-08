@@ -227,3 +227,72 @@ func (s *Textract) AnalyzeID(data []byte) (fields map[string]string, err error) 
 	}
 	return ids, nil
 }
+
+// Detects text in the input document. Amazon Textract can detect lines of text
+// and the words that make up a line of text. The input document must be in one of
+// the following image formats: JPEG, PNG, PDF, or TIFF. DetectDocumentText
+// returns the detected text in an array of Block objects. Each document page has
+// as an associated Block of type PAGE. Each PAGE Block object is the parent of
+// LINE Block objects that represent the lines of detected text on a page. A LINE
+// Block object is a parent for each word that makes up the line. Words are
+// represented by Block objects of type WORD. DetectDocumentText is a synchronous
+// operation. To analyze documents asynchronously, use StartDocumentTextDetection .
+// For more information, see Document Text Detection (https://docs.aws.amazon.com/textract/latest/dg/how-it-works-detecting.html)
+// .
+func (s *Textract) DetectDocumentText(data []byte) (blocks []types.Block, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("Textract-DetectDocumentText", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("Textract-DetectDocumentText-DetectedBlocks", blocks)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validation
+	if s.textractClient == nil {
+		err = errors.New("DetectDocumentText Failed: " + "Textract Client is Required")
+		return nil, err
+	}
+
+	if len(data) <= 0 {
+		err = errors.New("DetectDocumentText Failed: " + "Document is Required")
+		return nil, err
+	}
+
+	// create input object
+	input := &textract.DetectDocumentTextInput{
+		Document: &types.Document{
+			Bytes: data,
+		},
+	}
+
+	// perform action
+	var output *textract.DetectDocumentTextOutput
+
+	if segCtxSet {
+		output, err = s.textractClient.DetectDocumentText(segCtx, input)
+	} else {
+		output, err = s.textractClient.DetectDocumentText(context.Background(), input)
+	}
+
+	// evaluate result
+	if err != nil {
+		return nil, err
+	}
+	if len(output.Blocks) == 0 {
+		return nil, errors.New("DetectDocumentText Failed: " + "No Blocks Detected")
+	}
+
+	return output.Blocks, nil
+}

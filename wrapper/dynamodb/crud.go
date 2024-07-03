@@ -119,6 +119,7 @@ func (c *Crud) Open(cfg *ConnectionConfig) error {
 // Close will reset and clean up connection to dynamodb table
 func (c *Crud) Close() {
 	if c._ddb != nil {
+		c._ddb.DisableDax()
 		c._ddb = nil
 		c._timeout = 5
 		c._actionRetries = 4

@@ -3477,8 +3477,8 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 
 	var e *DynamoDBError
 
-	pageLimit := int64(100)
-	pagedQueryPageCountLimit := int64(25)
+	pageLimit := int64(250)              // changed from 100 to 250, since typical record is 4k or less and 250 is about 1mb or less
+	pagedQueryPageCountLimit := int64(1) // changed to 1 from 25
 
 	var indexNamePtr *string
 
@@ -3519,6 +3519,9 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 			if len(prevEvalKey) == 0 {
 				break
 			}
+
+			// prevEvalKey returned, logging for debug use
+			log.Println("QueryPagedItemsWithRetry: PrevEvalKey Returned, TableName="+d.TableName+", IndexName="+indexName+", PrevEvalKeyMap=", prevEvalKey)
 		}
 	}
 

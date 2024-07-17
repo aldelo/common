@@ -3488,6 +3488,8 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 		indexNamePtr = nil
 	}
 
+	var pagedSliceTemp reflect.Value
+
 	for {
 		// each time queried, we process up to 25 pages with each page up to 100 items,
 		// if there are more data, the prevEvalKey will contain value,
@@ -3501,16 +3503,17 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 			return nil, fmt.Errorf("QueryPagedItemsWithRetry Failed: %s", e)
 		} else {
 			// success
-			var valTarget reflect.Value
+			//var valTarget reflect.Value
 
-			if reflect.TypeOf(resultSlicePtr).Kind() == reflect.Ptr {
-				valTarget = reflect.ValueOf(resultSlicePtr).Elem()
-			} else {
-				valTarget = reflect.ValueOf(resultSlicePtr)
-			}
+			//if reflect.TypeOf(resultSlicePtr).Kind() == reflect.Ptr {
+			//	valTarget = reflect.ValueOf(resultSlicePtr).Elem()
+			//} else {
+			//	valTarget = reflect.ValueOf(resultSlicePtr)
+			//}
 
-			val := reflect.AppendSlice(valTarget, reflect.ValueOf(pagedSlicePtr).Elem())
-			resultSlicePtr = val.Interface()
+			//val := reflect.AppendSlice(valTarget, reflect.ValueOf(pagedSlicePtr).Elem())
+			//resultSlicePtr = val.Interface()
+			pagedSliceTemp = reflect.AppendSlice(pagedSliceTemp, reflect.ValueOf(pagedSlicePtr).Elem())
 
 			if prevEvalKey == nil {
 				break
@@ -3519,11 +3522,10 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 			if len(prevEvalKey) == 0 {
 				break
 			}
-
-			// prevEvalKey returned, logging for debug use
-			log.Println("QueryPagedItemsWithRetry: PrevEvalKey Returned, TableName="+d.TableName+", IndexName="+indexName+", PrevEvalKeyMap=", prevEvalKey)
 		}
 	}
+
+	resultSlicePtr = pagedSliceTemp.Interface()
 
 	return resultSlicePtr, nil
 }

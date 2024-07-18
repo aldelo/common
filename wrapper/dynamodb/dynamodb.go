@@ -3489,13 +3489,27 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 	}
 
 	var pagedSliceTemp reflect.Value
+	// Initialize pagedSliceTemp to avoid encountering the 'call of unknown method on zero Value' issue with subsequent reflect.AppendSlice calls.
+	if reflect.TypeOf(resultSlicePtr).Kind() == reflect.Ptr {
+		pagedSliceTemp = reflect.ValueOf(resultSlicePtr).Elem()
+	} else {
+		pagedSliceTemp = reflect.ValueOf(resultSlicePtr)
+	}
 
 	for {
+		// We create a new `pagedSlicePtr` variable for each `for` loop iteration instead of reusing the same one
+		// because it is a pointer. When using `reflect.AppendSlice`, only a pointer struct is copied into the slice.
+		// Each iteration of the `dynamodbattribute.UnmarshalListOfMaps` method modifies the content pointed to by this pointer,
+		// resulting in the slice containing data from only the last iteration.
+		originalSliceValue := reflect.ValueOf(pagedSlicePtr).Elem()
+		newPagedSlice := reflect.MakeSlice(originalSliceValue.Type(), 0, 0)
+		newPagedSlicePtr := reflect.New(newPagedSlice.Type()).Interface()
+
 		// each time queried, we process up to 25 pages with each page up to 100 items,
 		// if there are more data, the prevEvalKey will contain value,
 		// so the for loop will continue query again until prevEvalKey is nil,
 		// this method will retrieve all filtered data from data store, but may take longer time if there are more data
-		if prevEvalKey, e = d.QueryItemsWithRetry(maxRetries, pagedSlicePtr, timeOutDuration, nil, indexNamePtr,
+		if prevEvalKey, e = d.QueryItemsWithRetry(maxRetries, newPagedSlicePtr, timeOutDuration, nil, indexNamePtr,
 			aws.Int64(pageLimit), true, aws.Int64(pagedQueryPageCountLimit), prevEvalKey,
 			keyConditionExpression, nil, expressionAttributeValues,
 			filterConditionExpression); e != nil {
@@ -3513,7 +3527,7 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 
 			//val := reflect.AppendSlice(valTarget, reflect.ValueOf(pagedSlicePtr).Elem())
 			//resultSlicePtr = val.Interface()
-			pagedSliceTemp = reflect.AppendSlice(pagedSliceTemp, reflect.ValueOf(pagedSlicePtr).Elem())
+			pagedSliceTemp = reflect.AppendSlice(pagedSliceTemp, reflect.ValueOf(newPagedSlicePtr).Elem())
 
 			if prevEvalKey == nil {
 				break

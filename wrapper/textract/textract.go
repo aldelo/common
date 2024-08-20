@@ -164,7 +164,7 @@ func (s *Textract) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 // extracted and returned as IdentityDocumentFields , which records both the
 // normalized field and value of the extracted text. Unlike other Amazon Textract
 // operations, AnalyzeID doesn't return any Geometry data.
-func (s *Textract) AnalyzeID(data []byte) (fields map[string]string, err error) {
+func (s *Textract) AnalyzeID(data []byte) (doc *types.IdentityDocument, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -176,7 +176,7 @@ func (s *Textract) AnalyzeID(data []byte) (fields map[string]string, err error) 
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Textract-AnalyzeID-IdentityFields", fields)
+			_ = seg.Seg.AddMetadata("Textract-AnalyzeID-IdentityFields", doc)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)
@@ -221,11 +221,7 @@ func (s *Textract) AnalyzeID(data []byte) (fields map[string]string, err error) 
 		return nil, errors.New("AnalyzeID Failed: " + "No Identity Documents Found")
 	}
 
-	ids := map[string]string{}
-	for _, val := range output.IdentityDocuments[0].IdentityDocumentFields {
-		ids[*val.Type.Text] = *val.ValueDetection.Text
-	}
-	return ids, nil
+	return &output.IdentityDocuments[0], nil
 }
 
 // Detects text in the input document. Amazon Textract can detect lines of text

@@ -106,7 +106,7 @@ func (v *ViperConf) Init() (bool, error) {
 		}
 	} else {
 		// read success
-		v.viperClient.WatchConfig()
+		// v.viperClient.WatchConfig()
 		return true, nil
 	}
 }

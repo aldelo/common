@@ -48,6 +48,7 @@ import (
 	"github.com/aws/aws-xray-sdk-go/xray"
 	"net/http"
 	"os"
+	"sync"
 )
 
 //
@@ -95,6 +96,7 @@ type XRayParentSegment struct {
 
 // indicates if xray service tracing is on or off
 var _xrayServiceOn bool
+var _mu sync.RWMutex
 
 // Init will configure xray daemon address and service version
 func Init(daemonAddr string, serviceVersion string) error {
@@ -127,6 +129,8 @@ func Init(daemonAddr string, serviceVersion string) error {
 // the service is set to on during its init, open, or connect etc actions,
 // existing objects are not affected by this function action
 func SetXRayServiceOn() {
+	_mu.Lock()
+	defer _mu.Unlock()
 	_xrayServiceOn = true
 }
 
@@ -134,11 +138,15 @@ func SetXRayServiceOn() {
 // so that wrappers and code supporting xray will not start using xray for tracing when it is init, connect or open,
 // existing objects are not affected by this function action
 func SetXRayServiceOff() {
+	_mu.Lock()
+	defer _mu.Unlock()
 	_xrayServiceOn = false
 }
 
 // XRayServiceOn returns whether xray tracing service is on or off
 func XRayServiceOn() bool {
+	_mu.RLock()
+	defer _mu.RUnlock()
 	return _xrayServiceOn
 }
 
@@ -312,6 +320,8 @@ func NewSegment(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *X
 // NewSegmentNullable returns a new segment for the named service or url, if _xrayServiceOn = true,
 // otherwise, nil is returned for *XSegment.
 func NewSegmentNullable(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *XSegment {
+	_mu.RLock()
+	defer _mu.RUnlock()
 	if _xrayServiceOn {
 		return NewSegment(serviceNameOrUrl, parentSegment...)
 	} else {

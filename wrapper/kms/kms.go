@@ -41,7 +41,15 @@ package kms
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/crypto"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
@@ -51,6 +59,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kms"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
+	"log"
 	"net/http"
 )
 
@@ -423,6 +432,331 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 // kms-cmk encrypt/decrypt via rsa 2048 public/private key functions
 // ----------------------------------------------------------------------------------------------------------------
 
+// GenerateEncryptionDecryptionKeyRsa2048 will generate a new rsa 2048 key pair using kms cmk, and return the creation output
+// the key pair can only be used for rsa 2048 asymmetric encryption/decryption
+// keyName = the Alias name to create
+// keyPolicy = the key policy json string to apply
+//
+//	keyPolicy := map[string]interface{}{
+//		"Id":      "key-consolepolicy-3",
+//		"Version": "2012-10-17",
+//		"Statement": []map[string]interface{}{
+//			{
+//				"Effect":    "Allow",
+//				"Principal": map[string]interface{}{"AWS": "arn:aws:iam::***************:user/xxxxxxxxxxxxxxxxxxx"}, // Replace with your account ID
+//				"Action":    "kms:*",
+//				"Resource":  "*",
+//			},
+//			{
+//				"Sid":       "Allow access for Key Administrators",
+//				"Effect":    "Allow",
+//				"Principal": map[string]interface{}{"AWS": "arn:aws:iam::***************:user/xxxxxxxxxxxxxxxxxxx"}, // Replace with your account ID
+//				"Action":    "kms:*",
+//				"Resource":  "*",
+//			},
+//			{
+//				"Sid":       "Allow access for Key Administrators",
+//				"Effect":    "Allow",
+//				"Principal": map[string]interface{}{"AWS": "arn:aws:iam::***************:user/xxxxxxxxxxxxxxxxxxx"},
+//				"Action": []string{
+//					"kms:Create*",
+//					"kms:Describe*",
+//					"kms:Enable*",
+//					"kms:List*",
+//					"kms:Put*",
+//					"kms:Update*",
+//					"kms:Revoke*",
+//					"kms:Disable*",
+//					"kms:Get*",
+//					"kms:Delete*",
+//					"kms:TagResource",
+//					"kms:UntagResource",
+//					"kms:ScheduleKeyDeletion",
+//					"kms:CancelKeyDeletion",
+//				},
+//				"Resource": "*",
+//			},
+//			{
+//				"Sid":       "Allow use of the key",
+//				"Effect":    "Allow",
+//				"Principal": map[string]interface{}{"AWS": "arn:aws:iam::***************:user/xxxxxxxxxxxxxxxxxxx"},
+//				"Action": []string{
+//					"kms:Encrypt",
+//					"kms:Decrypt",
+//					"kms:ReEncrypt*",
+//					"kms:DescribeKey",
+//					"kms:GetPublicKey",
+//				},
+//				"Resource": "*",
+//			},
+//			{
+//				"Sid":       "Allow attachment of persistent resources",
+//				"Effect":    "Allow",
+//				"Principal": map[string]interface{}{"AWS": "arn:aws:iam::***************:user/xxxxxxxxxxxxxxxxxxx"},
+//				"Action": []string{
+//					"kms:CreateGrant",
+//					"kms:ListGrants",
+//					"kms:RevokeGrant",
+//				},
+//				"Resource": "*",
+//				"Condition": map[string]interface{}{
+//					"Bool": map[string]interface{}{
+//						"kms:GrantIsForAWSResource": "true",
+//					},
+//				},
+//			},
+//		},
+//	}
+func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJSON string) (encryptedOutput *kms.CreateKeyOutput, err error) {
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("KMS-GenerateDataKeyRsa2048", k._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("KMS-GenerateEncryptionDecryptionKeyRsa2048-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.kmsClient == nil {
+		err = errors.New("GenerateEncryptionDecryptionKeyRsa2048 with KMS CMK Failed: " + "KMS Client is Required")
+		return nil, err
+	}
+
+	var e error
+
+	if segCtx == nil {
+		encryptedOutput, e = k.kmsClient.CreateKey(&kms.CreateKeyInput{
+			Description: aws.String("Common RSA 2048 Key Creation"),
+			KeySpec:     aws.String(kms.KeySpecRsa2048),
+			KeyUsage:    aws.String(kms.KeyUsageTypeEncryptDecrypt),
+			Policy:      aws.String(string(keyPolicyJSON)),
+		})
+	} else {
+		encryptedOutput, e = k.kmsClient.CreateKeyWithContext(segCtx, &kms.CreateKeyInput{
+			Description: aws.String("Common RSA 2048 Key Creation"),
+			KeySpec:     aws.String(kms.KeySpecRsa2048),
+			KeyUsage:    aws.String(kms.KeyUsageTypeEncryptDecrypt),
+			Policy:      aws.String(string(keyPolicyJSON)),
+		})
+	}
+
+	if e != nil {
+		err = errors.New("GenerateEncryptionDecryptionKeyRsa2048 with KMS CMK Failed: (RSA Key Create Fail) " + e.Error())
+		return nil, err
+	}
+
+	aliasName := "alias/" + keyName // Change to your desired alias name
+
+	aliasInput := &kms.CreateAliasInput{
+		AliasName:   aws.String(aliasName),
+		TargetKeyId: encryptedOutput.KeyMetadata.KeyId,
+	}
+
+	_, err = k.kmsClient.CreateAlias(aliasInput)
+	if err != nil {
+		return nil, err
+	}
+
+	// return creation data
+	return encryptedOutput, nil
+}
+
+func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}) (encryptedOutput *kms.CreateKeyOutput, err error) {
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("KMS-GenerateSignVerifyKeyRsa2048", k._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("KMS-GenerateSignVerifyKeyRsa2048-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.kmsClient == nil {
+		err = errors.New("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: " + "KMS Client is Required")
+		return nil, err
+	}
+
+	keyPolicyJSON, err := json.Marshal(keyPolicy)
+	if err != nil {
+		return nil, err
+	}
+
+	var e error
+
+	if segCtx == nil {
+		encryptedOutput, e = k.kmsClient.CreateKey(&kms.CreateKeyInput{
+			Description: aws.String("Common RSA 2048 Key Creation"),
+			KeySpec:     aws.String(kms.KeySpecRsa2048),
+			KeyUsage:    aws.String(kms.KeyUsageTypeSignVerify),
+			Policy:      aws.String(string(keyPolicyJSON)),
+		})
+	} else {
+		encryptedOutput, e = k.kmsClient.CreateKeyWithContext(segCtx, &kms.CreateKeyInput{
+			Description: aws.String("Common RSA 2048 Key Creation"),
+			KeySpec:     aws.String(kms.KeySpecRsa2048),
+			KeyUsage:    aws.String(kms.KeyUsageTypeSignVerify),
+			Policy:      aws.String(string(keyPolicyJSON)),
+		})
+	}
+
+	if e != nil {
+		err = errors.New("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: (RSA Key Create Fail) " + e.Error())
+		return nil, err
+	}
+
+	aliasName := "alias/" + keyName // Change to your desired alias name
+
+	aliasInput := &kms.CreateAliasInput{
+		AliasName:   aws.String(aliasName),
+		TargetKeyId: encryptedOutput.KeyMetadata.KeyId,
+	}
+
+	_, err = k.kmsClient.CreateAlias(aliasInput)
+	if err != nil {
+		return nil, err
+	}
+
+	// return creation data
+	return encryptedOutput, nil
+}
+
+func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (output *kms.ScheduleKeyDeletionOutput, err error) {
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("KMS-KeyDeleteWithAlias", k._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("KMS-KeyDeleteWithAlias-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.kmsClient == nil {
+		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: " + "KMS Client is Required")
+		return nil, err
+	}
+
+	if alias == "" {
+		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: " + "Alias is Required")
+		return nil, err
+	}
+
+	if PendingWindowInDays < 7 {
+		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: " + "PendingWindowInDays Must Be At Least 7 Days")
+		return nil, err
+
+	}
+
+	aliasName := "alias/" + alias // Change to your desired alias name
+
+	result, err := k.kmsClient.GetPublicKey(&kms.GetPublicKeyInput{
+		KeyId: aws.String(aliasName),
+	})
+
+	var e error
+
+	if segCtx == nil {
+		output, e = k.kmsClient.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
+			KeyId:               result.KeyId,
+			PendingWindowInDays: aws.Int64(PendingWindowInDays),
+		})
+	} else {
+		output, e = k.kmsClient.ScheduleKeyDeletionWithContext(segCtx, &kms.ScheduleKeyDeletionInput{
+			KeyId:               result.KeyId,
+			PendingWindowInDays: aws.Int64(PendingWindowInDays),
+		})
+	}
+
+	if e != nil {
+		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
+		return nil, err
+	}
+
+	return output, nil
+}
+
+func (k *KMS) KeyDeleteWithArnID(arn string, PendingWindowInDays int64) (output *kms.ScheduleKeyDeletionOutput, err error) {
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("KMS-KeyDeleteWithArnID", k._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("KMS-KeyDeleteWithArnID-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.kmsClient == nil {
+		err = errors.New("KeyDeleteWithArnID with KMS CMK Failed: " + "KMS Client is Required")
+		return nil, err
+	}
+
+	if arn == "" {
+		err = errors.New("KeyDeleteWithArnID with KMS CMK Failed: " + "ARN is Required")
+		return nil, err
+	}
+
+	if PendingWindowInDays < 7 {
+		err = errors.New("KeyDeleteWithArnID with KMS CMK Failed: " + "PendingWindowInDays Must Be At Least 7 Days")
+		return nil, err
+	}
+
+	var e error
+
+	if segCtx == nil {
+		output, e = k.kmsClient.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
+			KeyId:               aws.String(arn),
+			PendingWindowInDays: aws.Int64(PendingWindowInDays),
+		})
+	} else {
+		output, e = k.kmsClient.ScheduleKeyDeletionWithContext(segCtx, &kms.ScheduleKeyDeletionInput{
+			KeyId:               aws.String(arn),
+			PendingWindowInDays: aws.Int64(PendingWindowInDays),
+		})
+	}
+
+	if e != nil {
+		err = errors.New("KeyDeleteWithArnID with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
+		return nil, err
+	}
+
+	return output, nil
+}
+
 // EncryptViaCmkRsa2048 will use kms cmk to encrypt plainText with asymmetric rsa 2048 kms cmk public key, and return cipherText string,
 // the cipherText can only be decrypted with the paired asymmetric rsa 2048 kms cmk private key
 //
@@ -501,6 +835,57 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 	// return encrypted cipher text blob
 	cipherText = util.ByteToHex(encryptedOutput.CiphertextBlob)
 	return cipherText, nil
+}
+
+func (k *KMS) GetRSAPublicKey(alias string) (output *kms.GetPublicKeyOutput, err error) {
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("KMS-GetRSAPublicKey", k._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("KMS-GetRSAPublicKey-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.kmsClient == nil {
+		err = errors.New("GetRSAPublicKey with KMS CMK Failed: " + "KMS Client is Required")
+		return nil, err
+	}
+
+	if alias == "" {
+		err = errors.New("GetRSAPublicKey with KMS CMK Failed: " + "Alias is Required")
+		return nil, err
+	}
+
+	var e error
+
+	aliasName := "alias/" + alias // Change to your desired alias name
+
+	if segCtx == nil {
+		output, err = k.kmsClient.GetPublicKey(&kms.GetPublicKeyInput{
+			KeyId: aws.String(aliasName),
+		})
+	} else {
+		output, err = k.kmsClient.GetPublicKeyWithContext(segCtx, &kms.GetPublicKeyInput{
+			KeyId: aws.String(aliasName),
+		})
+	}
+
+	if e != nil {
+		err = errors.New("GetRSAPublicKey with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
+		return nil, err
+	}
+
+	return output, nil
 }
 
 // ReEncryptViaCmkRsa2048 will re-encrypt sourceCipherText using the new targetKmsKeyName via kms, (must be targeting rsa 2048 key)
@@ -1098,4 +1483,141 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 
 	// return decrypted data
 	return plainText, nil
+}
+
+func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk *ecdsa.PrivateKey) (keyArn string, err error) {
+	// validate
+	if k.kmsClient == nil {
+		err = errors.New("ImportECCP256SignVerifyKey with KMS Failed: " + "KMS Client is Required")
+		return "", err
+	}
+
+	svc := k.kmsClient
+
+	cInput := &kms.CreateKeyInput{
+		BypassPolicyLockoutSafetyCheck: nil,
+		CustomKeyStoreId:               nil,
+		Description:                    nil,
+		KeySpec:                        aws.String(kms.KeySpecEccNistP256),
+		KeyUsage:                       aws.String(kms.KeyUsageTypeKeyAgreement),
+		MultiRegion:                    aws.Bool(false),
+		Origin:                         aws.String(kms.OriginTypeExternal),
+		Policy:                         aws.String(keyPolicyJson),
+		Tags:                           nil,
+		XksKeyId:                       nil,
+	}
+
+	cOutput, err := svc.CreateKey(cInput)
+	if err != nil {
+		return "", err
+	}
+
+	keyID := aws.StringValue(cOutput.KeyMetadata.KeyId)
+
+	if keyID == "" {
+		return "", errors.New("key ID is empty")
+	}
+
+	// Step 1: Get an import token and public key from KMS
+	getParams := &kms.GetParametersForImportInput{
+		KeyId:             aws.String(keyID),
+		WrappingAlgorithm: aws.String(kms.AlgorithmSpecRsaesOaepSha256),
+		WrappingKeySpec:   aws.String(kms.KeySpecRsa2048),
+	}
+	resp, err := svc.GetParametersForImport(getParams)
+	if err != nil {
+		return "", err
+	}
+
+	derKey, err := x509.MarshalPKCS8PrivateKey(eccPvk)
+	if err != nil {
+		return "", err
+	}
+
+	// Step 2: Encrypt the key material using the provided public key
+	pubKey, err := x509.ParsePKIXPublicKey(resp.PublicKey)
+	if err != nil {
+		return "", err
+	}
+	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
+	if !ok {
+		return "", errors.New("public key is not RSA")
+	}
+	encryptedKeyMaterial, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, rsaPubKey, derKey, nil)
+	if err != nil {
+		return "", err
+	}
+
+	//Step 3: Import the encrypted key material into KMS
+	importParams := &kms.ImportKeyMaterialInput{
+		EncryptedKeyMaterial: encryptedKeyMaterial,
+		ExpirationModel:      aws.String(kms.ExpirationModelTypeKeyMaterialDoesNotExpire),
+		ImportToken:          resp.ImportToken,
+		KeyId:                aws.String(keyID),
+		ValidTo:              nil,
+	}
+	_, err = svc.ImportKeyMaterial(importParams)
+	if err != nil {
+		return "", err
+	}
+
+	aliasName := "alias/" + keyAlias // Change to your desired alias name
+
+	aliasInput := &kms.CreateAliasInput{
+		AliasName:   aws.String(aliasName),
+		TargetKeyId: aws.String(keyID),
+	}
+
+	_, err = k.kmsClient.CreateAlias(aliasInput)
+	if err != nil {
+		return "", err
+	}
+
+	return aws.StringValue(cOutput.KeyMetadata.Arn), nil
+}
+
+func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, err error) {
+
+	//derive temp ECC public key
+	eccPubBytes, err := base64.StdEncoding.DecodeString(ephemeralPublicKeyB64)
+	if err != nil {
+		return nil, err
+	}
+	//eccPubKey, err := parseECCPublicKey(eccPubBytes)
+	//if err != nil {
+	//
+	//}
+	//
+	//key, err := x509.MarshalPKCS8PrivateKey(eccPubKey)
+	//if err != nil {
+	//
+	//}
+
+	imputReq := &kms.DeriveSharedSecretInput{
+		DryRun:                nil,
+		GrantTokens:           nil,
+		KeyAgreementAlgorithm: aws.String(kms.KeyAgreementAlgorithmSpecEcdh),
+		KeyId:                 aws.String(keyArn),
+		PublicKey:             eccPubBytes,
+		Recipient:             nil,
+	}
+	outputResp, err := k.kmsClient.DeriveSharedSecret(imputReq)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Println("outputResp: ", outputResp)
+	return outputResp.SharedSecret, err
+}
+
+func parseECCPublicKey(eccPub []byte) (*ecdsa.PublicKey, error) {
+	tempPubKey, err := x509.ParsePKIXPublicKey(eccPub)
+	if err != nil {
+		return nil, err
+	}
+	tpubK, ok := tempPubKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("input key is not a ecc public key")
+	}
+	return tpubK, nil
 }

@@ -54,6 +54,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/servicediscovery"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
+	"log"
 	"net/http"
 	"time"
 )
@@ -2344,6 +2345,8 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 	segCtx := context.Background()
 	segCtxSet := false
 
+	log.Println("DiscoverInstances Entered")
+
 	seg := xray.NewSegmentNullable("Cloudmap-DiscoverInstances", sd._parentSegment)
 
 	if seg != nil {
@@ -2364,6 +2367,7 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 			}
 		}()
 	}
+	log.Println("DiscoverInstances Segments Created")
 
 	// validate
 	if sd.sdClient == nil {
@@ -2380,6 +2384,7 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 		err = errors.New("CloudMap DiscoverInstances Failed: " + "Service Name is Required")
 		return nil, err
 	}
+	log.Println("DiscoverInstances Validated")
 
 	// define input
 	healthStatus := ""
@@ -2403,6 +2408,7 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 	if maxResults != nil && *maxResults > 0 {
 		input.MaxResults = maxResults
 	}
+	log.Println("DiscoverInstances params Input Defined")
 
 	// invoke action
 	var output *servicediscovery.DiscoverInstancesOutput
@@ -2419,6 +2425,7 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 			output, err = sd.sdClient.DiscoverInstances(input)
 		}
 	}
+	log.Println("DiscoverInstances Action Invoked")
 
 	if err != nil {
 		// handle error

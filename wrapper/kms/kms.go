@@ -46,8 +46,10 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/crypto"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
@@ -57,6 +59,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kms"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
+	"log"
 	"net/http"
 )
 
@@ -1496,7 +1499,7 @@ func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk 
 		CustomKeyStoreId:               nil,
 		Description:                    nil,
 		KeySpec:                        aws.String(kms.KeySpecEccNistP256),
-		KeyUsage:                       aws.String(kms.KeyUsageTypeSignVerify),
+		KeyUsage:                       aws.String(kms.KeyUsageTypeKeyAgreement),
 		MultiRegion:                    aws.Bool(false),
 		Origin:                         aws.String(kms.OriginTypeExternal),
 		Policy:                         aws.String(keyPolicyJson),
@@ -1571,4 +1574,50 @@ func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk 
 	}
 
 	return aws.StringValue(cOutput.KeyMetadata.Arn), nil
+}
+
+func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, err error) {
+
+	//derive temp ECC public key
+	eccPubBytes, err := base64.StdEncoding.DecodeString(ephemeralPublicKeyB64)
+	if err != nil {
+		return nil, err
+	}
+	//eccPubKey, err := parseECCPublicKey(eccPubBytes)
+	//if err != nil {
+	//
+	//}
+	//
+	//key, err := x509.MarshalPKCS8PrivateKey(eccPubKey)
+	//if err != nil {
+	//
+	//}
+
+	imputReq := &kms.DeriveSharedSecretInput{
+		DryRun:                nil,
+		GrantTokens:           nil,
+		KeyAgreementAlgorithm: aws.String(kms.KeyAgreementAlgorithmSpecEcdh),
+		KeyId:                 aws.String(keyArn),
+		PublicKey:             eccPubBytes,
+		Recipient:             nil,
+	}
+	outputResp, err := k.kmsClient.DeriveSharedSecret(imputReq)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Println("outputResp: ", outputResp)
+	return outputResp.SharedSecret, err
+}
+
+func parseECCPublicKey(eccPub []byte) (*ecdsa.PublicKey, error) {
+	tempPubKey, err := x509.ParsePKIXPublicKey(eccPub)
+	if err != nil {
+		return nil, err
+	}
+	tpubK, ok := tempPubKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("input key is not a ecc public key")
+	}
+	return tpubK, nil
 }

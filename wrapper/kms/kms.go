@@ -1054,6 +1054,87 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	return plainText, nil
 }
 
+// DecryptViaCmkRsa2048PKCS1 will use kms cmk to decrypt cipherText using asymmetric rsa 2048 kms cmk private key, and return plainText string,
+// the cipherText can only be decrypted with the asymmetric rsa 2048 kms cmk private key
+func (k *KMS) DecryptViaCmkRsa2048PKCS1(cipherText string) (plainText string, err error) {
+	return k.decryptViaCmkRsa2048Base(cipherText, kms.AlgorithmSpecRsaesPkcs1V15)
+}
+
+func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (plainText string, err error) {
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("KMS-decryptViaCmkRsa2048Base", k._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("KMS-decryptViaCmkRsa2048Base-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-decryptViaCmkRsa2048Base-CipherText-Length", len(cipherText))
+			_ = seg.Seg.AddMetadata("KMS-decryptViaCmkRsa2048Base-Result-PlainText-Length", len(plainText))
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.kmsClient == nil {
+		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: " + "KMS Client is Required")
+		return "", err
+	}
+
+	if len(k.RsaKmsKeyName) <= 0 {
+		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: " + "RSA KMS Key Name is Required")
+		return "", err
+	}
+
+	if len(cipherText) <= 0 {
+		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: " + "Cipher Text is Required")
+		return "", err
+	}
+
+	// prepare key info
+	keyId := "alias/" + k.RsaKmsKeyName
+	cipherBytes, ce := util.HexToByte(cipherText)
+
+	if ce != nil {
+		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: (Unmarshal CipherText Hex To Byte) " + ce.Error())
+		return "", err
+	}
+
+	// decrypt symmetric using kms cmk
+	var decryptedOutput *kms.DecryptOutput
+	var e error
+
+	if segCtx == nil {
+		decryptedOutput, e = k.kmsClient.Decrypt(&kms.DecryptInput{
+			EncryptionAlgorithm: aws.String(encryptionAlgorithm),
+			KeyId:               aws.String(keyId),
+			CiphertextBlob:      cipherBytes,
+		})
+	} else {
+		decryptedOutput, e = k.kmsClient.DecryptWithContext(segCtx,
+			&kms.DecryptInput{
+				EncryptionAlgorithm: aws.String(encryptionAlgorithm),
+				KeyId:               aws.String(keyId),
+				CiphertextBlob:      cipherBytes,
+			})
+	}
+
+	if e != nil {
+		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: (Asymmetric Decrypt) " + e.Error())
+		return "", err
+	}
+
+	// return decrypted cipher text blob
+	plainText = string(decryptedOutput.Plaintext)
+	return plainText, nil
+}
+
 // ----------------------------------------------------------------------------------------------------------------
 // kms-cmk sign/verify via rsa 2048 private/public key functions
 // ----------------------------------------------------------------------------------------------------------------

@@ -236,10 +236,12 @@ func (c *Crud) TransactionGet(transReads ...*DynamoDBTransactionReads) (successC
 
 // Set persists data to dynamodb table with given pointer struct that represents the target dynamodb table record,
 // pk value within pointer struct is created using CreatePKValue func
-// dataPtr refers to pointer to struct of the target dynamodb table record
+//
+// dataPtr = refers to pointer to struct of the target dynamodb table record
+// conditionExpression = optional condition expression to apply to the put operation
 //
 //	data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
-func (c *Crud) Set(dataPtr interface{}) (err error) {
+func (c *Crud) Set(dataPtr interface{}, conditionExpression ...string) (err error) {
 	if c._ddb == nil {
 		return fmt.Errorf("Set To Data Store Failed: (Validater 1) Connection Not Established")
 	}
@@ -248,7 +250,7 @@ func (c *Crud) Set(dataPtr interface{}) (err error) {
 		return fmt.Errorf("Set To Data Store Failed: (Validater 2) Data Var Requires Ptr")
 	}
 
-	if e := c._ddb.PutItemWithRetry(c._actionRetries, dataPtr, c._ddb.TimeOutDuration(c._timeout)); e != nil {
+	if e := c._ddb.PutItemWithRetry(c._actionRetries, dataPtr, c._ddb.TimeOutDuration(c._timeout), conditionExpression...); e != nil {
 		// set error
 		return fmt.Errorf("Set To Data Store Failed: (PutItem) %s", e.Error())
 	} else {

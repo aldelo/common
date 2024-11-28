@@ -240,10 +240,11 @@ type DynamoDBUpdateItemInput struct {
 //		a) We use interface{} because []interface{} will require each element conversion (instead we will handle conversion by internal code)
 //		b) PutItems ALWAYS Slice of Struct (Value), NOT pointers to Structs
 type DynamoDBTransactionWrites struct {
-	PutItems          interface{}
-	UpdateItems       []*DynamoDBUpdateItemInput
-	DeleteItems       []*DynamoDBTableKeys
-	TableNameOverride string
+	PutItems               interface{}
+	PutConditionExpression string
+	UpdateItems            []*DynamoDBUpdateItemInput
+	DeleteItems            []*DynamoDBTableKeys
+	TableNameOverride      string
 }
 
 // MarshalPutItems will marshal dynamodb transaction writes' put items into []map[string]*dynamodb.AttributeValue
@@ -1045,9 +1046,10 @@ func (d *DynamoDB) TimeOutDuration(timeOutSeconds uint) *time.Duration {
 //
 // parameters:
 //
-//	item = required, must be a struct object; ALWAYS SINGLE STRUCT OBJECT, NEVER SLICE
-//		   must start with fields 'pk string', 'sk string', and 'data string' before any other attributes
-//	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//		item = required, must be a struct object; ALWAYS SINGLE STRUCT OBJECT, NEVER SLICE
+//			   must start with fields 'pk string', 'sk string', and 'data string' before any other attributes
+//		timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
+//	 conditionExpression = optional, conditional expression to apply to the put item operation
 //
 // notes:
 //
@@ -1058,15 +1060,15 @@ func (d *DynamoDB) TimeOutDuration(timeOutSeconds uint) *time.Duration {
 //		reference child element
 //			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //				Info in parent struct with struct tag as info; to reach child element: info.xyz
-func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration, conditionExpression ...string) (ddbErr *DynamoDBError) {
 	if xray.XRayServiceOn() {
-		return d.putItemWithTrace(item, timeOutDuration)
+		return d.putItemWithTrace(item, timeOutDuration, conditionExpression...)
 	} else {
-		return d.putItemNormal(item, timeOutDuration)
+		return d.putItemNormal(item, timeOutDuration, conditionExpression...)
 	}
 }
 
-func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Duration, conditionExpression ...string) (ddbErr *DynamoDBError) {
 	trace := xray.NewSegment("DynamoDB-PutItem", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -1090,6 +1092,12 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 		return ddbErr
 	}
 
+	conditionExpressionStr := ""
+
+	if len(conditionExpression) > 0 {
+		conditionExpressionStr = conditionExpression[0]
+	}
+
 	trace.Capture("PutItem", func() error {
 		if av, err := dynamodbattribute.MarshalMap(item); err != nil {
 			ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (MarshalMap)")
@@ -1098,6 +1106,10 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 			input := &dynamodb.PutItemInput{
 				Item:      av,
 				TableName: aws.String(d.TableName),
+			}
+
+			if util.LenTrim(conditionExpressionStr) > 0 {
+				input.ConditionExpression = aws.String(conditionExpressionStr)
 			}
 
 			// record params payload
@@ -1124,8 +1136,9 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 		}
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
-			"TableName": d.TableName,
-			"ItemInfo":  item,
+			"TableName":           d.TableName,
+			"ItemInfo":            item,
+			"ConditionExpression": conditionExpressionStr,
 		},
 	})
 
@@ -1133,7 +1146,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 	return ddbErr
 }
 
-func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duration, conditionExpression ...string) (ddbErr *DynamoDBError) {
 	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -1146,12 +1159,22 @@ func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duratio
 		return d.handleError(errors.New("DynamoDB PutItem Failed: " + "Input Item Object is Nil"))
 	}
 
+	conditionExpressionStr := ""
+
+	if len(conditionExpression) > 0 {
+		conditionExpressionStr = conditionExpression[0]
+	}
+
 	if av, err := dynamodbattribute.MarshalMap(item); err != nil {
 		ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (MarshalMap)")
 	} else {
 		input := &dynamodb.PutItemInput{
 			Item:      av,
 			TableName: aws.String(d.TableName),
+		}
+
+		if util.LenTrim(conditionExpressionStr) > 0 {
+			input.ConditionExpression = aws.String(conditionExpressionStr)
 		}
 
 		// record params payload
@@ -1178,7 +1201,7 @@ func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duratio
 }
 
 // PutItemWithRetry add or updates, and handles dynamodb retries in case action temporarily fails
-func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDuration *time.Duration) *DynamoDBError {
+func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDuration *time.Duration, conditionExpression ...string) *DynamoDBError {
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -1195,7 +1218,7 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 		timeout = 15 * time.Second
 	}
 
-	if err := d.PutItem(item, util.DurationPtr(timeout)); err != nil {
+	if err := d.PutItem(item, util.DurationPtr(timeout), conditionExpression...); err != nil {
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
@@ -1206,7 +1229,7 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 				}
 
 				log.Println("PutItemWithRetry Failed: " + err.ErrorMessage)
-				return d.PutItemWithRetry(maxRetries-1, item, util.DurationPtr(timeout))
+				return d.PutItemWithRetry(maxRetries-1, item, util.DurationPtr(timeout), conditionExpression...)
 			} else {
 				if err.SuppressError {
 					log.Println("PutItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
@@ -5311,6 +5334,10 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 							Item:      v,
 						}
 
+						if util.LenTrim(t.PutConditionExpression) > 0 {
+							m.Put.ConditionExpression = aws.String(t.PutConditionExpression)
+						}
+
 						items = append(items, m)
 					}
 				}
@@ -5490,6 +5517,10 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 					m.Put = &dynamodb.Put{
 						TableName: aws.String(tableName),
 						Item:      v,
+					}
+
+					if util.LenTrim(t.PutConditionExpression) > 0 {
+						m.Put.ConditionExpression = aws.String(t.PutConditionExpression)
 					}
 
 					items = append(items, m)

@@ -169,6 +169,77 @@ func GetStructTagsValueSlice(field reflect.StructField, tagName ...string) (tagV
 	return
 }
 
+type StructFieldTagAndValue struct {
+	FieldName  string
+	FieldValue string
+
+	TagName  string
+	TagValue string
+
+	DynamoDBAttributeTagName string
+}
+
+// GetStructFieldTagAndValues extracts values of a specific struct tag and their corresponding field values
+// from the given struct object. Returns a slice of StructFieldTagAndValue or an error if the input is not a struct.
+//
+// input = represents the struct object
+// tagName = represents the tag name to extract
+func GetStructFieldTagAndValues(input interface{}, tagName string, getDynamoDBAttributeTagName bool) ([]*StructFieldTagAndValue, error) {
+	// validate
+	if LenTrim(tagName) <= 0 {
+		return nil, fmt.Errorf("Struct Tag Name is Required")
+	}
+
+	// Get the reflect.Value and reflect.Type of the input
+	v := reflect.ValueOf(input)
+	t := reflect.TypeOf(input)
+
+	if t == nil {
+		return nil, fmt.Errorf("Struct Input Object is Required (Currently Nil)")
+	}
+
+	// Ensure the input is a struct or a pointer to a struct
+	if t.Kind() == reflect.Ptr {
+		v = v.Elem()
+		t = t.Elem()
+	}
+
+	if t.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("Struct Input Object Expects a Struct Object or Pointer to Struct Object")
+	}
+
+	results := make([]*StructFieldTagAndValue, 0)
+
+	// Iterate over the fields of the struct
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		value := v.Field(i)
+
+		valueStr, _, _ := ReflectValueToString(value, "true", "false", false, false, "", false)
+
+		// Get the value of the specified tag
+		if tagValue := field.Tag.Get(tagName); LenTrim(tagValue) > 0 && tagValue != "-" {
+			// get dynamodbav attribute tag value
+			ddbTagName := ""
+
+			if getDynamoDBAttributeTagName {
+				ddbTagName = field.Tag.Get("dynamodbav")
+			}
+
+			// Add the tag value and field value to the results
+			results = append(results, &StructFieldTagAndValue{
+				FieldName:                field.Name,
+				FieldValue:               valueStr,
+				TagName:                  tagName,
+				TagValue:                 tagValue,
+				DynamoDBAttributeTagName: ddbTagName,
+			})
+		}
+	}
+
+	return results, nil
+}
+
 // ================================================================================================================
 // Reflection Helpers
 // ================================================================================================================
@@ -800,4 +871,190 @@ func ReflectObjectNewPtr(objType reflect.Type) interface{} {
 	} else {
 		return reflect.New(objType).Interface()
 	}
+}
+
+// ReflectAppendSlices appends two slices provided as interface{} and returns the resulting slice.
+// It returns an error if the inputs are not slices or their types are incompatible.
+func ReflectAppendSlices(slice1, slice2 interface{}) (interface{}, error) {
+	// validate
+	if slice1 == nil {
+		return nil, fmt.Errorf("Input 1 is Nil")
+	}
+
+	if slice2 == nil {
+		return nil, fmt.Errorf("Input 2 is Nil")
+	}
+
+	// Get the reflect.Value of the inputs
+	v1 := reflect.ValueOf(slice1)
+	v2 := reflect.ValueOf(slice2)
+
+	// Check that both inputs are slices
+	if v1.Kind() != reflect.Slice || v2.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("Both Inputs Expected To Be Slices")
+	}
+
+	// Ensure the slices have the same type
+	if v1.Type() != v2.Type() {
+		return nil, fmt.Errorf("Both Inputs Expects To Be Same Type")
+	}
+
+	// Create a new slice to hold the appended elements
+	result := reflect.MakeSlice(v1.Type(), v1.Len()+v2.Len(), v1.Len()+v2.Len())
+
+	// Copy elements from the first slice
+	reflect.Copy(result, v1)
+
+	// Copy elements from the second slice
+	reflect.Copy(result.Slice(v1.Len(), result.Len()), v2)
+
+	return result.Interface(), nil
+}
+
+// ReflectInterfaceToString converts interface{} to string
+func ReflectInterfaceToString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+
+	switch t := v.(type) {
+	case string:
+		return t
+	case []byte:
+		return string(t)
+	case int:
+		return Itoa(t)
+	case int64:
+		return Int64ToString(t)
+	case float32:
+		return Float32ToString(t)
+	case float64:
+		return Float64ToString(t)
+	case bool:
+		return BoolToString(t)
+	case error:
+		return t.Error()
+	default:
+		return fmt.Sprintf("%v", t)
+	}
+}
+
+// GetStructFieldValue retrieves the value of a specific field from a struct.
+// Returns the field value as an string and an error if the field does not exist or is inaccessible.
+func GetStructFieldValue(input interface{}, fieldName string) (string, error) {
+	if input == nil {
+		return "", fmt.Errorf("Input Object is Nil")
+	}
+
+	if LenTrim(fieldName) <= 0 {
+		return "", fmt.Errorf("Field Name is Required")
+	}
+
+	// Get the reflect.Value and reflect.Type of the input
+	v := reflect.ValueOf(input)
+	t := reflect.TypeOf(input)
+
+	// Handle pointer to struct
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+		t = t.Elem()
+	}
+
+	// Ensure the input is a struct
+	if v.Kind() != reflect.Struct {
+		return "", fmt.Errorf("Input Object Expects a Struct Object or Pointer to Struct Object")
+	}
+
+	// Check if the field exists
+	fieldValue := v.FieldByName(fieldName)
+
+	if !fieldValue.IsValid() {
+		return "", fmt.Errorf("Field %q Does Not Exist In the Struct", fieldName)
+	}
+
+	// Check if the field is accessible
+	if !fieldValue.CanInterface() {
+		return "", fmt.Errorf("Field %q is Inaccessible", fieldName)
+	}
+
+	// return string value
+	if fieldValueStr, _, err := ReflectValueToString(fieldValue, "true", "false", false, false, "", false); err != nil {
+		return "", fmt.Errorf("Field %q Value Conversion Failed: %v", fieldName, err)
+	} else {
+		return fieldValueStr, nil
+	}
+}
+
+// ConvertStructToSlice converts a struct passed as an interface{} to a slice of that struct's type.
+// Returns an error if the input is not a struct or a pointer to a struct.
+func ConvertStructToSlice(input interface{}) (interface{}, error) {
+	if input == nil {
+		return nil, fmt.Errorf("Struct Input is Nil")
+	}
+
+	// Get the reflect.Value and reflect.Type of the input
+	v := reflect.ValueOf(input)
+	t := reflect.TypeOf(input)
+
+	var v2 reflect.Value
+
+	// Handle pointer to struct
+	if v.Kind() == reflect.Ptr {
+		v2 = v.Elem()
+	}
+
+	// Ensure the input is a struct
+	if v2.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("Struct Input Expects a Struct Object or Pointer to Struct Object")
+	}
+
+	// Create a slice of the struct's type with one element
+	sliceType := reflect.SliceOf(t)
+	slice := reflect.MakeSlice(sliceType, 1, 1)
+	slice.Index(0).Set(v)
+
+	return slice.Interface(), nil
+}
+
+// ReflectSetStringSliceToField sets a slice of strings to a specified field in a struct passed as an interface{}.
+// Returns an error if the field does not exist or is not compatible with a []string type.
+func ReflectSetStringSliceToField(target interface{}, fieldName string, values []string) error {
+	if target == nil {
+		return fmt.Errorf("Target is Nil")
+	}
+
+	if LenTrim(fieldName) <= 0 {
+		return fmt.Errorf("Field Name is Required")
+	}
+
+	// Get the reflect.Value and reflect.Type of the target
+	v := reflect.ValueOf(target)
+
+	// Ensure the target is a pointer to a struct
+	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("Target Expects a Pointer to a Struct, or Struct Itself")
+	}
+
+	// Get the underlying struct
+	v = v.Elem()
+	field := v.FieldByName(fieldName)
+
+	// Check if the field exists
+	if !field.IsValid() {
+		return fmt.Errorf("Field %q Not Exist in Struct", fieldName)
+	}
+
+	// Ensure the field is a slice of strings
+	if field.Type() != reflect.TypeOf([]string{}) {
+		return fmt.Errorf("Field %q Expects Type of []string", fieldName)
+	}
+
+	// Ensure the field is settable
+	if !field.CanSet() {
+		return fmt.Errorf("Field %q Not Settable", fieldName)
+	}
+
+	// Set the slice of strings to the field
+	field.Set(reflect.ValueOf(values))
+	return nil
 }

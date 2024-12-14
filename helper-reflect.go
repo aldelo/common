@@ -129,7 +129,7 @@ func GetStructTagValueByObject(structObj interface{}, structFieldName string, st
 		return true, "", t
 	} else {
 		// struct field found
-		return false, field.Tag.Get(structTagName), t
+		return false, Replace(field.Tag.Get(structTagName), ",omitempty", ""), t
 	}
 }
 
@@ -156,14 +156,14 @@ func GetStructTagValueByType(t reflect.Type, structFieldName string, structTagNa
 		return true, ""
 	} else {
 		// struct field found
-		return false, field.Tag.Get(structTagName)
+		return false, Replace(field.Tag.Get(structTagName), ",omitempty", "")
 	}
 }
 
 // GetStructTagsValueSlice returns named struct tag values from field, in the order queried
 func GetStructTagsValueSlice(field reflect.StructField, tagName ...string) (tagValues []string) {
 	for _, t := range tagName {
-		tagValues = append(tagValues, field.Tag.Get(t))
+		tagValues = append(tagValues, Replace(field.Tag.Get(t), ",omitempty", ""))
 	}
 
 	return
@@ -218,12 +218,12 @@ func GetStructFieldTagAndValues(input interface{}, tagName string, getDynamoDBAt
 		valueStr, _, _ := ReflectValueToString(value, "true", "false", false, false, "", false)
 
 		// Get the value of the specified tag
-		if tagValue := field.Tag.Get(tagName); LenTrim(tagValue) > 0 && tagValue != "-" {
+		if tagValue := Replace(field.Tag.Get(tagName), ",omitempty", ""); LenTrim(tagValue) > 0 && tagValue != "-" {
 			// get dynamodbav attribute tag value
 			ddbTagName := ""
 
 			if getDynamoDBAttributeTagName {
-				ddbTagName = field.Tag.Get("dynamodbav")
+				ddbTagName = Replace(field.Tag.Get("dynamodbav"), ",omitempty", "")
 			}
 
 			// Add the tag value and field value to the results

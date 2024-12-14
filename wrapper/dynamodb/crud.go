@@ -1372,6 +1372,8 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		}
 	}
 
+	uniqueFieldsMap := make(map[string]*CrudUniqueFieldNameAndIndex)
+
 	// prepare and execute set expression action
 	if util.LenTrim(setExpression) > 0 {
 		expressionAttributeValues := map[string]*ddb.AttributeValue{}
@@ -1455,6 +1457,8 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 				if updatedUniqueFields, newUniqueFields, ukErr := crudUniqueModel.GetUpdatedUniqueFieldsFromExpressionAttributeValues(oldUniqueFields, expressionAttributeValues); ukErr != nil {
 					return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromExpressionAttributeValues) %s", ukErr.Error())
 				} else {
+					uniqueFieldsMap = oldUniqueFields
+
 					if updatedUniqueFields != nil && len(updatedUniqueFields) > 0 && newUniqueFields != nil && newUniqueFields.UniqueFields != nil && len(newUniqueFields.UniqueFields) > 0 {
 						doUpdateItemNonTransactional = false
 
@@ -1558,6 +1562,29 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		if e := c._ddb.RemoveItemAttributeWithRetry(c._actionRetries, pkValue, skValue, removeExpression, c._ddb.TimeOutDuration(c._timeout)); e != nil {
 			// remove item attribute error
 			return fmt.Errorf("Update To Data Store Failed: (RemoveItemAttribute) %s", e.Error())
+		}
+		
+		// check for unique key indexes to remove
+		if uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
+			// get slice of remove attributes
+			removeAttributes := strings.Split(util.Right(removeExpression, len(removeExpression)-7), ",")
+
+			// loop through each remove attribute to see if it is unique key index
+			// if so we will remove the unique key index from the table
+			for _, removeAttribute := range removeAttributes {
+				if util.LenTrim(removeAttribute) > 0 {
+					removeAttribute = util.Trim(removeAttribute)
+
+					if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
+						if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
+							if e := c._ddb.DeleteItemWithRetry(c._actionRetries, uniqueField.UniqueFieldIndex, "UniqueKey", c._ddb.TimeOutDuration(c._timeout)); e != nil {
+								// delete unique key index error
+								return fmt.Errorf("Update To Data Store Failed: (DeleteItem Unique Key Index) %s", e.Error())
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 

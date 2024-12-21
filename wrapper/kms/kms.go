@@ -678,6 +678,9 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 	result, err := k.kmsClient.GetPublicKey(&kms.GetPublicKeyInput{
 		KeyId: aws.String(aliasName),
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	var e error
 
@@ -693,6 +696,13 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 		})
 	}
 
+	if e != nil {
+		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
+		return nil, err
+	}
+	_, e = k.kmsClient.DeleteAlias(&kms.DeleteAliasInput{
+		AliasName: aws.String(aliasName),
+	})
 	if e != nil {
 		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
 		return nil, err

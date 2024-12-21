@@ -1,7 +1,7 @@
 package dynamodb
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2024 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,214 @@ import (
 	"time"
 )
 
+// CrudUniqueModel defines the unique model for the crud object
+// Specifically, an interface{} representing the crud object is passed in,
+// and the crud object's fields with its tag name matching UniqueTagName is discovered,
+// then the subject field's value is appended to the crud object's PK value to comprise the unique key index value.
+//
+// PKName = the crud object's PK Name, typically "PK", if not set, the default of "PK" is used.
+// PKDelimiter = the delimiter used to separate the PK parts, typically "#", if not set, the default of "#" is used.
+// UniqueTagName = the crud object's field tag name that is used to discover the unique key index value.
+//
+//	The tag value inside UniqueTagName under crud is an int represents the PK parts count from left to right, each part count is delimited by the PKDelimiter.
+//	For example, if the PK is "APP#SERVICE#SCOPE#IDENTIFIER", and the UniqueTagName is "uniquepkparts", and the tag value is "2", then the unique key index value is "APP#SERVICE".
+//	the PK Parts retrieved by the unique parts is used as prefix before appending the unique field name and unique field value.
+type CrudUniqueModel struct {
+	PKName        string
+	PKDelimiter   string
+	UniqueTagName string
+
+	pkParts []string
+}
+
+// getPKPrefix returns concatenated PK parts based on part count with PKDelimiter
+func (u *CrudUniqueModel) getPKPrefix(partCount int) string {
+	if partCount <= 0 {
+		return ""
+	}
+
+	if partCount > len(u.pkParts) {
+		partCount = len(u.pkParts)
+	}
+
+	return strings.Join(u.pkParts[:partCount], u.PKDelimiter)
+}
+
+type CrudUniqueRecord struct {
+	PK string `json:"pk" dynamodbav:"PK"`
+	SK string `json:"sk" dynamodbav:"SK"`
+}
+
+type CrudUniqueFields struct {
+	PK string `json:"pk" dynamodbav:"PK"`
+
+	// each unique field is in format of "DynamoDBAttributeTagName;;;FieldName;;;FieldIndex"
+	UniqueFields []string `json:"unique_fields" dynamodbav:"UniqueFields,omitempty"`
+}
+
+type CrudUniqueFieldNameAndIndex struct {
+	// DynamoDBAttributeTagName is used as key for the map
+	UniqueFieldName  string
+	UniqueFieldIndex string
+
+	OldUniqueFieldIndex string
+}
+
+func (u *CrudUniqueModel) GetUniqueFieldsFromSource(ddb *DynamoDB, sourcePKValue string, sourceSKValue string) (map[string]*CrudUniqueFieldNameAndIndex, error) {
+	if u == nil {
+		return nil, fmt.Errorf("Get Unique Fields From Source Failed: (Validater 1) Crud Unique Model is Required")
+	}
+
+	if ddb == nil {
+		return nil, fmt.Errorf("Get Unique Fields From Source Failed: (Validater 2) DynamoDB Connection is Required")
+	}
+
+	if util.LenTrim(sourcePKValue) == 0 {
+		return nil, fmt.Errorf("Get Unique Fields From Source Failed: (Validater 3) Source PK Value is Required")
+	}
+
+	if util.LenTrim(sourceSKValue) == 0 {
+		return nil, fmt.Errorf("Get Unique Fields From Source Failed: (Validater 4) Source SK Value is Required")
+	}
+
+	result := new(CrudUniqueFields)
+
+	if e := ddb.GetItemWithRetry(3, result, sourcePKValue, sourceSKValue, ddb.TimeOutDuration(3), aws.Bool(true), "PK", "UniqueFields"); e != nil {
+		return nil, fmt.Errorf("Get Unique Fields From Source Failed: (GetItem) %s", e.Error())
+	} else {
+		if result == nil {
+			return nil, nil
+		} else if result.UniqueFields == nil {
+			return nil, nil
+		} else {
+			uniqueFields := make(map[string]*CrudUniqueFieldNameAndIndex)
+
+			for _, v := range result.UniqueFields {
+				if util.LenTrim(v) > 0 {
+					if parts := strings.Split(v, ";;;"); len(parts) == 3 {
+						uniqueFields[parts[0]] = &CrudUniqueFieldNameAndIndex{
+							UniqueFieldName:     parts[1],
+							UniqueFieldIndex:    parts[2],
+							OldUniqueFieldIndex: parts[2],
+						}
+					}
+				}
+			}
+
+			return uniqueFields, nil
+		}
+	}
+}
+
+func (u *CrudUniqueModel) GetUpdatedUniqueFieldsFromExpressionAttributeValues(oldUniqueFields map[string]*CrudUniqueFieldNameAndIndex, updateExpressionAttributeValues map[string]*ddb.AttributeValue) (updatedUniqueFields map[string]*CrudUniqueFieldNameAndIndex, newUniqueFields *CrudUniqueFields, err error) {
+	if u == nil {
+		return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 1) Crud Unique Model is Required")
+	}
+
+	if oldUniqueFields == nil || len(oldUniqueFields) == 0 {
+		return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 2) Old Unique Fields is Required")
+	}
+
+	if updateExpressionAttributeValues == nil || len(updateExpressionAttributeValues) == 0 {
+		return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 3) Update Expression Attribute Values is Required")
+	}
+
+	updatedUniqueFields = make(map[string]*CrudUniqueFieldNameAndIndex)
+	newUniqueFields = new(CrudUniqueFields)
+
+	// loop through each of oldUniqueFields map key and match to updateExpressionAttributeValues map key,
+	// if found, this is unique field being updated
+	for k, v := range oldUniqueFields {
+		if util.LenTrim(k) > 0 && v != nil {
+			if attrVal, ok := updateExpressionAttributeValues[":"+k]; ok {
+				// found unique field being updated
+				if attrVal != nil {
+					newKey := fmt.Sprintf("%s#UniqueKey#%s#%s", util.SplitString(v.UniqueFieldIndex, "#UniqueKey#", 0), strings.ToUpper(v.UniqueFieldName), strings.ToUpper(aws.StringValue(attrVal.S)))
+
+					if newKey != v.OldUniqueFieldIndex {
+						newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, newKey))
+
+						updatedUniqueFields[k] = &CrudUniqueFieldNameAndIndex{
+							UniqueFieldName:     v.UniqueFieldName,
+							UniqueFieldIndex:    newKey,
+							OldUniqueFieldIndex: v.OldUniqueFieldIndex,
+						}
+					} else {
+						// no update, same new and old index
+						newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, v.UniqueFieldIndex))
+					}
+				}
+			} else {
+				// no update, only append newUniqueFields
+				newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, v.UniqueFieldIndex))
+			}
+		}
+	}
+
+	// return results
+	return updatedUniqueFields, newUniqueFields, nil
+}
+
+// GetUniqueFieldsFromObject returns the unique fields from the crud object,
+// uses tag name matching the unique field tag name defined under CrudUniqueModel
+//
+// input = the crud object to extract unique field values from
+func (u *CrudUniqueModel) GetUniqueFieldsFromCrudObject(input interface{}) (uniqueFields map[string]*CrudUniqueFieldNameAndIndex, err error) {
+	if u == nil {
+		return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (Validater 1) Unique Model is Required")
+	}
+
+	if util.LenTrim(u.UniqueTagName) == 0 {
+		return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (Validater 2) Unique Tag Name is Required")
+	}
+
+	if input == nil {
+		return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (Validater 3) Input Object is Required")
+	}
+
+	if util.LenTrim(u.PKName) == 0 {
+		u.PKName = "PK"
+	}
+
+	if util.LenTrim(u.PKDelimiter) == 0 {
+		u.PKDelimiter = "#"
+	}
+
+	// get struct tag field values matching unique tag name (dynamodbav tag value is also retrieved via this function)
+	if fields, e := util.GetStructFieldTagAndValues(input, u.UniqueTagName, true); e != nil {
+		// error
+		return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (GetStructFieldTagAndValues) %s", e.Error())
+	} else if len(fields) == 0 {
+		// nothing found
+		return nil, nil
+	} else {
+		// has unique fields found, ready to process
+
+		// get pk value in parts
+		if pkValue, pkErr := util.GetStructFieldValue(input, u.PKName); pkErr != nil {
+			return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (Get PK Field Value) %s", pkErr.Error())
+		} else {
+			u.pkParts = strings.Split(pkValue, u.PKDelimiter)
+		}
+
+		// loop thru each unique field to create unique key index value
+		// map key = dynamodbav attribute name
+		uniqueFields := make(map[string]*CrudUniqueFieldNameAndIndex)
+
+		for _, v := range fields {
+			if v != nil && util.IsNumericIntOnly(v.TagValue) && util.LenTrim(v.FieldName) > 0 && util.LenTrim(v.FieldValue) > 0 && util.LenTrim(v.DynamoDBAttributeTagName) > 0 && util.Atoi(v.TagValue) > 0 {
+				uniqueFields[v.DynamoDBAttributeTagName] = &CrudUniqueFieldNameAndIndex{
+					UniqueFieldName:  v.FieldName,
+					UniqueFieldIndex: fmt.Sprintf("%s#UniqueKey#%s#%s", u.getPKPrefix(util.Atoi(v.TagValue)), strings.ToUpper(v.FieldName), strings.ToUpper(v.FieldValue)),
+				}
+			}
+		}
+
+		// return unique key values
+		return uniqueFields, nil
+	}
+}
+
 type Crud struct {
 	_ddb           *DynamoDB
 	_timeout       uint
@@ -39,8 +247,9 @@ type Crud struct {
 type ConnectionConfig struct {
 	Region    string
 	TableName string
-	UseDax    bool
-	DaxUrl    string
+
+	UseDax bool
+	DaxUrl string
 
 	TimeoutSeconds uint
 	ActionRetries  uint
@@ -152,6 +361,8 @@ func (c *Crud) CreatePKValue(pkApp string, pkService string, pkScope string, pkI
 //
 //	result struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
 //
+// !!! Auto Projects CrUTC, CrBy, CrIP, UpUTC, UpBy, UpIP, if these attributes not included in Projection list !!!
+//
 // warning: projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
 func (c *Crud) Get(pkValue string, skValue string, resultDataPtr interface{}, consistentRead bool, projectedAttributes ...string) (err error) {
 	if c._ddb == nil {
@@ -170,6 +381,17 @@ func (c *Crud) Get(pkValue string, skValue string, resultDataPtr interface{}, co
 		return fmt.Errorf("Get From Data Store Failed: (Validater 4) Result Var Requires Ptr")
 	}
 
+	// auto project CrUTC, CrBy, CrIP, UpUTC, UpBy, UpIP
+	if len(projectedAttributes) > 0 {
+		projectionIndex := strings.Join(projectedAttributes, " ")
+
+		for _, v := range []string{"CrUTC", "CrBy", "CrIP", "UpUTC", "UpBy", "UpIP"} {
+			if !strings.Contains(projectionIndex, v) {
+				projectedAttributes = append(projectedAttributes, v)
+			}
+		}
+	}
+
 	if e := c._ddb.GetItemWithRetry(c._actionRetries, resultDataPtr, pkValue, skValue, c._ddb.TimeOutDuration(c._timeout), util.BoolPtr(consistentRead), projectedAttributes...); e != nil {
 		// get error
 		return fmt.Errorf("Get From Data Store Failed: (GetItem) %s", e.Error())
@@ -182,32 +404,95 @@ func (c *Crud) Get(pkValue string, skValue string, resultDataPtr interface{}, co
 // BatchGet executes get against up to 100 PK SK search keys,
 // results populated into resultDataSlicePtr (each slice element is struct of underlying dynamodb table record attributes definition)
 //
-// warning: projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
-func (c *Crud) BatchGet(searchKeys []PkSkValuePair, resultDataSlicePtr interface{}, consistentRead bool, projectedAttributes ...string) (found bool, err error) {
-	if c._ddb == nil {
-		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 1) Connection Not Established")
+// !!! Auto Projects CrUTC, CrBy, CrIP, UpUTC, UpBy, UpIP, if these attributes not included in Projection list !!!
+//
+// pkskList = slice of PK SK search keys to get against
+// resultItemsSlicePtr = slice pointer to hold the results
+// consistentRead = if true, read is consistent, if false, read is eventually consistent
+// projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
+func (c *Crud) BatchGet(pkskList []PkSkValuePair, resultItemsSlicePtr interface{}, consistentRead bool, projectedAttributes ...string) (found bool, err error) {
+	if pkskList == nil {
+		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 1) PK SK List Missing")
 	}
 
-	if resultDataSlicePtr == nil {
-		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 2) Result Data Slice Missing Ptr")
+	if len(pkskList) == 0 {
+		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 2) PK SK List Empty")
 	}
 
-	if len(searchKeys) == 0 {
-		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 3) Search Keys Missing Values")
+	if resultItemsSlicePtr == nil {
+		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 3) Result Items Slice Pointer Missing")
 	}
 
-	ddbSearchKeys := []DynamoDBTableKeys{}
+	searchKeys := make([]*DynamoDBTableKeyValue, 0)
 
-	for _, v := range searchKeys {
-		ddbSearchKeys = append(ddbSearchKeys, DynamoDBTableKeys{
+	for _, v := range pkskList {
+		searchKeys = append(searchKeys, &DynamoDBTableKeyValue{
 			PK: v.PKValue,
 			SK: v.SKValue,
 		})
 	}
 
-	if notFound, e := c._ddb.BatchGetItemsWithRetry(c._actionRetries, resultDataSlicePtr, ddbSearchKeys, c._ddb.TimeOutDuration(c._timeout), util.BoolPtr(consistentRead), projectedAttributes...); e != nil {
+	var projectedAttributesSet *DynamoDBProjectedAttributesSet
+
+	if len(projectedAttributes) > 0 {
+		// auto project CrUTC, CrBy, CrIP, UpUTC, UpBy, UpIP
+		projectionIndex := strings.Join(projectedAttributes, " ")
+
+		for _, v := range []string{"CrUTC", "CrBy", "CrIP", "UpUTC", "UpBy", "UpIP"} {
+			if !strings.Contains(projectionIndex, v) {
+				projectedAttributes = append(projectedAttributes, v)
+			}
+		}
+
+		projectedAttributesSet = &DynamoDBProjectedAttributesSet{
+			ProjectedAttributes: projectedAttributes,
+		}
+	}
+
+	multiGet := &DynamoDBMultiGetRequestResponse{
+		SearchKeys:          searchKeys,
+		ProjectedAttributes: projectedAttributesSet,
+		ConsistentRead:      aws.Bool(consistentRead),
+		ResultItemsSlicePtr: resultItemsSlicePtr,
+	}
+
+	if notFound, e := c.BatchGetEx(multiGet); e != nil {
 		// error
-		return false, fmt.Errorf("BatchGet From Data Store Failed: (BatchGetItems) %s" + e.Error())
+		return false, fmt.Errorf("BatchGet From Data Store Failed: %s", e.Error())
+	} else {
+		// success
+		return !notFound, nil
+	}
+}
+
+// BatchGetEx executes get against up to 100 PK SK search keys in the same or different tables,
+// results populated into resultItemsSlicePtr (each slice element is struct of underlying dynamodb table record attributes definition)
+//
+// warning: projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
+func (c *Crud) BatchGetEx(multiGetRequestResponse ...*DynamoDBMultiGetRequestResponse) (found bool, err error) {
+	if c._ddb == nil {
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 1) Connection Not Established")
+	}
+
+	if multiGetRequestResponse == nil {
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 2) GetRequests Missing")
+	}
+
+	if len(multiGetRequestResponse) == 0 {
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 3) GetRequests Empty")
+	}
+
+	if len(multiGetRequestResponse[0].SearchKeys) == 0 {
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 4) Search Keys Missing Values")
+	}
+
+	if multiGetRequestResponse[0].ResultItemsSlicePtr == nil {
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 5) Result Slice Pointer Missing")
+	}
+
+	if notFound, e := c._ddb.BatchGetItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), multiGetRequestResponse...); e != nil {
+		// error
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (on BatchGetItems) %s" + e.Error())
 	} else {
 		// success
 		return !notFound, nil
@@ -215,17 +500,33 @@ func (c *Crud) BatchGet(searchKeys []PkSkValuePair, resultDataSlicePtr interface
 }
 
 // TransactionGet retrieves records from dynamodb table(s), based on given PK SK,
-// action results will be passed to caller via transReads' ResultItemPtr and ResultError fields
-func (c *Crud) TransactionGet(transReads ...*DynamoDBTransactionReads) (successCount int, err error) {
+// action results will be passed to caller via transReads' ResultItemsSlicePtr
+func (c *Crud) TransactionGet(getItems ...*DynamoDBTransactionReads) (successCount int, err error) {
 	if c._ddb == nil {
 		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 1) Connection Not Established")
 	}
 
-	if transReads == nil {
-		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 2) Transaction Keys Missing")
+	if getItems == nil {
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 2) GetItems Requests Missing")
 	}
 
-	if success, e := c._ddb.TransactionGetItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), transReads...); e != nil {
+	if len(getItems) == 0 {
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 3) GetItems Requests Empty")
+	}
+
+	if getItems[0].SearchKeys == nil {
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 4) Search Keys Nil")
+	}
+
+	if len(getItems[0].SearchKeys) == 0 {
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 5) Search Keys Empty")
+	}
+
+	if getItems[0].ResultItemsSlicePtr == nil {
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 6) Result Slice Pointer Missing")
+	}
+
+	if success, e := c._ddb.TransactionGetItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), getItems...); e != nil {
 		// error
 		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (TransactionGetItems) %s", e.Error())
 	} else {
@@ -236,10 +537,14 @@ func (c *Crud) TransactionGet(transReads ...*DynamoDBTransactionReads) (successC
 
 // Set persists data to dynamodb table with given pointer struct that represents the target dynamodb table record,
 // pk value within pointer struct is created using CreatePKValue func
-// dataPtr refers to pointer to struct of the target dynamodb table record
 //
-//	data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
-func (c *Crud) Set(dataPtr interface{}) (err error) {
+// !!! Auto Creates Unique Key Indexes Based On Unique Field Values Found In Struct Tag Named UniqueTagName !!!
+//
+// dataPtr = refers to pointer to struct of the target dynamodb table record
+// conditionExpressionSet = optional condition expression to apply to the put operation
+//
+// data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
+func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBConditionExpressionSet) (err error) {
 	if c._ddb == nil {
 		return fmt.Errorf("Set To Data Store Failed: (Validater 1) Connection Not Established")
 	}
@@ -248,64 +553,297 @@ func (c *Crud) Set(dataPtr interface{}) (err error) {
 		return fmt.Errorf("Set To Data Store Failed: (Validater 2) Data Var Requires Ptr")
 	}
 
-	if e := c._ddb.PutItemWithRetry(c._actionRetries, dataPtr, c._ddb.TimeOutDuration(c._timeout)); e != nil {
-		// set error
-		return fmt.Errorf("Set To Data Store Failed: (PutItem) %s", e.Error())
+	// get unique key values
+	crudUniqueModel := &CrudUniqueModel{
+		PKName:        "PK",
+		PKDelimiter:   "#",
+		UniqueTagName: "uniquepkparts", // struct must also have 'UniqueFields' attribute
+	}
+
+	if uniqueFields, e := crudUniqueModel.GetUniqueFieldsFromCrudObject(dataPtr); e != nil {
+		return fmt.Errorf("Set To Data Store Failed: (Get Unique Fields From Crud Object) %s", e.Error())
 	} else {
-		// set success
-		return nil
-	}
-}
-
-// BatchSet executes put and delete against up to 25 grouped records combined,
-// putDataSlice = []dataStruct for the put items (make sure not passing in as Ptr)
-// deleteKeys = PK SK pairs slice to delete against
-// failedPuts & failedDeletes = PK SK pairs slices for the failed action attempts
-func (c *Crud) BatchSet(putDataSlice interface{}, deleteKeys []PkSkValuePair) (successCount int, failedPuts []PkSkValuePair, failedDeletes []PkSkValuePair, err error) {
-	if c._ddb == nil {
-		return 0, nil, nil, fmt.Errorf("BatchSet To Data Store Failed: (Validater 1) Connection Not Established")
-	}
-
-	ddbDeleteKeys := []DynamoDBTableKeys{}
-
-	for _, v := range deleteKeys {
-		ddbDeleteKeys = append(ddbDeleteKeys, DynamoDBTableKeys{
-			PK: v.PKValue,
-			SK: v.SKValue,
-		})
-	}
-
-	if len(ddbDeleteKeys) == 0 {
-		ddbDeleteKeys = nil
-	}
-
-	if success, unprocessed, e := c._ddb.BatchWriteItemsWithRetry(c._actionRetries, putDataSlice, ddbDeleteKeys, c._ddb.TimeOutDuration(c._timeout)); e != nil {
-		// error
-		return 0, nil, nil, fmt.Errorf("BatchSet To Data Store Failed: (BatchWriteItems) %s" + e.Error())
-	} else {
-		// success (may contain unprocessed)
-		if unprocessed != nil {
-			if unprocessed.PutItems != nil {
-				for _, v := range unprocessed.PutItems {
-					if v != nil {
-						failedPuts = append(failedPuts, PkSkValuePair{PKValue: aws.StringValue(v["PK"].S), SKValue: aws.StringValue(v["SK"].S)})
-					}
+		if uniqueFields != nil && len(uniqueFields) > 0 {
+			//
+			// create slice string from uniqueFields map, and set into dataPtr's UniqueFields Slice String attribute if present
+			//
+			uniqueFieldsSlice := make([]string, 0)
+			for k, v := range uniqueFields {
+				if util.LenTrim(k) > 0 && v != nil && util.LenTrim(v.UniqueFieldName) > 0 && util.LenTrim(v.UniqueFieldIndex) > 0 {
+					uniqueFieldsSlice = append(uniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, v.UniqueFieldIndex))
 				}
-
-				if len(failedPuts) == 0 {
-					failedPuts = nil
+			}
+			if len(uniqueFieldsSlice) > 0 {
+				if err = util.ReflectSetStringSliceToField(dataPtr, "UniqueFields", uniqueFieldsSlice); err != nil {
+					return fmt.Errorf("Set To Data Store Failed: (Set UniqueFields Attribute Error) %s", err.Error())
 				}
 			}
 
-			if unprocessed.DeleteKeys != nil {
-				for _, v := range unprocessed.DeleteKeys {
-					if v != nil {
-						failedDeletes = append(failedDeletes, PkSkValuePair{PKValue: v.PK, SKValue: v.SK})
+			//
+			// convert dataPtr to slice of dataPtr
+			//
+			if dataPtrSlice, convErr := util.ConvertStructToSlice(dataPtr); convErr != nil {
+				return fmt.Errorf("Set To Data Store Failed: (Convert Crud Struct To Slice) %s", convErr.Error())
+			} else {
+				//
+				// get conditional expression
+				//
+				var condExpr *DynamoDBConditionExpressionSet
+				if len(conditionExpressionSet) > 0 {
+					condExpr = conditionExpressionSet[0]
+					if util.LenTrim(condExpr.ConditionExpression) <= 0 {
+						condExpr = nil
 					}
 				}
 
-				if len(failedDeletes) == 0 {
-					failedDeletes = nil
+				//
+				// create put items set
+				//
+				putItemsSet := &DynamoDBTransactionWritePutItemsSet{
+					PutItems: dataPtrSlice,
+				}
+
+				if condExpr != nil {
+					putItemsSet.ConditionExpression = condExpr.ConditionExpression
+
+					if condExpr.ExpressionAttributeValues != nil && len(condExpr.ExpressionAttributeValues) > 0 {
+						putItemsSet.ExpressionAttributeValues = condExpr.ExpressionAttributeValues
+					}
+				} else {
+					putItemsSet.ConditionExpression = "attribute_not_exists(PK)"
+				}
+
+				// construct transaction writes
+				writes := new(DynamoDBTransactionWrites)
+				writes.PutItemsSet = []*DynamoDBTransactionWritePutItemsSet{putItemsSet}
+
+				//
+				// loop through all unique fields from crud object to add to crud unique record slice for put into dynamodb
+				//
+				uniqueRecords := make([]*CrudUniqueRecord, 0)
+
+				for k, v := range uniqueFields {
+					if util.LenTrim(k) > 0 && v != nil && util.LenTrim(v.UniqueFieldName) > 0 && util.LenTrim(v.UniqueFieldIndex) > 0 {
+						uniqueRecords = append(uniqueRecords, &CrudUniqueRecord{
+							PK: v.UniqueFieldIndex,
+							SK: "UniqueKey",
+						})
+					}
+				}
+
+				if len(uniqueRecords) > 0 {
+					// add unique key values to transaction writes
+					writes.PutItemsSet = append(writes.PutItemsSet, &DynamoDBTransactionWritePutItemsSet{
+						PutItems:            uniqueRecords,
+						ConditionExpression: "attribute_not_exists(PK)",
+					})
+				}
+
+				//
+				// execute transaction
+				//
+				if ok, e2 := c._ddb.TransactionWriteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), writes); e2 != nil {
+					// transaction write error
+					if e2.TransactionConditionalCheckFailed {
+						// possibly duplicate detected
+						return fmt.Errorf("Set To Data Store Failed: (TransactionWriteItems) [Possible Unique Attribute Duplicate Blocked] %s", e2.Error())
+					} else {
+						return fmt.Errorf("Set To Data Store Failed: (TransactionWriteItems) %s", e2.Error())
+					}
+				} else {
+					// transaction write no error (check for success or failure)
+					if !ok {
+						return fmt.Errorf("Set To Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
+					} else {
+						return nil
+					}
+				}
+			}
+		} else {
+			// no unique fields, use normal put
+			if len(conditionExpressionSet) == 0 {
+				conditionExpressionSet = append(conditionExpressionSet, &DynamoDBConditionExpressionSet{
+					ConditionExpression: "attribute_not_exists(PK)",
+				})
+			}
+
+			if e := c._ddb.PutItemWithRetry(c._actionRetries, dataPtr, c._ddb.TimeOutDuration(c._timeout), conditionExpressionSet...); e != nil {
+				// set error
+				return fmt.Errorf("Set To Data Store Failed: (PutItem) %s", e.Error())
+			} else {
+				// set success
+				return nil
+			}
+		}
+	}
+}
+
+func (c *Crud) prepareBatchSetParams(putItems interface{}, deleteKeys []PkSkValuePair, putConditionExpressionSet ...*DynamoDBConditionExpressionSet) ([]*DynamoDBTransactionWritePutItemsSet, []*DynamoDBTableKeys, map[string][]*PkSkValuePair, map[string][]*PkSkValuePair) {
+	if putItems == nil && len(deleteKeys) == 0 {
+		return nil, nil, nil, nil
+	}
+
+	put := make([]*DynamoDBTransactionWritePutItemsSet, 0)
+	del := make([]*DynamoDBTableKeys, 0)
+
+	if putItems != nil {
+		var conditionExpression string
+		var expressionAttrValues map[string]*ddb.AttributeValue
+
+		if len(putConditionExpressionSet) > 0 && putConditionExpressionSet[0] != nil {
+			conditionExpression = putConditionExpressionSet[0].ConditionExpression
+			expressionAttrValues = putConditionExpressionSet[0].ExpressionAttributeValues
+		}
+
+		put = append(put, &DynamoDBTransactionWritePutItemsSet{
+			PutItems: putItems,
+		})
+
+		if util.LenTrim(conditionExpression) > 0 && expressionAttrValues != nil && len(expressionAttrValues) > 0 {
+			put[0].ConditionExpression = conditionExpression
+			put[0].ExpressionAttributeValues = expressionAttrValues
+		}
+	}
+
+	if len(deleteKeys) > 0 {
+		for _, v := range deleteKeys {
+			del = append(del, &DynamoDBTableKeys{
+				PK: v.PKValue,
+				SK: v.SKValue,
+			})
+		}
+	}
+
+	return put, del, make(map[string][]*PkSkValuePair), make(map[string][]*PkSkValuePair)
+}
+
+func (c *Crud) prepareBatchSetResults(failedPutsMap map[string][]*PkSkValuePair, failedDeletesMap map[string][]*PkSkValuePair) (failedPuts []PkSkValuePair, failedDeletes []PkSkValuePair) {
+	if failedPutsMap != nil && len(failedPutsMap) > 0 {
+		for _, v := range failedPutsMap {
+			for _, vv := range v {
+				if vv != nil {
+					failedPuts = append(failedPuts, *vv)
+				}
+			}
+			break
+		}
+	}
+
+	if failedDeletesMap != nil && len(failedDeletesMap) > 0 {
+		for _, v := range failedDeletesMap {
+			for _, vv := range v {
+				if vv != nil {
+					failedDeletes = append(failedDeletes, *vv)
+				}
+			}
+			break
+		}
+	}
+
+	return failedPuts, failedDeletes
+}
+
+// BatchSet executes put and delete against up to 25 grouped records combined.
+//
+// !!! BatchSet Does Not Auto Create Unique Key Indexes - Only Set, Update, Delete Handles Unique Key Index Actions !!!
+//
+// putDataSlice = []dataStruct for the put items (make sure not passing in as Ptr)
+// deleteKeys = PK SK pairs slice to delete against
+//
+// failedPuts & failedDeletes = PK SK pairs slices for the failed action attempts
+//
+// !!! NOTE = Both putItemsSet and deleteKeys Cannot Be Set At The Same Time, Each BatchSet Handles Either Put or Delete, Not Both !!!
+func (c *Crud) BatchSet(putDataSlice interface{}, deleteKeys []PkSkValuePair) (successCount int, failedPuts []PkSkValuePair, failedDeletes []PkSkValuePair, err error) {
+	// prepare batch set params
+	putDataParam, deleteKeysParam, failedPutsMap, failedDeletesMap := c.prepareBatchSetParams(putDataSlice, deleteKeys)
+
+	if successCount, failedPutsMap, failedDeletesMap, err = c.BatchSetEx(putDataParam, deleteKeysParam); err != nil {
+		return 0, nil, nil, err
+	} else {
+		// prepare batch set results
+		failedPuts, failedDeletes = c.prepareBatchSetResults(failedPutsMap, failedDeletesMap)
+		return successCount, failedPuts, failedDeletes, nil
+	}
+}
+
+// BatchSetEx executes put and delete against up to 25 grouped records combined.
+//
+// !!! BatchSetEx Does Not Auto Create Unique Key Indexes - Only Set, Update, Delete Handles Unique Key Index Actions !!!
+//
+// putItemsSet = one or more put items sets to include in batch
+// deleteKeys = one or more delete keys to include in batch
+//
+// !!! NOTE = Both putItemsSet and deleteKeys Cannot Be Set At The Same Time, Each BatchSet Handles Either Put or Delete, Not Both !!!
+func (c *Crud) BatchSetEx(putItemsSet []*DynamoDBTransactionWritePutItemsSet, deleteKeys []*DynamoDBTableKeys) (successCount int, failedPuts map[string][]*PkSkValuePair, failedDeletes map[string][]*PkSkValuePair, err error) {
+	if c._ddb == nil {
+		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 1) Connection Not Established")
+	}
+
+	if putItemsSet != nil && len(putItemsSet) > 0 && deleteKeys != nil && len(deleteKeys) > 0 {
+		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 2) PutItemsSet and DeleteKeys Cannot Be Set At The Same Time")
+	}
+
+	if putItemsSet == nil && deleteKeys == nil {
+		return 0, nil, nil, fmt.Errorf("BatchSetEx Data Store Failed: (Validater 3) PutItemsSet and DeleteKeys Both Missing")
+	}
+
+	if (putItemsSet != nil && len(putItemsSet) == 0) && (deleteKeys != nil && len(deleteKeys) == 0) {
+		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 4) PutItemsSet and DeleteKeys Both Empty")
+	}
+
+	if success, unprocessed, e := c._ddb.BatchWriteItemsWithRetry(c._actionRetries, putItemsSet, deleteKeys, c._ddb.TimeOutDuration(c._timeout)); e != nil {
+		// error
+		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (BatchWriteItems) %s" + e.Error())
+	} else {
+		// success (may contain unprocessed)
+		if unprocessed != nil && len(unprocessed) > 0 {
+			if failedPuts == nil {
+				failedPuts = make(map[string][]*PkSkValuePair)
+			}
+
+			if failedDeletes == nil {
+				failedDeletes = make(map[string][]*PkSkValuePair)
+			}
+
+			for _, perTable := range unprocessed {
+				if perTable != nil {
+					if perTable.PutItems != nil && len(perTable.PutItems) > 0 {
+						puts := make([]*PkSkValuePair, 0)
+
+						for _, v := range perTable.PutItems {
+							if v != nil && len(v) > 0 {
+								pkAttr := v["PK"]
+								skAttr := v["SK"]
+
+								pkValue := ""
+								skValue := ""
+
+								if pkAttr != nil {
+									pkValue = aws.StringValue(pkAttr.S)
+								}
+
+								if skAttr != nil {
+									skValue = aws.StringValue(skAttr.S)
+								}
+
+								puts = append(puts, &PkSkValuePair{PKValue: pkValue, SKValue: skValue})
+							}
+						}
+
+						failedPuts[perTable.TableName] = puts
+					}
+
+					if perTable.DeleteKeys != nil && len(perTable.DeleteKeys) > 0 {
+						dels := make([]*PkSkValuePair, 0)
+
+						for _, v := range perTable.DeleteKeys {
+							if v != nil {
+								dels = append(dels, &PkSkValuePair{PKValue: v.PK, SKValue: v.SK})
+							}
+						}
+
+						failedDeletes[perTable.TableName] = dels
+					}
 				}
 			}
 		}
@@ -315,6 +853,8 @@ func (c *Crud) BatchSet(putDataSlice interface{}, deleteKeys []PkSkValuePair) (s
 }
 
 // TransactionSet puts, updates, deletes records against dynamodb table, with option to override table name,
+//
+// !!! TransactionSet Does Not Auto Create Unique Key Indexes - Only Set, Update, Delete Handles Unique Key Index Actions !!!
 func (c *Crud) TransactionSet(transWrites ...*DynamoDBTransactionWrites) (success bool, err error) {
 	if c._ddb == nil {
 		return false, fmt.Errorf("TransactionSet To Data Store Failed: (Validater 1) Connection Not Established")
@@ -745,6 +1285,8 @@ func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpre
 // Update will update a specific dynamodb record based on PK and SK, with given update expression, condition, and attribute values,
 // attribute values controls the actual values going to be updated into the record
 //
+// !!! Auto Creates and Delete Unique Key Indexes Based On Unique Field Values Found In Struct Tag Named UniqueTagName !!!
+//
 //	updateExpression = required, ATTRIBUTES ARE CASE SENSITIVE; set remove add or delete action expression, see Rules URL for full detail
 //		Rules:
 //			1) https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.UpdateExpressions.html
@@ -830,6 +1372,8 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		}
 	}
 
+	uniqueFieldsMap := make(map[string]*CrudUniqueFieldNameAndIndex)
+
 	// prepare and execute set expression action
 	if util.LenTrim(setExpression) > 0 {
 		expressionAttributeValues := map[string]*ddb.AttributeValue{}
@@ -897,17 +1441,150 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			}
 		}
 
-		if e := c._ddb.UpdateItemWithRetry(c._actionRetries, pkValue, skValue, setExpression, conditionExpression, nil, expressionAttributeValues, c._ddb.TimeOutDuration(c._timeout)); e != nil {
-			// update item error
-			return fmt.Errorf("Update To Data Store Failed: (UpdateItem) %s", e.Error())
+		// check for unique key indexes
+		doUpdateItemNonTransactional := true
+
+		crudUniqueModel := &CrudUniqueModel{
+			PKName:        "PK",
+			PKDelimiter:   "#",
+			UniqueTagName: "uniquepkparts",
+		}
+
+		if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(c._ddb, pkValue, skValue); crudErr != nil {
+			return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromSource) %s", crudErr.Error())
+		} else {
+			if oldUniqueFields != nil && len(oldUniqueFields) > 0 {
+				if updatedUniqueFields, newUniqueFields, ukErr := crudUniqueModel.GetUpdatedUniqueFieldsFromExpressionAttributeValues(oldUniqueFields, expressionAttributeValues); ukErr != nil {
+					return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromExpressionAttributeValues) %s", ukErr.Error())
+				} else {
+					uniqueFieldsMap = oldUniqueFields
+
+					if updatedUniqueFields != nil && len(updatedUniqueFields) > 0 && newUniqueFields != nil && newUniqueFields.UniqueFields != nil && len(newUniqueFields.UniqueFields) > 0 {
+						doUpdateItemNonTransactional = false
+
+						deleteKeys := make([]*DynamoDBTableKeys, 0)
+						putItemsCrudUniqueRecords := make([]*CrudUniqueRecord, 0)
+
+						for _, crudFieldAndIndex := range updatedUniqueFields {
+							if crudFieldAndIndex != nil && util.LenTrim(crudFieldAndIndex.OldUniqueFieldIndex) > 0 && util.LenTrim(crudFieldAndIndex.UniqueFieldIndex) > 0 && util.LenTrim(crudFieldAndIndex.UniqueFieldName) > 0 {
+								//
+								// delete old unique key values that were updated
+								//
+								deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
+									PK: crudFieldAndIndex.OldUniqueFieldIndex,
+									SK: "UniqueKey",
+								})
+
+								//
+								// add new unique key values that were updated
+								//
+								putItemsCrudUniqueRecords = append(putItemsCrudUniqueRecords, &CrudUniqueRecord{
+									PK: crudFieldAndIndex.UniqueFieldIndex,
+									SK: "UniqueKey",
+								})
+							}
+						}
+
+						putItemsSets := make([]*DynamoDBTransactionWritePutItemsSet, 0)
+						putItemsSets = append(putItemsSets, &DynamoDBTransactionWritePutItemsSet{
+							PutItems:            putItemsCrudUniqueRecords,
+							ConditionExpression: "attribute_not_exists(PK)",
+						})
+
+						//
+						// refresh unique key indexes and field names in update expression
+						//
+						if util.LenTrim(setExpression) > 0 {
+							setExpression += ", "
+						} else {
+							setExpression = "set "
+						}
+
+						setExpression += "UniqueFields=:UniqueFields"
+						expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
+							SS: aws.StringSlice(newUniqueFields.UniqueFields),
+						}
+
+						//
+						// update item via transaction (with UniqueFields also updated)
+						//
+						updateItems := make([]*DynamoDBUpdateItemInput, 0)
+
+						updateItems = append(updateItems, &DynamoDBUpdateItemInput{
+							PK:                        pkValue,
+							SK:                        skValue,
+							UpdateExpression:          setExpression,
+							ConditionExpression:       conditionExpression,
+							ExpressionAttributeValues: expressionAttributeValues,
+						})
+
+						//
+						// create writer
+						//
+						writes := &DynamoDBTransactionWrites{
+							PutItemsSet: putItemsSets,
+							DeleteItems: deleteKeys,
+							UpdateItems: updateItems,
+						}
+
+						if ok, e := c._ddb.TransactionWriteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), writes); e != nil {
+							if e.TransactionConditionalCheckFailed {
+								// transaction conditional check failed
+								return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) [Possible Unique Attribute Duplicate Blocked] %s", e.Error())
+							} else {
+								// transaction error
+								return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) %s", e.Error())
+							}
+						} else {
+							if !ok {
+								// transaction failed
+								return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if doUpdateItemNonTransactional {
+			//
+			// update item
+			//
+			if e := c._ddb.UpdateItemWithRetry(c._actionRetries, pkValue, skValue, setExpression, conditionExpression, nil, expressionAttributeValues, c._ddb.TimeOutDuration(c._timeout)); e != nil {
+				// update item error
+				return fmt.Errorf("Update To Data Store Failed: (UpdateItem) %s", e.Error())
+			}
 		}
 	}
 
 	// prepare and execute remove expression action
 	if util.LenTrim(removeExpression) > 0 {
-		if e := c._ddb.RemoveItemAttributeWithRetry(c._actionRetries, pkValue, skValue, removeExpression, c._ddb.TimeOutDuration(c._timeout)); err != nil {
+		if e := c._ddb.RemoveItemAttributeWithRetry(c._actionRetries, pkValue, skValue, removeExpression, c._ddb.TimeOutDuration(c._timeout)); e != nil {
 			// remove item attribute error
 			return fmt.Errorf("Update To Data Store Failed: (RemoveItemAttribute) %s", e.Error())
+		}
+		
+		// check for unique key indexes to remove
+		if uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
+			// get slice of remove attributes
+			removeAttributes := strings.Split(util.Right(removeExpression, len(removeExpression)-7), ",")
+
+			// loop through each remove attribute to see if it is unique key index
+			// if so we will remove the unique key index from the table
+			for _, removeAttribute := range removeAttributes {
+				if util.LenTrim(removeAttribute) > 0 {
+					removeAttribute = util.Trim(removeAttribute)
+
+					if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
+						if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
+							if e := c._ddb.DeleteItemWithRetry(c._actionRetries, uniqueField.UniqueFieldIndex, "UniqueKey", c._ddb.TimeOutDuration(c._timeout)); e != nil {
+								// delete unique key index error
+								return fmt.Errorf("Update To Data Store Failed: (DeleteItem Unique Key Index) %s", e.Error())
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -929,17 +1606,81 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 		return fmt.Errorf("Delete From Data Store Failed: (Validater 3) SK Value is Required")
 	}
 
-	if e := c._ddb.DeleteItemWithRetry(c._actionRetries, pkValue, skValue, c._ddb.TimeOutDuration(c._timeout)); e != nil {
-		// delete error
-		return fmt.Errorf("Delete From Data Store Failed: (DeleteItem) %s", e.Error())
-	} else {
-		// delete success
-		return nil
+	// check for unique key indexes
+	doDeleteItemNonTransactional := true
+
+	crudUniqueModel := &CrudUniqueModel{
+		PKName:        "PK",
+		PKDelimiter:   "#",
+		UniqueTagName: "uniquepkparts",
 	}
+
+	if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(c._ddb, pkValue, skValue); crudErr != nil {
+		return fmt.Errorf("Delete From Data Store Failed: (GetUniqueFieldsFromSource) %s", crudErr.Error())
+	} else {
+		if oldUniqueFields != nil && len(oldUniqueFields) > 0 {
+			deleteKeys := make([]*DynamoDBTableKeys, 0)
+
+			for _, crudFieldAndIndex := range oldUniqueFields {
+				if crudFieldAndIndex != nil && util.LenTrim(crudFieldAndIndex.UniqueFieldIndex) > 0 {
+					deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
+						PK: crudFieldAndIndex.UniqueFieldIndex,
+						SK: "UniqueKey",
+					})
+				}
+			}
+
+			if len(deleteKeys) > 0 {
+				doDeleteItemNonTransactional = false
+
+				deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
+					PK: pkValue,
+					SK: skValue,
+				})
+
+				//
+				// delete item via transaction
+				//
+				writes := &DynamoDBTransactionWrites{
+					DeleteItems: deleteKeys,
+				}
+
+				if ok, e := c._ddb.TransactionWriteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), writes); e != nil {
+					// transaction delete error
+					return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) %s", e.Error())
+				} else {
+					if !ok {
+						// transaction delete failed
+						return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
+					} else {
+						// transaction delete success
+						return nil
+					}
+				}
+			}
+		}
+	}
+
+	if doDeleteItemNonTransactional {
+		//
+		// delete item - non transactional
+		//
+		if e := c._ddb.DeleteItemWithRetry(c._actionRetries, pkValue, skValue, c._ddb.TimeOutDuration(c._timeout)); e != nil {
+			// delete error
+			return fmt.Errorf("Delete From Data Store Failed: (DeleteItem) %s", e.Error())
+		} else {
+			// delete success
+			return nil
+		}
+	}
+
+	return fmt.Errorf("Delete From Data Store Failed: (Abort) Delete Item Not Processed")
 }
 
 // BatchDelete removes one or more record from dynamodb table based on the PK SK pairs
-func (c *Crud) BatchDelete(deleteKeys ...PkSkValuePair) (successCount int, failedDeletes []PkSkValuePair, err error) {
+//
+// !!! BatchDelete Does Not Auto Handle Unique Key Indexes - Only Set, Update, Delete Handles Unique Key Index Actions !!!
+func (c *Crud) BatchDelete(deleteKeys ...*DynamoDBTableKeyValue) (successCount int, failedDeletes []PkSkValuePair, err error) {
 	if c._ddb == nil {
 		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 1) Connection Not Established")
 	}
@@ -948,16 +1689,7 @@ func (c *Crud) BatchDelete(deleteKeys ...PkSkValuePair) (successCount int, faile
 		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 2) Delete Keys Missing")
 	}
 
-	ddbDeleteKeys := []*DynamoDBTableKeys{}
-
-	for _, v := range deleteKeys {
-		ddbDeleteKeys = append(ddbDeleteKeys, &DynamoDBTableKeys{
-			PK: v.PKValue,
-			SK: v.SKValue,
-		})
-	}
-
-	if failed, e := c._ddb.BatchDeleteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), ddbDeleteKeys...); e != nil {
+	if failed, e := c._ddb.BatchDeleteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), deleteKeys...); e != nil {
 		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 2) %s", e.Error())
 	} else {
 		successCount = len(deleteKeys)

@@ -88,6 +88,13 @@ type S3 struct {
 	_parentSegment *xray.XRayParentSegment
 }
 
+// S3ErrorResult struct represents a Delete... batch operation error result
+type S3ErrorResult struct {
+	Key     string
+	Code    string
+	Message string
+}
+
 // ================================================================================================================
 // STRUCTS FUNCTIONS
 // ================================================================================================================
@@ -777,6 +784,115 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 		// delete successful
 		deleteSuccess = true
 		return deleteSuccess, nil
+	}
+}
+
+// DeleteBatch will delete up to 1,000 objects from S3 bucket by key
+//
+// Parameters:
+//
+//	timeOutDuration = nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
+//	targetKey = the actual key name with one or more 'folder' sub-hierarchy, such as "file1.txt", "folder2/file2.txt", "folder2/folder3/file3.txt"
+//
+// Return Values:
+//
+//	deletedKeysList = identifies the object that was successfully deleted.
+//	errorList = describes the object that Amazon S3 attempted to delete and the error it encountered
+//	err = error encountered while attempting to download
+func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (deletedKeysList []string, errorList []*S3ErrorResult, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("S3-DeleteBatch", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("S3-DeleteBatch-TargetKey", targetKeys)
+			_ = seg.Seg.AddMetadata("S3-DeleteBatch-Result-DeletedKeysList", deletedKeysList)
+			_ = seg.Seg.AddMetadata("S3-DeleteBatch-Result-ErrorList", errorList)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if s.s3Obj == nil {
+		err = errors.New("S3 Delete Batch Failed: " + "S3 Object is Required")
+		return nil, nil, err
+	}
+
+	if util.LenTrim(s.BucketName) <= 0 {
+		err = errors.New("S3 Delete Batch Failed: " + "Bucket Name is Required")
+		return nil, nil, err
+	}
+
+	if len(targetKeys) <= 0 {
+		err = errors.New("S3 Delete Batch Failed: " + "Target Keys is Required")
+		return nil, nil, err
+	}
+
+	// create input object
+	objects := make([]*s3.ObjectIdentifier, len(targetKeys))
+	for i, key := range targetKeys {
+		objects[i] = &s3.ObjectIdentifier{Key: aws.String(key)}
+	}
+
+	input := &s3.DeleteObjectsInput{
+		Bucket: aws.String(s.BucketName),
+		Delete: &s3.Delete{
+			Objects: objects,
+			Quiet:   aws.Bool(true), // Response suppresses details, reducing the payload size
+		},
+	}
+
+	// delete objects from s3 bucket
+	var output *s3.DeleteObjectsOutput
+
+	if timeOutDuration != nil {
+		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
+		defer cancel()
+
+		output, err = s.s3Obj.DeleteObjectsWithContext(ctx, input)
+	} else {
+		if segCtxSet {
+			output, err = s.s3Obj.DeleteObjectsWithContext(segCtx, input)
+		} else {
+			output, err = s.s3Obj.DeleteObjects(input)
+		}
+	}
+
+	// evaluate result
+	if err != nil {
+		err = errors.New("S3 Delete Batch Failed Failed: (Delete Objects) " + err.Error())
+		return nil, nil, err
+	} else {
+		if len(output.Deleted) > 0 {
+			for _, v := range output.Deleted {
+				if v != nil {
+					deletedKeysList = append(deletedKeysList, aws.StringValue(v.Key))
+				}
+			}
+		}
+
+		if len(output.Errors) > 0 {
+			for _, v := range output.Errors {
+				if v != nil {
+					errorList = append(errorList, &S3ErrorResult{
+						Key:     aws.StringValue(v.Key),
+						Code:    aws.StringValue(v.Code),
+						Message: aws.StringValue(v.Message),
+					})
+				}
+			}
+		}
+
+		return deletedKeysList, errorList, nil
 	}
 }
 

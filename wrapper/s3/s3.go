@@ -43,6 +43,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
+	"os"
+	"time"
+
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -52,9 +56,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
-	"net/http"
-	"os"
-	"time"
 )
 
 // ================================================================================================================
@@ -776,5 +777,110 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 		// delete successful
 		deleteSuccess = true
 		return deleteSuccess, nil
+	}
+}
+
+// List will list some or all (up to 1,000) of the objects in a S3 bucket
+//
+// Parameters:
+//
+//	timeOutDuration = optional, nil if no timeout pre-set via context; otherwise timeout duration typically in seconds via context
+//	nextToken = optional, if the prior call to List expected more values, a more...token is returned, to be used in this parameter
+//	maxResults = optional, if > 0, the maximum results limited to; By default, the action returns up to 1,000
+//	folder = optional, if the list objects is under one or more 'folder' sub-hierarchy, then specify the folder names from left to right
+//
+// Return Values:
+//
+//	objectKeys = string slice of object keys found
+//	moreObjectsNextToken = if more objects expected, use this token in the next method call by passing into nextToken parameter
+//	err = error encountered while attempting to download
+func (s *S3) ListFileKeys(timeOutDuration *time.Duration, nextToken string, maxResults int64, folder ...string) (fileKeys []string, moreFileKeysNextToken string, err error) {
+	segCtx := context.Background()
+	segCtxSet := false
+
+	seg := xray.NewSegmentNullable("S3-ListFileKeys", s._parentSegment)
+
+	if seg != nil {
+		segCtx = seg.Ctx
+		segCtxSet = true
+
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("S3-ListFileKeys-NextToken", nextToken)
+			_ = seg.Seg.AddMetadata("S3-ListFileKeys-MaxResults", maxResults)
+			_ = seg.Seg.AddMetadata("S3-ListFileKeys-Folder", folder)
+			_ = seg.Seg.AddMetadata("S3-ListFileKeys-Result-FileKeys", fileKeys)
+			_ = seg.Seg.AddMetadata("S3-ListFileKeys-Result-MoreFileKeysNextToken", moreFileKeysNextToken)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if util.LenTrim(s.BucketName) <= 0 {
+		err = errors.New("S3 List File Keys Failed: " + "Bucket Name is Required")
+		return nil, "", err
+	}
+
+	if s.s3Obj == nil {
+		err = errors.New("S3 List File Keys Failed Failed: " + "S3 Client is Required")
+		return nil, "", err
+	}
+
+	// define prefix
+	prefix := ""
+
+	if len(folder) > 0 {
+		preKey := ""
+
+		for _, v := range folder {
+			preKey += v + "/"
+		}
+
+		prefix = preKey + prefix
+	}
+
+	// create input object
+	input := &s3.ListObjectsV2Input{Bucket: aws.String(s.BucketName)}
+
+	if util.LenTrim(nextToken) > 0 {
+		input.ContinuationToken = aws.String(nextToken)
+	}
+
+	if maxResults > 0 {
+		input.MaxKeys = aws.Int64(maxResults)
+	}
+
+	if util.LenTrim(prefix) > 0 {
+		input.Prefix = aws.String(prefix)
+	}
+
+	// perform action
+	var output *s3.ListObjectsV2Output
+
+	if timeOutDuration != nil {
+		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
+		defer cancel()
+
+		output, err = s.s3Obj.ListObjectsV2WithContext(ctx, input)
+	} else {
+		if segCtxSet {
+			output, err = s.s3Obj.ListObjectsV2WithContext(segCtx, input)
+		} else {
+			output, err = s.s3Obj.ListObjectsV2(input)
+		}
+	}
+
+	// evaluate result
+	if err != nil {
+		err = errors.New("S3 List File Keys Failed: (List Action) " + err.Error())
+		return nil, "", err
+	} else {
+		for _, v := range output.Contents {
+			fileKeys = append(fileKeys, aws.StringValue(v.Key))
+		}
+		return fileKeys, aws.StringValue(output.NextContinuationToken), nil
 	}
 }

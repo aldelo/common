@@ -40,6 +40,9 @@ package redis
 // =================================================================================================================
 
 import (
+	"crypto/tls"
+	"strings"
+
 	"github.com/aldelo/common/wrapper/redis/redisbitop"
 	"github.com/aldelo/common/wrapper/redis/redisdatatype"
 	"github.com/aldelo/common/wrapper/redis/rediskeytype"
@@ -47,11 +50,11 @@ import (
 	"github.com/aldelo/common/wrapper/redis/redissetcondition"
 	"github.com/aldelo/common/wrapper/xray"
 	"github.com/go-redis/redis/v8"
-	"strings"
 
 	"errors"
-	util "github.com/aldelo/common"
 	"time"
+
+	util "github.com/aldelo/common"
 )
 
 // ================================================================================================================
@@ -77,6 +80,9 @@ type Redis struct {
 	// config fields
 	AwsRedisWriterEndpoint string
 	AwsRedisReaderEndpoint string
+
+	// TLS is supported by Redis starting with version 6 as an optional feature
+	EnableTLS bool
 
 	// client connection fields
 	cnWriter   *redis.Client
@@ -267,7 +273,7 @@ func (r *Redis) connectInternal() error {
 	}
 
 	// establish new writer redis client
-	r.cnWriter = redis.NewClient(&redis.Options{
+	optWriter := &redis.Options{
 		Addr:         r.AwsRedisWriterEndpoint, // redis endpoint url and port
 		Password:     "",                       // no password set
 		DB:           0,                        // use default DB
@@ -275,14 +281,18 @@ func (r *Redis) connectInternal() error {
 		WriteTimeout: 3 * time.Second,          // time after write operation timeout
 		PoolSize:     10,                       // 10 connections per every cpu
 		MinIdleConns: 3,                        // minimum number of idle connections to keep
-	})
+	}
+	if r.EnableTLS {
+		optWriter.TLSConfig = &tls.Config{InsecureSkipVerify: false}
+	}
+	r.cnWriter = redis.NewClient(optWriter)
 
 	if r.cnWriter == nil {
 		return errors.New("Connect To Redis Failed: (Writer Endpoint) " + "Obtain Client Yielded Nil")
 	}
 
 	// establish new reader redis client
-	r.cnReader = redis.NewClient(&redis.Options{
+	optReader := &redis.Options{
 		Addr:         r.AwsRedisReaderEndpoint, // redis endpoint url and port
 		Password:     "",                       // no password set
 		DB:           0,                        // use default DB
@@ -290,7 +300,11 @@ func (r *Redis) connectInternal() error {
 		WriteTimeout: 3 * time.Second,          // time after write operation timeout
 		PoolSize:     10,                       // 10 connections per every cpu
 		MinIdleConns: 3,                        // minimum number of idle connections to keep
-	})
+	}
+	if r.EnableTLS {
+		optReader.TLSConfig = &tls.Config{InsecureSkipVerify: false}
+	}
+	r.cnReader = redis.NewClient(optReader)
 
 	if r.cnReader == nil {
 		return errors.New("Connect To Redis Failed: (Reader Endpoint) " + "Obtain Client Yielded Nil")

@@ -21,6 +21,7 @@ import (
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/gin/ginbindtype"
 	"github.com/aldelo/common/wrapper/gin/ginjwtsignalgorithm"
+	jwtx "github.com/golang-jwt/jwt/v4"
 	"log"
 	"net/http"
 	"time"
@@ -428,11 +429,11 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 		//		1) data interface{} = this object represents the Authenticator return object (loggedInCredential interface{})
 		//		2) internal code can assert the loggedInCredential to the actual struct to retrieve its field values
 		//				such as: v, ok := data.(*User)
-		authMiddleware.PayloadFunc = func(data interface{}) jwt.MapClaims {
+		authMiddleware.PayloadFunc = func(data interface{}) jwtx.MapClaims {
 			if j.AddClaimsHandler != nil && data != nil {
 				if identVal, customMap := j.AddClaimsHandler(data); util.LenTrim(identVal) > 0 || customMap != nil {
 					if customMap == nil {
-						return jwt.MapClaims{
+						return jwtx.MapClaims{
 							j.IdentityKey: identVal,
 						}
 					} else {

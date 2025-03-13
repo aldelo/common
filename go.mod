@@ -22,6 +22,7 @@ require (
 	github.com/go-errors/errors v1.5.2-0.20240114202408-83795c27c02f
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-sql-driver/mysql v1.9.0
+	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/google/uuid v1.6.1-0.20241114170450-2d3c2a9cc518
 	github.com/jmoiron/sqlx v1.4.1-0.20240530132316-41dac167fdad
 	github.com/kardianos/service v1.2.3-0.20240613133416-becf2eb62b83
@@ -33,7 +34,7 @@ require (
 	go.uber.org/ratelimit v0.3.1
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.35.0
-	golang.org/x/net v0.35.0
+	golang.org/x/net v0.36.0
 	golang.org/x/time v0.10.0
 	google.golang.org/protobuf v1.36.5
 )
@@ -76,7 +77,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/gomodule/redigo v2.0.0+incompatible // indirect

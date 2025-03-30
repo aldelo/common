@@ -18,13 +18,13 @@ package gin
 
 import (
 	"fmt"
-	util "github.com/aldelo/common"
-	"github.com/aldelo/common/wrapper/gin/ginbindtype"
-	"github.com/aldelo/common/wrapper/gin/ginjwtsignalgorithm"
-	jwtx "github.com/golang-jwt/jwt/v4"
 	"log"
 	"net/http"
 	"time"
+
+	util "github.com/aldelo/common"
+	"github.com/aldelo/common/wrapper/gin/ginbindtype"
+	"github.com/aldelo/common/wrapper/gin/ginjwtsignalgorithm"
 
 	jwt "github.com/appleboy/gin-jwt/v2"
 	"github.com/gin-gonic/gin"
@@ -429,11 +429,11 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 		//		1) data interface{} = this object represents the Authenticator return object (loggedInCredential interface{})
 		//		2) internal code can assert the loggedInCredential to the actual struct to retrieve its field values
 		//				such as: v, ok := data.(*User)
-		authMiddleware.PayloadFunc = func(data interface{}) jwtx.MapClaims {
+		authMiddleware.PayloadFunc = func(data interface{}) jwt.MapClaims {
 			if j.AddClaimsHandler != nil && data != nil {
 				if identVal, customMap := j.AddClaimsHandler(data); util.LenTrim(identVal) > 0 || customMap != nil {
 					if customMap == nil {
-						return jwtx.MapClaims{
+						return jwt.MapClaims{
 							j.IdentityKey: identVal,
 						}
 					} else {

@@ -9863,10 +9863,10 @@ func (u *UTILS) RenameNX(keyOriginal string, keyNew string) (err error) {
 			}
 		}()
 
-		err = u.renameInternal(keyOriginal, keyNew)
+		err = u.renameNXInternal(keyOriginal, keyNew)
 		return err
 	} else {
-		return u.renameInternal(keyOriginal, keyNew)
+		return u.renameNXInternal(keyOriginal, keyNew)
 	}
 }
 

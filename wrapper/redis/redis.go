@@ -8964,10 +8964,10 @@ func (t *TTL) TTL(key string, bGetMilliseconds bool) (valTTL int64, notFound boo
 			}
 		}()
 
-		valTTL, notFound, err = t.TTL(key, bGetMilliseconds)
+		valTTL, notFound, err = t.ttlInternal(key, bGetMilliseconds)
 		return valTTL, notFound, err
 	} else {
-		return t.TTL(key, bGetMilliseconds)
+		return t.ttlInternal(key, bGetMilliseconds)
 	}
 }
 

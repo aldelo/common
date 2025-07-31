@@ -47,10 +47,9 @@ import (
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aldelo/common/wrapper/xray"
+	"github.com/aws/aws-sdk-go-v2/config"
+	awsiot "github.com/aws/aws-sdk-go-v2/service/iot"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	awsiot "github.com/aws/aws-sdk-go/service/iot"
-	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
 
 // ================================================================================================================
@@ -66,7 +65,7 @@ type IoT struct {
 	HttpOptions *awshttp2.HttpClientSettings
 
 	// store IoT client object
-	iotClient *awsiot.IoT
+	iotClient *awsiot.Client
 
 	_parentSegment *xray.XRayParentSegment
 }
@@ -96,20 +95,16 @@ func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 			}
 		}()
 
-		err = s.connectInternal()
-
-		if err == nil {
-			awsxray.AWS(s.iotClient.Client)
-		}
+		err = s.connectInternal(seg.Ctx)
 
 		return err
 	} else {
-		return s.connectInternal()
+		return s.connectInternal(context.Background())
 	}
 }
 
 // Connect will establish a connection to the IoT service
-func (s *IoT) connectInternal() error {
+func (s *IoT) connectInternal(ctx context.Context) error {
 	// clean up prior sqs client reference
 	s.iotClient = nil
 
@@ -135,16 +130,12 @@ func (s *IoT) connectInternal() error {
 	}
 
 	// establish aws session connection
-	if sess, err := session.NewSession(
-		&aws.Config{
-			Region:     aws.String(s.AwsRegion.Key()),
-			HTTPClient: httpCli,
-		}); err != nil {
+	if cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli)); err != nil {
 		// aws session error
 		return errors.New("Connect to IoT Failed: (AWS Session Error) " + err.Error())
 	} else {
 		// create cached objects for shared use
-		s.iotClient = awsiot.New(sess)
+		s.iotClient = awsiot.NewFromConfig(cfg)
 
 		if s.iotClient == nil {
 			return errors.New("Connect to IoT Client Failed: (New IoT Client Connection) " + "Connection Object Nil")
@@ -213,9 +204,9 @@ func (s *IoT) AttachPolicy(policyName, target string) (err error) {
 	}
 
 	if segCtxSet {
-		_, err = s.iotClient.AttachPolicyWithContext(segCtx, input)
+		_, err = s.iotClient.AttachPolicy(segCtx, input)
 	} else {
-		_, err = s.iotClient.AttachPolicy(input)
+		_, err = s.iotClient.AttachPolicy(context.Background(), input)
 	}
 
 	// evaluate result

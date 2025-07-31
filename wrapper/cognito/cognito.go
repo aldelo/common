@@ -47,10 +47,9 @@ import (
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aldelo/common/wrapper/xray"
+	"github.com/aws/aws-sdk-go-v2/config"
+	awscognito "github.com/aws/aws-sdk-go-v2/service/cognitoidentity"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	awscognito "github.com/aws/aws-sdk-go/service/cognitoidentity"
-	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
 
 // ================================================================================================================
@@ -66,7 +65,7 @@ type Cognito struct {
 	HttpOptions *awshttp2.HttpClientSettings
 
 	// store Cognito client object
-	cognitoClient *awscognito.CognitoIdentity
+	cognitoClient *awscognito.Client
 
 	_parentSegment *xray.XRayParentSegment
 }
@@ -96,20 +95,16 @@ func (s *Cognito) Connect(parentSegment ...*xray.XRayParentSegment) (err error) 
 			}
 		}()
 
-		err = s.connectInternal()
-
-		if err == nil {
-			awsxray.AWS(s.cognitoClient.Client)
-		}
+		err = s.connectInternal(seg.Ctx)
 
 		return err
 	} else {
-		return s.connectInternal()
+		return s.connectInternal(context.Background())
 	}
 }
 
 // Connect will establish a connection to the Cognito service
-func (s *Cognito) connectInternal() error {
+func (s *Cognito) connectInternal(ctx context.Context) error {
 	// clean up prior sqs client reference
 	s.cognitoClient = nil
 
@@ -135,16 +130,12 @@ func (s *Cognito) connectInternal() error {
 	}
 
 	// establish aws session connection
-	if sess, err := session.NewSession(
-		&aws.Config{
-			Region:     aws.String(s.AwsRegion.Key()),
-			HTTPClient: httpCli,
-		}); err != nil {
+	if cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli)); err != nil {
 		// aws session error
 		return errors.New("Connect to Cognito Failed: (AWS Session Error) " + err.Error())
 	} else {
 		// create cached objects for shared use
-		s.cognitoClient = awscognito.New(sess)
+		s.cognitoClient = awscognito.NewFromConfig(cfg)
 
 		if s.cognitoClient == nil {
 			return errors.New("Connect to Cognito Client Failed: (New Cognito Client Connection) " + "Connection Object Nil")
@@ -214,8 +205,8 @@ func (s *Cognito) GetOpenIdTokenForDeveloperIdentity(identityPoolId, developerPr
 	// create input object
 	input := &awscognito.GetOpenIdTokenForDeveloperIdentityInput{
 		IdentityPoolId: aws.String(identityPoolId),
-		Logins: map[string]*string{
-			developerProviderName: aws.String(developerProviderID),
+		Logins: map[string]string{
+			developerProviderName: developerProviderID,
 		},
 		TokenDuration: aws.Int64(86400), // Token duration in seconds (1 day)
 	}
@@ -224,9 +215,9 @@ func (s *Cognito) GetOpenIdTokenForDeveloperIdentity(identityPoolId, developerPr
 	var output *awscognito.GetOpenIdTokenForDeveloperIdentityOutput
 
 	if segCtxSet {
-		output, err = s.cognitoClient.GetOpenIdTokenForDeveloperIdentityWithContext(segCtx, input)
+		output, err = s.cognitoClient.GetOpenIdTokenForDeveloperIdentity(segCtx, input)
 	} else {
-		output, err = s.cognitoClient.GetOpenIdTokenForDeveloperIdentity(input)
+		output, err = s.cognitoClient.GetOpenIdTokenForDeveloperIdentity(context.Background(), input)
 	}
 
 	// evaluate result

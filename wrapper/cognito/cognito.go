@@ -160,7 +160,20 @@ func (s *Cognito) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 // OpenId Token functions
 // ----------------------------------------------------------------------------------------------------------------
 
-func (s *Cognito) GetOpenIdTokenForDeveloperIdentity(identityPoolId, developerProviderID, developerProviderName string) (identityId, token string, err error) {
+func (s *Cognito) NewOpenIdTokenForDeveloperIdentity(identityPoolId, developerProviderID, developerProviderName string) (identityId, token string, err error) {
+	return s.getOpenIdTokenForDeveloperIdentity(identityPoolId, developerProviderID, developerProviderName, nil)
+}
+
+func (s *Cognito) RefreshOpenIdTokenForDeveloperIdentity(identityPoolId, developerProviderID, developerProviderName, existingIdentityId string) (identityId, token string, err error) {
+	// validation
+	if len(existingIdentityId) <= 0 {
+		err = errors.New("RefreshOpenIdTokenForDeveloperIdentity Failed: " + "Existing Identity ID is Required")
+		return "", "", err
+	}
+	return s.getOpenIdTokenForDeveloperIdentity(identityPoolId, developerProviderID, developerProviderName, aws.String(existingIdentityId))
+}
+
+func (s *Cognito) getOpenIdTokenForDeveloperIdentity(identityPoolId, developerProviderID, developerProviderName string, existingIdentityId *string) (identityId, token string, err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -208,7 +221,8 @@ func (s *Cognito) GetOpenIdTokenForDeveloperIdentity(identityPoolId, developerPr
 		Logins: map[string]string{
 			developerProviderName: developerProviderID,
 		},
-		TokenDuration: aws.Int64(86400), // Token duration in seconds (1 day)
+		IdentityId:    existingIdentityId, // If you have a existing Identity ID, you can set it to refresh the matching Token; otherwise, leave it nil to create a new Identity ID
+		TokenDuration: aws.Int64(86400),   // Token duration in seconds (1 day)
 	}
 
 	// perform action

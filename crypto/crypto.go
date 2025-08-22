@@ -570,6 +570,22 @@ func ValidateHmac(encryptedDataWithHmac string, key string) (string, error) {
 // RSA HELPERS
 // ================================================================================================================
 
+// There are two format types of private key PEM file (between the -----BEGIN ... and -----END ... lines).
+//
+// 1. PKCS#1 format - RFC 8017
+//    Describes how RSA public and private keys are encoded.
+//
+//    -----BEGIN RSA PRIVATE KEY-----
+//    (base64 data)
+//    -----END RSA PRIVATE KEY-----
+//
+// 2. PKCS#8 format - RFC 5958
+//    Defines a generic container for any kind of private key, not just RSA (e.g., RSA, EC, DSA, Ed25519, etc.).
+//
+//    -----BEGIN PRIVATE KEY-----
+//    (base64 data)
+//    -----END PRIVATE KEY-----
+
 // RsaCreateKey generates the private and public key pair,
 // expressed in hex code value
 func RsaCreateKey() (privateKey string, publicKey string, err error) {
@@ -625,14 +641,22 @@ func rsaPrivateKeyFromHex(privateKeyHex string) (*rsa.PrivateKey, error) {
 	}
 
 	// parse key
-	key, err1 := x509.ParsePKCS1PrivateKey(b)
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		// PKCS#1
+		return x509.ParsePKCS1PrivateKey(b)
 
-	if err1 != nil {
-		return nil, err1
+	case "PRIVATE KEY":
+		// PKCS#8
+		key, err := x509.ParsePKCS8PrivateKey(b)
+		if err != nil {
+			return nil, err
+		}
+		return key.(*rsa.PrivateKey), nil
+
+	default:
+		return nil, fmt.Errorf("RSA Private Key From Hex Fail: Unsupported Key Type: %s", block.Type)
 	}
-
-	// return private key
-	return key, nil
 }
 
 // rsaPrivateKeyFromPem converts pkcs1 string private key into rsa private key object
@@ -643,10 +667,21 @@ func rsaPrivateKeyFromPem(privateKeyPem string) (*rsa.PrivateKey, error) {
 		return nil, errors.New("RSA Private Key From Pem Fail: " + "Pem Block Nil")
 	}
 
-	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err != nil {
-		return nil, err
-	} else {
-		return key, nil
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		// PKCS#1
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
+
+	case "PRIVATE KEY":
+		// PKCS#8
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		return key.(*rsa.PrivateKey), nil
+
+	default:
+		return nil, fmt.Errorf("RSA Private Key From Pem Fail: Unsupported Key Type: %s", block.Type)
 	}
 }
 
@@ -763,7 +798,8 @@ func RsaPrivateKeyDecrypt(data string, privateKeyHexOrPem string) (string, error
 	var privateKey *rsa.PrivateKey
 	var err error
 
-	if util.Left(privateKeyHexOrPem, 27) == "-----BEGIN PRIVATE KEY-----" && util.Right(privateKeyHexOrPem, 25) == "-----END PRIVATE KEY-----" {
+	if (util.Left(privateKeyHexOrPem, 31) == "-----BEGIN RSA PRIVATE KEY-----" && util.Right(privateKeyHexOrPem, 29) == "-----END RSA PRIVATE KEY-----") ||
+		(util.Left(privateKeyHexOrPem, 27) == "-----BEGIN PRIVATE KEY-----" && util.Right(privateKeyHexOrPem, 25) == "-----END PRIVATE KEY-----") {
 		// get private key from pem text
 		privateKey, err = rsaPrivateKeyFromPem(privateKeyHexOrPem)
 	} else {
@@ -811,7 +847,8 @@ func RsaPrivateKeySign(data string, privateKeyHexOrPem string) (string, error) {
 	var privateKey *rsa.PrivateKey
 	var err error
 
-	if util.Left(privateKeyHexOrPem, 27) == "-----BEGIN PRIVATE KEY-----" && util.Right(privateKeyHexOrPem, 25) == "-----END PRIVATE KEY-----" {
+	if (util.Left(privateKeyHexOrPem, 31) == "-----BEGIN RSA PRIVATE KEY-----" && util.Right(privateKeyHexOrPem, 29) == "-----END RSA PRIVATE KEY-----") ||
+		(util.Left(privateKeyHexOrPem, 27) == "-----BEGIN PRIVATE KEY-----" && util.Right(privateKeyHexOrPem, 25) == "-----END PRIVATE KEY-----") {
 		// get private key from pem text
 		privateKey, err = rsaPrivateKeyFromPem(privateKeyHexOrPem)
 	} else {

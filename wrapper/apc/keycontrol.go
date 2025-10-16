@@ -42,6 +42,9 @@ package apc
 import (
 	"context"
 	"errors"
+	"net/http"
+	"time"
+
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aldelo/common/wrapper/xray"
@@ -49,7 +52,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	pycrypto "github.com/aws/aws-sdk-go/service/paymentcryptography"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
-	"net/http"
 )
 
 // ================================================================================================================
@@ -502,7 +504,75 @@ func (k *PaymentCryptography) ImportRootCAPublicKey(publicKey string) (keyArn st
 	return
 }
 
-func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock, nonce string) (keyArn string, err error) {
+func (k *PaymentCryptography) ImportIntermediateCAPublicKey(capkArn, publicKey string) (keyArn string, err error) {
+
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("PaymentCryptography-ImportIntermediateCAPublicKey", k._parentSegment)
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("ImportIntermediateCAPublicKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return "", err
+	}
+
+	if publicKey == "" {
+		err = errors.New("ImportIntermediateCAPublicKey with PaymentCryptography Failed: (publicKey is empty) ")
+		return
+	}
+
+	imInput := &pycrypto.ImportKeyInput{
+		Enabled:                aws.Bool(true),
+		KeyCheckValueAlgorithm: nil,
+		KeyMaterial: &pycrypto.ImportKeyMaterial{
+			TrustedCertificatePublicKey: &pycrypto.TrustedCertificatePublicKey{
+				CertificateAuthorityPublicKeyIdentifier: aws.String(capkArn),
+				KeyAttributes: &pycrypto.KeyAttributes{
+					KeyAlgorithm: aws.String(pycrypto.KeyAlgorithmRsa2048),
+					KeyClass:     aws.String(pycrypto.KeyClassPublicKey),
+					KeyModesOfUse: &pycrypto.KeyModesOfUse{
+						Verify: aws.Bool(true),
+					},
+					KeyUsage: aws.String(pycrypto.KeyUsageTr31S0AsymmetricKeyForDigitalSignature),
+				},
+				PublicKeyCertificate: aws.String(publicKey),
+			},
+		},
+		Tags: nil,
+	}
+	var imOutput *pycrypto.ImportKeyOutput
+	var e error
+	if segCtx == nil {
+		imOutput, e = k.pycClient.ImportKey(imInput)
+	} else {
+		imOutput, e = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+	}
+
+	if e != nil {
+		return "", e
+	}
+	if imOutput != nil {
+		if imOutput.Key != nil {
+			keyArn = aws.StringValue(imOutput.Key.KeyArn)
+		}
+	}
+
+	return
+}
+
+func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock string, nonce *string) (keyArn string, err error) {
 	var segCtx context.Context
 	segCtx = nil
 
@@ -524,8 +594,8 @@ func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock, no
 		err = errors.New("ImportKEKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return "", err
 	}
-	if capkArn == "" || imToken == "" || signCA == "" || keyBlock == "" || nonce == "" {
-		err = errors.New("ImportKEKey with PaymentCryptography Failed: (one of capkArn, imToken, signCA, keyBlock, nonce is empty) ")
+	if capkArn == "" || imToken == "" || signCA == "" || keyBlock == "" {
+		err = errors.New("ImportKEKey with PaymentCryptography Failed: (one of capkArn, imToken, signCA, keyBlock is empty) ")
 		return
 	}
 
@@ -539,9 +609,9 @@ func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock, no
 				CertificateAuthorityPublicKeyIdentifier: aws.String(capkArn), //import root ca
 				ImportToken:                             aws.String(imToken),
 				KeyBlockFormat:                          aws.String(pycrypto.Tr34KeyBlockFormatX9Tr342012),
-				RandomNonce:                             aws.String(signCA),
-				SigningKeyCertificate:                   aws.String(keyBlock), //public key ca for sign
-				WrappedKeyBlock:                         aws.String(nonce),    //TR-34.2012 non-CMS two pass format
+				RandomNonce:                             nonce,
+				SigningKeyCertificate:                   aws.String(signCA),   //public key ca for sign
+				WrappedKeyBlock:                         aws.String(keyBlock), //TR-34.2012 non-CMS two pass format
 			},
 			TrustedCertificatePublicKey: nil,
 		},
@@ -551,9 +621,9 @@ func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock, no
 	var imOutput *pycrypto.ImportKeyOutput
 	var e error
 	if segCtx == nil {
-		imOutput, err = k.pycClient.ImportKey(imInput)
+		imOutput, e = k.pycClient.ImportKey(imInput)
 	} else {
-		imOutput, err = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+		imOutput, e = k.pycClient.ImportKeyWithContext(segCtx, imInput)
 	}
 
 	if e != nil {
@@ -617,9 +687,9 @@ func (k *PaymentCryptography) ImportTR31Key(keyBlock, warpKeyArn string) (keyArn
 	var imOutput *pycrypto.ImportKeyOutput
 	var e error
 	if segCtx == nil {
-		imOutput, err = k.pycClient.ImportKey(imInput)
+		imOutput, e = k.pycClient.ImportKey(imInput)
 	} else {
-		imOutput, err = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+		imOutput, e = k.pycClient.ImportKeyWithContext(segCtx, imInput)
 	}
 	if e != nil {
 		return "", e
@@ -634,7 +704,7 @@ func (k *PaymentCryptography) ImportTR31Key(keyBlock, warpKeyArn string) (keyArn
 	return
 }
 
-func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token string, err error) {
+func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token string, parametersValidUntilTimestamp *time.Time, err error) {
 
 	var segCtx context.Context
 	segCtx = nil
@@ -655,7 +725,7 @@ func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token 
 	// validate
 	if k.pycClient == nil {
 		err = errors.New("GetParamsForImportKEKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
-		return "", "", "", err
+		return "", "", "", nil, err
 	}
 
 	pmsInput := &pycrypto.GetParametersForImportInput{
@@ -671,13 +741,14 @@ func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token 
 		pmsOutput, e = k.pycClient.GetParametersForImportWithContext(segCtx, pmsInput)
 	}
 	if e != nil {
-		return "", "", "", e
+		return "", "", "", nil, e
 	}
 
 	if pmsOutput != nil {
 		token = aws.StringValue(pmsOutput.ImportToken)
 		cert = aws.StringValue(pmsOutput.WrappingKeyCertificate)
 		certChain = aws.StringValue(pmsOutput.WrappingKeyCertificateChain)
+		parametersValidUntilTimestamp = pmsOutput.ParametersValidUntilTimestamp
 	}
 	return
 }
@@ -698,6 +769,81 @@ func (k *PaymentCryptography) ListAlias() (output *pycrypto.ListAliasesOutput, e
 
 	if e != nil {
 		err = errors.New("ListAlias with PaymentCryptography Failed: (ListAlias) " + e.Error())
+		return
+	}
+	return aliasOutput, nil
+}
+func (k *PaymentCryptography) ListAliasNextPage(nextTK string) (output *pycrypto.ListAliasesOutput, err error) {
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("ListAliasNextPage with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return nil, err
+	}
+
+	// generate alias
+	var aliasInput *pycrypto.ListAliasesInput
+	var aliasOutput *pycrypto.ListAliasesOutput
+	var e error
+	if nextTK != "" {
+		aliasInput = &pycrypto.ListAliasesInput{
+			NextToken: aws.String(nextTK),
+		}
+	}
+
+	aliasOutput, e = k.pycClient.ListAliases(aliasInput)
+
+	if e != nil {
+		err = errors.New("ListAliasNextPage with PaymentCryptography Failed: (ListAlias) " + e.Error())
+		return
+	}
+	return aliasOutput, nil
+}
+
+func (k *PaymentCryptography) GetKey(keyArn string) (output *pycrypto.GetKeyOutput, err error) {
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("GetKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return nil, err
+	}
+
+	// generate alias
+	var aliasInput *pycrypto.GetKeyInput
+	var aliasOutput *pycrypto.GetKeyOutput
+	var e error
+
+	aliasInput = &pycrypto.GetKeyInput{
+		KeyIdentifier: aws.String(keyArn),
+	}
+
+	aliasOutput, e = k.pycClient.GetKey(aliasInput)
+
+	if e != nil {
+		err = errors.New("GetKey with PaymentCryptography Failed: (GetKey) " + e.Error())
+		return
+	}
+	return aliasOutput, nil
+}
+
+func (k *PaymentCryptography) GetKeyByAlias(keyAlias string) (output *pycrypto.GetAliasOutput, err error) {
+	// validate
+	if k.pycClient == nil {
+		err = errors.New("GetKeyByAlias with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return nil, err
+	}
+
+	// generate alias
+	var aliasInput *pycrypto.GetAliasInput
+	var aliasOutput *pycrypto.GetAliasOutput
+	var e error
+
+	aliasInput = &pycrypto.GetAliasInput{
+		AliasName: aws.String(keyAlias),
+	}
+
+	aliasOutput, e = k.pycClient.GetAlias(aliasInput)
+
+	if e != nil {
+		err = errors.New("GetKeyByAlias with PaymentCryptography Failed: (GetKeyByAlias) " + e.Error())
 		return
 	}
 	return aliasOutput, nil

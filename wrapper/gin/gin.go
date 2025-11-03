@@ -19,6 +19,11 @@ package gin
 import (
 	"database/sql"
 	"fmt"
+	"log"
+	"reflect"
+	"strings"
+	"time"
+
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/gin/ginbindtype"
 	"github.com/aldelo/common/wrapper/gin/gingzipcompression"
@@ -34,10 +39,6 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/utrack/gin-csrf"
 	"golang.org/x/time/rate"
-	"log"
-	"reflect"
-	"strings"
-	"time"
 )
 
 // Gin struct provides a wrapper for gin-gonic based web server operations
@@ -948,7 +949,7 @@ func (g *Gin) setupSessionMiddleware() {
 				size = 1
 			}
 
-			store, _ = redis.NewStore(size, "tcp", g.SessionMiddleware.RedisHostAndPort, "", []byte(g.SessionMiddleware.SecretKey))
+			store, _ = redis.NewStore(size, "tcp", g.SessionMiddleware.RedisHostAndPort, "", "", []byte(g.SessionMiddleware.SecretKey))
 		}
 
 		if store != nil {

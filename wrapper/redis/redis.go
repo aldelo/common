@@ -9003,19 +9003,21 @@ func (t *TTL) ttlInternal(key string, bGetMilliseconds bool) (valTTL int64, notF
 		return 0, false, err
 	}
 
+	if d == -2 {
+		// not found
+		return 0, true, nil
+	} else if d == -1 {
+		// forever living
+		return -1, false, nil
+	}
+
 	if bGetMilliseconds {
 		valTTL = d.Milliseconds()
 	} else {
 		valTTL = int64(d.Seconds())
 	}
 
-	if valTTL == -2 {
-		// not found
-		return 0, true, nil
-	} else {
-		// else
-		return valTTL, notFound, err
-	}
+	return valTTL, notFound, err
 }
 
 // Expire sets a timeout on key (seconds or milliseconds based on input parameter)

@@ -19,12 +19,13 @@ package tcp
 import (
 	"bytes"
 	"fmt"
-	util "github.com/aldelo/common"
 	"log"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	util "github.com/aldelo/common"
 )
 
 // TCPServer defines a concurrent tcp server for handling inbound client requests, and sending back responses
@@ -265,7 +266,7 @@ func (s *TCPServer) handleClientConnection(conn net.Conn) {
 		select {
 		case <-s._clientEnd[conn.RemoteAddr().String()]:
 			// command received to end tcp client connection handler
-			_ = conn.Close()
+			//_ = conn.Close() // already has defer close
 
 			s._mux.Lock()
 			delete(s._clients, conn.RemoteAddr().String())
@@ -301,7 +302,7 @@ func (s *TCPServer) handleClientConnection(conn net.Conn) {
 				}
 
 				// remove connection from map
-				_ = conn.Close()
+				// _ = conn.Close() // already has defer close
 
 				s._mux.Lock()
 				delete(s._clients, conn.RemoteAddr().String())
@@ -319,7 +320,7 @@ func (s *TCPServer) handleClientConnection(conn net.Conn) {
 					s.ClientReceiveHandler(conn.RemoteAddr().String(), bytes.Trim(readBytes, "\x00"), s.WriteToClient)
 				} else {
 					// if client receive handler is not defined, end the client handler service
-					_ = conn.Close()
+					// _ = conn.Close() // already has defer close
 
 					s._mux.Lock()
 					delete(s._clients, conn.RemoteAddr().String())

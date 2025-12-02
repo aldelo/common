@@ -43,6 +43,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
+	"reflect"
+	"strings"
+	"time"
+
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -54,12 +60,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
+	"github.com/aws/aws-xray-sdk-go/strategy/ctxmissing"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
-	"log"
-	"net/http"
-	"reflect"
-	"strings"
-	"time"
 )
 
 // *********************************************************************************************************************
@@ -977,6 +979,12 @@ func (d *DynamoDB) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 			d._parentSegment = parentSegment[0]
 		}
 
+		_ = awsxray.Configure(awsxray.Config{
+			LogLevel:               "silent", // disable x-ray logging completely
+			LogFormat:              "",
+			ContextMissingStrategy: ctxmissing.NewDefaultIgnoreErrorStrategy(),
+		})
+
 		seg := xray.NewSegment("DynamoDB-Connect", d._parentSegment)
 		defer seg.Close()
 		defer func() {
@@ -1031,6 +1039,7 @@ func (d *DynamoDB) connectInternal() error {
 	if sess, err := session.NewSession(
 		&aws.Config{
 			Region:     aws.String(d.AwsRegion.Key()),
+			LogLevel:   aws.LogLevel(aws.LogOff), // explicitly turn off aws sdk logging
 			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error

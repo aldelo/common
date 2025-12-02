@@ -17,11 +17,12 @@ package aws
  */
 
 import (
-	helper "github.com/aldelo/common"
-	"golang.org/x/net/http2"
 	"net"
 	"net/http"
 	"time"
+
+	helper "github.com/aldelo/common"
+	"golang.org/x/net/http2"
 )
 
 // HttpClientSettings based on aws documentation
@@ -64,6 +65,9 @@ type HttpClientSettings struct {
 	// Transport.TLSHandshakeTimeout: maximum amount of time waiting for a TLS handshake to be completed
 	// default = 10 seconds; 0 means no timeout
 	TlsHandshake *time.Duration
+
+	// Transport.MaxConnsPerHost: limits the total number of connections per host, including connections in the dialing, active, and idle states
+	MaxConnsPerHost *int
 }
 
 // AwsHttp2Client struct defines container for HttpClientSettings
@@ -97,15 +101,19 @@ func (h2 *AwsHttp2Client) setDefaults() {
 	}
 
 	if h2.Options.MaxHostIdleConns == nil {
-		h2.Options.MaxHostIdleConns = helper.IntPtr(100)
+		h2.Options.MaxHostIdleConns = helper.IntPtr(250)
 	}
 
 	if h2.Options.ResponseHeader == nil {
-		h2.Options.ResponseHeader = helper.DurationPtr(5 * time.Second)
+		h2.Options.ResponseHeader = helper.DurationPtr(10 * time.Second)
 	}
 
 	if h2.Options.TlsHandshake == nil {
 		h2.Options.TlsHandshake = helper.DurationPtr(5 * time.Second)
+	}
+
+	if h2.Options.MaxConnsPerHost == nil {
+		h2.Options.MaxConnsPerHost = helper.IntPtr(0)
 	}
 }
 
@@ -172,6 +180,10 @@ func (h2 *AwsHttp2Client) TlsHandshakeTimeout(v time.Duration) {
 	h2.Options.TlsHandshake = &v
 }
 
+func (h2 *AwsHttp2Client) MaxConnsPerHost(v int) {
+	h2.Options.MaxConnsPerHost = &v
+}
+
 // NewHttp2Client returns custom http2 client for aws connection
 func (h2 *AwsHttp2Client) NewHttp2Client() (*http.Client, error) {
 	h2.setDefaults()
@@ -190,6 +202,7 @@ func (h2 *AwsHttp2Client) NewHttp2Client() (*http.Client, error) {
 		TLSHandshakeTimeout:   *h2.Options.TlsHandshake,
 		MaxIdleConnsPerHost:   *h2.Options.MaxHostIdleConns,
 		ExpectContinueTimeout: *h2.Options.ExpectContinue,
+		MaxConnsPerHost:       *h2.Options.MaxConnsPerHost,
 	}
 
 	// client makes HTTP/2 requests

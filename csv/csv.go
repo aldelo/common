@@ -79,6 +79,10 @@ func (c *Csv) SkipHeaderRow() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.closed {
+		return errors.New("Skip Header Row Failed: " + "Csv Closed")
+	}
+
 	if c.f == nil {
 		return errors.New("Skip Header Row Failed: " + "File Nil")
 	}
@@ -106,6 +110,10 @@ func (c *Csv) BeginCsvReader() error {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.closed {
+		return errors.New("Begin Csv Reader Failed: " + "Csv Closed")
+	}
 
 	if c.f == nil {
 		return errors.New("Begin Csv Reader Failed: " + "File Nil")
@@ -138,6 +146,7 @@ func (c *Csv) ReadCsv() (eof bool, record []string, err error) {
 	}
 
 	if c.cr == nil {
+		c.mu.Unlock()
 		return false, []string{}, errors.New("Read Csv Row Failed: " + "Csv Reader Nil")
 	}
 
@@ -155,7 +164,6 @@ func (c *Csv) ReadCsv() (eof bool, record []string, err error) {
 
 	// read record of csv
 	record, err = cr.Read()
-
 	if err == io.EOF {
 		return true, []string{}, nil
 	}

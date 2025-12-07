@@ -4862,11 +4862,9 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		}
 
 		if consistentRead != nil {
-			if *consistentRead {
-				if len(*indexName) > 0 {
-					// gsi not valid for consistent read, turn off consistent read
-					*consistentRead = false
-				}
+			if *consistentRead && indexName != nil && len(*indexName) > 0 {
+				// gsi not valid for consistent read, turn off consistent read
+				*consistentRead = false
 			}
 
 			params.ConsistentRead = consistentRead
@@ -5079,11 +5077,9 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 	}
 
 	if consistentRead != nil {
-		if *consistentRead {
-			if len(*indexName) > 0 {
-				// gsi not valid for consistent read, turn off consistent read
-				*consistentRead = false
-			}
+		if *consistentRead && indexName != nil && len(*indexName) > 0 {
+			// gsi not valid for consistent read, turn off consistent read
+			*consistentRead = false
 		}
 
 		params.ConsistentRead = consistentRead
@@ -5718,11 +5714,9 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 		}
 
 		if consistentRead != nil {
-			if *consistentRead {
-				if len(*indexName) > 0 {
-					// gsi not valid for consistent read, turn off consistent read
-					*consistentRead = false
-				}
+			if *consistentRead && indexName != nil && len(*indexName) > 0 {
+				// gsi not valid for consistent read, turn off consistent read
+				*consistentRead = false
 			}
 
 			params.ConsistentRead = consistentRead
@@ -5883,11 +5877,9 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 	}
 
 	if consistentRead != nil {
-		if *consistentRead {
-			if len(*indexName) > 0 {
-				// gsi not valid for consistent read, turn off consistent read
-				*consistentRead = false
-			}
+		if *consistentRead && indexName != nil && len(*indexName) > 0 {
+			// gsi not valid for consistent read, turn off consistent read
+			*consistentRead = false
 		}
 
 		params.ConsistentRead = consistentRead
@@ -6300,7 +6292,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 							if m != nil {
 								tableName := d.TableName
 
-								if util.LenTrim(tableName) > 0 {
+								if util.LenTrim(v.TableNameOverride) > 0 {
 									tableName = v.TableNameOverride
 								}
 
@@ -6558,7 +6550,7 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 						if m != nil {
 							tableName := d.TableName
 
-							if util.LenTrim(tableName) > 0 {
+							if util.LenTrim(v.TableNameOverride) > 0 {
 								tableName = v.TableNameOverride
 							}
 

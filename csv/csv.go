@@ -1,7 +1,7 @@
 package csv
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,12 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync"
 )
 
 // Csv defines a struct for csv parsing and handling
 type Csv struct {
+	mu          sync.Mutex
 	f           *os.File
 	r           *bufio.Reader
 	cr          *csv.Reader
@@ -38,6 +40,9 @@ func (c *Csv) Open(path string) error {
 	if c == nil {
 		return errors.New("Open File Failed: " + "Csv Nil")
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	c.ParsedCount = -1
 	c.TriedCount = -1
@@ -68,6 +73,9 @@ func (c *Csv) SkipHeaderRow() error {
 		return errors.New("Skip Header Row Failed: " + "Csv Nil")
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.f == nil {
 		return errors.New("Skip Header Row Failed: " + "File Nil")
 	}
@@ -93,6 +101,9 @@ func (c *Csv) BeginCsvReader() error {
 		return errors.New("Begin Csv Reader Failed: " + "Csv Nil")
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.f == nil {
 		return errors.New("Begin Csv Reader Failed: " + "File Nil")
 	}
@@ -117,8 +128,20 @@ func (c *Csv) ReadCsv() (eof bool, record []string, err error) {
 		return false, []string{}, errors.New("Read Csv Row Failed: " + "Csv Nil")
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.cr == nil {
 		return false, []string{}, errors.New("Read Csv Row Failed: " + "Csv Reader Nil")
+	}
+
+	// init counters
+	if c.TriedCount < 0 {
+		c.TriedCount = 0
+	}
+
+	if c.ParsedCount < 0 {
+		c.ParsedCount = 0
 	}
 
 	// read record of csv
@@ -149,6 +172,9 @@ func (c *Csv) Close() error {
 	if c == nil {
 		return nil
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	if c.f == nil {
 		return nil

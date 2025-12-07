@@ -27,10 +27,13 @@ import (
 
 // Csv defines a struct for csv parsing and handling
 type Csv struct {
-	mu          sync.Mutex
-	f           *os.File
-	r           *bufio.Reader
-	cr          *csv.Reader
+	mu     sync.Mutex
+	closed bool
+
+	f  *os.File
+	r  *bufio.Reader
+	cr *csv.Reader
+
 	ParsedCount int // data lines parsed count (data lines refers to lines below title columns)
 	TriedCount  int // data lines tried count (data lines refers to lines below title columns)
 }
@@ -129,7 +132,10 @@ func (c *Csv) ReadCsv() (eof bool, record []string, err error) {
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	if c.closed {
+		c.mu.Unlock()
+		return false, []string{}, errors.New("Read Csv Row Failed: " + "Csv Closed")
+	}
 
 	if c.cr == nil {
 		return false, []string{}, errors.New("Read Csv Row Failed: " + "Csv Reader Nil")
@@ -144,11 +150,21 @@ func (c *Csv) ReadCsv() (eof bool, record []string, err error) {
 		c.ParsedCount = 0
 	}
 
+	cr := c.cr
+	c.mu.Unlock()
+
 	// read record of csv
-	record, err = c.cr.Read()
+	record, err = cr.Read()
 
 	if err == io.EOF {
 		return true, []string{}, nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return false, []string{}, errors.New("Read Csv Row Failed: " + "Csv Closed")
 	}
 
 	// always increment tried count
@@ -176,12 +192,20 @@ func (c *Csv) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.f == nil {
+	if c.closed || c.f == nil {
 		return nil
 	}
 
+	c.closed = true
 	c.r = nil
 	c.cr = nil
 
-	return c.f.Close()
+	var err error
+
+	if c.f != nil {
+		err = c.f.Close()
+	}
+	c.f = nil
+
+	return err
 }

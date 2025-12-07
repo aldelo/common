@@ -200,12 +200,12 @@ func IsCreditCardMod10Valid(cardNumber string) (bool, error) {
 	}
 }
 
-// EnvelopWithStxEtxLrc will take content data, wrap with STX, ETX, and calculate LRC to append
+// EnvelopWithStxEtxLrcWithError will take content data, wrap with STX, ETX, and calculate LRC to append
 //
 // contentData = do not include STX, ETX, LRC
-func EnvelopWithStxEtxLrc(contentData string) string {
+func EnvelopWithStxEtxLrcWithError(contentData string) (string, error) {
 	if len(contentData) == 0 {
-		return ""
+		return "", fmt.Errorf("Content Data is Required for LRC Calculation")
 	}
 
 	if contentData[:1] != AsciiToString(STX) {
@@ -232,10 +232,21 @@ func EnvelopWithStxEtxLrc(contentData string) string {
 	lrc, err := GetLRC(contentData)
 
 	if err != nil {
-		log.Printf("EnvelopWithStxEtxLrc Error Calculating LRC: %s", err)
+		return "", err
+	}
+	return contentData + lrc, nil
+}
+
+// EnvelopWithStxEtxLrc will take content data, wrap with STX, ETX, and calculate LRC to append
+//
+// contentData = do not include STX, ETX, LRC
+func EnvelopWithStxEtxLrc(contentData string) string {
+	envelopData, err := EnvelopWithStxEtxLrcWithError(contentData)
+	if err != nil {
+		log.Printf("EnvelopWithStxEtxLrc Error: %s", err)
 		return ""
 	}
-	return contentData + lrc
+	return envelopData
 }
 
 // StripStxEtxLrcFromEnvelop removes STX ETX and LRC from envelopment and returns content data.

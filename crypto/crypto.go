@@ -743,9 +743,9 @@ func rsaPublicKeyFromPem(publicKeyPem string) (*rsa.PublicKey, error) {
 //
 // publicKeyHexOrPem = can be either HEX or PEM
 func RsaPublicKeyEncrypt(data string, publicKeyHexOrPem string) (string, error) {
-	// data must not exceed 214 bytes
-	if len(data) > 214 {
-		return "", errors.New("RSA Public Key Encrypt Data Must Not Exceed 214 Bytes")
+	// data must not exceed 190 bytes
+	if len(data) > 190 {
+		return "", errors.New("RSA OAEP 2048 SHA-256 Public Key Encrypt Data Must Not Exceed 190 Bytes")
 	}
 
 	if len(data) == 0 {
@@ -756,7 +756,8 @@ func RsaPublicKeyEncrypt(data string, publicKeyHexOrPem string) (string, error) 
 	var publicKey *rsa.PublicKey
 	var err error
 
-	if util.Left(publicKeyHexOrPem, 26) == "-----BEGIN PUBLIC KEY-----" && util.Right(publicKeyHexOrPem, 24) == "-----END PUBLIC KEY-----" {
+	if (util.Left(publicKeyHexOrPem, 30) == "-----BEGIN RSA PUBLIC KEY-----" && util.Right(publicKeyHexOrPem, 28) == "-----END RSA PUBLIC KEY-----") ||
+		(util.Left(publicKeyHexOrPem, 26) == "-----BEGIN PUBLIC KEY-----" && util.Right(publicKeyHexOrPem, 24) == "-----END PUBLIC KEY-----") {
 		// get public key from pem
 		publicKey, err = rsaPublicKeyFromPem(publicKeyHexOrPem)
 	} else {
@@ -892,7 +893,8 @@ func RsaPublicKeyVerify(data string, publicKeyHexOrPem string, signatureHex stri
 	var publicKey *rsa.PublicKey
 	var err error
 
-	if util.Left(publicKeyHexOrPem, 26) == "-----BEGIN PUBLIC KEY-----" && util.Right(publicKeyHexOrPem, 24) == "-----END PUBLIC KEY-----" {
+	if (util.Left(publicKeyHexOrPem, 30) == "-----BEGIN RSA PUBLIC KEY-----" && util.Right(publicKeyHexOrPem, 28) == "-----END RSA PUBLIC KEY-----") ||
+		(util.Left(publicKeyHexOrPem, 26) == "-----BEGIN PUBLIC KEY-----" && util.Right(publicKeyHexOrPem, 24) == "-----END PUBLIC KEY-----") {
 		// get public key from pem
 		publicKey, err = rsaPublicKeyFromPem(publicKeyHexOrPem)
 	} else {

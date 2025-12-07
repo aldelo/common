@@ -1352,8 +1352,8 @@ func (sd *CloudMap) CreateService(name string,
 //
 // Parameters:
 //  1. serviceId = (required) service to update
-//  2. dnsConfUpdate = (required) update dns config to this value
-//  3. healthCheckConf = (optional) update health check config to this value, set nil if not updating health check config
+//  2. dnsConfUpdate = (required) update dns config to this value, cannot be nil, dnsConfUpdate is required
+//  3. healthCheckConf = (optional) update health check config to this value, set nil to remove healthCheckConfig
 //  4. descriptionUpdate = (optional) service description to update, set nil if not updating description, set "" to remove existing description
 //  5. timeOutDuration = (optional) maximum time before timeout via context
 //

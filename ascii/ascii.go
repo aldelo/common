@@ -18,6 +18,7 @@ package ascii
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 )
@@ -162,10 +163,21 @@ func IsCreditCardMod10Valid(cardNumber string) (bool, error) {
 				}
 
 				buf := strconv.Itoa(temp)
-				x, _ := strconv.Atoi(buf[:1])
-				y, _ := strconv.Atoi(buf[len(buf)-1:])
+
+				x, e1 := strconv.Atoi(buf[:1])
+				if e1 != nil {
+					return false, fmt.Errorf("Convert Element Digit Failed: (A) %s", e1)
+				}
+
+				y, e2 := strconv.Atoi(buf[len(buf)-1:])
+				if e2 != nil {
+					return false, fmt.Errorf("Convert Element Digit Failed: (B) %s", e2)
+				}
+
 				temp = x + y
 			}
+		} else {
+			return false, fmt.Errorf("Convert Element Failed: (C) %s", e)
 		}
 	}
 
@@ -217,7 +229,12 @@ func EnvelopWithStxEtxLrc(contentData string) string {
 		contentData += AsciiToString(ETX)
 	}
 
-	lrc, _ := GetLRC(contentData)
+	lrc, err := GetLRC(contentData)
+
+	if err != nil {
+		log.Printf("EnvelopWithStxEtxLrc Error Calculating LRC: %s", err)
+		return ""
+	}
 	return contentData + lrc
 }
 
@@ -385,8 +402,8 @@ func EscapeNonPrintable(data string) string {
 	data = strings.Replace(data, AsciiToString(EM), "[EM_19]", -1)
 	data = strings.Replace(data, AsciiToString(SUB), "[SUB_1A]", -1)
 	data = strings.Replace(data, AsciiToString(ESC), "[ESC_1B]", -1)
-	data = strings.Replace(data, AsciiToString(CR), "[CR_1C]", -1)
-	data = strings.Replace(data, AsciiToString(FS), "[FS_1D]", -1)
+	data = strings.Replace(data, AsciiToString(FS), "[FS_1C]", -1)
+	data = strings.Replace(data, AsciiToString(GS), "[GS_1D]", -1)
 	data = strings.Replace(data, AsciiToString(RS), "[RS_1E]", -1)
 	data = strings.Replace(data, AsciiToString(US), "[US_1F]", -1)
 
@@ -423,8 +440,8 @@ func UnescapeNonPrintable(data string) string {
 	data = strings.Replace(data, "[EM_19]", AsciiToString(EM), -1)
 	data = strings.Replace(data, "[SUB_1A]", AsciiToString(SUB), -1)
 	data = strings.Replace(data, "[ESC_1B]", AsciiToString(ESC), -1)
-	data = strings.Replace(data, "[CR_1C]", AsciiToString(CR), -1)
-	data = strings.Replace(data, "[FS_1D]", AsciiToString(FS), -1)
+	data = strings.Replace(data, "[FS_1C]", AsciiToString(FS), -1)
+	data = strings.Replace(data, "[GS_1D]", AsciiToString(GS), -1)
 	data = strings.Replace(data, "[RS_1E]", AsciiToString(RS), -1)
 	data = strings.Replace(data, "[US_1F]", AsciiToString(US), -1)
 

@@ -7400,7 +7400,7 @@ func (d *DynamoDB) BatchDeleteItemsWithRetry(maxRetries uint,
 	}
 
 	if len(deleteKeys) == 0 {
-		return []*DynamoDBTableKeyValue{}, fmt.Errorf("BatchDeleteItemsWithRetry Failed: %s", err)
+		return []*DynamoDBTableKeyValue{}, fmt.Errorf("BatchDeleteItemsWithRetry Failed: %s", "At Least 1 Delete Key Required")
 	}
 
 	if maxRetries > 10 {

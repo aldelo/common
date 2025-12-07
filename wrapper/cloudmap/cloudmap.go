@@ -1339,6 +1339,7 @@ func (sd *CloudMap) CreateService(name string,
 //  1. update the TTL for existing dnsRecords configurations
 //  2. add, update, or delete HealthCheckConfig for a specified service,
 //     HealthCheckCustomConfig cannot be added, updated or deleted via UpdateService action
+//  3. dnsConfUpdate is required parameter and cannot be nil, cannot be removed or deleted
 //
 // Notes:
 //  1. public and private dns namespaces,
@@ -1353,7 +1354,7 @@ func (sd *CloudMap) CreateService(name string,
 // Parameters:
 //  1. serviceId = (required) service to update
 //  2. dnsConfUpdate = (required) update dns config to this value, cannot be nil, dnsConfUpdate is required
-//  3. healthCheckConf = (optional) update health check config to this value, set nil to remove healthCheckConfig
+//  3. healthCheckConf = (optional) add, update, or remove health check config to this value (set nil to delete healthCheckConfig)
 //  4. descriptionUpdate = (optional) service description to update, set nil if not updating description, set "" to remove existing description
 //  5. timeOutDuration = (optional) maximum time before timeout via context
 //

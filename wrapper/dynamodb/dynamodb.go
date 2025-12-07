@@ -1,7 +1,7 @@
 package dynamodb
 
 /*
- * Copyright 2020-2024 Aldelo, LP
+ * Copyright 2020-2025 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -91,6 +92,9 @@ type DynamoDBError struct {
 
 // Error returns error string of the struct object
 func (e *DynamoDBError) Error() string {
+	if e == nil {
+		return ""
+	}
 	return e.ErrorMessage
 }
 
@@ -516,7 +520,8 @@ type DynamoDBTransactionWrites struct {
 	UpdateItems []*DynamoDBUpdateItemInput
 	DeleteItems []*DynamoDBTableKeys
 
-	allPutItems interface{}
+	allPutItems      interface{}
+	allPutItemsMutex sync.RWMutex
 }
 
 // LoadPutItems will return all put items in all PutItemsSets,
@@ -552,7 +557,10 @@ func (w *DynamoDBTransactionWrites) LoadPutItems() interface{} {
 	}
 
 	// return result
+	w.allPutItemsMutex.Lock()
 	w.allPutItems = allPutItems
+	w.allPutItemsMutex.Unlock()
+
 	return allPutItems
 }
 
@@ -588,7 +596,8 @@ type DynamoDBTransactionReads struct {
 	ResultItemsSlicePtr interface{}
 	ResultItemsCount    int
 
-	resultItemKey []string
+	resultItemKey      []string
+	resultItemKeyMutex sync.RWMutex
 }
 
 // MarshalSearchKeyValueMaps will convert struct's SearchKeys into []map[string]*dynamodb.AttributeValue
@@ -624,6 +633,9 @@ func (g *DynamoDBTransactionReads) MarshalSearchKeyValueMaps() (result []map[str
 	result = make([]map[string]*dynamodb.AttributeValue, 0)
 
 	// loop thru each search key to marshal
+	g.resultItemKeyMutex.Lock()
+	defer g.resultItemKeyMutex.Unlock()
+
 	if util.LenTrim(g.SKName) > 0 {
 		for _, kv := range g.SearchKeys {
 			if kv != nil {
@@ -783,20 +795,35 @@ type DynamoDB struct {
 	// if dax is not enabled, skip dax true or not will always route to DynamoDB
 	SkipDax bool
 
+	// connMutex protects the dynamodb connection object
+	connMutex sync.RWMutex
+
 	// operating table
 	TableName string
 	PKName    string
 	SKName    string
 
 	// last execute param string
-	LastExecuteParamsPayload string
+	LastExecuteParamsPayload      string
+	LastExecuteParamsPayloadMutex sync.RWMutex
 
-	_parentSegment *xray.XRayParentSegment
+	_parentSegment      *xray.XRayParentSegment
+	_parentSegmentMutex sync.RWMutex
 }
 
 // =====================================================================================================================
 // Internal Utility Helpers
 // =====================================================================================================================
+
+func (d *DynamoDB) connectionSnapshot() (cn *dynamodb.DynamoDB, cnDax *dax.Dax, skipDax bool) {
+	if d != nil {
+		d.connMutex.RLock()
+		defer d.connMutex.RUnlock()
+		return d.cn, d.cnDax, d.SkipDax
+	} else {
+		return nil, nil, true
+	}
+}
 
 // handleError is an internal helper method to evaluate dynamodb error,
 // and to advise if retry, immediate retry, suppress error etc error handling advisory
@@ -805,6 +832,16 @@ type DynamoDB struct {
 //
 //	RetryNeedsBackOff = true indicates when doing retry, must wait an arbitrary time duration before retry; false indicates immediate is ok
 func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "[DynamoDB Object Nil] " + err.Error(),
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if err != nil {
 		prefix := ""
 
@@ -815,7 +852,9 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 		prefixType := ""
 		origError := ""
 
-		if aerr, ok := err.(awserr.Error); ok {
+		var aerr awserr.Error
+
+		if errors.As(err, &aerr) {
 			// aws errors
 			prefixType = "[AWS] "
 
@@ -956,11 +995,21 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (d *DynamoDB) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if d == nil {
+		return
+	}
+
+	d._parentSegmentMutex.Lock()
 	d._parentSegment = parentSegment
+	d._parentSegmentMutex.Unlock()
 }
 
 // TimeOutDuration returns time.Duration pointer from timeOutSeconds
 func (d *DynamoDB) TimeOutDuration(timeOutSeconds uint) *time.Duration {
+	if d == nil {
+		return nil
+	}
+
 	if timeOutSeconds == 0 {
 		return nil
 	} else {
@@ -974,9 +1023,15 @@ func (d *DynamoDB) TimeOutDuration(timeOutSeconds uint) *time.Duration {
 
 // Connect will establish a connection to the dynamodb service
 func (d *DynamoDB) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if d == nil {
+		return errors.New("Connect To DynamoDB Failed: (Validate) " + "DynamoDB Object Nil")
+	}
+
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
+			d._parentSegmentMutex.Lock()
 			d._parentSegment = parentSegment[0]
+			d._parentSegmentMutex.Unlock()
 		}
 
 		_ = awsxray.Configure(awsxray.Config{
@@ -1010,6 +1065,12 @@ func (d *DynamoDB) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 
 // Connect will establish a connection to the dynamodb service
 func (d *DynamoDB) connectInternal() error {
+	if d == nil {
+		return errors.New("Connect To DynamoDB Failed: (Validate) " + "DynamoDB Object Nil")
+	}
+	d.connMutex.Lock()
+	defer d.connMutex.Unlock()
+
 	// clean up prior cn reference
 	d.cn = nil
 	d.SkipDax = false
@@ -1041,6 +1102,7 @@ func (d *DynamoDB) connectInternal() error {
 			Region:     aws.String(d.AwsRegion.Key()),
 			LogLevel:   aws.LogLevel(aws.LogOff), // explicitly turn off aws sdk logging
 			HTTPClient: httpCli,
+			MaxRetries: aws.Int(3),
 		}); err != nil {
 		// aws session error
 		return errors.New("Connect To DynamoDB Failed: (AWS Session Error) " + err.Error())
@@ -1063,6 +1125,10 @@ func (d *DynamoDB) connectInternal() error {
 
 // EnableDax will enable dax service for this dynamodb session
 func (d *DynamoDB) EnableDax() (err error) {
+	if d == nil {
+		return errors.New("Enable Dax Failed: " + "DynamoDB Object Nil")
+	}
+
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("DynamoDB-EnableDax", d._parentSegment)
 
@@ -1085,6 +1151,12 @@ func (d *DynamoDB) EnableDax() (err error) {
 
 // EnableDax will enable dax service for this dynamodb session
 func (d *DynamoDB) enableDaxInternal() error {
+	if d == nil {
+		return errors.New("Enable Dax Failed: " + "DynamoDB Object Nil")
+	}
+	d.connMutex.Lock()
+	defer d.connMutex.Unlock()
+
 	if d.cn == nil {
 		return errors.New("Enable Dax Failed: " + "DynamoDB Not Yet Connected")
 	}
@@ -1111,11 +1183,19 @@ func (d *DynamoDB) enableDaxInternal() error {
 
 // DisableDax will disable dax service for this dynamodb session
 func (d *DynamoDB) DisableDax() {
+	if d == nil {
+		return
+	}
+
+	d.connMutex.Lock()
+	defer d.connMutex.Unlock()
+
 	if d.cnDax != nil {
 		_ = d.cnDax.Close()
-		d.cnDax = nil
-		d.SkipDax = false
 	}
+
+	d.cnDax = nil
+	d.SkipDax = false
 }
 
 // =====================================================================================================================
@@ -1124,24 +1204,61 @@ func (d *DynamoDB) DisableDax() {
 
 // do_PutItem is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_PutItem(input *dynamodb.PutItemInput, ctx ...aws.Context) (output *dynamodb.PutItemOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if len(ctx) <= 0 {
-			return d.cnDax.PutItem(input)
-		} else {
-			return d.cnDax.PutItemWithContext(ctx[0], input)
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if len(ctx) <= 0 {
-			return d.cn.PutItem(input)
-		} else {
-			return d.cn.PutItemWithContext(ctx[0], input)
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB PutItem Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB PutItem Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB PutItem Failed: Input Nil")
+	}
+
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB PutItem Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if err := safeCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.PutItemOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			return cnDax.PutItemWithContext(ctxToUse, input)
+		} else if cn != nil {
+			return cn.PutItemWithContext(ctxToUse, input)
+		} else {
+			return nil, errors.New("DynamoDB PutItem Failed: No DynamoDB or Dax Connection Available")
+		}
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var out *dynamodb.PutItemOutput
+	var callErr error
+
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
 }
 
 // =====================================================================================================================
@@ -1150,24 +1267,60 @@ func (d *DynamoDB) do_PutItem(input *dynamodb.PutItemInput, ctx ...aws.Context) 
 
 // do_UpdateItem is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_UpdateItem(input *dynamodb.UpdateItemInput, ctx ...aws.Context) (output *dynamodb.UpdateItemOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if len(ctx) <= 0 {
-			return d.cnDax.UpdateItem(input)
-		} else {
-			return d.cnDax.UpdateItemWithContext(ctx[0], input)
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if len(ctx) <= 0 {
-			return d.cn.UpdateItem(input)
-		} else {
-			return d.cn.UpdateItemWithContext(ctx[0], input)
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB UpdateItem Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB UpdateItem Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB UpdateItem Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB UpdateItem Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if err := safeCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.UpdateItemOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			return cnDax.UpdateItemWithContext(ctxToUse, input)
+		} else if cn != nil {
+			return cn.UpdateItemWithContext(ctxToUse, input)
+		} else {
+			return nil, errors.New("DynamoDB UpdateItem Failed: No DynamoDB or Dax Connection Available")
+		}
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var out *dynamodb.UpdateItemOutput
+	var callErr error
+
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
 }
 
 // =====================================================================================================================
@@ -1176,24 +1329,60 @@ func (d *DynamoDB) do_UpdateItem(input *dynamodb.UpdateItemInput, ctx ...aws.Con
 
 // do_DeleteItem is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_DeleteItem(input *dynamodb.DeleteItemInput, ctx ...aws.Context) (output *dynamodb.DeleteItemOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if len(ctx) <= 0 {
-			return d.cnDax.DeleteItem(input)
-		} else {
-			return d.cnDax.DeleteItemWithContext(ctx[0], input)
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if len(ctx) <= 0 {
-			return d.cn.DeleteItem(input)
-		} else {
-			return d.cn.DeleteItemWithContext(ctx[0], input)
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB DeleteItem Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB UpdateItem Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB DeleteItem Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB DeleteItem Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if err := safeCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.DeleteItemOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			return cnDax.DeleteItemWithContext(ctxToUse, input)
+		} else if cn != nil {
+			return cn.DeleteItemWithContext(ctxToUse, input)
+		} else {
+			return nil, errors.New("DynamoDB DeleteItem Failed: No DynamoDB or Dax Connection Available")
+		}
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var out *dynamodb.DeleteItemOutput
+	var callErr error
+
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
 }
 
 // =====================================================================================================================
@@ -1202,24 +1391,59 @@ func (d *DynamoDB) do_DeleteItem(input *dynamodb.DeleteItemInput, ctx ...aws.Con
 
 // do_GetItem is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_GetItem(input *dynamodb.GetItemInput, ctx ...aws.Context) (output *dynamodb.GetItemOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if len(ctx) <= 0 {
-			return d.cnDax.GetItem(input)
-		} else {
-			return d.cnDax.GetItemWithContext(ctx[0], input)
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if len(ctx) <= 0 {
-			return d.cn.GetItem(input)
-		} else {
-			return d.cn.GetItemWithContext(ctx[0], input)
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB GetItem Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB GetItem Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB GetItem Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB GetItem Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if err := safeCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.GetItemOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			return cnDax.GetItemWithContext(ctxToUse, input)
+		} else if cn != nil {
+			return cn.GetItemWithContext(ctxToUse, input)
+		} else {
+			return nil, errors.New("DynamoDB GetItem Failed: No DynamoDB or Dax Connection Available")
+		}
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var out *dynamodb.GetItemOutput
+	var callErr error
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
 }
 
 // =====================================================================================================================
@@ -1228,176 +1452,441 @@ func (d *DynamoDB) do_GetItem(input *dynamodb.GetItemInput, ctx ...aws.Context) 
 
 // do_Query_Pagination_Data is a helper that calls either dax or dynamodb based on dax availability, to get pagination data for the given query filter
 func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...aws.Context) (paginationData []map[string]*dynamodb.AttributeValue, err error) {
-	paginationData = make([]map[string]*dynamodb.AttributeValue, 0)
-
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		fn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
-			if pageOutput != nil {
-				if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
-					if pageOutput.LastEvaluatedKey != nil {
-						paginationData = append(paginationData, pageOutput.LastEvaluatedKey)
-					}
-				}
-			}
-
-			return !lastPage
-		}
-
-		if len(ctx) <= 0 {
-			err = d.cnDax.QueryPages(input, fn)
-		} else {
-			err = d.cnDax.QueryPagesWithContext(ctx[0], input, fn)
-		}
-
-		return paginationData, err
-
-	} else if d.cn != nil {
-		// dynamodb
-		fn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
-			if pageOutput != nil {
-				if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
-					if pageOutput.LastEvaluatedKey != nil {
-						paginationData = append(paginationData, pageOutput.LastEvaluatedKey)
-					}
-				}
-			}
-
-			return !lastPage
-		}
-
-		if len(ctx) <= 0 {
-			err = d.cn.QueryPages(input, fn)
-		} else {
-			err = d.cn.QueryPagesWithContext(ctx[0], input, fn)
-		}
-
-		return paginationData, err
-
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB QueryPaginationData Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB Query PaginationData Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB Query PaginationData Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB Query PaginationData Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if err := safeCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	call := func(callCtx aws.Context) ([]map[string]*dynamodb.AttributeValue, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+
+		paginationData := make([]map[string]*dynamodb.AttributeValue, 0)
+
+		pageFn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
+			if pageOutput != nil && len(pageOutput.Items) > 0 {
+				if pageOutput.LastEvaluatedKey != nil && len(pageOutput.LastEvaluatedKey) > 0 {
+					paginationData = append(paginationData, cloneAttributeValueMap(pageOutput.LastEvaluatedKey))
+				}
+			}
+			return !lastPage
+		}
+
+		var err error
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			err = cnDax.QueryPagesWithContext(ctxToUse, input, pageFn)
+		} else if cn != nil {
+			err = cn.QueryPagesWithContext(ctxToUse, input, pageFn)
+		} else {
+			return nil, errors.New("DynamoDB Query PaginationData Failed: No DynamoDB or Dax Connection Available")
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		return paginationData, nil
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var (
+		out     []map[string]*dynamodb.AttributeValue
+		callErr error
+	)
+
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
 }
 
 // =====================================================================================================================
 // Internal do_Query Helper
 // =====================================================================================================================
 
+func cloneAttributeValueMap(src map[string]*dynamodb.AttributeValue) map[string]*dynamodb.AttributeValue {
+	if len(src) == 0 {
+		return nil
+	}
+
+	dst := make(map[string]*dynamodb.AttributeValue, len(src))
+	for k, v := range src {
+		if v == nil {
+			dst[k] = nil
+			continue
+		}
+
+		copied := *v
+		dst[k] = &copied
+	}
+
+	return dst
+}
+
+func mergeConsumedCapacity(dst *dynamodb.ConsumedCapacity, src *dynamodb.ConsumedCapacity) *dynamodb.ConsumedCapacity {
+	if src == nil {
+		return dst
+	}
+	if dst == nil {
+		dst = &dynamodb.ConsumedCapacity{}
+	}
+
+	mergeFloat64(&dst.CapacityUnits, src.CapacityUnits)
+	mergeFloat64(&dst.ReadCapacityUnits, src.ReadCapacityUnits)
+	mergeFloat64(&dst.WriteCapacityUnits, src.WriteCapacityUnits)
+
+	if src.TableName != nil {
+		dst.TableName = src.TableName
+	}
+
+	dst.Table = mergeCapacity(dst.Table, src.Table)
+	dst.LocalSecondaryIndexes = mergeCapacityMap(dst.LocalSecondaryIndexes, src.LocalSecondaryIndexes)
+	dst.GlobalSecondaryIndexes = mergeCapacityMap(dst.GlobalSecondaryIndexes, src.GlobalSecondaryIndexes)
+
+	return dst
+}
+
+func mergeCapacityMap(dst map[string]*dynamodb.Capacity, src map[string]*dynamodb.Capacity) map[string]*dynamodb.Capacity {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[string]*dynamodb.Capacity, len(src))
+	}
+	for name, cap1 := range src {
+		dst[name] = mergeCapacity(dst[name], cap1)
+	}
+	return dst
+}
+
+func mergeCapacity(dst *dynamodb.Capacity, src *dynamodb.Capacity) *dynamodb.Capacity {
+	if src == nil {
+		return dst
+	}
+	if dst == nil {
+		dst = &dynamodb.Capacity{}
+	}
+
+	mergeFloat64(&dst.CapacityUnits, src.CapacityUnits)
+	mergeFloat64(&dst.ReadCapacityUnits, src.ReadCapacityUnits)
+	mergeFloat64(&dst.WriteCapacityUnits, src.WriteCapacityUnits)
+
+	return dst
+}
+
+func mergeFloat64(dst **float64, src *float64) {
+	if src == nil {
+		return
+	}
+	if *dst == nil {
+		*dst = aws.Float64(0)
+	}
+	**dst += *src
+}
+
 // do_Query is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_Query(input *dynamodb.QueryInput, pagedQuery bool, pagedQueryPageCountLimit *int64, ctx ...aws.Context) (output *dynamodb.QueryOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if !pagedQuery {
-			//
-			// not paged query
-			//
-			if len(ctx) <= 0 {
-				return d.cnDax.Query(input)
-			} else {
-				return d.cnDax.QueryWithContext(ctx[0], input)
-			}
-		} else {
-			//
-			// paged query
-			//
-			pageCount := int64(0)
-
-			fn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
-				if pageOutput != nil {
-					if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
-						pageCount++
-
-						if output == nil {
-							output = new(dynamodb.QueryOutput)
-						}
-
-						output.SetCount(aws.Int64Value(output.Count) + aws.Int64Value(pageOutput.Count))
-						output.SetScannedCount(aws.Int64Value(output.ScannedCount) + aws.Int64Value(pageOutput.ScannedCount))
-						output.SetLastEvaluatedKey(pageOutput.LastEvaluatedKey)
-
-						for _, v := range pageOutput.Items {
-							output.Items = append(output.Items, v)
-						}
-
-						// check if ok to stop
-						if pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0 {
-							if pageCount >= *pagedQueryPageCountLimit {
-								return false
-							}
-						}
-					}
-				}
-
-				return !lastPage
-			}
-
-			if len(ctx) <= 0 {
-				err = d.cnDax.QueryPages(input, fn)
-			} else {
-				err = d.cnDax.QueryPagesWithContext(ctx[0], input, fn)
-			}
-
-			return output, err
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if !pagedQuery {
-			//
-			// not paged query
-			//
-			if len(ctx) <= 0 {
-				return d.cn.Query(input)
-			} else {
-				return d.cn.QueryWithContext(ctx[0], input)
-			}
-		} else {
-			//
-			// paged query
-			//
-			pageCount := int64(0)
-
-			fn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
-				if pageOutput != nil {
-					if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
-						pageCount++
-
-						if output == nil {
-							output = new(dynamodb.QueryOutput)
-						}
-
-						output.SetCount(aws.Int64Value(output.Count) + aws.Int64Value(pageOutput.Count))
-						output.SetScannedCount(aws.Int64Value(output.ScannedCount) + aws.Int64Value(pageOutput.ScannedCount))
-						output.SetLastEvaluatedKey(pageOutput.LastEvaluatedKey)
-
-						for _, v := range pageOutput.Items {
-							output.Items = append(output.Items, v)
-						}
-
-						// check if ok to stop
-						if pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0 {
-							if pageCount >= *pagedQueryPageCountLimit {
-								return false
-							}
-						}
-					}
-				}
-
-				return !lastPage
-			}
-
-			if len(ctx) <= 0 {
-				err = d.cn.QueryPages(input, fn)
-			} else {
-				err = d.cn.QueryPagesWithContext(ctx[0], input, fn)
-			}
-
-			return output, err
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB QueryItems Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB Query Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB Query Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB Query Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
+	if ctxErr := safeCtx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.QueryOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
+		if ctxErr := ctxToUse.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+
+		execPaged := func(run func(aws.Context, func(*dynamodb.QueryOutput, bool) bool) error) (*dynamodb.QueryOutput, error) {
+			var (
+				items            []map[string]*dynamodb.AttributeValue
+				lastEvaluatedKey map[string]*dynamodb.AttributeValue
+				consumedCapacity *dynamodb.ConsumedCapacity
+				totalCount       int64
+				totalScanned     int64
+				pageCount        int64
+			)
+
+			enforcePageLimit := pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0
+			var pageLimit int64
+			if enforcePageLimit {
+				pageLimit = *pagedQueryPageCountLimit
+			}
+
+			pageFn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
+				if err := ctxToUse.Err(); err != nil {
+					return false
+				}
+				if pageOutput == nil {
+					return false
+				}
+
+				pageCount++
+
+				if len(pageOutput.Items) > 0 {
+					items = append(items, pageOutput.Items...)
+				}
+				if pageOutput.Count != nil {
+					totalCount += aws.Int64Value(pageOutput.Count)
+				}
+				if pageOutput.ScannedCount != nil {
+					totalScanned += aws.Int64Value(pageOutput.ScannedCount)
+				}
+				if pageOutput.ConsumedCapacity != nil {
+					consumedCapacity = mergeConsumedCapacity(consumedCapacity, pageOutput.ConsumedCapacity)
+				}
+				if len(pageOutput.LastEvaluatedKey) > 0 {
+					lastEvaluatedKey = cloneAttributeValueMap(pageOutput.LastEvaluatedKey)
+				}
+
+				if enforcePageLimit && pageCount >= pageLimit {
+					return false
+				}
+
+				return !lastPage
+			}
+
+			if err := run(ctxToUse, pageFn); err != nil {
+				return nil, err
+			}
+			if err := ctxToUse.Err(); err != nil {
+				return nil, err
+			}
+
+			out := &dynamodb.QueryOutput{
+				Items: items,
+			}
+			out.Count = aws.Int64(totalCount)
+			out.ScannedCount = aws.Int64(totalScanned)
+
+			if len(lastEvaluatedKey) > 0 {
+				out.LastEvaluatedKey = lastEvaluatedKey
+			}
+			if consumedCapacity != nil {
+				out.ConsumedCapacity = consumedCapacity
+			}
+			return out, nil
+		}
+
+		var (
+			result  *dynamodb.QueryOutput
+			execErr error
+		)
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			if pagedQuery {
+				result, execErr = execPaged(func(runCtx aws.Context, fn func(*dynamodb.QueryOutput, bool) bool) error {
+					return cnDax.QueryPagesWithContext(runCtx, input, fn)
+				})
+			} else {
+				result, execErr = cnDax.QueryWithContext(ctxToUse, input)
+			}
+		} else if cn != nil {
+			if pagedQuery {
+				result, execErr = execPaged(func(runCtx aws.Context, fn func(*dynamodb.QueryOutput, bool) bool) error {
+					return cn.QueryPagesWithContext(runCtx, input, fn)
+				})
+			} else {
+				result, execErr = cn.QueryWithContext(ctxToUse, input)
+			}
+		} else {
+			return nil, errors.New("DynamoDB Query Failed: No DynamoDB or Dax Connection Available")
+		}
+
+		if execErr != nil {
+			return nil, execErr
+		}
+
+		d.LastExecuteParamsPayloadMutex.Lock()
+		d.LastExecuteParamsPayload = input.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
+
+		return result, nil
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var (
+		out     *dynamodb.QueryOutput
+		callErr error
+	)
+
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
+
+	//if d.cnDax != nil && !d.SkipDax {
+	//	// dax
+	//	if !pagedQuery {
+	//		//
+	//		// not paged query
+	//		//
+	//		if len(ctx) <= 0 {
+	//			return d.cnDax.Query(input)
+	//		} else {
+	//			return d.cnDax.QueryWithContext(ctx[0], input)
+	//		}
+	//	} else {
+	//		//
+	//		// paged query
+	//		//
+	//		pageCount := int64(0)
+	//
+	//		fn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
+	//			if pageOutput != nil {
+	//				if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
+	//					pageCount++
+	//
+	//					if output == nil {
+	//						output = new(dynamodb.QueryOutput)
+	//					}
+	//
+	//					output.SetCount(aws.Int64Value(output.Count) + aws.Int64Value(pageOutput.Count))
+	//					output.SetScannedCount(aws.Int64Value(output.ScannedCount) + aws.Int64Value(pageOutput.ScannedCount))
+	//					output.SetLastEvaluatedKey(pageOutput.LastEvaluatedKey)
+	//
+	//					for _, v := range pageOutput.Items {
+	//						output.Items = append(output.Items, v)
+	//					}
+	//
+	//					// check if ok to stop
+	//					if pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0 {
+	//						if pageCount >= *pagedQueryPageCountLimit {
+	//							return false
+	//						}
+	//					}
+	//				}
+	//			}
+	//
+	//			return !lastPage
+	//		}
+	//
+	//		if len(ctx) <= 0 {
+	//			err = d.cnDax.QueryPages(input, fn)
+	//		} else {
+	//			err = d.cnDax.QueryPagesWithContext(ctx[0], input, fn)
+	//		}
+	//
+	//		return output, err
+	//	}
+	//} else if d.cn != nil {
+	//	// dynamodb
+	//	if !pagedQuery {
+	//		//
+	//		// not paged query
+	//		//
+	//		if len(ctx) <= 0 {
+	//			return d.cn.Query(input)
+	//		} else {
+	//			return d.cn.QueryWithContext(ctx[0], input)
+	//		}
+	//	} else {
+	//		//
+	//		// paged query
+	//		//
+	//		pageCount := int64(0)
+	//
+	//		fn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
+	//			if pageOutput != nil {
+	//				if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
+	//					pageCount++
+	//
+	//					if output == nil {
+	//						output = new(dynamodb.QueryOutput)
+	//					}
+	//
+	//					output.SetCount(aws.Int64Value(output.Count) + aws.Int64Value(pageOutput.Count))
+	//					output.SetScannedCount(aws.Int64Value(output.ScannedCount) + aws.Int64Value(pageOutput.ScannedCount))
+	//					output.SetLastEvaluatedKey(pageOutput.LastEvaluatedKey)
+	//
+	//					for _, v := range pageOutput.Items {
+	//						output.Items = append(output.Items, v)
+	//					}
+	//
+	//					// check if ok to stop
+	//					if pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0 {
+	//						if pageCount >= *pagedQueryPageCountLimit {
+	//							return false
+	//						}
+	//					}
+	//				}
+	//			}
+	//
+	//			return !lastPage
+	//		}
+	//
+	//		if len(ctx) <= 0 {
+	//			err = d.cn.QueryPages(input, fn)
+	//		} else {
+	//			err = d.cn.QueryPagesWithContext(ctx[0], input, fn)
+	//		}
+	//
+	//		return output, err
+	//	}
+	//} else {
+	//	// connection error
+	//	return nil, errors.New("DynamoDB QueryItems Failed: " + "No DynamoDB or Dax Connection Available")
+	//}
 }
 
 // =====================================================================================================================
@@ -1406,116 +1895,278 @@ func (d *DynamoDB) do_Query(input *dynamodb.QueryInput, pagedQuery bool, pagedQu
 
 // do_Scan is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_Scan(input *dynamodb.ScanInput, pagedQuery bool, pagedQueryPageCountLimit *int64, ctx ...aws.Context) (output *dynamodb.ScanOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if !pagedQuery {
-			//
-			// not paged query
-			//
-			if len(ctx) <= 0 {
-				return d.cnDax.Scan(input)
-			} else {
-				return d.cnDax.ScanWithContext(ctx[0], input)
-			}
-		} else {
-			//
-			// paged query
-			//
-			pageCount := int64(0)
-
-			fn := func(pageOutput *dynamodb.ScanOutput, lastPage bool) bool {
-				if pageOutput != nil {
-					if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
-						pageCount++
-
-						if output == nil {
-							output = new(dynamodb.ScanOutput)
-						}
-
-						output.SetCount(aws.Int64Value(output.Count) + aws.Int64Value(pageOutput.Count))
-						output.SetScannedCount(aws.Int64Value(output.ScannedCount) + aws.Int64Value(pageOutput.ScannedCount))
-						output.SetLastEvaluatedKey(pageOutput.LastEvaluatedKey)
-
-						for _, v := range pageOutput.Items {
-							output.Items = append(output.Items, v)
-						}
-
-						if pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0 {
-							if pageCount >= *pagedQueryPageCountLimit {
-								return false
-							}
-						}
-					}
-				}
-
-				return !lastPage
-			}
-
-			if len(ctx) <= 0 {
-				err = d.cnDax.ScanPages(input, fn)
-			} else {
-				err = d.cnDax.ScanPagesWithContext(ctx[0], input, fn)
-			}
-
-			return output, err
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if !pagedQuery {
-			//
-			// not paged query
-			//
-			if len(ctx) <= 0 {
-				return d.cn.Scan(input)
-			} else {
-				return d.cn.ScanWithContext(ctx[0], input)
-			}
-		} else {
-			//
-			// paged query
-			//
-			pageCount := int64(0)
-
-			fn := func(pageOutput *dynamodb.ScanOutput, lastPage bool) bool {
-				if pageOutput != nil {
-					if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
-						pageCount++
-
-						if output == nil {
-							output = new(dynamodb.ScanOutput)
-						}
-
-						output.SetCount(aws.Int64Value(output.Count) + aws.Int64Value(pageOutput.Count))
-						output.SetScannedCount(aws.Int64Value(output.ScannedCount) + aws.Int64Value(pageOutput.ScannedCount))
-						output.SetLastEvaluatedKey(pageOutput.LastEvaluatedKey)
-
-						for _, v := range pageOutput.Items {
-							output.Items = append(output.Items, v)
-						}
-
-						if pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0 {
-							if pageCount >= *pagedQueryPageCountLimit {
-								return false
-							}
-						}
-					}
-				}
-
-				return !lastPage
-			}
-
-			if len(ctx) <= 0 {
-				err = d.cn.ScanPages(input, fn)
-			} else {
-				err = d.cn.ScanPagesWithContext(ctx[0], input, fn)
-			}
-
-			return output, err
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB ScanItems Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB Scan Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB Scan Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB Scan Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
+	if ctxErr := safeCtx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.ScanOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
+		if ctxErr := ctxToUse.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+
+		execPaged := func(run func(aws.Context, func(*dynamodb.ScanOutput, bool) bool) error) (*dynamodb.ScanOutput, error) {
+			var (
+				items            []map[string]*dynamodb.AttributeValue
+				lastEvaluatedKey map[string]*dynamodb.AttributeValue
+				consumedCapacity *dynamodb.ConsumedCapacity
+				totalCount       int64
+				totalScanned     int64
+				pageCount        int64
+			)
+
+			enforcePageLimit := pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0
+			var pageLimit int64
+			if enforcePageLimit {
+				pageLimit = *pagedQueryPageCountLimit
+			}
+
+			pageFn := func(pageOutput *dynamodb.ScanOutput, lastPage bool) bool {
+				if err := ctxToUse.Err(); err != nil {
+					return false
+				}
+				if pageOutput == nil {
+					return !lastPage
+				}
+
+				if len(pageOutput.Items) > 0 {
+					pageCount++
+					items = append(items, pageOutput.Items...)
+				}
+
+				if pageOutput.Count != nil {
+					totalCount += aws.Int64Value(pageOutput.Count)
+				}
+				if pageOutput.ScannedCount != nil {
+					totalScanned += aws.Int64Value(pageOutput.ScannedCount)
+				}
+				if pageOutput.ConsumedCapacity != nil {
+					consumedCapacity = mergeConsumedCapacity(consumedCapacity, pageOutput.ConsumedCapacity)
+				}
+				if len(pageOutput.LastEvaluatedKey) > 0 {
+					lastEvaluatedKey = cloneAttributeValueMap(pageOutput.LastEvaluatedKey)
+				}
+
+				if enforcePageLimit && pageCount >= pageLimit {
+					return false
+				}
+
+				return !lastPage
+			}
+
+			if err := run(ctxToUse, pageFn); err != nil {
+				return nil, err
+			}
+			if err := ctxToUse.Err(); err != nil {
+				return nil, err
+			}
+
+			out := &dynamodb.ScanOutput{
+				Items: items,
+			}
+			out.Count = aws.Int64(totalCount)
+			out.ScannedCount = aws.Int64(totalScanned)
+
+			if len(lastEvaluatedKey) > 0 {
+				out.LastEvaluatedKey = lastEvaluatedKey
+			}
+			if consumedCapacity != nil {
+				out.ConsumedCapacity = consumedCapacity
+			}
+
+			return out, nil
+		}
+
+		var (
+			result  *dynamodb.ScanOutput
+			execErr error
+		)
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			if pagedQuery {
+				result, execErr = execPaged(func(runCtx aws.Context, fn func(*dynamodb.ScanOutput, bool) bool) error {
+					return cnDax.ScanPagesWithContext(runCtx, input, fn)
+				})
+			} else {
+				result, execErr = cnDax.ScanWithContext(ctxToUse, input)
+			}
+		} else if cn != nil {
+			if pagedQuery {
+				result, execErr = execPaged(func(runCtx aws.Context, fn func(*dynamodb.ScanOutput, bool) bool) error {
+					return cn.ScanPagesWithContext(runCtx, input, fn)
+				})
+			} else {
+				result, execErr = cn.ScanWithContext(ctxToUse, input)
+			}
+		} else {
+			return nil, errors.New("DynamoDB Scan Failed: No DynamoDB or Dax Connection Available")
+		}
+
+		if execErr != nil {
+			return nil, execErr
+		}
+
+		d.LastExecuteParamsPayloadMutex.Lock()
+		d.LastExecuteParamsPayload = input.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
+
+		return result, nil
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var (
+		out     *dynamodb.ScanOutput
+		callErr error
+	)
+
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
+
+	//if d.cnDax != nil && !d.SkipDax {
+	//	// dax
+	//	if !pagedQuery {
+	//		//
+	//		// not paged query
+	//		//
+	//		if len(ctx) <= 0 {
+	//			return d.cnDax.Scan(input)
+	//		} else {
+	//			return d.cnDax.ScanWithContext(ctx[0], input)
+	//		}
+	//	} else {
+	//		//
+	//		// paged query
+	//		//
+	//		pageCount := int64(0)
+	//
+	//		fn := func(pageOutput *dynamodb.ScanOutput, lastPage bool) bool {
+	//			if pageOutput != nil {
+	//				if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
+	//					pageCount++
+	//
+	//					if output == nil {
+	//						output = new(dynamodb.ScanOutput)
+	//					}
+	//
+	//					output.SetCount(aws.Int64Value(output.Count) + aws.Int64Value(pageOutput.Count))
+	//					output.SetScannedCount(aws.Int64Value(output.ScannedCount) + aws.Int64Value(pageOutput.ScannedCount))
+	//					output.SetLastEvaluatedKey(pageOutput.LastEvaluatedKey)
+	//
+	//					for _, v := range pageOutput.Items {
+	//						output.Items = append(output.Items, v)
+	//					}
+	//
+	//					if pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0 {
+	//						if pageCount >= *pagedQueryPageCountLimit {
+	//							return false
+	//						}
+	//					}
+	//				}
+	//			}
+	//
+	//			return !lastPage
+	//		}
+	//
+	//		if len(ctx) <= 0 {
+	//			err = d.cnDax.ScanPages(input, fn)
+	//		} else {
+	//			err = d.cnDax.ScanPagesWithContext(ctx[0], input, fn)
+	//		}
+	//
+	//		return output, err
+	//	}
+	//} else if d.cn != nil {
+	//	// dynamodb
+	//	if !pagedQuery {
+	//		//
+	//		// not paged query
+	//		//
+	//		if len(ctx) <= 0 {
+	//			return d.cn.Scan(input)
+	//		} else {
+	//			return d.cn.ScanWithContext(ctx[0], input)
+	//		}
+	//	} else {
+	//		//
+	//		// paged query
+	//		//
+	//		pageCount := int64(0)
+	//
+	//		fn := func(pageOutput *dynamodb.ScanOutput, lastPage bool) bool {
+	//			if pageOutput != nil {
+	//				if pageOutput.Items != nil && len(pageOutput.Items) > 0 {
+	//					pageCount++
+	//
+	//					if output == nil {
+	//						output = new(dynamodb.ScanOutput)
+	//					}
+	//
+	//					output.SetCount(aws.Int64Value(output.Count) + aws.Int64Value(pageOutput.Count))
+	//					output.SetScannedCount(aws.Int64Value(output.ScannedCount) + aws.Int64Value(pageOutput.ScannedCount))
+	//					output.SetLastEvaluatedKey(pageOutput.LastEvaluatedKey)
+	//
+	//					for _, v := range pageOutput.Items {
+	//						output.Items = append(output.Items, v)
+	//					}
+	//
+	//					if pagedQueryPageCountLimit != nil && *pagedQueryPageCountLimit > 0 {
+	//						if pageCount >= *pagedQueryPageCountLimit {
+	//							return false
+	//						}
+	//					}
+	//				}
+	//			}
+	//
+	//			return !lastPage
+	//		}
+	//
+	//		if len(ctx) <= 0 {
+	//			err = d.cn.ScanPages(input, fn)
+	//		} else {
+	//			err = d.cn.ScanPagesWithContext(ctx[0], input, fn)
+	//		}
+	//
+	//		return output, err
+	//	}
+	//} else {
+	//	// connection error
+	//	return nil, errors.New("DynamoDB ScanItems Failed: " + "No DynamoDB or Dax Connection Available")
+	//}
 }
 
 // =====================================================================================================================
@@ -1524,24 +2175,78 @@ func (d *DynamoDB) do_Scan(input *dynamodb.ScanInput, pagedQuery bool, pagedQuer
 
 // do_BatchWriteItem is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_BatchWriteItem(input *dynamodb.BatchWriteItemInput, ctx ...aws.Context) (output *dynamodb.BatchWriteItemOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if len(ctx) <= 0 {
-			return d.cnDax.BatchWriteItem(input)
-		} else {
-			return d.cnDax.BatchWriteItemWithContext(ctx[0], input)
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if len(ctx) <= 0 {
-			return d.cn.BatchWriteItem(input)
-		} else {
-			return d.cn.BatchWriteItemWithContext(ctx[0], input)
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB BatchWriteItem Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB BatchWriteItem Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB BatchWriteItem Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB BatchWriteItem Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
+	if err := safeCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.BatchWriteItemOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+
+		var (
+			res *dynamodb.BatchWriteItemOutput
+			err error
+		)
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			res, err = cnDax.BatchWriteItemWithContext(ctxToUse, input)
+		} else if cn != nil {
+			res, err = cn.BatchWriteItemWithContext(ctxToUse, input)
+		} else {
+			return nil, errors.New("DynamoDB BatchWriteItem Failed: No DynamoDB or Dax Connection Available")
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		return res, nil
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var (
+		out     *dynamodb.BatchWriteItemOutput
+		callErr error
+	)
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
 }
 
 // =====================================================================================================================
@@ -1550,24 +2255,78 @@ func (d *DynamoDB) do_BatchWriteItem(input *dynamodb.BatchWriteItemInput, ctx ..
 
 // do_BatchGetItem is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_BatchGetItem(input *dynamodb.BatchGetItemInput, ctx ...aws.Context) (output *dynamodb.BatchGetItemOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if len(ctx) <= 0 {
-			return d.cnDax.BatchGetItem(input)
-		} else {
-			return d.cnDax.BatchGetItemWithContext(ctx[0], input)
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if len(ctx) <= 0 {
-			return d.cn.BatchGetItem(input)
-		} else {
-			return d.cn.BatchGetItemWithContext(ctx[0], input)
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB BatchGetItem Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB BatchGetItem Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB BatchGetItem Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB BatchGetItem Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
+	if err := safeCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.BatchGetItemOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+
+		var (
+			res *dynamodb.BatchGetItemOutput
+			err error
+		)
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			res, err = cnDax.BatchGetItemWithContext(ctxToUse, input)
+		} else if cn != nil {
+			res, err = cn.BatchGetItemWithContext(ctxToUse, input)
+		} else {
+			return nil, errors.New("DynamoDB BatchGetItem Failed: No DynamoDB or Dax Connection Available")
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		return res, nil
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var (
+		out     *dynamodb.BatchGetItemOutput
+		callErr error
+	)
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
 }
 
 // =====================================================================================================================
@@ -1576,24 +2335,79 @@ func (d *DynamoDB) do_BatchGetItem(input *dynamodb.BatchGetItemInput, ctx ...aws
 
 // do_TransactWriteItems is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_TransactWriteItems(input *dynamodb.TransactWriteItemsInput, ctx ...aws.Context) (output *dynamodb.TransactWriteItemsOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if len(ctx) <= 0 {
-			return d.cnDax.TransactWriteItems(input)
-		} else {
-			return d.cnDax.TransactWriteItemsWithContext(ctx[0], input)
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if len(ctx) <= 0 {
-			return d.cn.TransactWriteItems(input)
-		} else {
-			return d.cn.TransactWriteItemsWithContext(ctx[0], input)
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB TransactionWriteItems Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB TransactionWriteItems Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB TransactWriteItems Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB TransactWriteItems Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
+	if err := safeCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.TransactWriteItemsOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+
+		var (
+			res     *dynamodb.TransactWriteItemsOutput
+			callErr error
+		)
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			res, callErr = cnDax.TransactWriteItemsWithContext(ctxToUse, input)
+		} else if cn != nil {
+			res, callErr = cn.TransactWriteItemsWithContext(ctxToUse, input)
+		} else {
+			return nil, errors.New("DynamoDB TransactWriteItems Failed: No DynamoDB or Dax Connection Available")
+		}
+
+		if callErr != nil {
+			return nil, callErr
+		}
+
+		return res, nil
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var (
+		out     *dynamodb.TransactWriteItemsOutput
+		callErr error
+	)
+
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
 }
 
 // =====================================================================================================================
@@ -1602,24 +2416,78 @@ func (d *DynamoDB) do_TransactWriteItems(input *dynamodb.TransactWriteItemsInput
 
 // do_TransactGetItems is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_TransactGetItems(input *dynamodb.TransactGetItemsInput, ctx ...aws.Context) (output *dynamodb.TransactGetItemsOutput, err error) {
-	if d.cnDax != nil && !d.SkipDax {
-		// dax
-		if len(ctx) <= 0 {
-			return d.cnDax.TransactGetItems(input)
-		} else {
-			return d.cnDax.TransactGetItemsWithContext(ctx[0], input)
-		}
-	} else if d.cn != nil {
-		// dynamodb
-		if len(ctx) <= 0 {
-			return d.cn.TransactGetItems(input)
-		} else {
-			return d.cn.TransactGetItemsWithContext(ctx[0], input)
-		}
-	} else {
-		// connection error
-		return nil, errors.New("DynamoDB TransactionGetItems Failed: " + "No DynamoDB or Dax Connection Available")
+	if d == nil {
+		return nil, errors.New("DynamoDB TransactionGetItems Failed: DynamoDB Object Nil")
 	}
+
+	if input == nil {
+		return nil, errors.New("DynamoDB TransactGetItems Failed: Input Nil")
+	}
+	cn, cnDax, skipDax := d.connectionSnapshot()
+	if cn == nil && (cnDax == nil || skipDax) {
+		return nil, errors.New("DynamoDB TransactGetItems Failed: No DynamoDB or Dax Connection Available")
+	}
+
+	var awsCtx aws.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		awsCtx = ctx[0]
+	}
+
+	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
+	if err := safeCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.TransactGetItemsOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+
+		var (
+			res     *dynamodb.TransactGetItemsOutput
+			callErr error
+		)
+
+		cn, cnDax, skipDax := d.connectionSnapshot()
+		if cnDax != nil && !skipDax {
+			res, callErr = cnDax.TransactGetItemsWithContext(ctxToUse, input)
+		} else if cn != nil {
+			res, callErr = cn.TransactGetItemsWithContext(ctxToUse, input)
+		} else {
+			return nil, errors.New("DynamoDB TransactGetItems Failed: No DynamoDB or Dax Connection Available")
+		}
+
+		if callErr != nil {
+			return nil, callErr
+		}
+
+		return res, nil
+	}
+
+	connMgr := GetGlobalConnectionManager()
+	if connMgr == nil {
+		return call(safeCtx)
+	}
+
+	var (
+		out     *dynamodb.TransactGetItemsOutput
+		callErr error
+	)
+	if err := connMgr.ExecuteWithLimit(safeCtx, func() error {
+		out, callErr = call(safeCtx)
+		return callErr
+	}); err != nil {
+		return nil, err
+	}
+
+	return out, callErr
 }
 
 // =====================================================================================================================
@@ -1645,6 +2513,16 @@ func (d *DynamoDB) do_TransactGetItems(input *dynamodb.TransactGetItemsInput, ct
 //			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration, conditionExpressionSet ...*DynamoDBConditionExpressionSet) (ddbErr *DynamoDBError) {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB PutItem Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.putItemWithTrace(item, timeOutDuration, conditionExpressionSet...)
 	} else {
@@ -1653,6 +2531,16 @@ func (d *DynamoDB) PutItem(item interface{}, timeOutDuration *time.Duration, con
 }
 
 func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Duration, conditionExpressionSet ...*DynamoDBConditionExpressionSet) (ddbErr *DynamoDBError) {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB putItemWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	trace := xray.NewSegment("DynamoDB-PutItem", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -1705,7 +2593,9 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 			}
 
 			// record params payload
+			d.LastExecuteParamsPayloadMutex.Lock()
 			d.LastExecuteParamsPayload = "PutItem = " + input.String()
+			d.LastExecuteParamsPayloadMutex.Unlock()
 
 			subTrace := trace.NewSubSegment("PutItem_Do")
 			defer subTrace.Close()
@@ -1740,6 +2630,16 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 }
 
 func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duration, conditionExpressionSet ...*DynamoDBConditionExpressionSet) (ddbErr *DynamoDBError) {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB putItemNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -1779,7 +2679,9 @@ func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duratio
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "PutItem = " + input.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		// save into dynamodb table
 		if timeOutDuration != nil {
@@ -1803,6 +2705,16 @@ func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duratio
 
 // PutItemWithRetry add or updates, and handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDuration *time.Duration, conditionExpressionSet ...*DynamoDBConditionExpressionSet) *DynamoDBError {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB PutItemWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -1949,6 +2861,16 @@ func (d *DynamoDB) UpdateItem(pkValue string, skValue string,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue,
 	timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
 
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB UpdateItem Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.updateItemWithTrace(pkValue, skValue, updateExpression, conditionExpression, expressionAttributeNames, expressionAttributeValues, timeOutDuration)
 	} else {
@@ -1962,6 +2884,16 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 	expressionAttributeNames map[string]*string,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue,
 	timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB updateItemWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	trace := xray.NewSegment("DynamoDB-UpdateItem", d._parentSegment)
 	defer trace.Close()
@@ -2037,7 +2969,9 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "UpdateItem = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		// execute dynamodb service
 		var err error
@@ -2082,6 +3016,16 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 	expressionAttributeNames map[string]*string,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue,
 	timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB updateItemNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
@@ -2141,7 +3085,9 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "UpdateItem = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	// execute dynamodb service
 	var err error
@@ -2173,6 +3119,17 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 	expressionAttributeNames map[string]*string,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue,
 	timeOutDuration *time.Duration) *DynamoDBError {
+
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB UpdateItemWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -2239,6 +3196,16 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 
 // RemoveItemAttribute will remove attribute from dynamodb item in given table using primary key (PK, SK)
 func (d *DynamoDB) RemoveItemAttribute(pkValue string, skValue string, removeExpression string, timeOutDuration *time.Duration, conditionExpressionSet ...*DynamoDBConditionExpressionSet) (ddbErr *DynamoDBError) {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB RemoveItemAttribute Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.removeItemAttributeWithTrace(pkValue, skValue, removeExpression, timeOutDuration, conditionExpressionSet...)
 	} else {
@@ -2247,6 +3214,16 @@ func (d *DynamoDB) RemoveItemAttribute(pkValue string, skValue string, removeExp
 }
 
 func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, removeExpression string, timeOutDuration *time.Duration, conditionExpressionSet ...*DynamoDBConditionExpressionSet) (ddbErr *DynamoDBError) {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB removeItemAttributeWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	trace := xray.NewSegment("DynamoDB-RemoveItemAttribute", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -2319,7 +3296,9 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "RemoveItemAttribute = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		// execute dynamodb service
 		var err error
@@ -2356,6 +3335,16 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 }
 
 func (d *DynamoDB) removeItemAttributeNormal(pkValue string, skValue string, removeExpression string, timeOutDuration *time.Duration, conditionExpressionSet ...*DynamoDBConditionExpressionSet) (ddbErr *DynamoDBError) {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB removeItemAttributeNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -2413,7 +3402,9 @@ func (d *DynamoDB) removeItemAttributeNormal(pkValue string, skValue string, rem
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "RemoveItemAttribute = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	// execute dynamodb service
 	var err error
@@ -2439,6 +3430,16 @@ func (d *DynamoDB) removeItemAttributeNormal(pkValue string, skValue string, rem
 
 // RemoveItemAttributeWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) RemoveItemAttributeWithRetry(maxRetries uint, pkValue string, skValue string, removeExpression string, timeOutDuration *time.Duration, conditionExpressionSet ...*DynamoDBConditionExpressionSet) *DynamoDBError {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB RemoveItemAttributeWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -2515,6 +3516,16 @@ func (d *DynamoDB) RemoveItemAttributeWithRetry(maxRetries uint, pkValue string,
 //	skValue = optional, value of sort key to seek; set to blank if value not provided
 //	timeOutDuration = optional, timeout duration sent via context to scan method; nil if not using timeout duration
 func (d *DynamoDB) DeleteItem(pkValue string, skValue string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB DeleteItem Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.deleteItemWithTrace(pkValue, skValue, timeOutDuration)
 	} else {
@@ -2523,6 +3534,16 @@ func (d *DynamoDB) DeleteItem(pkValue string, skValue string, timeOutDuration *t
 }
 
 func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB deleteItemWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	trace := xray.NewSegment("DynamoDB-DeleteItem", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -2573,7 +3594,9 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "DeleteItem = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		var err error
 
@@ -2607,6 +3630,16 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 }
 
 func (d *DynamoDB) deleteItemNormal(pkValue string, skValue string, timeOutDuration *time.Duration) (ddbErr *DynamoDBError) {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB deleteItemNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -2643,7 +3676,9 @@ func (d *DynamoDB) deleteItemNormal(pkValue string, skValue string, timeOutDurat
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "DeleteItem = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	var err error
 
@@ -2667,6 +3702,16 @@ func (d *DynamoDB) deleteItemNormal(pkValue string, skValue string, timeOutDurat
 
 // DeleteItemWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue string, timeOutDuration *time.Duration) *DynamoDBError {
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB DeleteItemWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -2766,6 +3811,16 @@ func (d *DynamoDB) GetItem(resultItemPtr interface{},
 	pkValue string, skValue string,
 	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
 
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB GetItem Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.getItemWithTrace(resultItemPtr, pkValue, skValue, timeOutDuration, consistentRead, projectedAttributes...)
 	} else {
@@ -2776,6 +3831,16 @@ func (d *DynamoDB) GetItem(resultItemPtr interface{},
 func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 	pkValue string, skValue string,
 	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB getItemWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	trace := xray.NewSegment("DynamoDB-GetItem", d._parentSegment)
 	defer trace.Close()
@@ -2887,7 +3952,9 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "GetItem = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		// execute get item action
 		var result *dynamodb.GetItemOutput
@@ -2935,6 +4002,17 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 	pkValue string, skValue string,
 	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) (ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB getItemNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if d.cn == nil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -3029,7 +4107,9 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "GetItem = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	// execute get item action
 	var result *dynamodb.GetItemOutput
@@ -3069,6 +4149,17 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 	resultItemPtr interface{}, pkValue string, skValue string,
 	timeOutDuration *time.Duration, consistentRead *bool, projectedAttributes ...string) *DynamoDBError {
+
+	if d == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "DynamoDB GetItemWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -3151,6 +4242,16 @@ func (d *DynamoDB) QueryPaginationDataWithRetry(
 	expressionAttributeNames map[string]*string,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue) (paginationData []map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB QueryPaginationDataWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -3225,6 +4326,16 @@ func (d *DynamoDB) queryPaginationDataWrapper(
 	expressionAttributeNames map[string]*string,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue) (paginationData []map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB queryPaginationDataWrapper Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.queryPaginationDataWithTrace(timeOutDuration, indexName, itemsPerPage, keyConditionExpression, expressionAttributeNames, expressionAttributeValues)
 	} else {
@@ -3239,6 +4350,16 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 	keyConditionExpression string,
 	expressionAttributeNames map[string]*string,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue) (paginationData []map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB queryPaginationDataWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	trace := xray.NewSegment("DynamoDB-QueryPaginationDataWithTrace", d._parentSegment)
 	defer trace.Close()
@@ -3320,7 +4441,9 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 		params.Limit = aws.Int64(itemsPerPage)
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "QueryPaginationDataWithTrace = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		subTrace := trace.NewSubSegment("QueryPaginationDataWithTrace_Do")
 		defer subTrace.Close()
@@ -3361,6 +4484,16 @@ func (d *DynamoDB) queryPaginationDataNormal(
 	keyConditionExpression string,
 	expressionAttributeNames map[string]*string,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue) (paginationData []map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB queryPaginationDataNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	if d.cn == nil {
 		return nil, d.handleError(errors.New("QueryPaginationDataNormal Failed: DynamoDB Connection is Required"))
@@ -3428,7 +4561,9 @@ func (d *DynamoDB) queryPaginationDataNormal(
 	params.Limit = aws.Int64(itemsPerPage)
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "QueryPaginationDataNormal = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	if timeOutDuration != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
@@ -3550,6 +4685,16 @@ func (d *DynamoDB) QueryItems(resultItemsPtr interface{},
 	filterConditionExpression *expression.ConditionBuilder,
 	projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
 
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB QueryItems Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.queryItemsWithTrace(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey,
 			keyConditionExpression, expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
@@ -3572,6 +4717,16 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 	expressionAttributeValues map[string]*dynamodb.AttributeValue,
 	filterConditionExpression *expression.ConditionBuilder,
 	projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB queryItemsWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	trace := xray.NewSegment("DynamoDB-QueryItems", d._parentSegment)
 	defer trace.Close()
@@ -3730,7 +4885,9 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "QueryItems = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		subTrace := trace.NewSubSegment("QueryItems_Do")
 		defer subTrace.Close()
@@ -3792,6 +4949,17 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 	expressionAttributeValues map[string]*dynamodb.AttributeValue,
 	filterConditionExpression *expression.ConditionBuilder,
 	projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB queryItemsNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if d.cn == nil {
 		return nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -3934,7 +5102,9 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "QueryItems = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	if timeOutDuration != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
@@ -3982,6 +5152,17 @@ func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue,
 	filterConditionExpression *expression.ConditionBuilder,
 	projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB QueryItemsWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -4131,6 +5312,10 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 	keyConditionExpression string,
 	expressionAttributeValues map[string]*dynamodb.AttributeValue,
 	filterConditionExpression *expression.ConditionBuilder) (returnItemsList interface{}, err error) {
+
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB QueryPagedItemsWithRetry Failed: DynamoDB Object Nil")
+	}
 
 	if pagedSlicePtr == nil {
 		return nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Query and is Required")
@@ -4310,6 +5495,10 @@ func (d *DynamoDB) QueryPerPageItemsWithRetry(
 	expressionAttributeValues map[string]*dynamodb.AttributeValue,
 	filterConditionExpression *expression.ConditionBuilder) (returnItemsList interface{}, prevEvalKey map[string]*dynamodb.AttributeValue, err error) {
 
+	if d == nil {
+		return nil, nil, fmt.Errorf("DynamoDB QueryPerPageItemsWithRetry Failed: DynamoDB Object Nil")
+	}
+
 	if pagedSlicePtr == nil {
 		return nil, nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Query and is Required")
 	} else {
@@ -4405,6 +5594,17 @@ func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
 	pagedQueryPageCountLimit *int64,
 	exclusiveStartKey map[string]*dynamodb.AttributeValue,
 	filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB ScanItems Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.scanItemsWithTrace(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, filterConditionExpression, projectedAttributes...)
 	} else {
@@ -4421,6 +5621,17 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 	pagedQueryPageCountLimit *int64,
 	exclusiveStartKey map[string]*dynamodb.AttributeValue,
 	filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB scanItemsWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	trace := xray.NewSegment("DynamoDB-ScanItems", d._parentSegment)
 	defer trace.Close()
 	defer func() {
@@ -4530,7 +5741,9 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "ScanItems = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		subTrace := trace.NewSubSegment("ScanItems_Do")
 		defer subTrace.Close()
@@ -4586,6 +5799,17 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 	pagedQueryPageCountLimit *int64,
 	exclusiveStartKey map[string]*dynamodb.AttributeValue,
 	filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB scanItemsNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if d.cn == nil {
 		return nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -4682,7 +5906,9 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "ScanItems = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	// create timeout context
 	if timeOutDuration != nil {
@@ -4727,6 +5953,17 @@ func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
 	pagedQueryPageCountLimit *int64,
 	exclusiveStartKey map[string]*dynamodb.AttributeValue,
 	filterConditionExpression expression.ConditionBuilder, projectedAttributes ...string) (prevEvalKey map[string]*dynamodb.AttributeValue, ddbErr *DynamoDBError) {
+
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB ScanItemsWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -4841,6 +6078,10 @@ func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
 	indexName string,
 	filterConditionExpression expression.ConditionBuilder) (returnItemsList interface{}, err error) {
 
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB ScanPagedItemsWithRetry Failed: DynamoDB Object Nil")
+	}
+
 	if pagedSlicePtr == nil {
 		return nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Scan and is Required")
 	} else {
@@ -4950,6 +6191,16 @@ func (d *DynamoDB) BatchWriteItems(
 	deleteKeys []*DynamoDBTableKeys,
 	timeOutDuration *time.Duration) (successCount int, unprocessedItems []*DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
 
+	if d == nil {
+		return 0, nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB BatchWriteItems Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.batchWriteItemsWithTrace(putItemsSet, deleteKeys, timeOutDuration)
 	} else {
@@ -4960,6 +6211,16 @@ func (d *DynamoDB) BatchWriteItems(
 func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWritePutItemsSet,
 	deleteKeys []*DynamoDBTableKeys,
 	timeOutDuration *time.Duration) (successCount int, unprocessedItems []*DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+
+	if d == nil {
+		return 0, nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB batchWriteItemsWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	trace := xray.NewSegment("DynamoDB-BatchWriteItems", d._parentSegment)
 	defer trace.Close()
@@ -5130,7 +6391,9 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "BatchWriteItems = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		// execute batch write action
 		var result *dynamodb.BatchWriteItemOutput
@@ -5218,6 +6481,16 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWritePutItemsSet,
 	deleteKeys []*DynamoDBTableKeys,
 	timeOutDuration *time.Duration) (successCount int, unprocessedItems []*DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+
+	if d == nil {
+		return 0, nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB batchWriteItemsNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	if d.cn == nil {
 		return 0, nil, d.handleError(errors.New("DynamoDB Connection is Required"))
@@ -5376,7 +6649,9 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "BatchWriteItems = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	// execute batch write action
 	var result *dynamodb.BatchWriteItemOutput
@@ -5454,6 +6729,16 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 	putItemsSet []*DynamoDBTransactionWritePutItemsSet, deleteKeys []*DynamoDBTableKeys,
 	timeOutDuration *time.Duration) (successCount int, unprocessedItems []*DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
+
+	if d == nil {
+		return 0, nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB BatchWriteItemsWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	if maxRetries > 10 {
 		maxRetries = 10
@@ -5552,6 +6837,16 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 //			if struct has field with complex type (another struct), to reference it in code, use the parent struct field dot child field notation
 //				Info in parent struct with struct tag as info; to reach child element: info.xyz
 func (d *DynamoDB) BatchGetItems(timeOutDuration *time.Duration, multiGetRequestResponse ...*DynamoDBMultiGetRequestResponse) (notFound bool, err *DynamoDBError) {
+	if d == nil {
+		return true, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB BatchGetItems Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.batchGetItemsWithTrace(timeOutDuration, multiGetRequestResponse...)
 	} else {
@@ -5560,13 +6855,39 @@ func (d *DynamoDB) BatchGetItems(timeOutDuration *time.Duration, multiGetRequest
 }
 
 func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiGetRequestResponse ...*DynamoDBMultiGetRequestResponse) (notFound bool, err *DynamoDBError) {
+	if d == nil {
+		return true, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB batchGetItemsWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	trace := xray.NewSegment("DynamoDB-BatchGetItems", d._parentSegment)
 
 	defer trace.Close()
 	defer func() {
-		if err != nil {
-			_ = trace.Seg.AddError(fmt.Errorf(err.ErrorMessage))
+		if r := recover(); r != nil {
+			if err != nil {
+				err.ErrorMessage = err.ErrorMessage + " - PANIC: " + fmt.Sprintf("%v", r)
+				log.Printf("DynamoDB batchGetItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
+				if trace.Seg != nil {
+					_ = trace.Seg.AddError(err)
+				}
+			} else {
+				err = d.handleError(fmt.Errorf("PANIC: %v", r), "DynamoDB-batchGetItemsWithTrace")
+				log.Printf("DynamoDB batchGetItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
+				if trace.Seg != nil {
+					_ = trace.Seg.AddError(err)
+				}
+			}
+		} else if err != nil {
+			log.Printf("DynamoDB batchGetItemsWithTrace Recovered Without Panic But Has Error: %s", err.ErrorMessage)
+			if trace.Seg != nil {
+				_ = trace.Seg.AddError(err)
+			}
 		}
 	}()
 
@@ -5720,7 +7041,9 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "BatchGetItems = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		// execute batch
 		var result *dynamodb.BatchGetItemOutput
@@ -5794,6 +7117,15 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 }
 
 func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetRequestResponse ...*DynamoDBMultiGetRequestResponse) (notFound bool, err *DynamoDBError) {
+	if d == nil {
+		return true, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB batchGetItemsNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	if d.cn == nil {
 		return false, d.handleError(errors.New("DynamoDB Connection is Required"))
@@ -5927,7 +7259,9 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "BatchGetItems = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	// execute batch
 	var result *dynamodb.BatchGetItemOutput
@@ -5980,6 +7314,16 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 
 // BatchGetItemsWithRetry handles dynamodb retries in case action temporarily fails
 func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint, timeOutDuration *time.Duration, multiGetRequestResponse ...*DynamoDBMultiGetRequestResponse) (notFound bool, err *DynamoDBError) {
+	if d == nil {
+		return false, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB BatchGetItemsWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if maxRetries > 10 {
 		maxRetries = 10
 	}
@@ -6053,6 +7397,16 @@ func (d *DynamoDB) BatchDeleteItemsWithRetry(maxRetries uint,
 	timeOutDuration *time.Duration,
 	deleteKeys ...*DynamoDBTableKeyValue) (deleteFailKeys []*DynamoDBTableKeyValue, err error) {
 
+	if d == nil {
+		return nil, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB BatchDeleteItemsWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if len(deleteKeys) == 0 {
 		return []*DynamoDBTableKeyValue{}, fmt.Errorf("BatchDeleteItemsWithRetry Failed: %s", err)
 	}
@@ -6110,6 +7464,16 @@ func (d *DynamoDB) BatchDeleteItemsWithRetry(maxRetries uint,
 //
 //	if dynamodb table is defined as PK and SK together, then to search, MUST use PK and SK together or error will trigger
 func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
+	if d == nil {
+		return false, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB TransactionWriteItems Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.transactionWriteItemsWithTrace(timeOutDuration, tranItems...)
 	} else {
@@ -6118,14 +7482,40 @@ func (d *DynamoDB) TransactionWriteItems(timeOutDuration *time.Duration, tranIte
 }
 
 func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration, tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
+	if d == nil {
+		return false, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB transactionWriteItemsWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	trace := xray.NewSegment("DynamoDB-TransactionWriteItems", d._parentSegment)
 
 	defer trace.Close()
 
 	defer func() {
-		if err != nil {
-			_ = trace.Seg.AddError(fmt.Errorf(err.ErrorMessage))
+		if r := recover(); r != nil {
+			if err != nil {
+				err.ErrorMessage = err.ErrorMessage + " - PANIC: " + fmt.Sprintf("%v", r)
+				log.Printf("DynamoDB transactionWriteItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
+				if trace.Seg != nil {
+					_ = trace.Seg.AddError(err)
+				}
+			} else {
+				err = d.handleError(fmt.Errorf("PANIC: %v", r), "DynamoDB-transactionWriteItemsWithTrace")
+				log.Printf("DynamoDB transactionWriteItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
+				if trace.Seg != nil {
+					_ = trace.Seg.AddError(err)
+				}
+			}
+		} else if err != nil {
+			log.Printf("DynamoDB transactionWriteItemsWithTrace Recovered Without Panic But Has Error: %s", err.ErrorMessage)
+			if trace.Seg != nil {
+				_ = trace.Seg.AddError(err)
+			}
 		}
 	}()
 
@@ -6322,7 +7712,9 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "TransactionWriteItems = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		// execute transaction write operation
 		var err1 error
@@ -6359,6 +7751,16 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 }
 
 func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
+	if d == nil {
+		return false, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB transactionWriteItemsNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if d.cn == nil {
 		return false, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -6547,7 +7949,9 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "TransactionWriteItems = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	// execute transaction write operation
 	var err1 error
@@ -6573,6 +7977,16 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 	timeOutDuration *time.Duration,
 	tranItems ...*DynamoDBTransactionWrites) (success bool, err *DynamoDBError) {
+
+	if d == nil {
+		return false, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB TransactionWriteItemsWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	if maxRetries > 10 {
 		maxRetries = 10
@@ -6665,6 +8079,16 @@ func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 //  3. no more than total of 25 search keys allowed across all variadic objects
 //  4. the ResultItemsSlicePtr in all getItems Reads objects within all variadic objects MUST BE SET
 func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, getItems ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
+	if d == nil {
+		return 0, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB TransactionGetItems Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if xray.XRayServiceOn() {
 		return d.transactionGetItemsWithTrace(timeOutDuration, getItems...)
 	} else {
@@ -6673,38 +8097,60 @@ func (d *DynamoDB) TransactionGetItems(timeOutDuration *time.Duration, getItems 
 }
 
 func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, getItems ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
+	if d == nil {
+		return 0, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB transactionGetItemsWithTrace Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	trace := xray.NewSegment("DynamoDB-TransactionGetItems", d._parentSegment)
 
 	defer trace.Close()
 	defer func() {
-		if err != nil {
-			_ = trace.Seg.AddError(fmt.Errorf(err.ErrorMessage))
+		if r := recover(); r != nil {
+			if err != nil {
+				err.ErrorMessage = err.ErrorMessage + " - PANIC: " + fmt.Sprintf("%v", r)
+				log.Printf("DynamoDB transactionGetItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
+				if trace.Seg != nil {
+					_ = trace.Seg.AddError(err)
+				}
+			} else {
+				err = d.handleError(fmt.Errorf("PANIC: %v", r), "DynamoDB-transactionGetItemsWithTrace")
+				log.Printf("DynamoDB transactionGetItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
+				if trace.Seg != nil {
+					_ = trace.Seg.AddError(err)
+				}
+			}
+		} else if err != nil {
+			log.Printf("DynamoDB transactionGetItemsWithTrace Recovered Without Panic But Has Error: %s", err.ErrorMessage)
+			if trace.Seg != nil {
+				_ = trace.Seg.AddError(err)
+			}
 		}
 	}()
 
 	if d.cn == nil {
-		err = d.handleError(errors.New("DynamoDB Connection is Required"))
-		return 0, err
+		return 0, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
 	if util.LenTrim(d.TableName) <= 0 {
-		err = d.handleError(errors.New("DynamoDB Table Name is Required"))
-		return 0, err
+		return 0, d.handleError(errors.New("DynamoDB Table Name is Required"))
 	}
 
 	if util.LenTrim(d.PKName) <= 0 {
-		err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "PK Name is Required"))
-		return 0, err
+		return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "PK Name is Required"))
 	}
 
 	if getItems == nil {
-		err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "GetItems is Nil"))
-		return 0, err
+		return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "GetItems is Nil"))
 	}
 
 	if len(getItems) <= 0 {
-		err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "GetItems is Empty"))
-		return 0, err
+		return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: " + "GetItems is Empty"))
 	}
 
 	searchCount := 0
@@ -6831,7 +8277,9 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 		}
 
 		// record params payload
+		d.LastExecuteParamsPayloadMutex.Lock()
 		d.LastExecuteParamsPayload = "TransactionGetItems = " + params.String()
+		d.LastExecuteParamsPayloadMutex.Unlock()
 
 		// execute transaction get operation
 		var result *dynamodb.TransactGetItemsOutput
@@ -6888,6 +8336,16 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 }
 
 func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, getItems ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
+	if d == nil {
+		return 0, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB transactionGetItemsNormal Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if d.cn == nil {
 		return 0, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
@@ -7019,7 +8477,9 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 	}
 
 	// record params payload
+	d.LastExecuteParamsPayloadMutex.Lock()
 	d.LastExecuteParamsPayload = "TransactionGetItems = " + params.String()
+	d.LastExecuteParamsPayloadMutex.Unlock()
 
 	// execute transaction get operation
 	var result *dynamodb.TransactGetItemsOutput
@@ -7063,6 +8523,16 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
 	timeOutDuration *time.Duration,
 	getItems ...*DynamoDBTransactionReads) (successCount int, err *DynamoDBError) {
+
+	if d == nil {
+		return 0, &DynamoDBError{
+			ErrorMessage:                      "DynamoDB TransactionGetItemsWithRetry Failed: DynamoDB Object Nil",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
 
 	if maxRetries > 10 {
 		maxRetries = 10
@@ -7142,6 +8612,10 @@ func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
 
 // CreateTable creates a new dynamodb table to the default aws region (as configured by aws cli)
 func (d *DynamoDB) CreateTable(input *dynamodb.CreateTableInput, ctx ...aws.Context) (*dynamodb.CreateTableOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB CreateTable Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB CreateTable Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7163,6 +8637,10 @@ func (d *DynamoDB) CreateTable(input *dynamodb.CreateTableInput, ctx ...aws.Cont
 
 // UpdateTable updates an existing dynamodb table with provided input parameter
 func (d *DynamoDB) UpdateTable(input *dynamodb.UpdateTableInput, ctx ...aws.Context) (*dynamodb.UpdateTableOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB UpdateTable Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB UpdateTable Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7184,6 +8662,10 @@ func (d *DynamoDB) UpdateTable(input *dynamodb.UpdateTableInput, ctx ...aws.Cont
 
 // DeleteTable deletes an existing dynamodb table
 func (d *DynamoDB) DeleteTable(input *dynamodb.DeleteTableInput, ctx ...aws.Context) (*dynamodb.DeleteTableOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB DeleteTable Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB DeleteTable Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7205,6 +8687,10 @@ func (d *DynamoDB) DeleteTable(input *dynamodb.DeleteTableInput, ctx ...aws.Cont
 
 // ListTables queries dynamodb tables list and returns found tables info
 func (d *DynamoDB) ListTables(input *dynamodb.ListTablesInput, ctx ...aws.Context) (*dynamodb.ListTablesOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB ListTables Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB ListTables Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7226,6 +8712,10 @@ func (d *DynamoDB) ListTables(input *dynamodb.ListTablesInput, ctx ...aws.Contex
 
 // DescribeTable describes the dynamodb table info for target identified in input parameter
 func (d *DynamoDB) DescribeTable(input *dynamodb.DescribeTableInput, ctx ...aws.Context) (*dynamodb.DescribeTableOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB DescribeTable Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB DescribeTable Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7247,6 +8737,10 @@ func (d *DynamoDB) DescribeTable(input *dynamodb.DescribeTableInput, ctx ...aws.
 
 // CreateGlobalTable creates a dynamodb global table
 func (d *DynamoDB) CreateGlobalTable(input *dynamodb.CreateGlobalTableInput, ctx ...aws.Context) (*dynamodb.CreateGlobalTableOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB CreateGlobalTable Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB CreateGlobalTable Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7268,6 +8762,10 @@ func (d *DynamoDB) CreateGlobalTable(input *dynamodb.CreateGlobalTableInput, ctx
 
 // UpdateGlobalTable updates a dynamodb global table
 func (d *DynamoDB) UpdateGlobalTable(input *dynamodb.UpdateGlobalTableInput, ctx ...aws.Context) (*dynamodb.UpdateGlobalTableOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB UpdateGlobalTable Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB UpdateGlobalTable Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7289,6 +8787,10 @@ func (d *DynamoDB) UpdateGlobalTable(input *dynamodb.UpdateGlobalTableInput, ctx
 
 // ListGlobalTables lists dynamodb global tables
 func (d *DynamoDB) ListGlobalTables(input *dynamodb.ListGlobalTablesInput, ctx ...aws.Context) (*dynamodb.ListGlobalTablesOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB ListGlobalTables Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB ListGlobalTables Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7310,6 +8812,10 @@ func (d *DynamoDB) ListGlobalTables(input *dynamodb.ListGlobalTablesInput, ctx .
 
 // DescribeGlobalTable describes dynamodb global table
 func (d *DynamoDB) DescribeGlobalTable(input *dynamodb.DescribeGlobalTableInput, ctx ...aws.Context) (*dynamodb.DescribeGlobalTableOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB DescribeGlobalTable Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB DescribeGlobalTable Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7331,6 +8837,10 @@ func (d *DynamoDB) DescribeGlobalTable(input *dynamodb.DescribeGlobalTableInput,
 
 // CreateBackup creates dynamodb table backup
 func (d *DynamoDB) CreateBackup(input *dynamodb.CreateBackupInput, ctx ...aws.Context) (*dynamodb.CreateBackupOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB CreateBackup Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB CreateBackup Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7352,6 +8862,10 @@ func (d *DynamoDB) CreateBackup(input *dynamodb.CreateBackupInput, ctx ...aws.Co
 
 // DeleteBackup deletes an existing dynamodb table backup
 func (d *DynamoDB) DeleteBackup(input *dynamodb.DeleteBackupInput, ctx ...aws.Context) (*dynamodb.DeleteBackupOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB DeleteBackup Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB DeleteBackup Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7373,6 +8887,10 @@ func (d *DynamoDB) DeleteBackup(input *dynamodb.DeleteBackupInput, ctx ...aws.Co
 
 // ListBackups lists dynamodb table backup
 func (d *DynamoDB) ListBackups(input *dynamodb.ListBackupsInput, ctx ...aws.Context) (*dynamodb.ListBackupsOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB ListBackups Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB ListBackups Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7394,6 +8912,10 @@ func (d *DynamoDB) ListBackups(input *dynamodb.ListBackupsInput, ctx ...aws.Cont
 
 // DescribeBackup describes dynamodb table backup
 func (d *DynamoDB) DescribeBackup(input *dynamodb.DescribeBackupInput, ctx ...aws.Context) (*dynamodb.DescribeBackupOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB DescribeBackup Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB DescribeBackup Failed: " + "No DynamoDB Connection Available")
 	}
@@ -7415,6 +8937,10 @@ func (d *DynamoDB) DescribeBackup(input *dynamodb.DescribeBackupInput, ctx ...aw
 
 // UpdatePointInTimeBackup updates dynamodb table point in time backup option
 func (d *DynamoDB) UpdatePointInTimeBackup(input *dynamodb.UpdateContinuousBackupsInput, ctx ...aws.Context) (*dynamodb.UpdateContinuousBackupsOutput, error) {
+	if d == nil {
+		return nil, fmt.Errorf("DynamoDB UpdatePointInTimeBackup Failed: " + "DynamoDB Object is Nil")
+	}
+
 	if d.cn == nil {
 		return nil, fmt.Errorf("DynamoDB UpdatePointInTimeBackup Failed: " + "No DynamoDB Connection Available")
 	}

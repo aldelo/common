@@ -873,6 +873,17 @@ func ReflectObjectNewPtr(objType reflect.Type) interface{} {
 	}
 }
 
+// ReflectInterfaceSliceLen returns the length of a slice passed as interface{}.
+// It returns the length and a boolean indicating whether the input was a slice or array.
+// If the input is not a slice or array, it returns 0 and false.
+func ReflectInterfaceSliceLen(slice interface{}) (int, bool) {
+	v := reflect.ValueOf(slice)
+	if v.Kind() != reflect.Slice && v.Kind() != reflect.Array {
+		return 0, false
+	}
+	return v.Len(), true
+}
+
 // ReflectAppendSlices appends two slices provided as interface{} and returns the resulting slice.
 // It returns an error if the inputs are not slices or their types are incompatible.
 func ReflectAppendSlices(slice1, slice2 interface{}) (interface{}, error) {

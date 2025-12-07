@@ -21,14 +21,47 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
+
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aws/aws-sdk-go/aws"
 	ddb "github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"strings"
-	"time"
 )
+
+var (
+	cachedGlobalTableSupportedRegions []string
+	cachedGlobalTableRegionsOnce      sync.Once
+)
+
+var auditProjectionAttributes = []string{"CrUTC", "CrBy", "CrIP", "UpUTC", "UpBy", "UpIP"}
+
+// helper used by every CRUD read that auto-appends projections
+func cloneAndEnsureProjectionAttributes(attrs []string) []string {
+	if len(attrs) == 0 {
+		return nil
+	}
+
+	cloned := make([]string, len(attrs), len(attrs)+len(auditProjectionAttributes))
+	copy(cloned, attrs)
+
+	existing := make(map[string]struct{}, len(cloned))
+	for _, attr := range cloned {
+		existing[attr] = struct{}{}
+	}
+
+	for _, attr := range auditProjectionAttributes {
+		if _, ok := existing[attr]; !ok {
+			cloned = append(cloned, attr)
+			existing[attr] = struct{}{}
+		}
+	}
+
+	return cloned
+}
 
 // CrudUniqueModel defines the unique model for the crud object
 // Specifically, an interface{} representing the crud object is passed in,
@@ -52,6 +85,10 @@ type CrudUniqueModel struct {
 
 // getPKPrefix returns concatenated PK parts based on part count with PKDelimiter
 func (u *CrudUniqueModel) getPKPrefix(partCount int) string {
+	if u == nil {
+		return ""
+	}
+
 	if partCount <= 0 {
 		return ""
 	}
@@ -242,6 +279,8 @@ type Crud struct {
 	_ddb           *DynamoDB
 	_timeout       uint
 	_actionRetries uint
+
+	_ddbMutex sync.RWMutex
 }
 
 type ConnectionConfig struct {
@@ -292,13 +331,18 @@ type GlobalTableInfo struct {
 	Regions   []awsregion.AWSRegion
 }
 
-var cachedGlobalTableSupportedRegions []string
-
 // Open will establish connection to the target dynamodb table as defined in config.yaml
 func (c *Crud) Open(cfg *ConnectionConfig) error {
+	if c == nil {
+		return fmt.Errorf("Crud Object is Nil")
+	}
+
 	if cfg == nil {
 		return fmt.Errorf("Config is Required")
 	}
+
+	c._ddbMutex.Lock()
+	defer c._ddbMutex.Unlock()
 
 	c._ddb = &DynamoDB{
 		AwsRegion:   awsregion.GetAwsRegion(cfg.Region),
@@ -327,6 +371,13 @@ func (c *Crud) Open(cfg *ConnectionConfig) error {
 
 // Close will reset and clean up connection to dynamodb table
 func (c *Crud) Close() {
+	if c == nil {
+		return
+	}
+
+	c._ddbMutex.Lock()
+	defer c._ddbMutex.Unlock()
+
 	if c._ddb != nil {
 		c._ddb.DisableDax()
 		c._ddb = nil
@@ -337,6 +388,10 @@ func (c *Crud) Close() {
 
 // CreatePKValue generates composite pk values from configured app and service name, along with parameterized pk values
 func (c *Crud) CreatePKValue(pkApp string, pkService string, pkScope string, pkIdentifier string, values ...string) (pkValue string, err error) {
+	if c == nil {
+		return "", fmt.Errorf("Create PK Value Failed: (Validater 1) Crud Object is Nil")
+	}
+
 	pkValue = fmt.Sprintf("%s#%s#%s#%s", pkApp, pkService, pkScope, pkIdentifier)
 
 	for _, v := range values {
@@ -352,7 +407,7 @@ func (c *Crud) CreatePKValue(pkApp string, pkService string, pkScope string, pkI
 	if util.LenTrim(pkValue) > 0 {
 		return pkValue, nil
 	} else {
-		return "", fmt.Errorf("Create PK Value Failed: %s", err.Error())
+		return "", fmt.Errorf("Create PK Value Failed: %s", "No PK Value Created")
 	}
 }
 
@@ -365,34 +420,46 @@ func (c *Crud) CreatePKValue(pkApp string, pkService string, pkScope string, pkI
 //
 // warning: projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
 func (c *Crud) Get(pkValue string, skValue string, resultDataPtr interface{}, consistentRead bool, projectedAttributes ...string) (err error) {
-	if c._ddb == nil {
-		return fmt.Errorf("Get From Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return fmt.Errorf("Get From Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return fmt.Errorf("Get From Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(pkValue) == 0 {
-		return fmt.Errorf("Get From Data Store Failed: (Validater 2) PK Value is Required")
+		return fmt.Errorf("Get From Data Store Failed: (Validater 3) PK Value is Required")
 	}
 
 	if util.LenTrim(skValue) == 0 {
-		return fmt.Errorf("Get From Data Store Failed: (Validater 3) SK Value is Required")
+		return fmt.Errorf("Get From Data Store Failed: (Validater 4) SK Value is Required")
 	}
 
 	if resultDataPtr == nil {
-		return fmt.Errorf("Get From Data Store Failed: (Validater 4) Result Var Requires Ptr")
+		return fmt.Errorf("Get From Data Store Failed: (Validater 5) Result Var Requires Ptr")
 	}
 
-	// auto project CrUTC, CrBy, CrIP, UpUTC, UpBy, UpIP
-	if len(projectedAttributes) > 0 {
-		projectionIndex := strings.Join(projectedAttributes, " ")
+	projectionAttrs := cloneAndEnsureProjectionAttributes(projectedAttributes)
 
-		for _, v := range []string{"CrUTC", "CrBy", "CrIP", "UpUTC", "UpBy", "UpIP"} {
-			if !strings.Contains(projectionIndex, v) {
-				projectedAttributes = append(projectedAttributes, v)
-			}
-		}
-	}
+	//// auto project CrUTC, CrBy, CrIP, UpUTC, UpBy, UpIP
+	//if len(projectedAttributes) > 0 {
+	//	projectionIndex := strings.Join(projectedAttributes, " ")
+	//
+	//	for _, v := range []string{"CrUTC", "CrBy", "CrIP", "UpUTC", "UpBy", "UpIP"} {
+	//		if !strings.Contains(projectionIndex, v) {
+	//			projectedAttributes = append(projectedAttributes, v)
+	//		}
+	//	}
+	//}
 
-	if e := c._ddb.GetItemWithRetry(c._actionRetries, resultDataPtr, pkValue, skValue, c._ddb.TimeOutDuration(c._timeout), util.BoolPtr(consistentRead), projectedAttributes...); e != nil {
+	if e := _ddb.GetItemWithRetry(_actionRetries, resultDataPtr, pkValue, skValue, _ddb.TimeOutDuration(_timeout), util.BoolPtr(consistentRead), projectionAttrs...); e != nil {
 		// get error
 		return fmt.Errorf("Get From Data Store Failed: (GetItem) %s", e.Error())
 	} else {
@@ -411,19 +478,36 @@ func (c *Crud) Get(pkValue string, skValue string, resultDataPtr interface{}, co
 // consistentRead = if true, read is consistent, if false, read is eventually consistent
 // projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
 func (c *Crud) BatchGet(pkskList []PkSkValuePair, resultItemsSlicePtr interface{}, consistentRead bool, projectedAttributes ...string) (found bool, err error) {
+	if c == nil {
+		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
 	if pkskList == nil {
-		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 1) PK SK List Missing")
+		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 2) PK SK List Missing")
 	}
 
 	if len(pkskList) == 0 {
-		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 2) PK SK List Empty")
+		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 3) PK SK List Empty")
+	}
+
+	if len(pkskList) > 100 {
+		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 4) PK SK List Exceeds 100 Items Limit")
 	}
 
 	if resultItemsSlicePtr == nil {
-		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 3) Result Items Slice Pointer Missing")
+		return false, fmt.Errorf("BatchGet From Data Store Failed: (Validater 5) Result Items Slice Pointer Missing")
 	}
 
-	searchKeys := make([]*DynamoDBTableKeyValue, 0)
+	projectionAttrs := cloneAndEnsureProjectionAttributes(projectedAttributes)
+
+	var projectedAttributesSet *DynamoDBProjectedAttributesSet
+	if len(projectionAttrs) > 0 {
+		projectedAttributesSet = &DynamoDBProjectedAttributesSet{
+			projectionAttrs,
+		}
+	}
+
+	searchKeys := make([]*DynamoDBTableKeyValue, 0, len(pkskList))
 
 	for _, v := range pkskList {
 		searchKeys = append(searchKeys, &DynamoDBTableKeyValue{
@@ -432,22 +516,22 @@ func (c *Crud) BatchGet(pkskList []PkSkValuePair, resultItemsSlicePtr interface{
 		})
 	}
 
-	var projectedAttributesSet *DynamoDBProjectedAttributesSet
-
-	if len(projectedAttributes) > 0 {
-		// auto project CrUTC, CrBy, CrIP, UpUTC, UpBy, UpIP
-		projectionIndex := strings.Join(projectedAttributes, " ")
-
-		for _, v := range []string{"CrUTC", "CrBy", "CrIP", "UpUTC", "UpBy", "UpIP"} {
-			if !strings.Contains(projectionIndex, v) {
-				projectedAttributes = append(projectedAttributes, v)
-			}
-		}
-
-		projectedAttributesSet = &DynamoDBProjectedAttributesSet{
-			ProjectedAttributes: projectedAttributes,
-		}
-	}
+	//var projectedAttributesSet *DynamoDBProjectedAttributesSet
+	//
+	//if len(projectedAttributes) > 0 {
+	//	// auto project CrUTC, CrBy, CrIP, UpUTC, UpBy, UpIP
+	//	projectionIndex := strings.Join(projectedAttributes, " ")
+	//
+	//	for _, v := range []string{"CrUTC", "CrBy", "CrIP", "UpUTC", "UpBy", "UpIP"} {
+	//		if !strings.Contains(projectionIndex, v) {
+	//			projectedAttributes = append(projectedAttributes, v)
+	//		}
+	//	}
+	//
+	//	projectedAttributesSet = &DynamoDBProjectedAttributesSet{
+	//		ProjectedAttributes: projectedAttributes,
+	//	}
+	//}
 
 	multiGet := &DynamoDBMultiGetRequestResponse{
 		SearchKeys:          searchKeys,
@@ -470,29 +554,47 @@ func (c *Crud) BatchGet(pkskList []PkSkValuePair, resultItemsSlicePtr interface{
 //
 // warning: projectedAttributes = if specified, MUST include PartitionKey (Hash Key) typically "PK" as the first projected attribute, regardless if used or not
 func (c *Crud) BatchGetEx(multiGetRequestResponse ...*DynamoDBMultiGetRequestResponse) (found bool, err error) {
-	if c._ddb == nil {
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if multiGetRequestResponse == nil {
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 2) GetRequests Missing")
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 3) GetRequests Missing")
 	}
 
 	if len(multiGetRequestResponse) == 0 {
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 3) GetRequests Empty")
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 4) GetRequests Empty")
+	}
+
+	if multiGetRequestResponse[0] == nil {
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 5) GetRequest Nil")
+	}
+
+	if multiGetRequestResponse[0].SearchKeys == nil {
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 6) Search Keys Nil")
 	}
 
 	if len(multiGetRequestResponse[0].SearchKeys) == 0 {
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 4) Search Keys Missing Values")
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 7) Search Keys Missing Values")
 	}
 
 	if multiGetRequestResponse[0].ResultItemsSlicePtr == nil {
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 5) Result Slice Pointer Missing")
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 8) Result Slice Pointer Missing")
 	}
 
-	if notFound, e := c._ddb.BatchGetItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), multiGetRequestResponse...); e != nil {
+	if notFound, e := _ddb.BatchGetItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), multiGetRequestResponse...); e != nil {
 		// error
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (on BatchGetItems) %s" + e.Error())
+		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (on BatchGetItems) %s", e.Error())
 	} else {
 		// success
 		return !notFound, nil
@@ -502,31 +604,55 @@ func (c *Crud) BatchGetEx(multiGetRequestResponse ...*DynamoDBMultiGetRequestRes
 // TransactionGet retrieves records from dynamodb table(s), based on given PK SK,
 // action results will be passed to caller via transReads' ResultItemsSlicePtr
 func (c *Crud) TransactionGet(getItems ...*DynamoDBTransactionReads) (successCount int, err error) {
-	if c._ddb == nil {
-		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if getItems == nil {
-		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 2) GetItems Requests Missing")
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 3) GetItems Requests Missing")
 	}
 
 	if len(getItems) == 0 {
-		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 3) GetItems Requests Empty")
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 4) GetItems Requests Empty")
+	}
+
+	if getItems[0] == nil {
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 5) GetItems Request Nil")
 	}
 
 	if getItems[0].SearchKeys == nil {
-		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 4) Search Keys Nil")
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 6) Search Keys Nil")
 	}
 
 	if len(getItems[0].SearchKeys) == 0 {
-		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 5) Search Keys Empty")
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 7) Search Keys Empty")
 	}
 
 	if getItems[0].ResultItemsSlicePtr == nil {
-		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 6) Result Slice Pointer Missing")
+		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 8) Result Slice Pointer Missing")
 	}
 
-	if success, e := c._ddb.TransactionGetItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), getItems...); e != nil {
+	count := 0
+	for _, v := range getItems {
+		if v != nil {
+			count += len(v.SearchKeys)
+			if count > 25 {
+				return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 9) Total Search Keys Exceeds 25 Items Limit")
+			}
+		}
+	}
+
+	if success, e := _ddb.TransactionGetItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), getItems...); e != nil {
 		// error
 		return 0, fmt.Errorf("TransactionGet From Data Store Failed: (TransactionGetItems) %s", e.Error())
 	} else {
@@ -545,12 +671,22 @@ func (c *Crud) TransactionGet(getItems ...*DynamoDBTransactionReads) (successCou
 //
 // data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav
 func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBConditionExpressionSet) (err error) {
-	if c._ddb == nil {
-		return fmt.Errorf("Set To Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return fmt.Errorf("Set To Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return fmt.Errorf("Set To Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if dataPtr == nil {
-		return fmt.Errorf("Set To Data Store Failed: (Validater 2) Data Var Requires Ptr")
+		return fmt.Errorf("Set To Data Store Failed: (Validater 3) Data Var Requires Ptr")
 	}
 
 	// get unique key values
@@ -642,7 +778,7 @@ func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBCondi
 				//
 				// execute transaction
 				//
-				if ok, e2 := c._ddb.TransactionWriteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), writes); e2 != nil {
+				if ok, e2 := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e2 != nil {
 					// transaction write error
 					if e2.TransactionConditionalCheckFailed {
 						// possibly duplicate detected
@@ -667,7 +803,7 @@ func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBCondi
 				})
 			}
 
-			if e := c._ddb.PutItemWithRetry(c._actionRetries, dataPtr, c._ddb.TimeOutDuration(c._timeout), conditionExpressionSet...); e != nil {
+			if e := _ddb.PutItemWithRetry(_actionRetries, dataPtr, _ddb.TimeOutDuration(_timeout), conditionExpressionSet...); e != nil {
 				// set error
 				return fmt.Errorf("Set To Data Store Failed: (PutItem) %s", e.Error())
 			} else {
@@ -679,6 +815,10 @@ func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBCondi
 }
 
 func (c *Crud) prepareBatchSetParams(putItems interface{}, deleteKeys []PkSkValuePair, putConditionExpressionSet ...*DynamoDBConditionExpressionSet) ([]*DynamoDBTransactionWritePutItemsSet, []*DynamoDBTableKeys, map[string][]*PkSkValuePair, map[string][]*PkSkValuePair) {
+	if c == nil {
+		return nil, nil, nil, nil
+	}
+
 	if putItems == nil && len(deleteKeys) == 0 {
 		return nil, nil, nil, nil
 	}
@@ -718,6 +858,10 @@ func (c *Crud) prepareBatchSetParams(putItems interface{}, deleteKeys []PkSkValu
 }
 
 func (c *Crud) prepareBatchSetResults(failedPutsMap map[string][]*PkSkValuePair, failedDeletesMap map[string][]*PkSkValuePair) (failedPuts []PkSkValuePair, failedDeletes []PkSkValuePair) {
+	if c == nil {
+		return nil, nil
+	}
+
 	if failedPutsMap != nil && len(failedPutsMap) > 0 {
 		for _, v := range failedPutsMap {
 			for _, vv := range v {
@@ -725,7 +869,7 @@ func (c *Crud) prepareBatchSetResults(failedPutsMap map[string][]*PkSkValuePair,
 					failedPuts = append(failedPuts, *vv)
 				}
 			}
-			break
+			//break
 		}
 	}
 
@@ -736,7 +880,7 @@ func (c *Crud) prepareBatchSetResults(failedPutsMap map[string][]*PkSkValuePair,
 					failedDeletes = append(failedDeletes, *vv)
 				}
 			}
-			break
+			//break
 		}
 	}
 
@@ -754,6 +898,10 @@ func (c *Crud) prepareBatchSetResults(failedPutsMap map[string][]*PkSkValuePair,
 //
 // !!! NOTE = Both putItemsSet and deleteKeys Cannot Be Set At The Same Time, Each BatchSet Handles Either Put or Delete, Not Both !!!
 func (c *Crud) BatchSet(putDataSlice interface{}, deleteKeys []PkSkValuePair) (successCount int, failedPuts []PkSkValuePair, failedDeletes []PkSkValuePair, err error) {
+	if c == nil {
+		return 0, nil, nil, fmt.Errorf("BatchSet To Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
 	// prepare batch set params
 	putDataParam, deleteKeysParam, failedPutsMap, failedDeletesMap := c.prepareBatchSetParams(putDataSlice, deleteKeys)
 
@@ -775,25 +923,57 @@ func (c *Crud) BatchSet(putDataSlice interface{}, deleteKeys []PkSkValuePair) (s
 //
 // !!! NOTE = Both putItemsSet and deleteKeys Cannot Be Set At The Same Time, Each BatchSet Handles Either Put or Delete, Not Both !!!
 func (c *Crud) BatchSetEx(putItemsSet []*DynamoDBTransactionWritePutItemsSet, deleteKeys []*DynamoDBTableKeys) (successCount int, failedPuts map[string][]*PkSkValuePair, failedDeletes map[string][]*PkSkValuePair, err error) {
-	if c._ddb == nil {
-		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if putItemsSet != nil && len(putItemsSet) > 0 && deleteKeys != nil && len(deleteKeys) > 0 {
-		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 2) PutItemsSet and DeleteKeys Cannot Be Set At The Same Time")
+		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 3) PutItemsSet and DeleteKeys Cannot Be Set At The Same Time")
 	}
 
 	if putItemsSet == nil && deleteKeys == nil {
-		return 0, nil, nil, fmt.Errorf("BatchSetEx Data Store Failed: (Validater 3) PutItemsSet and DeleteKeys Both Missing")
+		return 0, nil, nil, fmt.Errorf("BatchSetEx Data Store Failed: (Validater 4) PutItemsSet and DeleteKeys Both Missing")
 	}
 
 	if (putItemsSet != nil && len(putItemsSet) == 0) && (deleteKeys != nil && len(deleteKeys) == 0) {
-		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 4) PutItemsSet and DeleteKeys Both Empty")
+		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 5) PutItemsSet and DeleteKeys Both Empty")
 	}
 
-	if success, unprocessed, e := c._ddb.BatchWriteItemsWithRetry(c._actionRetries, putItemsSet, deleteKeys, c._ddb.TimeOutDuration(c._timeout)); e != nil {
+	count := 0
+	outErr := fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 4.1) Combined PutItemsSet and DeleteKeys Exceeds 25 Items Limit")
+
+	if putItemsSet != nil {
+		for _, v := range putItemsSet {
+			if v != nil && v.PutItems != nil {
+				if n, ok := util.ReflectInterfaceSliceLen(v.PutItems); ok {
+					count += n
+					if count > 25 {
+						return 0, nil, nil, outErr
+					}
+				}
+			}
+		}
+	}
+	if deleteKeys != nil {
+		count += len(deleteKeys)
+		if count > 25 {
+			return 0, nil, nil, outErr
+		}
+	}
+
+	if success, unprocessed, e := _ddb.BatchWriteItemsWithRetry(_actionRetries, putItemsSet, deleteKeys, _ddb.TimeOutDuration(_timeout)); e != nil {
 		// error
-		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (BatchWriteItems) %s" + e.Error())
+		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (BatchWriteItems) %s", e.Error())
 	} else {
 		// success (may contain unprocessed)
 		if unprocessed != nil && len(unprocessed) > 0 {
@@ -856,15 +1036,57 @@ func (c *Crud) BatchSetEx(putItemsSet []*DynamoDBTransactionWritePutItemsSet, de
 //
 // !!! TransactionSet Does Not Auto Create Unique Key Indexes - Only Set, Update, Delete Handles Unique Key Index Actions !!!
 func (c *Crud) TransactionSet(transWrites ...*DynamoDBTransactionWrites) (success bool, err error) {
-	if c._ddb == nil {
-		return false, fmt.Errorf("TransactionSet To Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return false, fmt.Errorf("TransactionSet To Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return false, fmt.Errorf("TransactionSet To Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if transWrites == nil {
-		return false, fmt.Errorf("TransactionSet To Data Store Failed: (Validater 2) Transaction Data Missing")
+		return false, fmt.Errorf("TransactionSet To Data Store Failed: (Validater 3) Transaction Data Missing")
 	}
 
-	if ok, e := c._ddb.TransactionWriteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), transWrites...); e != nil {
+	count := 0
+	outErr := fmt.Errorf("TransactionSet To Data Store Failed: (Validater 4) Total Transaction Items Exceeds 25 Items Limit")
+
+	for _, v := range transWrites {
+		if v != nil {
+			if v.PutItemsSet != nil {
+				for _, vv := range v.PutItemsSet {
+					if vv != nil && vv.PutItems != nil {
+						if n, ok := util.ReflectInterfaceSliceLen(vv.PutItems); ok {
+							count += n
+							if count > 25 {
+								return false, outErr
+							}
+						}
+					}
+				}
+			}
+			if v.UpdateItems != nil {
+				count += len(v.UpdateItems)
+				if count > 25 {
+					return false, outErr
+				}
+			}
+			if v.DeleteItems != nil {
+				count += len(v.DeleteItems)
+				if count > 25 {
+					return false, outErr
+				}
+			}
+		}
+	}
+
+	if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), transWrites...); e != nil {
 		// error
 		return false, fmt.Errorf("TransactionSet To Data Store Failed: (TransactionWriteItems) %s", e.Error())
 	} else {
@@ -888,42 +1110,52 @@ func (c *Crud) TransactionSet(transWrites ...*DynamoDBTransactionWrites) (succes
 //
 // responseDataPtrSlice, is the slice ptr result to caller, expects caller to assert to target slice ptr objects, ie: results.([]*xyz)
 func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface{}, resultDataPtrSlice interface{}) (responseDataPtrSlice interface{}, err error) {
-	if c._ddb == nil {
-		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if keyExpression == nil {
-		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 2) Key Expression is Required")
+		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 3) Key Expression is Required")
 	}
 
 	if util.LenTrim(keyExpression.PKName) == 0 {
-		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 3) Key Expression Missing PK Name")
+		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 4) Key Expression Missing PK Name")
 	}
 
 	if util.LenTrim(keyExpression.PKValue) == 0 {
-		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 4) Key Expression Missing PK Value")
+		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 5) Key Expression Missing PK Value")
 	}
 
 	if keyExpression.UseSK {
 		if util.LenTrim(keyExpression.SKName) == 0 {
-			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 5) Key Expression Missing SK Name")
+			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 6) Key Expression Missing SK Name")
 		}
 
 		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
-			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 6) Key Expression Missing SK Comparer")
+			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 7) Key Expression Missing SK Comparer")
 		}
 
 		if util.LenTrim(keyExpression.SKValue) == 0 {
-			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 7) Key Expression Missing SK Value")
+			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 8) Key Expression Missing SK Value")
 		}
 	}
 
 	if pagedDataPtrSlice == nil {
-		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 8) Paged Data Slice Missing Ptr")
+		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 9) Paged Data Slice Missing Ptr")
 	}
 
 	if resultDataPtrSlice == nil {
-		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 9) Result Data Slice Missing Ptr")
+		return nil, fmt.Errorf("Query From Data Store Failed: (Validater 10) Result Data Slice Missing Ptr")
 	}
 
 	keyValues := map[string]*ddb.AttributeValue{}
@@ -975,8 +1207,8 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 	}
 
 	// query against dynamodb table
-	if dataList, e := c._ddb.QueryPagedItemsWithRetry(c._actionRetries, pagedDataPtrSlice, resultDataPtrSlice,
-		c._ddb.TimeOutDuration(c._timeout), keyExpression.IndexName,
+	if dataList, e := _ddb.QueryPagedItemsWithRetry(_actionRetries, pagedDataPtrSlice, resultDataPtrSlice,
+		_ddb.TimeOutDuration(_timeout), keyExpression.IndexName,
 		keyCondition, keyValues, nil); e != nil {
 		// query error
 		return nil, fmt.Errorf("Query From Data Store Failed: (QueryPaged) %s", e.Error())
@@ -988,6 +1220,10 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 
 // lastEvalKeyToBase64 serializes last evaluated key to base 64 string
 func (c *Crud) lastEvalKeyToBase64(key map[string]*ddb.AttributeValue) (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("Base64 Encode LastEvalKey Failed: (Validater 1) Crud Object is Nil")
+	}
+
 	if key != nil {
 		lastEvalKey := map[string]interface{}{}
 
@@ -1007,6 +1243,10 @@ func (c *Crud) lastEvalKeyToBase64(key map[string]*ddb.AttributeValue) (string, 
 
 // exclusiveStartKeyFromBase64 de-serializes last evaluated key base 64 string into map[string]*dynamodb.Attribute object
 func (c *Crud) exclusiveStartKeyFromBase64(key string) (map[string]*ddb.AttributeValue, error) {
+	if c == nil {
+		return nil, fmt.Errorf("Base64 Decode ExclusiveStartKey Failed: (Validater 1) Crud Object is Nil")
+	}
+
 	if util.LenTrim(key) > 0 {
 		if byteJson, err := base64.StdEncoding.DecodeString(key); err != nil {
 			return nil, fmt.Errorf("Base64 Decode ExclusiveStartKey Failed: (Base64 DecodeString Error) %s", err.Error())
@@ -1045,41 +1285,51 @@ func (c *Crud) exclusiveStartKeyFromBase64(key string) (map[string]*ddb.Attribut
 //
 // responseDataPtrSlice, is the slice ptr result to caller, expects caller to assert to target slice ptr objects, ie: results.([]*xyz)
 func (c *Crud) QueryByPage(itemsPerPage int64, exclusiveStartKey string, keyExpression *QueryExpression, pagedDataPtrSlice interface{}) (responseDataPtrSlice interface{}, prevEvalKey string, err error) {
-	if c._ddb == nil {
-		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if keyExpression == nil {
-		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 2) Key Expression is Required")
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 3) Key Expression is Required")
 	}
 
 	if util.LenTrim(keyExpression.PKName) == 0 {
-		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 3) Key Expression Missing PK Name")
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 4) Key Expression Missing PK Name")
 	}
 
 	if util.LenTrim(keyExpression.PKValue) == 0 {
-		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 4) Key Expression Missing PK Value")
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 5) Key Expression Missing PK Value")
 	}
 
 	if keyExpression.UseSK {
 		if util.LenTrim(keyExpression.SKName) == 0 {
-			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 5) Key Expression Missing SK Name")
+			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 6) Key Expression Missing SK Name")
 		}
 
 		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
-			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 6) Key Expression Missing SK Comparer")
+			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 7) Key Expression Missing SK Comparer")
 		}
 
 		if util.LenTrim(keyExpression.SKValue) == 0 {
-			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 7) Key Expression Missing SK Value")
+			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 8) Key Expression Missing SK Value")
 		}
 	}
 
 	if pagedDataPtrSlice == nil {
-		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 8) Paged Data Slice Missing Ptr")
+		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 9) Paged Data Slice Missing Ptr")
 	}
 
-	if itemsPerPage < 0 {
+	if itemsPerPage <= 0 {
 		itemsPerPage = 10
 	} else if itemsPerPage > 500 {
 		itemsPerPage = 500
@@ -1142,8 +1392,8 @@ func (c *Crud) QueryByPage(itemsPerPage int64, exclusiveStartKey string, keyExpr
 		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (ESK From Base64 Error) %s", err.Error())
 	}
 
-	if dataList, prevKey, e := c._ddb.QueryPerPageItemsWithRetry(c._actionRetries, itemsPerPage, esk, pagedDataPtrSlice,
-		c._ddb.TimeOutDuration(c._timeout), keyExpression.IndexName,
+	if dataList, prevKey, e := _ddb.QueryPerPageItemsWithRetry(_actionRetries, itemsPerPage, esk, pagedDataPtrSlice,
+		_ddb.TimeOutDuration(_timeout), keyExpression.IndexName,
 		keyCondition, keyValues, nil); e != nil {
 		// query error
 		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (QueryPaged) %s", e.Error())
@@ -1171,33 +1421,43 @@ func (c *Crud) QueryByPage(itemsPerPage int64, exclusiveStartKey string, keyExpr
 // for page 1 use exclusiveStartKey as nil
 // for page 2 and more use the exclusiveStartKey from paginationData slice
 func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpression) (paginationData []string, err error) {
-	if c._ddb == nil {
-		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if keyExpression == nil {
-		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 2) Key Expression is Required")
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 3) Key Expression is Required")
 	}
 
 	if util.LenTrim(keyExpression.PKName) == 0 {
-		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 3) Key Expression Missing PK Name")
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 4) Key Expression Missing PK Name")
 	}
 
 	if util.LenTrim(keyExpression.PKValue) == 0 {
-		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 4) Key Expression Missing PK Value")
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 5) Key Expression Missing PK Value")
 	}
 
 	if keyExpression.UseSK {
 		if util.LenTrim(keyExpression.SKName) == 0 {
-			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 5) Key Expression Missing SK Name")
+			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 6) Key Expression Missing SK Name")
 		}
 
 		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
-			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 6) Key Expression Missing SK Comparer")
+			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 7) Key Expression Missing SK Comparer")
 		}
 
 		if util.LenTrim(keyExpression.SKValue) == 0 {
-			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 7) Key Expression Missing SK Value")
+			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 8) Key Expression Missing SK Value")
 		}
 	}
 
@@ -1256,7 +1516,7 @@ func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpre
 	}
 
 	// query pagination data against dynamodb table
-	if pData, e := c._ddb.QueryPaginationDataWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), util.StringPtr(keyExpression.IndexName), itemsPerPage, keyCondition, nil, keyValues); e != nil {
+	if pData, e := _ddb.QueryPaginationDataWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), util.StringPtr(keyExpression.IndexName), itemsPerPage, keyCondition, nil, keyValues); e != nil {
 		// query error
 		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (QueryPaged) %s", e.Error())
 	} else {
@@ -1319,20 +1579,30 @@ func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpre
 //				1) "size(info.actors) >= :num"
 //					a) When Length of Actors Attribute Value is Equal or Greater Than :num, ONLY THEN UpdateExpression is Performed
 func (c *Crud) Update(pkValue string, skValue string, updateExpression string, conditionExpression string, attributeValues []*AttributeValue) (err error) {
-	if c._ddb == nil {
-		return fmt.Errorf("Update To Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return fmt.Errorf("Update To Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return fmt.Errorf("Update To Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(pkValue) == 0 {
-		return fmt.Errorf("Update To Data Store Failed: (Validater 2) PK Value is Missing")
+		return fmt.Errorf("Update To Data Store Failed: (Validater 3) PK Value is Missing")
 	}
 
 	if util.LenTrim(skValue) == 0 {
-		return fmt.Errorf("Update To Data Store Failed: (Validater 3) SK Value is Missing")
+		return fmt.Errorf("Update To Data Store Failed: (Validater 4) SK Value is Missing")
 	}
 
 	if util.LenTrim(updateExpression) == 0 {
-		return fmt.Errorf("Update To Data Store Failed: (Validater 4) Update Expression is Missing")
+		return fmt.Errorf("Update To Data Store Failed: (Validater 5) Update Expression is Missing")
 	}
 
 	// extract set and remove expressions from update expression
@@ -1450,7 +1720,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			UniqueTagName: "uniquepkparts",
 		}
 
-		if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(c._ddb, pkValue, skValue); crudErr != nil {
+		if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(_ddb, pkValue, skValue); crudErr != nil {
 			return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromSource) %s", crudErr.Error())
 		} else {
 			if oldUniqueFields != nil && len(oldUniqueFields) > 0 {
@@ -1527,7 +1797,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 							UpdateItems: updateItems,
 						}
 
-						if ok, e := c._ddb.TransactionWriteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), writes); e != nil {
+						if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
 							if e.TransactionConditionalCheckFailed {
 								// transaction conditional check failed
 								return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) [Possible Unique Attribute Duplicate Blocked] %s", e.Error())
@@ -1550,7 +1820,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			//
 			// update item
 			//
-			if e := c._ddb.UpdateItemWithRetry(c._actionRetries, pkValue, skValue, setExpression, conditionExpression, nil, expressionAttributeValues, c._ddb.TimeOutDuration(c._timeout)); e != nil {
+			if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, setExpression, conditionExpression, nil, expressionAttributeValues, _ddb.TimeOutDuration(_timeout)); e != nil {
 				// update item error
 				return fmt.Errorf("Update To Data Store Failed: (UpdateItem) %s", e.Error())
 			}
@@ -1559,11 +1829,11 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 	// prepare and execute remove expression action
 	if util.LenTrim(removeExpression) > 0 {
-		if e := c._ddb.RemoveItemAttributeWithRetry(c._actionRetries, pkValue, skValue, removeExpression, c._ddb.TimeOutDuration(c._timeout)); e != nil {
+		if e := _ddb.RemoveItemAttributeWithRetry(_actionRetries, pkValue, skValue, removeExpression, _ddb.TimeOutDuration(_timeout)); e != nil {
 			// remove item attribute error
 			return fmt.Errorf("Update To Data Store Failed: (RemoveItemAttribute) %s", e.Error())
 		}
-		
+
 		// check for unique key indexes to remove
 		if uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
 			// get slice of remove attributes
@@ -1577,7 +1847,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 					if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
 						if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
-							if e := c._ddb.DeleteItemWithRetry(c._actionRetries, uniqueField.UniqueFieldIndex, "UniqueKey", c._ddb.TimeOutDuration(c._timeout)); e != nil {
+							if e := _ddb.DeleteItemWithRetry(_actionRetries, uniqueField.UniqueFieldIndex, "UniqueKey", _ddb.TimeOutDuration(_timeout)); e != nil {
 								// delete unique key index error
 								return fmt.Errorf("Update To Data Store Failed: (DeleteItem Unique Key Index) %s", e.Error())
 							}
@@ -1594,16 +1864,26 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 // Delete removes data from dynamodb table with given pk and sk values
 func (c *Crud) Delete(pkValue string, skValue string) (err error) {
-	if c._ddb == nil {
-		return fmt.Errorf("Delete From Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return fmt.Errorf("Delete From Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return fmt.Errorf("Delete From Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(pkValue) == 0 {
-		return fmt.Errorf("Delete From Data Store Failed: (Validater 2) PK Value is Required")
+		return fmt.Errorf("Delete From Data Store Failed: (Validater 3) PK Value is Required")
 	}
 
 	if util.LenTrim(skValue) == 0 {
-		return fmt.Errorf("Delete From Data Store Failed: (Validater 3) SK Value is Required")
+		return fmt.Errorf("Delete From Data Store Failed: (Validater 4) SK Value is Required")
 	}
 
 	// check for unique key indexes
@@ -1615,7 +1895,7 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 		UniqueTagName: "uniquepkparts",
 	}
 
-	if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(c._ddb, pkValue, skValue); crudErr != nil {
+	if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(_ddb, pkValue, skValue); crudErr != nil {
 		return fmt.Errorf("Delete From Data Store Failed: (GetUniqueFieldsFromSource) %s", crudErr.Error())
 	} else {
 		if oldUniqueFields != nil && len(oldUniqueFields) > 0 {
@@ -1645,7 +1925,7 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 					DeleteItems: deleteKeys,
 				}
 
-				if ok, e := c._ddb.TransactionWriteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), writes); e != nil {
+				if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
 					// transaction delete error
 					return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) %s", e.Error())
 				} else {
@@ -1665,7 +1945,7 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 		//
 		// delete item - non transactional
 		//
-		if e := c._ddb.DeleteItemWithRetry(c._actionRetries, pkValue, skValue, c._ddb.TimeOutDuration(c._timeout)); e != nil {
+		if e := _ddb.DeleteItemWithRetry(_actionRetries, pkValue, skValue, _ddb.TimeOutDuration(_timeout)); e != nil {
 			// delete error
 			return fmt.Errorf("Delete From Data Store Failed: (DeleteItem) %s", e.Error())
 		} else {
@@ -1681,16 +1961,34 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 //
 // !!! BatchDelete Does Not Auto Handle Unique Key Indexes - Only Set, Update, Delete Handles Unique Key Index Actions !!!
 func (c *Crud) BatchDelete(deleteKeys ...*DynamoDBTableKeyValue) (successCount int, failedDeletes []PkSkValuePair, err error) {
-	if c._ddb == nil {
-		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 1) Connection Not Established")
+	if c == nil {
+		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	_actionRetries := c._actionRetries
+	_timeout := c._timeout
+	c._ddbMutex.RUnlock()
+
+	if _ddb == nil {
+		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
 	if deleteKeys == nil {
-		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 2) Delete Keys Missing")
+		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 3) Delete Keys Nil")
 	}
 
-	if failed, e := c._ddb.BatchDeleteItemsWithRetry(c._actionRetries, c._ddb.TimeOutDuration(c._timeout), deleteKeys...); e != nil {
-		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 2) %s", e.Error())
+	if len(deleteKeys) == 0 {
+		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 4) Delete Keys Missing")
+	}
+
+	if len(deleteKeys) > 25 {
+		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 5) Delete Keys Exceeds 25 Items Limit")
+	}
+
+	if failed, e := _ddb.BatchDeleteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), deleteKeys...); e != nil {
+		return 0, nil, fmt.Errorf("BatchDelete From Data Store Failed: (Validater 6) %s", e.Error())
 	} else {
 		successCount = len(deleteKeys)
 
@@ -1727,22 +2025,30 @@ func (c *Crud) CreateTable(tableName string,
 	attributes []*ddb.AttributeDefinition,
 	customDynamoDBConnection ...*DynamoDB) error {
 
+	if c == nil {
+		return fmt.Errorf("CreateTable Failed: (Validater 1) Crud Object is Nil")
+	}
+
 	// check for custom object
 	var ddbObj *DynamoDB
 
 	if len(customDynamoDBConnection) > 0 {
 		ddbObj = customDynamoDBConnection[0]
 	} else {
-		ddbObj = c._ddb
+		c._ddbMutex.RLock()
+		_ddb := c._ddb
+		c._ddbMutex.RUnlock()
+
+		ddbObj = _ddb
 	}
 
 	// validate
 	if ddbObj == nil {
-		return fmt.Errorf("CreateTable Failed: (Validater 1) Connection Not Established")
+		return fmt.Errorf("CreateTable Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(tableName) == 0 {
-		return fmt.Errorf("CreateTable Failed: (Validater 2) Table Name is Required")
+		return fmt.Errorf("CreateTable Failed: (Validater 3) Table Name is Required")
 	}
 
 	if sse != nil {
@@ -1851,17 +2157,25 @@ func (c *Crud) UpdateTable(tableName string, rcu int64, wcu int64,
 	gsi []*ddb.GlobalSecondaryIndexUpdate,
 	attributes []*ddb.AttributeDefinition) error {
 
+	if c == nil {
+		return fmt.Errorf("UpdateTable Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return fmt.Errorf("UpdateTable Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return fmt.Errorf("UpdateTable Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(tableName) == 0 {
-		return fmt.Errorf("UpdateTable Failed: (Validater 2) Table Name is Required")
+		return fmt.Errorf("UpdateTable Failed: (Validater 3) Table Name is Required")
 	}
 
 	if (rcu > 0 || wcu > 0) && (rcu <= 0 || wcu <= 0) {
-		return fmt.Errorf("UpdateTable Failed: (Validater 3) Capacity Update Requires Both RCU and WCU Provided")
+		return fmt.Errorf("UpdateTable Failed: (Validater 4) Capacity Update Requires Both RCU and WCU Provided")
 	}
 
 	var hasUpdates bool
@@ -1897,7 +2211,7 @@ func (c *Crud) UpdateTable(tableName string, rcu int64, wcu int64,
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.UpdateTable(input, ctx); err != nil {
+	if output, err := _ddb.UpdateTable(input, ctx); err != nil {
 		return fmt.Errorf("UpdateTable Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -1910,13 +2224,21 @@ func (c *Crud) UpdateTable(tableName string, rcu int64, wcu int64,
 
 // DeleteTable will delete the target dynamodb table given by input parameter values
 func (c *Crud) DeleteTable(tableName string, region awsregion.AWSRegion) error {
+	if c == nil {
+		return fmt.Errorf("DeleteTable Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return fmt.Errorf("DeleteTable Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return fmt.Errorf("DeleteTable Failed: (Validater 2) Connection Not Established")
 	}
 
 	if !region.Valid() && region != awsregion.UNKNOWN {
-		return fmt.Errorf("DeleteTable Failed: (Validater 2) Region is Required")
+		return fmt.Errorf("DeleteTable Failed: (Validater 3) Region is Required")
 	}
 
 	// *
@@ -1924,15 +2246,15 @@ func (c *Crud) DeleteTable(tableName string, region awsregion.AWSRegion) error {
 	// *
 	var ddbObj *DynamoDB
 
-	if c._ddb.AwsRegion == region {
-		ddbObj = c._ddb
+	if _ddb.AwsRegion == region {
+		ddbObj = _ddb
 	} else {
 		d := &DynamoDB{
 			AwsRegion:   region,
 			TableName:   tableName,
 			PKName:      "PK",
 			SKName:      "SK",
-			HttpOptions: c._ddb.HttpOptions,
+			HttpOptions: _ddb.HttpOptions,
 			SkipDax:     true,
 			DaxEndpoint: "",
 		}
@@ -1966,6 +2288,10 @@ func (c *Crud) DeleteTable(tableName string, region awsregion.AWSRegion) error {
 
 // ListTables will return list of all dynamodb table names
 func (c *Crud) ListTables() ([]string, error) {
+	if c == nil {
+		return []string{}, fmt.Errorf("ListTables Failed: (Validater 1) Crud Object is Nil")
+	}
+
 	outputData := new([]string)
 
 	if err := c.listTablesInternal(nil, outputData); err != nil {
@@ -1976,9 +2302,17 @@ func (c *Crud) ListTables() ([]string, error) {
 }
 
 func (c *Crud) listTablesInternal(exclusiveStartTableName *string, outputData *[]string) error {
+	if c == nil {
+		return fmt.Errorf("listTablesInternal Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return fmt.Errorf("listTablesInternal Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return fmt.Errorf("listTablesInternal Failed: (Validater 2) Connection Not Established")
 	}
 
 	// prepare
@@ -1995,7 +2329,7 @@ func (c *Crud) listTablesInternal(exclusiveStartTableName *string, outputData *[
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.ListTables(input, ctx); err != nil {
+	if output, err := _ddb.ListTables(input, ctx); err != nil {
 		return fmt.Errorf("listTablesInternal Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2022,13 +2356,21 @@ func (c *Crud) listTablesInternal(exclusiveStartTableName *string, outputData *[
 
 // DescribeTable will describe the dynamodb table info based on input parameter values
 func (c *Crud) DescribeTable(tableName string) (*ddb.TableDescription, error) {
+	if c == nil {
+		return nil, fmt.Errorf("DescribeTable Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return nil, fmt.Errorf("DescribeTable Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return nil, fmt.Errorf("DescribeTable Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(tableName) == 0 {
-		return nil, fmt.Errorf("DescribeTable Failed: (Validater 2) Table Name is Required")
+		return nil, fmt.Errorf("DescribeTable Failed: (Validater 3) Table Name is Required")
 	}
 
 	// prepare
@@ -2040,7 +2382,7 @@ func (c *Crud) DescribeTable(tableName string) (*ddb.TableDescription, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.DescribeTable(input, ctx); err != nil {
+	if output, err := _ddb.DescribeTable(input, ctx); err != nil {
 		return nil, fmt.Errorf("DescribeTable Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2057,11 +2399,15 @@ func (c *Crud) DescribeTable(tableName string) (*ddb.TableDescription, error) {
 
 // supportGlobalTable checks if input parameter supports dynamodb global table
 func (c *Crud) supportGlobalTable(region awsregion.AWSRegion) bool {
+	if c == nil {
+		return false
+	}
+
 	if !region.Valid() && region != awsregion.UNKNOWN {
 		return false
 	}
 
-	if len(cachedGlobalTableSupportedRegions) == 0 {
+	cachedGlobalTableRegionsOnce.Do(func() {
 		cachedGlobalTableSupportedRegions = []string{
 			awsregion.AWS_us_east_1_nvirginia.Key(),
 			awsregion.AWS_us_west_2_oregon.Key(),
@@ -2071,7 +2417,7 @@ func (c *Crud) supportGlobalTable(region awsregion.AWSRegion) bool {
 			awsregion.AWS_eu_central_1_frankfurt.Key(),
 			awsregion.AWS_eu_west_2_london.Key(),
 		}
-	}
+	})
 
 	return util.StringSliceContains(&cachedGlobalTableSupportedRegions, region.Key())
 }
@@ -2097,22 +2443,30 @@ func (c *Crud) CreateGlobalTable(tableName string,
 	attributes []*ddb.AttributeDefinition,
 	replicaRegions []awsregion.AWSRegion) error {
 
+	if c == nil {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return fmt.Errorf("CreateGlobalTable Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(tableName) == 0 {
-		return fmt.Errorf("CreateGlobalTable Failed: (Validater 2) Global Table Name is Required")
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 3) Global Table Name is Required")
 	}
 
-	if !c.supportGlobalTable(c._ddb.AwsRegion) {
-		return fmt.Errorf("CreateGlobalTable Failed: (Validater 3-1) Region %s Not Support Global Table", c._ddb.AwsRegion.Key())
+	if !c.supportGlobalTable(_ddb.AwsRegion) {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 4) Region %s Not Support Global Table", _ddb.AwsRegion.Key())
 	}
 
 	for _, r := range replicaRegions {
 		if r.Valid() && r != awsregion.UNKNOWN && !c.supportGlobalTable(r) {
-			return fmt.Errorf("CreateGlobalTable Failed: (Validater 3-2) Region %s Not Support Global Table", r.Key())
+			return fmt.Errorf("CreateGlobalTable Failed: (Validater 5) Region %s Not Support Global Table", r.Key())
 		}
 	}
 
@@ -2125,11 +2479,11 @@ func (c *Crud) CreateGlobalTable(tableName string,
 	}
 
 	if replicaRegions == nil {
-		return fmt.Errorf("CreateGlobalTable Failed: (Validater 4) Regions List is Required")
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 6) Regions List is Required")
 	}
 
 	if len(replicaRegions) == 0 {
-		return fmt.Errorf("CreateGlobalTable Failed: (Validater 5) Regions List is Required")
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 7) Regions List is Required")
 	}
 
 	// prepare
@@ -2139,7 +2493,7 @@ func (c *Crud) CreateGlobalTable(tableName string,
 
 	replicas := []*ddb.Replica{
 		{
-			RegionName: aws.String(c._ddb.AwsRegion.Key()),
+			RegionName: aws.String(_ddb.AwsRegion.Key()),
 		},
 	}
 
@@ -2152,7 +2506,7 @@ func (c *Crud) CreateGlobalTable(tableName string,
 	}
 
 	if len(replicas) == 0 {
-		return fmt.Errorf("CreateGlobalTable Failed: (Validater 6) Replicas' Region List is Required")
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 8) Replicas' Region List is Required")
 	}
 
 	input.ReplicationGroup = replicas
@@ -2161,27 +2515,27 @@ func (c *Crud) CreateGlobalTable(tableName string,
 	// * create replica region tables before creating global table
 	// *
 	if err := c.CreateTable(tableName, true, 0, 0, sse, true, lsi, gsi, attributes); err != nil {
-		return fmt.Errorf("CreateGlobalTable Failed: (Validater 7) Create Regional Primary Table Error, " + err.Error())
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 9) Create Regional Primary Table Error, " + err.Error())
 	}
 
 	for _, r := range replicaRegions {
-		if r.Valid() && r != awsregion.UNKNOWN && c._ddb.AwsRegion.Key() != r.Key() {
+		if r.Valid() && r != awsregion.UNKNOWN && _ddb.AwsRegion.Key() != r.Key() {
 			d := &DynamoDB{
 				AwsRegion:   r,
 				TableName:   tableName,
 				PKName:      "PK",
 				SKName:      "SK",
-				HttpOptions: c._ddb.HttpOptions,
+				HttpOptions: _ddb.HttpOptions,
 				SkipDax:     true,
 				DaxEndpoint: "",
 			}
 
 			if err := d.connectInternal(); err != nil {
-				return fmt.Errorf("CreateGlobalTable Failed: (Validater 8) Create Regional Replica to %s Table %s Error, %s", r.Key(), tableName, err.Error())
+				return fmt.Errorf("CreateGlobalTable Failed: (Validater 10) Create Regional Replica to %s Table %s Error, %s", r.Key(), tableName, err.Error())
 			}
 
 			if err := c.CreateTable(tableName, true, 0, 0, sse, true, lsi, gsi, attributes, d); err != nil {
-				return fmt.Errorf("CreateGlobalTable Failed: (Validater 9) Create Regional Replica to %s to Table %s Error, %s", r.Key(), tableName, err.Error())
+				return fmt.Errorf("CreateGlobalTable Failed: (Validater 11) Create Regional Replica to %s to Table %s Error, %s", r.Key(), tableName, err.Error())
 			}
 		}
 	}
@@ -2190,7 +2544,7 @@ func (c *Crud) CreateGlobalTable(tableName string,
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.CreateGlobalTable(input, ctx); err != nil {
+	if output, err := _ddb.CreateGlobalTable(input, ctx); err != nil {
 		return fmt.Errorf("CreateGlobalTable Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2216,27 +2570,35 @@ func (c *Crud) CreateGlobalTable(tableName string,
 //
 // warning: do not first create the new replica table when adding to global table, this function creates all the new replica tables automatically
 func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWSRegion, deleteRegions []awsregion.AWSRegion) error {
+	if c == nil {
+		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(tableName) == 0 {
-		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 2) Global Table Name is Required")
+		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 3) Global Table Name is Required")
 	}
 
 	if createRegions == nil && deleteRegions == nil {
-		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 3) Either Create Regions or Delete Regions List is Required")
+		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 4) Either Create Regions or Delete Regions List is Required")
 	}
 
 	if len(createRegions) == 0 && len(deleteRegions) == 0 {
-		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 4) Either Create Regions or Delete Regions List is Required")
+		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 5) Either Create Regions or Delete Regions List is Required")
 	}
 
 	if createRegions != nil && len(createRegions) > 0 {
 		for _, r := range createRegions {
 			if r.Valid() && r != awsregion.UNKNOWN && !c.supportGlobalTable(r) {
-				return fmt.Errorf("UpdateGlobalTable Failed: (Validater 5) Region %s Not Support Global Table", r.Key())
+				return fmt.Errorf("UpdateGlobalTable Failed: (Validater 6) Region %s Not Support Global Table", r.Key())
 			}
 		}
 	}
@@ -2249,11 +2611,11 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 		tblDesc, err := c.DescribeTable(tableName)
 
 		if err != nil {
-			return fmt.Errorf("UpdateGlobalTable Failed: (Validater 6) Describe Current Region %s Table %s Failed, %s", c._ddb.AwsRegion.Key(), tableName, err.Error())
+			return fmt.Errorf("UpdateGlobalTable Failed: (Validater 7) Describe Current Region %s Table %s Failed, %s", _ddb.AwsRegion.Key(), tableName, err.Error())
 		}
 
 		if tblDesc == nil {
-			return fmt.Errorf("UpdateGlobalTable Failed: (Validater 7) Describe Current Region %s Table %s Failed, %s", c._ddb.AwsRegion.Key(), tableName, "Received Table Description is Nil")
+			return fmt.Errorf("UpdateGlobalTable Failed: (Validater 8) Describe Current Region %s Table %s Failed, %s", _ddb.AwsRegion.Key(), tableName, "Received Table Description is Nil")
 		}
 
 		// create new tables in target regions based on tblDesc
@@ -2311,23 +2673,23 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 		}
 
 		for _, r := range createRegions {
-			if r.Valid() && r != awsregion.UNKNOWN && c._ddb.AwsRegion.Key() != r.Key() {
+			if r.Valid() && r != awsregion.UNKNOWN && _ddb.AwsRegion.Key() != r.Key() {
 				d := &DynamoDB{
 					AwsRegion:   r,
 					TableName:   tableName,
 					PKName:      "PK",
 					SKName:      "SK",
-					HttpOptions: c._ddb.HttpOptions,
+					HttpOptions: _ddb.HttpOptions,
 					SkipDax:     true,
 					DaxEndpoint: "",
 				}
 
 				if err := d.connectInternal(); err != nil {
-					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 8) Create Regional Replica to %s Table %s Error, %s", r.Key(), tableName, err.Error())
+					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 9) Create Regional Replica to %s Table %s Error, %s", r.Key(), tableName, err.Error())
 				}
 
 				if err := c.CreateTable(tableName, true, 0, 0, sse, true, lsi, gsi, attributes, d); err != nil {
-					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 9) Create Regional Replica to %s to Table %s Error, %s", r.Key(), tableName, err.Error())
+					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 10) Create Regional Replica to %s to Table %s Error, %s", r.Key(), tableName, err.Error())
 				}
 			}
 		}
@@ -2372,7 +2734,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.UpdateGlobalTable(input, ctx); err != nil {
+	if output, err := _ddb.UpdateGlobalTable(input, ctx); err != nil {
 		return fmt.Errorf("UpdateGlobalTable Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2415,6 +2777,10 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 //	eu-west-2 (london), eu-central-1 (frankfurt), eu-west-1 (ireland)
 //	ap-southeast-1 (singapore), ap-southeast-2 (sydney), ap-northeast-1 (tokyo), ap-northeast-2 (seoul)
 func (c *Crud) ListGlobalTables(filterRegion ...awsregion.AWSRegion) ([]*GlobalTableInfo, error) {
+	if c == nil {
+		return []*GlobalTableInfo{}, fmt.Errorf("ListGlobalTables Failed: (Validater 1) Crud Object is Nil")
+	}
+
 	outputData := new([]*GlobalTableInfo)
 
 	region := awsregion.UNKNOWN
@@ -2425,7 +2791,7 @@ func (c *Crud) ListGlobalTables(filterRegion ...awsregion.AWSRegion) ([]*GlobalT
 
 	if region.Valid() && region != awsregion.UNKNOWN {
 		if !c.supportGlobalTable(region) {
-			return []*GlobalTableInfo{}, fmt.Errorf("ListGlobalTables Failed: (Validater 1) Region %s Not Support Global Table", region.Key())
+			return []*GlobalTableInfo{}, fmt.Errorf("ListGlobalTables Failed: (Validater 2) Region %s Not Support Global Table", region.Key())
 		}
 	}
 
@@ -2437,9 +2803,17 @@ func (c *Crud) ListGlobalTables(filterRegion ...awsregion.AWSRegion) ([]*GlobalT
 }
 
 func (c *Crud) listGlobalTablesInternal(filterRegion awsregion.AWSRegion, exclusiveStartGlobalTableName *string, outputData *[]*GlobalTableInfo) error {
+	if c == nil {
+		return fmt.Errorf("listGlobalTablesInternal Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return fmt.Errorf("listGlobalTablesInternal Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return fmt.Errorf("listGlobalTablesInternal Failed: (Validater 2) Connection Not Established")
 	}
 
 	if outputData == nil {
@@ -2460,7 +2834,7 @@ func (c *Crud) listGlobalTablesInternal(filterRegion awsregion.AWSRegion, exclus
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.ListGlobalTables(input, ctx); err != nil {
+	if output, err := _ddb.ListGlobalTables(input, ctx); err != nil {
 		return fmt.Errorf("listGlobalTablesInternal Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2499,13 +2873,21 @@ func (c *Crud) listGlobalTablesInternal(filterRegion awsregion.AWSRegion, exclus
 
 // DescribeGlobalTable will describe the dynamodb global table info based on input parameter values
 func (c *Crud) DescribeGlobalTable(tableName string) (*ddb.GlobalTableDescription, error) {
+	if c == nil {
+		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(tableName) == 0 {
-		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Validater 2) Global Table Name is Required")
+		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Validater 3) Global Table Name is Required")
 	}
 
 	// prepare
@@ -2517,7 +2899,7 @@ func (c *Crud) DescribeGlobalTable(tableName string) (*ddb.GlobalTableDescriptio
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.DescribeGlobalTable(input, ctx); err != nil {
+	if output, err := _ddb.DescribeGlobalTable(input, ctx); err != nil {
 		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2534,9 +2916,17 @@ func (c *Crud) DescribeGlobalTable(tableName string) (*ddb.GlobalTableDescriptio
 
 // CreateBackup creates dynamodb backup based on the given input parameter
 func (c *Crud) CreateBackup(tableName string, backupName string) (backupArn string, err error) {
+	if c == nil {
+		return "", fmt.Errorf("CreateBackup Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return "", fmt.Errorf("CreateBackup Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return "", fmt.Errorf("CreateBackup Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(tableName) == 0 {
@@ -2544,7 +2934,7 @@ func (c *Crud) CreateBackup(tableName string, backupName string) (backupArn stri
 	}
 
 	if util.LenTrim(backupName) == 0 {
-		return "", fmt.Errorf("CreateBackup Failed: (Validater 3) Backup Name is Required")
+		return "", fmt.Errorf("CreateBackup Failed: (Validater 4) Backup Name is Required")
 	}
 
 	// prepare
@@ -2557,7 +2947,7 @@ func (c *Crud) CreateBackup(tableName string, backupName string) (backupArn stri
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.CreateBackup(input, ctx); err != nil {
+	if output, err := _ddb.CreateBackup(input, ctx); err != nil {
 		return "", fmt.Errorf("CreateBackup Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2572,13 +2962,21 @@ func (c *Crud) CreateBackup(tableName string, backupName string) (backupArn stri
 
 // DeleteBackup deletes dynamodb backup based on the given input parameter
 func (c *Crud) DeleteBackup(backupArn string) error {
+	if c == nil {
+		return fmt.Errorf("DeleteBackup Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return fmt.Errorf("DeleteBackup Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return fmt.Errorf("DeleteBackup Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(backupArn) == 0 {
-		return fmt.Errorf("DeleteBackup Failed: (Validater 2) BackupArn is Required")
+		return fmt.Errorf("DeleteBackup Failed: (Validater 3) BackupArn is Required")
 	}
 
 	// prepare
@@ -2590,7 +2988,7 @@ func (c *Crud) DeleteBackup(backupArn string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.DeleteBackup(input, ctx); err != nil {
+	if output, err := _ddb.DeleteBackup(input, ctx); err != nil {
 		return fmt.Errorf("DeleteBackup Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2603,6 +3001,10 @@ func (c *Crud) DeleteBackup(backupArn string) error {
 
 // ListBackups lists dynamodb backups based on the given input parameter
 func (c *Crud) ListBackups(tableNameFilter string, fromTime *time.Time, toTime *time.Time) ([]*ddb.BackupSummary, error) {
+	if c == nil {
+		return []*ddb.BackupSummary{}, fmt.Errorf("ListBackups Failed: (Validater 1) Crud Object is Nil")
+	}
+
 	outputData := new([]*ddb.BackupSummary)
 
 	var tableName *string
@@ -2622,9 +3024,17 @@ func (c *Crud) ListBackups(tableNameFilter string, fromTime *time.Time, toTime *
 func (c *Crud) listBackupsInternal(tableNameFilter *string, fromTime *time.Time, toTime *time.Time,
 	exclusiveStartBackupArn *string, outputData *[]*ddb.BackupSummary) error {
 
+	if c == nil {
+		return fmt.Errorf("listBackupsInternal Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return fmt.Errorf("listBackupsInternal Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return fmt.Errorf("listBackupsInternal Failed: (Validater 2) Connection Not Established")
 	}
 
 	// prepare
@@ -2641,7 +3051,7 @@ func (c *Crud) listBackupsInternal(tableNameFilter *string, fromTime *time.Time,
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.ListBackups(input, ctx); err != nil {
+	if output, err := _ddb.ListBackups(input, ctx); err != nil {
 		return fmt.Errorf("listBackupsInternal Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2670,13 +3080,21 @@ func (c *Crud) listBackupsInternal(tableNameFilter *string, fromTime *time.Time,
 
 // DescribeBackup describes a given dynamodb backup info
 func (c *Crud) DescribeBackup(backupArn string) (*ddb.BackupDescription, error) {
+	if c == nil {
+		return nil, fmt.Errorf("DescribeBackup Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return nil, fmt.Errorf("DescribeBackup Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return nil, fmt.Errorf("DescribeBackup Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(backupArn) == 0 {
-		return nil, fmt.Errorf("DescribeBackup Failed: (Validater 2) BackupArn is Required")
+		return nil, fmt.Errorf("DescribeBackup Failed: (Validater 3) BackupArn is Required")
 	}
 
 	// prepare
@@ -2688,7 +3106,7 @@ func (c *Crud) DescribeBackup(backupArn string) (*ddb.BackupDescription, error) 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.DescribeBackup(input, ctx); err != nil {
+	if output, err := _ddb.DescribeBackup(input, ctx); err != nil {
 		return nil, fmt.Errorf("DescribeBackup Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -2705,13 +3123,21 @@ func (c *Crud) DescribeBackup(backupArn string) (*ddb.BackupDescription, error) 
 
 // UpdatePointInTimeBackup updates dynamodb continuous backup options (point in time recovery) based on the given input parameter
 func (c *Crud) UpdatePointInTimeBackup(tableName string, pointInTimeRecoveryEnabled bool) error {
+	if c == nil {
+		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Validater 1) Crud Object is Nil")
+	}
+
+	c._ddbMutex.RLock()
+	_ddb := c._ddb
+	c._ddbMutex.RUnlock()
+
 	// validate
-	if c._ddb == nil {
-		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Validater 1) Connection Not Established")
+	if _ddb == nil {
+		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Validater 2) Connection Not Established")
 	}
 
 	if util.LenTrim(tableName) == 0 {
-		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Validater 2) Table Name is Required")
+		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Validater 3) Table Name is Required")
 	}
 
 	// prepare
@@ -2726,7 +3152,7 @@ func (c *Crud) UpdatePointInTimeBackup(tableName string, pointInTimeRecoveryEnab
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := c._ddb.UpdatePointInTimeBackup(input, ctx); err != nil {
+	if output, err := _ddb.UpdatePointInTimeBackup(input, ctx); err != nil {
 		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {

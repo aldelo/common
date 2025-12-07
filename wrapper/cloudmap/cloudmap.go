@@ -43,6 +43,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
+	"sync"
+	"time"
+
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -54,9 +59,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/servicediscovery"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
-	"log"
-	"net/http"
-	"time"
 )
 
 // ================================================================================================================
@@ -72,9 +74,11 @@ type CloudMap struct {
 	HttpOptions *awshttp2.HttpClientSettings
 
 	// store aws session object
-	sdClient *servicediscovery.ServiceDiscovery
+	sdClient      *servicediscovery.ServiceDiscovery
+	sdClientMutex sync.RWMutex
 
-	_parentSegment *xray.XRayParentSegment
+	_parentSegment      *xray.XRayParentSegment
+	_parentSegmentMutex sync.RWMutex
 }
 
 // DnsConf represents a dns config option to be used by CreateService
@@ -130,12 +134,21 @@ type HealthCheckConf struct {
 
 // Connect will establish a connection to the CloudMap service
 func (sd *CloudMap) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if sd == nil {
+		return errors.New("CloudMap Connect Failed: " + "CloudMap Object Nil")
+	}
+
 	if xray.XRayServiceOn() {
+		sd._parentSegmentMutex.Lock()
+
 		if len(parentSegment) > 0 {
 			sd._parentSegment = parentSegment[0]
 		}
 
 		seg := xray.NewSegment("Cloudmap-Connect", sd._parentSegment)
+
+		sd._parentSegmentMutex.Unlock()
+
 		defer seg.Close()
 		defer func() {
 			_ = seg.Seg.AddMetadata("Cloudmap-AWS-Region", sd.AwsRegion)
@@ -148,7 +161,11 @@ func (sd *CloudMap) Connect(parentSegment ...*xray.XRayParentSegment) (err error
 		err = sd.connectInternal()
 
 		if err == nil {
-			awsxray.AWS(sd.sdClient.Client)
+			sd.sdClientMutex.RLock()
+			if sd.sdClient != nil {
+				awsxray.AWS(sd.sdClient.Client)
+			}
+			sd.sdClientMutex.RUnlock()
 		}
 
 		return err
@@ -159,6 +176,13 @@ func (sd *CloudMap) Connect(parentSegment ...*xray.XRayParentSegment) (err error
 
 // Connect will establish a connection to the CloudMap service
 func (sd *CloudMap) connectInternal() error {
+	if sd == nil {
+		return errors.New("CloudMap connectInternal Failed: " + "CloudMap Object Nil")
+	}
+
+	sd.sdClientMutex.Lock()
+	defer sd.sdClientMutex.Unlock()
+
 	// clean up prior sd client
 	sd.sdClient = nil
 
@@ -205,11 +229,22 @@ func (sd *CloudMap) connectInternal() error {
 
 // Disconnect clear client
 func (sd *CloudMap) Disconnect() {
+	if sd == nil {
+		return
+	}
+
+	sd.sdClientMutex.Lock()
+	defer sd.sdClientMutex.Unlock()
+
 	sd.sdClient = nil
 }
 
 // toTags converts map of tags to slice of tags
 func (sd *CloudMap) toTags(tagsMap map[string]string) (t []*servicediscovery.Tag) {
+	if sd == nil {
+		return
+	}
+
 	if tagsMap != nil {
 		for k, v := range tagsMap {
 			t = append(t, &servicediscovery.Tag{
@@ -223,7 +258,13 @@ func (sd *CloudMap) toTags(tagsMap map[string]string) (t []*servicediscovery.Tag
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (sd *CloudMap) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if sd == nil {
+		return
+	}
+
+	sd._parentSegmentMutex.Lock()
 	sd._parentSegment = parentSegment
+	sd._parentSegmentMutex.Unlock()
 }
 
 // ----------------------------------------------------------------------------------------------------------------
@@ -251,10 +292,17 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 	description string,
 	tags map[string]string,
 	timeOutDuration ...time.Duration) (operationId string, err error) {
+
+	if sd == nil {
+		return "", fmt.Errorf("CloudMap CreateHttpNamespace Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-CreateHttpNamespace", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -272,8 +320,12 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: " + "SD Client is Required")
 		return "", err
 	}
@@ -318,17 +370,22 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.CreateHttpNamespaceWithContext(ctx, input)
+		output, err = sdClient.CreateHttpNamespaceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.CreateHttpNamespaceWithContext(segCtx, input)
+			output, err = sdClient.CreateHttpNamespaceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.CreateHttpNamespace(input)
+			output, err = sdClient.CreateHttpNamespace(input)
 		}
 	}
 
 	if err != nil {
 		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: (Create Action) " + err.Error())
+		return "", err
+	}
+
+	if output == nil || output.OperationId == nil {
+		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: (Create Action) " + "Output Nil")
 		return "", err
 	}
 
@@ -360,10 +417,17 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 	description string,
 	tags map[string]string,
 	timeOutDuration ...time.Duration) (operationId string, err error) {
+
+	if sd == nil {
+		return "", errors.New("CloudMap CreatePrivateDnsNamespace Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-CreatePrivateDnsNamespace", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -382,8 +446,12 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap CreatePrivateDnsNamespace Failed: " + "SD Client is Required")
 		return "", err
 	}
@@ -434,17 +502,22 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.CreatePrivateDnsNamespaceWithContext(ctx, input)
+		output, err = sdClient.CreatePrivateDnsNamespaceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.CreatePrivateDnsNamespaceWithContext(segCtx, input)
+			output, err = sdClient.CreatePrivateDnsNamespaceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.CreatePrivateDnsNamespace(input)
+			output, err = sdClient.CreatePrivateDnsNamespace(input)
 		}
 	}
 
 	if err != nil {
 		err = errors.New("CloudMap CreatePrivateDnsNamespace Failed: (Create Action) " + err.Error())
+		return "", err
+	}
+
+	if output == nil || output.OperationId == nil {
+		err = errors.New("CloudMap CreatePrivateDnsNamespace Failed: (Create Action) " + "Output Nil")
 		return "", err
 	}
 
@@ -474,10 +547,17 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 	description string,
 	tags map[string]string,
 	timeOutDuration ...time.Duration) (operationId string, err error) {
+
+	if sd == nil {
+		return "", errors.New("CloudMap CreatePublicDnsNamespace Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-CreatePublicDnsNamespace", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -495,8 +575,12 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap CreatePublicDnsNamespace Failed: " + "SD Client is Required")
 		return "", err
 	}
@@ -541,17 +625,22 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.CreatePublicDnsNamespaceWithContext(ctx, input)
+		output, err = sdClient.CreatePublicDnsNamespaceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.CreatePublicDnsNamespaceWithContext(segCtx, input)
+			output, err = sdClient.CreatePublicDnsNamespaceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.CreatePublicDnsNamespace(input)
+			output, err = sdClient.CreatePublicDnsNamespace(input)
 		}
 	}
 
 	if err != nil {
 		err = errors.New("CloudMap CreatePublicDnsNamespace Failed: (Create Action) " + err.Error())
+		return "", err
+	}
+
+	if output == nil || output.OperationId == nil {
+		err = errors.New("CloudMap CreatePublicDnsNamespace Failed: (Create Action) " + "Output Nil")
 		return "", err
 	}
 
@@ -569,10 +658,17 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 //  1. namespace = sd namespace object found
 //  2. err = error info if any
 func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Duration) (namespace *servicediscovery.Namespace, err error) {
+
+	if sd == nil {
+		return nil, errors.New("CloudMap GetNamespace Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-GetNamespace", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -589,8 +685,12 @@ func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Dur
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap GetNamespace Failed: " + "SD Client is Required")
 		return nil, err
 	}
@@ -612,18 +712,23 @@ func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Dur
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.GetNamespaceWithContext(ctx, input)
+		output, err = sdClient.GetNamespaceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.GetNamespaceWithContext(segCtx, input)
+			output, err = sdClient.GetNamespaceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.GetNamespace(input)
+			output, err = sdClient.GetNamespace(input)
 		}
 	}
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap GetNamespace Failed: (Get Action) " + err.Error())
+		return nil, err
+	}
+
+	if output == nil || output.Namespace == nil {
+		err = errors.New("CloudMap GetNamespace Failed: (Get Action) " + "Output Nil")
 		return nil, err
 	}
 
@@ -646,10 +751,17 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (namespaces []*servicediscovery.NamespaceSummary, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap ListNamespaces Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-ListNamespaces", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -669,8 +781,12 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap ListNamespaces Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
@@ -678,6 +794,10 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 	if maxResults != nil {
 		if *maxResults <= 0 {
 			err = errors.New("CloudMap ListNamespaces Failed: " + "MaxResults Must Be Greater Than Zero")
+			return nil, "", err
+		}
+		if *maxResults > 100 {
+			err = errors.New("CloudMap ListNamespaces Failed: " + "MaxResults Cannot Exceed 100")
 			return nil, "", err
 		}
 	}
@@ -729,12 +849,12 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.ListNamespacesWithContext(ctx, input)
+		output, err = sdClient.ListNamespacesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.ListNamespacesWithContext(segCtx, input)
+			output, err = sdClient.ListNamespacesWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.ListNamespaces(input)
+			output, err = sdClient.ListNamespaces(input)
 		}
 	}
 
@@ -744,7 +864,15 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 		return nil, "", err
 	}
 
-	return output.Namespaces, *output.NextToken, nil
+	if output != nil {
+		ns := output.Namespaces
+		nt := aws.StringValue(output.NextToken)
+
+		return ns, nt, nil
+	} else {
+		log.Println("CloudMap ListNamespaces Warning: (List Action) Output Nil")
+		return nil, "", errors.New("CloudMap ListNamespaces Failed: (List Action) Output Nil")
+	}
 }
 
 // ListNamespacesPages gets summary information about namespaces created already
@@ -764,10 +892,17 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (namespaces []*servicediscovery.NamespaceSummary, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap ListNamespacesPages Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-ListNamespacesPages", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -787,8 +922,12 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap ListNamespacesPages Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
@@ -796,6 +935,10 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 	if maxResults != nil {
 		if *maxResults <= 0 {
 			err = errors.New("CloudMap ListNamespacesPages Failed: " + "MaxResults Must Be Greater Than Zero")
+			return nil, "", err
+		}
+		if *maxResults > 100 {
+			err = errors.New("CloudMap ListNamespacesPages Failed: " + "MaxResults Cannot Exceed 100")
 			return nil, "", err
 		}
 	}
@@ -843,7 +986,7 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 	// invoke action
 	fn := func(pageOutput *servicediscovery.ListNamespacesOutput, lastPage bool) bool {
 		if pageOutput != nil {
-			moreNextToken = *pageOutput.NextToken
+			moreNextToken = aws.StringValue(pageOutput.NextToken)
 			namespaces = append(namespaces, pageOutput.Namespaces...)
 		}
 
@@ -854,12 +997,12 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		err = sd.sdClient.ListNamespacesPagesWithContext(ctx, input, fn)
+		err = sdClient.ListNamespacesPagesWithContext(ctx, input, fn)
 	} else {
 		if segCtxSet {
-			err = sd.sdClient.ListNamespacesPagesWithContext(segCtx, input, fn)
+			err = sdClient.ListNamespacesPagesWithContext(segCtx, input, fn)
 		} else {
-			err = sd.sdClient.ListNamespacesPages(input, fn)
+			err = sdClient.ListNamespacesPages(input, fn)
 		}
 	}
 
@@ -881,10 +1024,17 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 //  1. operationId = represents the operation to be used for status check on this action via GetOperation()
 //  2. err = error info if any
 func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.Duration) (operationId string, err error) {
+
+	if sd == nil {
+		return "", errors.New("CloudMap DeleteNamespace Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-DeleteNamespace", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -901,8 +1051,12 @@ func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap DeleteNamespace Failed: " + "SD Client is Required")
 		return "", err
 	}
@@ -924,18 +1078,23 @@ func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.DeleteNamespaceWithContext(ctx, input)
+		output, err = sdClient.DeleteNamespaceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.DeleteNamespaceWithContext(segCtx, input)
+			output, err = sdClient.DeleteNamespaceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.DeleteNamespace(input)
+			output, err = sdClient.DeleteNamespace(input)
 		}
 	}
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap DeleteNamespace Failed: (Delete Action) " + err.Error())
+		return "", err
+	}
+
+	if output == nil || output.OperationId == nil {
+		err = errors.New("CloudMap DeleteNamespace Failed: (Delete Action) " + "Output Nil")
 		return "", err
 	}
 
@@ -971,10 +1130,17 @@ func (sd *CloudMap) CreateService(name string,
 	description string,
 	tags map[string]string,
 	timeOutDuration ...time.Duration) (service *servicediscovery.Service, err error) {
+
+	if sd == nil {
+		return nil, errors.New("CloudMap CreateService Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-CreateService", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -995,8 +1161,12 @@ func (sd *CloudMap) CreateService(name string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap CreateService Failed: " + "SD Client is Required")
 		return nil, err
 	}
@@ -1016,30 +1186,35 @@ func (sd *CloudMap) CreateService(name string,
 		return nil, err
 	}
 
-	if dnsConf != nil {
+	sd.sdClientMutex.RLock()
+	dnsConfLocal := dnsConf
+	healthCheckConfLocal := healthCheckConf
+	sd.sdClientMutex.RUnlock()
+
+	if dnsConfLocal != nil {
 		// dns conf set, public or private dns namespace only
-		if dnsConf.TTL <= 0 {
-			dnsConf.TTL = 300 // default to 5 minutes ttl if not specified
+		if dnsConfLocal.TTL <= 0 {
+			dnsConfLocal.TTL = 300 // default to 5 minutes ttl if not specified
 		}
 
-		if healthCheckConf != nil {
-			if healthCheckConf.FailureThreshold <= 0 {
-				healthCheckConf.FailureThreshold = 1
+		if healthCheckConfLocal != nil {
+			if healthCheckConfLocal.FailureThreshold <= 0 {
+				healthCheckConfLocal.FailureThreshold = 1
 			}
 
-			if healthCheckConf.Custom {
-				healthCheckConf.PubDns_HealthCheck_Type = sdhealthchecktype.UNKNOWN
-				healthCheckConf.PubDns_HealthCheck_Path = ""
+			if healthCheckConfLocal.Custom {
+				healthCheckConfLocal.PubDns_HealthCheck_Type = sdhealthchecktype.UNKNOWN
+				healthCheckConfLocal.PubDns_HealthCheck_Path = ""
 			} else {
-				if !healthCheckConf.PubDns_HealthCheck_Type.Valid() || healthCheckConf.PubDns_HealthCheck_Type == sdhealthchecktype.UNKNOWN {
+				if !healthCheckConfLocal.PubDns_HealthCheck_Type.Valid() || healthCheckConfLocal.PubDns_HealthCheck_Type == sdhealthchecktype.UNKNOWN {
 					err = errors.New("CloudMap CreateService Failed: " + "Public Dns Namespace Health Check Requires Endpoint Type")
 					return nil, err
 				}
 
-				if healthCheckConf.PubDns_HealthCheck_Type == sdhealthchecktype.TCP {
-					healthCheckConf.PubDns_HealthCheck_Path = ""
+				if healthCheckConfLocal.PubDns_HealthCheck_Type == sdhealthchecktype.TCP {
+					healthCheckConfLocal.PubDns_HealthCheck_Path = ""
 				} else {
-					if util.LenTrim(healthCheckConf.PubDns_HealthCheck_Path) == 0 {
+					if util.LenTrim(healthCheckConfLocal.PubDns_HealthCheck_Path) == 0 {
 						err = errors.New("CloudMap CreateService Failed: " + "Health Check Resource Path is Required for HTTP & HTTPS Types")
 						return nil, err
 					}
@@ -1048,9 +1223,11 @@ func (sd *CloudMap) CreateService(name string,
 		}
 	} else {
 		// if dns is not defined, this is api only, health check must be custom
-		if !healthCheckConf.Custom {
-			err = errors.New("CloudMap CreateService Failed: " + "Route 53 Health Check is for Private or Public Dns Namespaces Only")
-			return nil, err
+		if healthCheckConfLocal != nil {
+			if !healthCheckConfLocal.Custom {
+				err = errors.New("CloudMap CreateService Failed: " + "Route 53 Health Check is for Private or Public Dns Namespaces Only")
+				return nil, err
+			}
 		}
 	}
 
@@ -1078,16 +1255,16 @@ func (sd *CloudMap) CreateService(name string,
 		}
 	}
 
-	if dnsConf != nil {
+	if dnsConfLocal != nil {
 		routingPolicy := "MULTIVALUE"
 
-		if !dnsConf.MultiValue {
+		if !dnsConfLocal.MultiValue {
 			routingPolicy = "WEIGHTED"
 		}
 
 		dnsType := "A"
 
-		if dnsConf.SRV {
+		if dnsConfLocal.SRV {
 			dnsType = "SRV"
 		}
 
@@ -1095,28 +1272,28 @@ func (sd *CloudMap) CreateService(name string,
 			RoutingPolicy: aws.String(routingPolicy),
 			DnsRecords: []*servicediscovery.DnsRecord{
 				{
-					TTL:  aws.Int64(dnsConf.TTL),
+					TTL:  aws.Int64(dnsConfLocal.TTL),
 					Type: aws.String(dnsType),
 				},
 			},
 		}
 	}
 
-	if healthCheckConf != nil {
-		if healthCheckConf.Custom {
+	if healthCheckConfLocal != nil {
+		if healthCheckConfLocal.Custom {
 			// custom health config
 			input.HealthCheckCustomConfig = &servicediscovery.HealthCheckCustomConfig{
-				FailureThreshold: aws.Int64(healthCheckConf.FailureThreshold),
+				FailureThreshold: aws.Int64(healthCheckConfLocal.FailureThreshold),
 			}
 		} else {
 			// public dns health config
 			input.HealthCheckConfig = &servicediscovery.HealthCheckConfig{
-				FailureThreshold: aws.Int64(healthCheckConf.FailureThreshold),
-				Type:             aws.String(healthCheckConf.PubDns_HealthCheck_Type.Key()),
+				FailureThreshold: aws.Int64(healthCheckConfLocal.FailureThreshold),
+				Type:             aws.String(healthCheckConfLocal.PubDns_HealthCheck_Type.Key()),
 			}
 
-			if util.LenTrim(healthCheckConf.PubDns_HealthCheck_Path) > 0 {
-				input.HealthCheckConfig.SetResourcePath(healthCheckConf.PubDns_HealthCheck_Path)
+			if util.LenTrim(healthCheckConfLocal.PubDns_HealthCheck_Path) > 0 {
+				input.HealthCheckConfig.SetResourcePath(healthCheckConfLocal.PubDns_HealthCheck_Path)
 			}
 		}
 	}
@@ -1128,18 +1305,23 @@ func (sd *CloudMap) CreateService(name string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.CreateServiceWithContext(ctx, input)
+		output, err = sdClient.CreateServiceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.CreateServiceWithContext(segCtx, input)
+			output, err = sdClient.CreateServiceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.CreateService(input)
+			output, err = sdClient.CreateService(input)
 		}
 	}
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap CreateService Failed: (Create Action) " + err.Error())
+		return nil, err
+	}
+
+	if output == nil || output.Service == nil {
+		err = errors.New("CloudMap CreateService Failed: (Create Action) " + "Output Nil")
 		return nil, err
 	}
 
@@ -1176,10 +1358,22 @@ func (sd *CloudMap) UpdateService(serviceId string,
 	healthCheckConfUpdate *HealthCheckConf,
 	descriptionUpdate *string,
 	timeOutDuration ...time.Duration) (operationId string, err error) {
+
+	if sd == nil {
+		return "", errors.New("CloudMap UpdateService Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap UpdateService Failed: " + "ServiceId is Required")
+		return "", err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-UpdateService", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1199,14 +1393,13 @@ func (sd *CloudMap) UpdateService(serviceId string,
 		}()
 	}
 
-	// validate
-	if sd.sdClient == nil {
-		err = errors.New("CloudMap UpdateService Failed: " + "SD Client is Required")
-		return "", err
-	}
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
 
-	if util.LenTrim(serviceId) == 0 {
-		err = errors.New("CloudMap UpdateService Failed: " + "ServiceId is Required")
+	// validate
+	if sdClient == nil {
+		err = errors.New("CloudMap UpdateService Failed: " + "SD Client is Required")
 		return "", err
 	}
 
@@ -1293,18 +1486,23 @@ func (sd *CloudMap) UpdateService(serviceId string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.UpdateServiceWithContext(ctx, input)
+		output, err = sdClient.UpdateServiceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.UpdateServiceWithContext(segCtx, input)
+			output, err = sdClient.UpdateServiceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.UpdateService(input)
+			output, err = sdClient.UpdateService(input)
 		}
 	}
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap UpdateService Failed: (Update Action) " + err.Error())
+		return "", err
+	}
+
+	if output == nil || output.OperationId == nil {
+		err = errors.New("CloudMap UpdateService Failed: (Update Action) " + "Output Nil")
 		return "", err
 	}
 
@@ -1321,10 +1519,22 @@ func (sd *CloudMap) UpdateService(serviceId string,
 //  1. service = service object found based on the provided serviceId
 //  2. err = contains error info if error was encountered
 func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duration) (service *servicediscovery.Service, err error) {
+
+	if sd == nil {
+		return nil, errors.New("CloudMap GetService Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap GetService Failed: " + "ServiceId is Required")
+		return nil, err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-GetService", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1341,14 +1551,13 @@ func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duratio
 		}()
 	}
 
-	// validate
-	if sd.sdClient == nil {
-		err = errors.New("CloudMap GetService Failed: " + "SD Client is Required")
-		return nil, err
-	}
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
 
-	if util.LenTrim(serviceId) == 0 {
-		err = errors.New("CloudMap GetService Failed: " + "ServiceId is Required")
+	// validate
+	if sdClient == nil {
+		err = errors.New("CloudMap GetService Failed: " + "SD Client is Required")
 		return nil, err
 	}
 
@@ -1364,18 +1573,23 @@ func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duratio
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.GetServiceWithContext(ctx, input)
+		output, err = sdClient.GetServiceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.GetServiceWithContext(segCtx, input)
+			output, err = sdClient.GetServiceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.GetService(input)
+			output, err = sdClient.GetService(input)
 		}
 	}
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap GetService Failed: (Get Action) " + err.Error())
+		return nil, err
+	}
+
+	if output == nil || output.Service == nil {
+		err = errors.New("CloudMap GetService Failed: (Get Action) " + "Output Nil")
 		return nil, err
 	}
 
@@ -1398,10 +1612,17 @@ func (sd *CloudMap) ListServices(filter []string,
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (services []*servicediscovery.ServiceSummary, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap ListServices Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-ListServices", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1421,8 +1642,12 @@ func (sd *CloudMap) ListServices(filter []string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap ListService Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
@@ -1481,12 +1706,12 @@ func (sd *CloudMap) ListServices(filter []string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.ListServicesWithContext(ctx, input)
+		output, err = sdClient.ListServicesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.ListServicesWithContext(segCtx, input)
+			output, err = sdClient.ListServicesWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.ListServices(input)
+			output, err = sdClient.ListServices(input)
 		}
 	}
 
@@ -1496,7 +1721,15 @@ func (sd *CloudMap) ListServices(filter []string,
 		return nil, "", err
 	}
 
-	return output.Services, *output.NextToken, nil
+	if output != nil {
+		ns := output.Services
+		nt := aws.StringValue(output.NextToken)
+
+		return ns, nt, nil
+	} else {
+		log.Println("CloudMap ListServices Warning: (List Action) Output Nil")
+		return nil, "", errors.New("CloudMap ListServices Failed: (List Action) Output Nil")
+	}
 }
 
 // ListServicesPages lists summary information about all the services associated with one or more namespaces
@@ -1516,10 +1749,17 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (services []*servicediscovery.ServiceSummary, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap ListServicesPages Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-ListServicesPages", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1539,8 +1779,12 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap ListServicesPages Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
@@ -1595,7 +1839,7 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 	// invoke action
 	fn := func(pageOutput *servicediscovery.ListServicesOutput, lastPage bool) bool {
 		if pageOutput != nil {
-			moreNextToken = *pageOutput.NextToken
+			moreNextToken = aws.StringValue(pageOutput.NextToken)
 			services = append(services, pageOutput.Services...)
 		}
 
@@ -1606,12 +1850,12 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		err = sd.sdClient.ListServicesPagesWithContext(ctx, input, fn)
+		err = sdClient.ListServicesPagesWithContext(ctx, input, fn)
 	} else {
 		if segCtxSet {
-			err = sd.sdClient.ListServicesPagesWithContext(segCtx, input, fn)
+			err = sdClient.ListServicesPagesWithContext(segCtx, input, fn)
 		} else {
-			err = sd.sdClient.ListServicesPages(input, fn)
+			err = sdClient.ListServicesPages(input, fn)
 		}
 	}
 
@@ -1635,10 +1879,22 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 // Return Values:
 //  1. err = nil indicates success; contains error info if error was encountered
 func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Duration) (err error) {
+
+	if sd == nil {
+		return errors.New("CloudMap DeleteService Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap DeleteService Failed: " + "ServiceId is Required")
+		return err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-DeleteService", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1654,14 +1910,13 @@ func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Dura
 		}()
 	}
 
-	// validate
-	if sd.sdClient == nil {
-		err = errors.New("CloudMap DeleteService Failed: " + "SD Client is Required")
-		return err
-	}
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
 
-	if util.LenTrim(serviceId) == 0 {
-		err = errors.New("CloudMap DeleteService Failed: " + "ServiceId is Required")
+	// validate
+	if sdClient == nil {
+		err = errors.New("CloudMap DeleteService Failed: " + "SD Client is Required")
 		return err
 	}
 
@@ -1675,12 +1930,12 @@ func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Dura
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = sd.sdClient.DeleteServiceWithContext(ctx, input)
+		_, err = sdClient.DeleteServiceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = sd.sdClient.DeleteServiceWithContext(segCtx, input)
+			_, err = sdClient.DeleteServiceWithContext(segCtx, input)
 		} else {
-			_, err = sd.sdClient.DeleteService(input)
+			_, err = sdClient.DeleteService(input)
 		}
 	}
 
@@ -1747,10 +2002,22 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 	creatorRequestId string,
 	attributes map[string]string,
 	timeOutDuration ...time.Duration) (operationId string, err error) {
+
+	if sd == nil {
+		return "", errors.New("CloudMap RegisterInstance Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap RegisterInstance Failed: " + "ServiceId is Required")
+		return "", err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-RegisterInstance", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1770,14 +2037,13 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 		}()
 	}
 
-	// validate
-	if sd.sdClient == nil {
-		err = errors.New("CloudMap RegisterInstance Failed: " + "SD Client is Required")
-		return "", err
-	}
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
 
-	if util.LenTrim(serviceId) == 0 {
-		err = errors.New("CloudMap RegisterInstance Failed: " + "ServiceId is Required")
+	// validate
+	if sdClient == nil {
+		err = errors.New("CloudMap RegisterInstance Failed: " + "SD Client is Required")
 		return "", err
 	}
 
@@ -1816,18 +2082,23 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.RegisterInstanceWithContext(ctx, input)
+		output, err = sdClient.RegisterInstanceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.RegisterInstanceWithContext(segCtx, input)
+			output, err = sdClient.RegisterInstanceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.RegisterInstance(input)
+			output, err = sdClient.RegisterInstance(input)
 		}
 	}
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap RegisterInstance Failed: (Register Action) " + err.Error())
+		return "", err
+	}
+
+	if output == nil || output.OperationId == nil {
+		err = errors.New("CloudMap RegisterInstance Failed: (Register Action) " + "Output Nil")
 		return "", err
 	}
 
@@ -1858,10 +2129,22 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 	serviceId string,
 	isHealthy bool,
 	timeOutDuration ...time.Duration) (err error) {
+
+	if sd == nil {
+		return errors.New("CloudMap UpdateInstanceCustomHealthStatus Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap UpdateInstanceCustomHealthStatus Failed: " + "ServiceId is Required")
+		return err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-UpdateInstanceCustomHealthStatus", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1879,19 +2162,18 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap UpdateInstanceCustomHealthStatus Failed: " + "SD Client is Required")
 		return err
 	}
 
 	if util.LenTrim(instanceId) == 0 {
 		err = errors.New("CloudMap UpdateInstanceCustomHealthStatus Failed: " + "InstanceId is Required")
-		return err
-	}
-
-	if util.LenTrim(serviceId) == 0 {
-		err = errors.New("CloudMap UpdateInstanceCustomHealthStatus Failed: " + "ServiceId is Required")
 		return err
 	}
 
@@ -1915,12 +2197,12 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = sd.sdClient.UpdateInstanceCustomHealthStatusWithContext(ctx, input)
+		_, err = sdClient.UpdateInstanceCustomHealthStatusWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = sd.sdClient.UpdateInstanceCustomHealthStatusWithContext(segCtx, input)
+			_, err = sdClient.UpdateInstanceCustomHealthStatusWithContext(segCtx, input)
 		} else {
-			_, err = sd.sdClient.UpdateInstanceCustomHealthStatus(input)
+			_, err = sdClient.UpdateInstanceCustomHealthStatus(input)
 		}
 	}
 
@@ -1947,10 +2229,22 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 func (sd *CloudMap) DeregisterInstance(instanceId string,
 	serviceId string,
 	timeOutDuration ...time.Duration) (operationId string, err error) {
+
+	if sd == nil {
+		return "", errors.New("CloudMap DeregisterInstance Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap DeregisterInstance Failed: " + "ServiceId is Required")
+		return "", err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-DeregisterInstance", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1968,19 +2262,18 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap DeregisterInstance Failed: " + "SD Client is Required")
 		return "", err
 	}
 
 	if util.LenTrim(instanceId) == 0 {
 		err = errors.New("CloudMap DeregisterInstance Failed: " + "InstanceId is Required")
-		return "", err
-	}
-
-	if util.LenTrim(serviceId) == 0 {
-		err = errors.New("CloudMap DeregisterInstance Failed: " + "ServiceId is Required")
 		return "", err
 	}
 
@@ -1997,18 +2290,23 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.DeregisterInstanceWithContext(ctx, input)
+		output, err = sdClient.DeregisterInstanceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.DeregisterInstanceWithContext(segCtx, input)
+			output, err = sdClient.DeregisterInstanceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.DeregisterInstance(input)
+			output, err = sdClient.DeregisterInstance(input)
 		}
 	}
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap DeregisterInstance Failed: (Deregister Action) " + err.Error())
+		return "", err
+	}
+
+	if output == nil || output.OperationId == nil {
+		err = errors.New("CloudMap DeregisterInstance Failed: (Deregister Action) " + "Output Nil")
 		return "", err
 	}
 
@@ -2027,10 +2325,22 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 func (sd *CloudMap) GetInstance(instanceId string,
 	serviceId string,
 	timeOutDuration ...time.Duration) (instance *servicediscovery.Instance, err error) {
+
+	if sd == nil {
+		return nil, errors.New("CloudMap GetInstance Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap GetInstance Failed: " + "ServiceId is Required")
+		return nil, err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-GetInstance", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2048,19 +2358,18 @@ func (sd *CloudMap) GetInstance(instanceId string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap GetInstance Failed: " + "SD Client is Required")
 		return nil, err
 	}
 
 	if util.LenTrim(instanceId) == 0 {
 		err = errors.New("CloudMap GetInstance Failed: " + "InstanceId is Required")
-		return nil, err
-	}
-
-	if util.LenTrim(serviceId) == 0 {
-		err = errors.New("CloudMap GetInstance Failed: " + "ServiceId is Required")
 		return nil, err
 	}
 
@@ -2077,18 +2386,23 @@ func (sd *CloudMap) GetInstance(instanceId string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.GetInstanceWithContext(ctx, input)
+		output, err = sdClient.GetInstanceWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.GetInstanceWithContext(segCtx, input)
+			output, err = sdClient.GetInstanceWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.GetInstance(input)
+			output, err = sdClient.GetInstance(input)
 		}
 	}
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap GetInstance Failed: (Get Action) " + err.Error())
+		return nil, err
+	}
+
+	if output == nil || output.Instance == nil {
+		err = errors.New("CloudMap GetInstance Failed: (Get Action) " + "Output Nil")
 		return nil, err
 	}
 
@@ -2117,10 +2431,22 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (status map[string]string, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap GetInstancesHealthStatus Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap GetInstancesHealthStatus Failed: " + "ServiceId is Required")
+		return nil, "", err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-GetInstancesHealthStatus", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2141,8 +2467,12 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap GetInstancesHealthStatus Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
@@ -2180,12 +2510,12 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.GetInstancesHealthStatusWithContext(ctx, input)
+		output, err = sdClient.GetInstancesHealthStatusWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.GetInstancesHealthStatusWithContext(segCtx, input)
+			output, err = sdClient.GetInstancesHealthStatusWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.GetInstancesHealthStatus(input)
+			output, err = sdClient.GetInstancesHealthStatus(input)
 		}
 	}
 
@@ -2195,7 +2525,15 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 		return nil, "", err
 	}
 
-	return aws.StringValueMap(output.Status), *output.NextToken, nil
+	if output != nil {
+		ns := aws.StringValueMap(output.Status)
+		nt := aws.StringValue(output.NextToken)
+
+		return ns, nt, nil
+	} else {
+		log.Println("CloudMap GetInstancesHealthStatus Warning: (Get Action) Output Nil")
+		return nil, "", errors.New("CloudMap GetInstancesHealthStatus Failed: (Get Action) Output Nil")
+	}
 }
 
 // GetInstancesHealthStatusPages gets the current health status (healthy, unhealthy, unknown) of one or more instances,
@@ -2221,10 +2559,22 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (status map[string]string, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap GetInstancesHealthStatusPages Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap GetInstancesHealthStatusPages Failed: " + "ServiceId is Required")
+		return nil, "", err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-GetInstancesHealthStatusPages", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2245,8 +2595,12 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap GetInstancesHealthStatusPages Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
@@ -2280,7 +2634,7 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 	// invoke action
 	fn := func(pageOutput *servicediscovery.GetInstancesHealthStatusOutput, lastPage bool) bool {
 		if pageOutput != nil {
-			moreNextToken = *pageOutput.NextToken
+			moreNextToken = aws.StringValue(pageOutput.NextToken)
 			m := aws.StringValueMap(pageOutput.Status)
 
 			if status == nil {
@@ -2299,12 +2653,12 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		err = sd.sdClient.GetInstancesHealthStatusPagesWithContext(ctx, input, fn)
+		err = sdClient.GetInstancesHealthStatusPagesWithContext(ctx, input, fn)
 	} else {
 		if segCtxSet {
-			err = sd.sdClient.GetInstancesHealthStatusPagesWithContext(segCtx, input, fn)
+			err = sdClient.GetInstancesHealthStatusPagesWithContext(segCtx, input, fn)
 		} else {
-			err = sd.sdClient.GetInstancesHealthStatusPages(input, fn)
+			err = sdClient.GetInstancesHealthStatusPages(input, fn)
 		}
 	}
 
@@ -2342,12 +2696,19 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 	queryParameters map[string]string,
 	maxResults *int64,
 	timeOutDuration ...time.Duration) (instances []*servicediscovery.HttpInstanceSummary, err error) {
+
+	if sd == nil {
+		return nil, errors.New("CloudMap DiscoverInstances Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
 	log.Println("DiscoverInstances Entered")
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-DiscoverInstances", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2367,10 +2728,13 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 			}
 		}()
 	}
-	log.Println("DiscoverInstances Segments Created")
+
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
 
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap DiscoverInstances Failed: " + "SD Client is Required")
 		return nil, err
 	}
@@ -2384,7 +2748,6 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 		err = errors.New("CloudMap DiscoverInstances Failed: " + "Service Name is Required")
 		return nil, err
 	}
-	log.Println("DiscoverInstances Validated")
 
 	// define input
 	healthStatus := ""
@@ -2408,7 +2771,6 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 	if maxResults != nil && *maxResults > 0 {
 		input.MaxResults = maxResults
 	}
-	log.Println("DiscoverInstances params Input Defined")
 
 	// invoke action
 	var output *servicediscovery.DiscoverInstancesOutput
@@ -2417,19 +2779,23 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.DiscoverInstancesWithContext(ctx, input)
+		output, err = sdClient.DiscoverInstancesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.DiscoverInstancesWithContext(segCtx, input)
+			output, err = sdClient.DiscoverInstancesWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.DiscoverInstances(input)
+			output, err = sdClient.DiscoverInstances(input)
 		}
 	}
-	log.Println("DiscoverInstances Action Invoked")
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap DiscoverInstances Failed: (Discover Action) " + err.Error())
+		return nil, err
+	}
+
+	if output == nil || output.Instances == nil {
+		err = errors.New("CloudMap DiscoverInstances Failed: (Discover Action) " + "Output Nil")
 		return nil, err
 	}
 
@@ -2452,10 +2818,22 @@ func (sd *CloudMap) ListInstances(serviceId string,
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (instances []*servicediscovery.InstanceSummary, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap ListInstances Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap ListInstances Failed: " + "Service ID is Required")
+		return nil, "", err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-ListInstances", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2475,14 +2853,13 @@ func (sd *CloudMap) ListInstances(serviceId string,
 		}()
 	}
 
-	// validate
-	if sd.sdClient == nil {
-		err = errors.New("CloudMap ListInstances Failed: " + "SD Client is Required")
-		return nil, "", err
-	}
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
 
-	if util.LenTrim(serviceId) == 0 {
-		err = errors.New("CloudMap ListInstances Failed: " + "Service ID is Required")
+	// validate
+	if sdClient == nil {
+		err = errors.New("CloudMap ListInstances Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
 
@@ -2515,12 +2892,12 @@ func (sd *CloudMap) ListInstances(serviceId string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.ListInstancesWithContext(ctx, input)
+		output, err = sdClient.ListInstancesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.ListInstancesWithContext(segCtx, input)
+			output, err = sdClient.ListInstancesWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.ListInstances(input)
+			output, err = sdClient.ListInstances(input)
 		}
 	}
 
@@ -2530,7 +2907,15 @@ func (sd *CloudMap) ListInstances(serviceId string,
 		return nil, "", err
 	}
 
-	return output.Instances, *output.NextToken, nil
+	if output != nil {
+		ns := output.Instances
+		nt := aws.StringValue(output.NextToken)
+
+		return ns, nt, nil
+	} else {
+		log.Println("CloudMap ListInstances Warning: (List Action) Output Nil")
+		return nil, "", errors.New("CloudMap ListInstances Failed: (List Action) Output Nil")
+	}
 }
 
 // ListInstancesPages lists summary information about the instances registered using a specified service
@@ -2550,10 +2935,22 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (instances []*servicediscovery.InstanceSummary, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap ListInstancesPages Failed: " + "CloudMap Object Nil")
+	}
+
+	if util.LenTrim(serviceId) == 0 {
+		err = errors.New("CloudMap ListInstancesPages Failed: " + "Service ID is Required")
+		return nil, "", err
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-ListInstancesPages", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2573,14 +2970,13 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 		}()
 	}
 
-	// validate
-	if sd.sdClient == nil {
-		err = errors.New("CloudMap ListInstancesPages Failed: " + "SD Client is Required")
-		return nil, "", err
-	}
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
 
-	if util.LenTrim(serviceId) == 0 {
-		err = errors.New("CloudMap ListInstancesPages Failed: " + "Service ID is Required")
+	// validate
+	if sdClient == nil {
+		err = errors.New("CloudMap ListInstancesPages Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
 
@@ -2609,7 +3005,7 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 	// invoke action
 	fn := func(pageOutput *servicediscovery.ListInstancesOutput, lastPage bool) bool {
 		if pageOutput != nil {
-			moreNextToken = *pageOutput.NextToken
+			moreNextToken = aws.StringValue(pageOutput.NextToken)
 			instances = append(instances, pageOutput.Instances...)
 		}
 
@@ -2620,12 +3016,12 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		err = sd.sdClient.ListInstancesPagesWithContext(ctx, input, fn)
+		err = sdClient.ListInstancesPagesWithContext(ctx, input, fn)
 	} else {
 		if segCtxSet {
-			err = sd.sdClient.ListInstancesPagesWithContext(segCtx, input, fn)
+			err = sdClient.ListInstancesPagesWithContext(segCtx, input, fn)
 		} else {
-			err = sd.sdClient.ListInstancesPages(input, fn)
+			err = sdClient.ListInstancesPages(input, fn)
 		}
 	}
 
@@ -2655,10 +3051,16 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 //     a) Targets = evaluate Targets to retrieve namespaceId, serviceId, InstanceId etc, using NAMESPACE, SERVICE, INSTANCE key names
 //  2. err = error info any
 func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Duration) (operation *servicediscovery.Operation, err error) {
+	if sd == nil {
+		return nil, errors.New("CloudMap GetOperation Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-GetOperation", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2675,8 +3077,12 @@ func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Dur
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap GetOperation Failed: " + "SD Client is Required")
 		return nil, err
 	}
@@ -2698,18 +3104,23 @@ func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Dur
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.GetOperationWithContext(ctx, input)
+		output, err = sdClient.GetOperationWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.GetOperationWithContext(segCtx, input)
+			output, err = sdClient.GetOperationWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.GetOperation(input)
+			output, err = sdClient.GetOperation(input)
 		}
 	}
 
 	if err != nil {
 		// handle error
 		err = errors.New("CloudMap GetOperation Failed: (Get Action) " + err.Error())
+		return nil, err
+	}
+
+	if output == nil || output.Operation == nil {
+		err = errors.New("CloudMap GetOperation Failed: (Get Action) " + "Output Nil")
 		return nil, err
 	}
 
@@ -2736,10 +3147,17 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (operations []*servicediscovery.OperationSummary, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap ListOperations Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-ListOperations", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2759,8 +3177,12 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap ListOperations Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
@@ -2867,12 +3289,12 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = sd.sdClient.ListOperationsWithContext(ctx, input)
+		output, err = sdClient.ListOperationsWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = sd.sdClient.ListOperationsWithContext(segCtx, input)
+			output, err = sdClient.ListOperationsWithContext(segCtx, input)
 		} else {
-			output, err = sd.sdClient.ListOperations(input)
+			output, err = sdClient.ListOperations(input)
 		}
 	}
 
@@ -2882,7 +3304,15 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 		return nil, "", err
 	}
 
-	return output.Operations, *output.NextToken, nil
+	if output != nil {
+		ns := output.Operations
+		nt := aws.StringValue(output.NextToken)
+
+		return ns, nt, nil
+	} else {
+		log.Println("CloudMap ListOperations Warning: (List Action) Output Nil")
+		return nil, "", errors.New("CloudMap ListOperations Failed: (List Action) Output Nil")
+	}
 }
 
 // ListOperationsPages lists operations that match the criteria specified in parameters
@@ -2906,10 +3336,17 @@ func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperation
 	maxResults *int64,
 	nextToken *string,
 	timeOutDuration ...time.Duration) (operations []*servicediscovery.OperationSummary, moreNextToken string, err error) {
+
+	if sd == nil {
+		return nil, "", errors.New("CloudMap ListOperationsPages Failed: " + "CloudMap Object Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
+	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-ListOperationsPages", sd._parentSegment)
+	sd._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2929,8 +3366,12 @@ func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperation
 		}()
 	}
 
+	sd.sdClientMutex.RLock()
+	sdClient := sd.sdClient
+	sd.sdClientMutex.RUnlock()
+
 	// validate
-	if sd.sdClient == nil {
+	if sdClient == nil {
 		err = errors.New("CloudMap ListOperationsPages Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
@@ -3033,7 +3474,7 @@ func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperation
 	// invoke action
 	fn := func(pageOutput *servicediscovery.ListOperationsOutput, lastPage bool) bool {
 		if pageOutput != nil {
-			moreNextToken = *pageOutput.NextToken
+			moreNextToken = aws.StringValue(pageOutput.NextToken)
 			operations = append(operations, pageOutput.Operations...)
 		}
 
@@ -3044,12 +3485,12 @@ func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperation
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		err = sd.sdClient.ListOperationsPagesWithContext(ctx, input, fn)
+		err = sdClient.ListOperationsPagesWithContext(ctx, input, fn)
 	} else {
 		if segCtxSet {
-			err = sd.sdClient.ListOperationsPagesWithContext(segCtx, input, fn)
+			err = sdClient.ListOperationsPagesWithContext(segCtx, input, fn)
 		} else {
-			err = sd.sdClient.ListOperationsPages(input, fn)
+			err = sdClient.ListOperationsPages(input, fn)
 		}
 	}
 

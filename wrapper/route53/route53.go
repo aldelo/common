@@ -42,13 +42,15 @@ package route53
 import (
 	"context"
 	"errors"
+	"net/http"
+	"sync"
+
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/xray"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/route53"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
-	"net/http"
 )
 
 // ================================================================================================================
@@ -64,9 +66,11 @@ type Route53 struct {
 	sess *session.Session
 
 	// store route 53 object
-	r53Client *route53.Route53
+	r53Client      *route53.Route53
+	r53ClientMutex sync.RWMutex
 
-	_parentSegment *xray.XRayParentSegment
+	_parentSegment      *xray.XRayParentSegment
+	_parentSegmentMutex sync.RWMutex
 }
 
 // ================================================================================================================
@@ -79,12 +83,21 @@ type Route53 struct {
 
 // Connect will establish a connection to the Route53 service
 func (r *Route53) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if r == nil {
+		return errors.New("Route53 Connect Failed: (Struct Pointer Nil) " + "Route53 Struct Pointer is Nil")
+	}
+
 	if xray.XRayServiceOn() {
+		r._parentSegmentMutex.Lock()
+
 		if len(parentSegment) > 0 {
 			r._parentSegment = parentSegment[0]
 		}
 
 		seg := xray.NewSegment("Route53-Connect", r._parentSegment)
+
+		r._parentSegmentMutex.Unlock()
+
 		defer seg.Close()
 		defer func() {
 			if err != nil {
@@ -95,7 +108,9 @@ func (r *Route53) Connect(parentSegment ...*xray.XRayParentSegment) (err error) 
 		err = r.connectInternal()
 
 		if err == nil {
+			r.r53ClientMutex.RLock()
 			awsxray.AWS(r.r53Client.Client)
+			r.r53ClientMutex.RUnlock()
 		}
 
 		return err
@@ -106,6 +121,13 @@ func (r *Route53) Connect(parentSegment ...*xray.XRayParentSegment) (err error) 
 
 // Connect will establish a connection to the Route53 service
 func (r *Route53) connectInternal() error {
+	if r == nil {
+		return errors.New("Route53 connectInternal Failed: (Struct Pointer Nil) " + "Route53 Struct Pointer is Nil")
+	}
+
+	r.r53ClientMutex.Lock()
+	defer r.r53ClientMutex.Unlock()
+
 	// clean up prior session reference
 	r.sess = nil
 
@@ -151,12 +173,26 @@ func (r *Route53) connectInternal() error {
 
 // Disconnect will disjoin from aws session by clearing it
 func (r *Route53) Disconnect() {
+	if r == nil {
+		return
+	}
+
+	r.r53ClientMutex.Lock()
+	defer r.r53ClientMutex.Unlock()
+
 	r.r53Client = nil
 	r.sess = nil
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (r *Route53) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if r == nil {
+		return
+	}
+
+	r._parentSegmentMutex.Lock()
+	defer r._parentSegmentMutex.Unlock()
+
 	r._parentSegment = parentSegment
 }
 
@@ -172,10 +208,20 @@ func (r *Route53) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 // ttl = 15 - 300 (defaults to 60 if ttl is 0)
 // recordType = A (currently only A is supported via this function)
 func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string, ip string, ttl uint, recordType string) (err error) {
+	if r == nil {
+		return errors.New("Route53 CreateUpdateResourceRecordset Failed: (Struct Pointer Nil) " + "Route53 Struct Pointer is Nil")
+	}
+
+	if recordType != "A" {
+		return errors.New("Route53 CreateUpdateResourceRecordset Failed: " + "Only 'A' Record Type is Supported")
+	}
+
 	var segCtx context.Context
 	segCtx = nil
 
+	r._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Route53-CreateUpdateResourceRecordset", r._parentSegment)
+	r._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -194,8 +240,12 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 		}()
 	}
 
+	r.r53ClientMutex.RLock()
+	r53Client := r.r53Client
+	r.r53ClientMutex.RUnlock()
+
 	// validate
-	if r.r53Client == nil {
+	if r53Client == nil {
 		err = errors.New("CreateUpdateResourceRecordset Failed: " + "Route53 Client is Required")
 		return err
 	}
@@ -250,9 +300,9 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 	}
 
 	if segCtx == nil {
-		_, err = r.r53Client.ChangeResourceRecordSets(input)
+		_, err = r53Client.ChangeResourceRecordSets(input)
 	} else {
-		_, err = r.r53Client.ChangeResourceRecordSetsWithContext(segCtx, input)
+		_, err = r53Client.ChangeResourceRecordSetsWithContext(segCtx, input)
 	}
 
 	if err != nil {
@@ -268,13 +318,23 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 // hostedZoneID = root domain hosted zone id (from aws route 53)
 // url = fully qualified domain name url, such as abc.example.com
 // ip = recordset IPv4 address
-// ttl = 15 - 300 (defaults to 60 if ttl is 0)
+// ttl = 15 - 300 (defaults to 60 if ttl is 0) => must match original ttl used when creating recordset
 // recordType = A (currently only A is supported via this function)
 func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip string, ttl uint, recordType string) (err error) {
+	if r == nil {
+		return errors.New("Route53 DeleteResourceRecordset Failed: (Struct Pointer Nil) " + "Route53 Struct Pointer is Nil")
+	}
+
+	if recordType != "A" {
+		return errors.New("Route53 DeleteResourceRecordset Failed: " + "Only 'A' Record Type is Supported")
+	}
+
 	var segCtx context.Context
 	segCtx = nil
 
+	r._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Route53-DeleteResourceRecordset", r._parentSegment)
+	r._parentSegmentMutex.RUnlock()
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -293,24 +353,28 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 		}()
 	}
 
+	r.r53ClientMutex.RLock()
+	r53Client := r.r53Client
+	r.r53ClientMutex.RUnlock()
+
 	// validate
-	if r.r53Client == nil {
-		err = errors.New("CreateUpdateResourceRecordset Failed: " + "Route53 Client is Required")
+	if r53Client == nil {
+		err = errors.New("DeleteResourceRecordset Failed: " + "Route53 Client is Required")
 		return err
 	}
 
 	if len(hostedZoneID) <= 0 {
-		err = errors.New("CreateUpdateResourceRecordset Failed: " + "Hosted Zone ID is Required")
+		err = errors.New("DeleteResourceRecordset Failed: " + "Hosted Zone ID is Required")
 		return err
 	}
 
 	if len(url) <= 0 {
-		err = errors.New("CreateUpdateResourceRecordset Failed: " + "URL is Required")
+		err = errors.New("DeleteResourceRecordset Failed: " + "URL is Required")
 		return err
 	}
 
 	if len(ip) <= 0 {
-		err = errors.New("CreateUpdateResourceRecordset Failed: " + "IP is Required")
+		err = errors.New("DeleteResourceRecordset Failed: " + "IP is Required")
 		return err
 	}
 
@@ -349,9 +413,9 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 	}
 
 	if segCtx == nil {
-		_, err = r.r53Client.ChangeResourceRecordSets(input)
+		_, err = r53Client.ChangeResourceRecordSets(input)
 	} else {
-		_, err = r.r53Client.ChangeResourceRecordSetsWithContext(segCtx, input)
+		_, err = r53Client.ChangeResourceRecordSetsWithContext(segCtx, input)
 	}
 
 	if err != nil {

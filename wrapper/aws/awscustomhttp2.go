@@ -1,7 +1,7 @@
 package aws
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2025 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,45 +29,59 @@ import (
 type HttpClientSettings struct {
 	// Dialer.KeepAlive: negative value disables keep-alive; 0 enables keep-alive
 	// default = keep-alive enabled
-	ConnKeepAlive *time.Duration
+	DialContextKeepAlive *time.Duration
 
 	// Dialer.Timeout: maximum amount of time a dial will wait for a connection to be created
-	// default = 30 seconds
-	Connect *time.Duration
+	// default = 10 seconds
+	DialContextConnectTimeout *time.Duration
 
 	// Transport.ExpectContinueTimeout: maximum amount of time to wait for a server's first response headers after fully writing the request headers,
 	// 		if the response has an "Expect: 100-continue" header,
 	//		this time does not include the time to send the request header,
 	//		the http client sends its payload after this timeout is exhausted
 	// default = 1 second; set to 0 for no timeout and send request payload without waiting
-	ExpectContinue *time.Duration
+	ExpectContinueTimeout *time.Duration
 
-	// Transport.IdleConnTimeout: maximum amount of time to keep an idle network connection alive between http requests
-	// default = 0 for no limit
-	IdleConn *time.Duration
+	// Client.Timeout: overall timeout for http client including connection, request, response
+	// default = 60 seconds
+	OverallTimeout *time.Duration
+
+	// -------
 
 	// Transport.MaxIdleConns: maximum number of idle (keep-alive) connections across all hosts,
 	// 		use case: increasing this value when many connections in a short period from same clients
 	// default = 0 means no limit
-	MaxAllIdleConns *int
+	MaxIdleConns *int
 
 	// Transport.MaxIdleConnsPerHost: maximum number of idle (keep-alive) connections to keep per-host,
 	//		use case: increasing this value when many connections in a short period from same clients
 	// default = 0 means 2 idle connections per host
-	MaxHostIdleConns *int
+	// suggest setting to 250 or higher for aws sdk usage
+	// use 500 as default here
+	MaxIdleConnsPerHost *int
+
+	// Transport.MaxConnsPerHost: limits the total number of connections per host, including connections in the dialing, active, and idle states
+	// default = 0 means no limit
+	MaxConnsPerHost *int
+
+	// Transport.IdleConnTimeout: maximum amount of time to keep an idle network connection alive between http requests
+	// default = 0 for no limit
+	// use 300 seconds (5 minutes) as default here
+	IdleConnTimeout *time.Duration
+
+	DisableKeepAlive   *bool
+	DisableCompression *bool
+
+	// Transport.TLSHandshakeTimeout: maximum amount of time waiting for a TLS handshake to be completed
+	// default = 10 seconds; 0 means no timeout
+	TlsHandshakeTimeout *time.Duration
 
 	// Transport.ResponseHeaderTimeout: maximum amount of time to wait for a client to read the response header,
 	//		if the client isn't able to read the response's header within this duration, the request fails with a timeout error,
 	//		warning: when using long-running lambda functions, as the operation does not return any response headers until the lambda has finished or timeout
 	// default = no timeout, waits forever
-	ResponseHeader *time.Duration
-
-	// Transport.TLSHandshakeTimeout: maximum amount of time waiting for a TLS handshake to be completed
-	// default = 10 seconds; 0 means no timeout
-	TlsHandshake *time.Duration
-
-	// Transport.MaxConnsPerHost: limits the total number of connections per host, including connections in the dialing, active, and idle states
-	MaxConnsPerHost *int
+	// use 30 seconds as default here
+	ResponseHeaderTimeout *time.Duration
 }
 
 // AwsHttp2Client struct defines container for HttpClientSettings
@@ -80,108 +94,181 @@ func (h2 *AwsHttp2Client) setDefaults() {
 		h2.Options = new(HttpClientSettings)
 	}
 
-	if h2.Options.ConnKeepAlive == nil {
-		h2.Options.ConnKeepAlive = helper.DurationPtr(0)
+	if h2.Options.DialContextKeepAlive == nil {
+		h2.Options.DialContextKeepAlive = helper.DurationPtr(0)
 	}
 
-	if h2.Options.Connect == nil {
-		h2.Options.Connect = helper.DurationPtr(5 * time.Second)
+	if h2.Options.DialContextConnectTimeout == nil {
+		h2.Options.DialContextConnectTimeout = helper.DurationPtr(10 * time.Second)
 	}
 
-	if h2.Options.ExpectContinue == nil {
-		h2.Options.ExpectContinue = helper.DurationPtr(1 * time.Second)
+	if h2.Options.ExpectContinueTimeout == nil {
+		h2.Options.ExpectContinueTimeout = helper.DurationPtr(1 * time.Second)
 	}
 
-	if h2.Options.IdleConn == nil {
-		h2.Options.IdleConn = helper.DurationPtr(300 * time.Second)
+	if h2.Options.OverallTimeout == nil {
+		h2.Options.OverallTimeout = helper.DurationPtr(60 * time.Second)
 	}
 
-	if h2.Options.MaxAllIdleConns == nil {
-		h2.Options.MaxAllIdleConns = helper.IntPtr(0)
+	// --------
+
+	if h2.Options.MaxIdleConns == nil {
+		h2.Options.MaxIdleConns = helper.IntPtr(0)
 	}
 
-	if h2.Options.MaxHostIdleConns == nil {
-		h2.Options.MaxHostIdleConns = helper.IntPtr(250)
-	}
-
-	if h2.Options.ResponseHeader == nil {
-		h2.Options.ResponseHeader = helper.DurationPtr(10 * time.Second)
-	}
-
-	if h2.Options.TlsHandshake == nil {
-		h2.Options.TlsHandshake = helper.DurationPtr(5 * time.Second)
+	if h2.Options.MaxIdleConnsPerHost == nil {
+		h2.Options.MaxIdleConnsPerHost = helper.IntPtr(500)
 	}
 
 	if h2.Options.MaxConnsPerHost == nil {
 		h2.Options.MaxConnsPerHost = helper.IntPtr(0)
 	}
+
+	if h2.Options.IdleConnTimeout == nil {
+		h2.Options.IdleConnTimeout = helper.DurationPtr(300 * time.Second)
+	}
+
+	if h2.Options.DisableKeepAlive == nil {
+		h2.Options.DisableKeepAlive = helper.BoolPtr(false)
+	}
+
+	if h2.Options.DisableCompression == nil {
+		h2.Options.DisableCompression = helper.BoolPtr(false)
+	}
+
+	if h2.Options.TlsHandshakeTimeout == nil {
+		h2.Options.TlsHandshakeTimeout = helper.DurationPtr(10 * time.Second)
+	}
+
+	if h2.Options.ResponseHeaderTimeout == nil {
+		h2.Options.ResponseHeaderTimeout = helper.DurationPtr(30 * time.Second)
+	}
 }
 
-// ConnKeepAlive sets Dialer.KeepAlive: negative value disables keep-alive; 0 enables keep-alive
-// default = keep-alive enabled
-func (h2 *AwsHttp2Client) ConnKeepAlive(v time.Duration) {
-	h2.Options.ConnKeepAlive = &v
+// SetDialContextKeepAlive sets Dialer.KeepAlive: negative value disables keep-alive; 0 enables keep-alive
+// default = keep-alive enabled = 0
+func (h2 *AwsHttp2Client) SetDialContextKeepAlive(v time.Duration) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.DialContextKeepAlive = &v
 }
 
-// ConnectTimeout sets Dialer.Timeout: maximum amount of time a dial will wait for a connection to be created
-// default = 30 seconds
-func (h2 *AwsHttp2Client) ConnectTimeout(v time.Duration) {
-	h2.Options.Connect = &v
+// SetDialContextConnectTimeout sets Dialer.Timeout: maximum amount of time a dial will wait for a connection to be created
+// default = 10 seconds
+func (h2 *AwsHttp2Client) SetDialContextConnectTimeout(v time.Duration) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.DialContextConnectTimeout = &v
 }
 
-// ExpectContinueTimeout sets Transport.ExpectContinueTimeout: maximum amount of time to wait for a server's first response headers after fully writing the request headers,
+// SetExpectContinueTimeout sets Transport.ExpectContinueTimeout: maximum amount of time to wait for a server's first response headers after fully writing the request headers,
 //
 //	if the response has an "Expect: 100-continue" header,
 //	this time does not include the time to send the request header,
 //	the http client sends its payload after this timeout is exhausted
 //
 // default = 1 second; set to 0 for no timeout and send request payload without waiting
-func (h2 *AwsHttp2Client) ExpectContinueTimeout(v time.Duration) {
-	h2.Options.ExpectContinue = &v
+func (h2 *AwsHttp2Client) SetExpectContinueTimeout(v time.Duration) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.ExpectContinueTimeout = &v
 }
 
-// IdleConnTimeout sets Transport.IdleConnTimeout: maximum amount of time to keep an idle network connection alive between http requests
-// default = 0 for no limit
-func (h2 *AwsHttp2Client) IdleConnTimeout(v time.Duration) {
-	h2.Options.IdleConn = &v
+// SetOverallTimeout sets Client.Timeout: overall timeout for http client including connection, request, response
+// default = 60 seconds
+func (h2 *AwsHttp2Client) SetOverallTimeout(v time.Duration) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.OverallTimeout = &v
 }
 
-// MaxAllIdleConns sets Transport.MaxIdleConns: maximum number of idle (keep-alive) connections across all hosts,
+// SetMaxIdleConns sets Transport.MaxIdleConns: maximum number of idle (keep-alive) connections across all hosts,
 //
 //	use case: increasing this value when many connections in a short period from same clients
 //
 // default = 0 means no limit
-func (h2 *AwsHttp2Client) MaxAllIdleConns(v int) {
-	h2.Options.MaxAllIdleConns = &v
+func (h2 *AwsHttp2Client) SetMaxIdleConns(v int) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.MaxIdleConns = &v
 }
 
-// MaxHostIdleConns sets Transport.MaxIdleConnsPerHost: maximum number of idle (keep-alive) connections to keep per-host,
+// SetMaxIdleConnsPerHost sets Transport.MaxIdleConnsPerHost: maximum number of idle (keep-alive) connections to keep per-host,
 //
 //	use case: increasing this value when many connections in a short period from same clients
 //
 // default = 0 means 2 idle connections per host
-func (h2 *AwsHttp2Client) MaxHostIdleConns(v int) {
-	h2.Options.MaxHostIdleConns = &v
+// suggest setting to 250 or higher for aws sdk usage
+// use 500 as default here
+func (h2 *AwsHttp2Client) SetMaxIdleConnsPerHost(v int) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.MaxIdleConnsPerHost = &v
 }
 
-// ResponseHeaderTimeout sets Transport.ResponseHeaderTimeout: maximum amount of time to wait for a client to read the response header,
+// SetMaxConnsPerHost sets Transport.MaxConnsPerHost: limits the total number of connections per host, including connections in the dialing, active, and idle states
+// default = 0 means no limit
+func (h2 *AwsHttp2Client) SetMaxConnsPerHost(v int) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.MaxConnsPerHost = &v
+}
+
+// SetIdleConnTimeout sets Transport.IdleConnTimeout: maximum amount of time to keep an idle network connection alive between http requests
+// default = 0 for no limit
+func (h2 *AwsHttp2Client) SetIdleConnTimeout(v time.Duration) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.IdleConnTimeout = &v
+}
+
+// SetDisableKeepAlives sets Transport.DisableKeepAlives: if true, prevents re-use of TCP connections between different HTTP requests
+// default = false
+func (h2 *AwsHttp2Client) SetDisableKeepAlives(v bool) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.DisableKeepAlive = &v
+}
+
+// SetDisableCompressions sets Transport.DisableCompression: if true, prevents the Transport from requesting compression with an "Accept-Encoding: gzip" request header when the Request contains no existing Accept-Encoding value.
+// default = false
+func (h2 *AwsHttp2Client) SetDisableCompressions(v bool) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.DisableCompression = &v
+}
+
+// SetTlsHandshakeTimeout sets Transport.TLSHandshakeTimeout: maximum amount of time waiting for a TLS handshake to be completed
+// default = 10 seconds; 0 means no timeout
+func (h2 *AwsHttp2Client) SetTlsHandshakeTimeout(v time.Duration) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.TlsHandshakeTimeout = &v
+}
+
+// SetResponseHeaderTimeout sets Transport.ResponseHeaderTimeout: maximum amount of time to wait for a client to read the response header,
 //
 //	if the client isn't able to read the response's header within this duration, the request fails with a timeout error,
 //	warning: when using long-running lambda functions, as the operation does not return any response headers until the lambda has finished or timeout
 //
 // default = no timeout, waits forever
-func (h2 *AwsHttp2Client) ResponseHeaderTimeout(v time.Duration) {
-	h2.Options.ResponseHeader = &v
-}
-
-// TlsHandshakeTimeout sets Transport.TLSHandshakeTimeout: maximum amount of time waiting for a TLS handshake to be completed
-// default = 10 seconds; 0 means no timeout
-func (h2 *AwsHttp2Client) TlsHandshakeTimeout(v time.Duration) {
-	h2.Options.TlsHandshake = &v
-}
-
-func (h2 *AwsHttp2Client) MaxConnsPerHost(v int) {
-	h2.Options.MaxConnsPerHost = &v
+// use 30 seconds as default here
+func (h2 *AwsHttp2Client) SetResponseHeaderTimeout(v time.Duration) {
+	if h2.Options == nil {
+		h2.Options = new(HttpClientSettings)
+	}
+	h2.Options.ResponseHeaderTimeout = &v
 }
 
 // NewHttp2Client returns custom http2 client for aws connection
@@ -191,18 +278,22 @@ func (h2 *AwsHttp2Client) NewHttp2Client() (*http.Client, error) {
 	var client http.Client
 
 	tr := &http.Transport{
-		ResponseHeaderTimeout: *h2.Options.ResponseHeader,
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			KeepAlive: *h2.Options.ConnKeepAlive,
-			Timeout:   *h2.Options.Connect,
-		}).DialContext,
-		MaxIdleConns:          *h2.Options.MaxAllIdleConns,
-		IdleConnTimeout:       *h2.Options.IdleConn,
-		TLSHandshakeTimeout:   *h2.Options.TlsHandshake,
-		MaxIdleConnsPerHost:   *h2.Options.MaxHostIdleConns,
-		ExpectContinueTimeout: *h2.Options.ExpectContinue,
+		MaxIdleConns:          *h2.Options.MaxIdleConns,
+		MaxIdleConnsPerHost:   *h2.Options.MaxIdleConnsPerHost,
 		MaxConnsPerHost:       *h2.Options.MaxConnsPerHost,
+		IdleConnTimeout:       *h2.Options.IdleConnTimeout,
+		DisableKeepAlives:     *h2.Options.DisableKeepAlive,
+		DisableCompression:    *h2.Options.DisableCompression,
+		TLSHandshakeTimeout:   *h2.Options.TlsHandshakeTimeout,
+		ResponseHeaderTimeout: *h2.Options.ResponseHeaderTimeout,
+
+		DialContext: (&net.Dialer{
+			KeepAlive: *h2.Options.DialContextKeepAlive,
+			Timeout:   *h2.Options.DialContextConnectTimeout,
+		}).DialContext,
+
+		ExpectContinueTimeout: *h2.Options.ExpectContinueTimeout,
+		Proxy:                 http.ProxyFromEnvironment,
 	}
 
 	// client makes HTTP/2 requests
@@ -214,5 +305,6 @@ func (h2 *AwsHttp2Client) NewHttp2Client() (*http.Client, error) {
 
 	return &http.Client{
 		Transport: tr,
+		Timeout:   *h2.Options.OverallTimeout,
 	}, nil
 }

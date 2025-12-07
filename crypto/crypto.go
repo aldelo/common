@@ -914,7 +914,10 @@ func RsaPublicKeyVerify(data string, publicKeyHexOrPem string, signatureHex stri
 	h.Write(msg)
 	d := h.Sum(nil)
 
-	sig, _ := util.HexToByte(signatureHex)
+	sig, sigErr := util.HexToByte(signatureHex)
+	if sigErr != nil {
+		return sigErr
+	}
 
 	err1 := rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, d, sig)
 

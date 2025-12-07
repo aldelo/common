@@ -1186,10 +1186,17 @@ func (sd *CloudMap) CreateService(name string,
 		return nil, err
 	}
 
-	sd.sdClientMutex.RLock()
-	dnsConfLocal := dnsConf
-	healthCheckConfLocal := healthCheckConf
-	sd.sdClientMutex.RUnlock()
+	var dnsConfLocal *DnsConf
+	var healthCheckConfLocal *HealthCheckConf
+
+	if dnsConf != nil {
+		tmp := *dnsConf
+		dnsConfLocal = &tmp
+	}
+	if healthCheckConf != nil {
+		tmp := *healthCheckConf
+		healthCheckConfLocal = &tmp
+	}
 
 	if dnsConfLocal != nil {
 		// dns conf set, public or private dns namespace only
@@ -1347,7 +1354,7 @@ func (sd *CloudMap) CreateService(name string,
 //  1. serviceId = (required) service to update
 //  2. dnsConfUpdate = (required) update dns config to this value, if nil, existing dns configuration will be removed from service
 //  3. healthCheckConf = (optional) update health check config to this value, if nil, existing health check config will be removed from service
-//  4. descriptionUpdate = (optional) service description to update, if nil, existing description will be removed from service
+//  4. descriptionUpdate = (optional) service description to update, if "", existing description will be removed from service
 //  5. timeOutDuration = (optional) maximum time before timeout via context
 //
 // Return Values:
@@ -1403,35 +1410,47 @@ func (sd *CloudMap) UpdateService(serviceId string,
 		return "", err
 	}
 
-	if dnsConfUpdate == nil {
+	var dnsConfUpdateLocal *DnsConf
+	var healthCheckConfUpdateLocal *HealthCheckConf
+
+	if dnsConfUpdate != nil {
+		tmp := *dnsConfUpdate
+		dnsConfUpdateLocal = &tmp
+	}
+	if healthCheckConfUpdate != nil {
+		tmp := *healthCheckConfUpdate
+		healthCheckConfUpdateLocal = &tmp
+	}
+
+	if dnsConfUpdateLocal == nil {
 		err = errors.New("CloudMap UpdateService Failed: " + "Dns Config Update is Required")
 		return "", err
 	}
 
-	if healthCheckConfUpdate != nil && healthCheckConfUpdate.Custom {
+	if healthCheckConfUpdateLocal != nil && healthCheckConfUpdateLocal.Custom {
 		err = errors.New("CloudMap UpdateService Failed: " + "Health Check Custom Config Cannot Be Updated")
 		return "", err
 	}
 
 	// dns conf set, public or private dns namespace only
-	if dnsConfUpdate.TTL <= 0 {
-		dnsConfUpdate.TTL = 300 // default to 5 minutes ttl if not specified
+	if dnsConfUpdateLocal.TTL <= 0 {
+		dnsConfUpdateLocal.TTL = 300 // default to 5 minutes ttl if not specified
 	}
 
-	if healthCheckConfUpdate != nil {
-		if healthCheckConfUpdate.FailureThreshold <= 0 {
-			healthCheckConfUpdate.FailureThreshold = 1
+	if healthCheckConfUpdateLocal != nil {
+		if healthCheckConfUpdateLocal.FailureThreshold <= 0 {
+			healthCheckConfUpdateLocal.FailureThreshold = 1
 		}
 
-		if !healthCheckConfUpdate.PubDns_HealthCheck_Type.Valid() || healthCheckConfUpdate.PubDns_HealthCheck_Type == sdhealthchecktype.UNKNOWN {
+		if !healthCheckConfUpdateLocal.PubDns_HealthCheck_Type.Valid() || healthCheckConfUpdateLocal.PubDns_HealthCheck_Type == sdhealthchecktype.UNKNOWN {
 			err = errors.New("CloudMap UpdateService Failed: " + "Public Dns Namespace Health Check Requires Endpoint Type")
 			return "", err
 		}
 
-		if healthCheckConfUpdate.PubDns_HealthCheck_Type == sdhealthchecktype.TCP {
-			healthCheckConfUpdate.PubDns_HealthCheck_Path = ""
+		if healthCheckConfUpdateLocal.PubDns_HealthCheck_Type == sdhealthchecktype.TCP {
+			healthCheckConfUpdateLocal.PubDns_HealthCheck_Path = ""
 		} else {
-			if util.LenTrim(healthCheckConfUpdate.PubDns_HealthCheck_Path) == 0 {
+			if util.LenTrim(healthCheckConfUpdateLocal.PubDns_HealthCheck_Path) == 0 {
 				err = errors.New("CloudMap UpdateService Failed: " + "Health Check Resource Path is Required for HTTP & HTTPS Types")
 				return "", err
 			}
@@ -1448,34 +1467,37 @@ func (sd *CloudMap) UpdateService(serviceId string,
 	if descriptionUpdate != nil {
 		if util.LenTrim(*descriptionUpdate) > 0 {
 			input.Service.Description = descriptionUpdate
+		} else {
+			// empty description, remove existing
+			input.Service.Description = aws.String("")
 		}
 	}
 
 	// dns update is TTL only but must provide existing dns type
 	dnsType := "A"
 
-	if dnsConfUpdate.SRV {
+	if dnsConfUpdateLocal.SRV {
 		dnsType = "SRV"
 	}
 
 	input.Service.DnsConfig = &servicediscovery.DnsConfigChange{
 		DnsRecords: []*servicediscovery.DnsRecord{
 			{
-				TTL:  aws.Int64(dnsConfUpdate.TTL),
+				TTL:  aws.Int64(dnsConfUpdateLocal.TTL),
 				Type: aws.String(dnsType),
 			},
 		},
 	}
 
-	if healthCheckConfUpdate != nil {
+	if healthCheckConfUpdateLocal != nil {
 		// update public dns health config
 		input.Service.HealthCheckConfig = &servicediscovery.HealthCheckConfig{
-			FailureThreshold: aws.Int64(healthCheckConfUpdate.FailureThreshold),
-			Type:             aws.String(healthCheckConfUpdate.PubDns_HealthCheck_Type.Key()),
+			FailureThreshold: aws.Int64(healthCheckConfUpdateLocal.FailureThreshold),
+			Type:             aws.String(healthCheckConfUpdateLocal.PubDns_HealthCheck_Type.Key()),
 		}
 
-		if util.LenTrim(healthCheckConfUpdate.PubDns_HealthCheck_Path) > 0 {
-			input.Service.HealthCheckConfig.ResourcePath = aws.String(healthCheckConfUpdate.PubDns_HealthCheck_Path)
+		if util.LenTrim(healthCheckConfUpdateLocal.PubDns_HealthCheck_Path) > 0 {
+			input.Service.HealthCheckConfig.ResourcePath = aws.String(healthCheckConfUpdateLocal.PubDns_HealthCheck_Path)
 		}
 	}
 

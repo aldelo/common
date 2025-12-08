@@ -20,13 +20,19 @@ import (
 	"bytes"
 	"crypto/tls"
 	"errors"
-	"github.com/aldelo/common/tlsconfig"
-	"google.golang.org/protobuf/proto"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/aldelo/common/tlsconfig"
+	"google.golang.org/protobuf/proto"
 )
+
+var mu sync.RWMutex
 
 // server ca pems stores list of self-signed CAs for client tls config
 var serverCaPems []string
@@ -34,10 +40,23 @@ var serverCaPems []string
 // client tls config stores the current client tls root CA config object
 var clientTlsConfig *tls.Config
 
+// client timeout seconds for http client requests
+var clientTimeoutSeconds int
+
+func SetClientTimeoutSeconds(timeoutSeconds int) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	clientTimeoutSeconds = timeoutSeconds
+}
+
 // AppendServerCAPemFiles adds self-signed server ca pems to local cache,
 // and then recreates the clientTlsConfig object based on the new list of CAs
 func AppendServerCAPemFiles(caPemFilePath ...string) error {
 	if len(caPemFilePath) > 0 {
+		mu.Lock()
+		defer mu.Unlock()
+
 		serverCaPems = append(serverCaPems, caPemFilePath...)
 		return newClientTlsCAsConfig()
 	} else {
@@ -49,6 +68,9 @@ func AppendServerCAPemFiles(caPemFilePath ...string) error {
 // then adds self-signed server ca pems to local cache,
 // then recreates the clientTlsConfig object based on the new list of CAs
 func ResetServerCAPemFiles(caPemFilePath ...string) error {
+	mu.Lock()
+	defer mu.Unlock()
+
 	serverCaPems = []string{}
 	clientTlsConfig = nil
 
@@ -85,6 +107,16 @@ type HeaderKeyValue struct {
 
 // GET sends url get request to host and retrieve the body response in string
 func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
+	mu.RLock()
+	timeout := clientTimeoutSeconds
+	mu.RUnlock()
+
+	if timeout <= 0 {
+		timeout = 30 // default timeout 30 seconds
+	} else if timeout > 300 {
+		timeout = 300 // max timeout 5 minutes
+	}
+
 	// create http client
 	var client *http.Client
 
@@ -97,6 +129,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 
 		client = &http.Client{
 			Transport: tr,
+			Timeout:   time.Duration(timeout) * time.Second,
 		}
 	}
 
@@ -126,18 +159,19 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 
 	var respBytes []byte
 
-	respBytes, err = ioutil.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	resp.Close = true
 
 	// clean up stale connections
 	client.CloseIdleConnections()
 
-	if err != nil && statusCode == 400 {
+	if err != nil {
+		// when read error, even if 200, still return error
 		return statusCode, "", err
 	}
 
-	if statusCode != 200 {
+	if statusCode < 200 || statusCode >= 300 {
 		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Get Resp] " + string(respBytes))
 	}
 
@@ -153,6 +187,16 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 //
 //	Content-Type: application/json
 func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
+	mu.RLock()
+	timeout := clientTimeoutSeconds
+	mu.RUnlock()
+
+	if timeout <= 0 {
+		timeout = 30 // default timeout 30 seconds
+	} else if timeout > 300 {
+		timeout = 300 // max timeout 5 minutes
+	}
+
 	// create http client
 	var client *http.Client
 
@@ -165,6 +209,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 
 		client = &http.Client{
 			Transport: tr,
+			Timeout:   time.Duration(timeout) * time.Second,
 		}
 	}
 
@@ -211,11 +256,12 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	// clean up stale connections
 	client.CloseIdleConnections()
 
-	if err != nil && statusCode == 400 {
+	if err != nil {
+		// when read error, even if 200, still return error
 		return statusCode, "", err
 	}
 
-	if statusCode != 200 {
+	if statusCode < 200 || statusCode >= 300 {
 		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Post Resp] " + string(respBytes))
 	}
 
@@ -230,6 +276,16 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 //
 //	Content-Type: application/json
 func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
+	mu.RLock()
+	timeout := clientTimeoutSeconds
+	mu.RUnlock()
+
+	if timeout <= 0 {
+		timeout = 30 // default timeout 30 seconds
+	} else if timeout > 300 {
+		timeout = 300 // max timeout 5 minutes
+	}
+
 	// create http client
 	var client *http.Client
 
@@ -242,6 +298,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 
 		client = &http.Client{
 			Transport: tr,
+			Timeout:   time.Duration(timeout) * time.Second,
 		}
 	}
 
@@ -288,11 +345,12 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	// clean up stale connections
 	client.CloseIdleConnections()
 
-	if err != nil && statusCode == 400 {
+	if err != nil {
+		// when read error, even if 200, still return error
 		return statusCode, "", err
 	}
 
-	if statusCode != 200 {
+	if statusCode < 200 || statusCode >= 300 {
 		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Put Resp] " + string(respBytes))
 	}
 
@@ -307,6 +365,16 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 //
 //	Content-Type: application/json
 func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
+	mu.RLock()
+	timeout := clientTimeoutSeconds
+	mu.RUnlock()
+
+	if timeout <= 0 {
+		timeout = 30 // default timeout 30 seconds
+	} else if timeout > 300 {
+		timeout = 300 // max timeout 5 minutes
+	}
+
 	// create http client
 	var client *http.Client
 
@@ -319,6 +387,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 
 		client = &http.Client{
 			Transport: tr,
+			Timeout:   time.Duration(timeout) * time.Second,
 		}
 	}
 
@@ -348,18 +417,19 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 
 	var respBytes []byte
 
-	respBytes, err = ioutil.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	resp.Close = true
 
 	// clean up stale connections
 	client.CloseIdleConnections()
 
-	if err != nil && statusCode == 400 {
+	if err != nil {
+		// when read error, even if 200, still return error
 		return statusCode, "", err
 	}
 
-	if statusCode != 200 {
+	if statusCode < 200 || statusCode >= 300 {
 		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Delete Resp] " + string(respBytes))
 	}
 
@@ -373,6 +443,16 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 //
 //	Content-Type: application/x-protobuf
 func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
+	mu.RLock()
+	timeout := clientTimeoutSeconds
+	mu.RUnlock()
+
+	if timeout <= 0 {
+		timeout = 30 // default timeout 30 seconds
+	} else if timeout > 300 {
+		timeout = 300 // max timeout 5 minutes
+	}
+
 	// create http client
 	var client *http.Client
 
@@ -385,6 +465,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 
 		client = &http.Client{
 			Transport: tr,
+			Timeout:   time.Duration(timeout) * time.Second,
 		}
 	}
 
@@ -426,19 +507,20 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 
 	var respBytes []byte
 
-	respBytes, err = ioutil.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	resp.Close = true
 
 	// clean up stale connections
 	client.CloseIdleConnections()
 
-	if err != nil && statusCode == 400 {
+	if err != nil {
+		// when read error, even if 200, still return error
 		outResponseProtoBufObjectPtr = nil
 		return statusCode, err
 	}
 
-	if statusCode != 200 {
+	if statusCode < 200 || statusCode >= 300 {
 		outResponseProtoBufObjectPtr = nil
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Get ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
@@ -466,6 +548,16 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 //
 //	Content-Type: application/x-protobuf
 func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
+	mu.RLock()
+	timeout := clientTimeoutSeconds
+	mu.RUnlock()
+
+	if timeout <= 0 {
+		timeout = 30 // default timeout 30 seconds
+	} else if timeout > 300 {
+		timeout = 300 // max timeout 5 minutes
+	}
+
 	// create http client
 	var client *http.Client
 
@@ -478,6 +570,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 
 		client = &http.Client{
 			Transport: tr,
+			Timeout:   time.Duration(timeout) * time.Second,
 		}
 	}
 
@@ -532,19 +625,20 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 
 	var respBytes []byte
 
-	respBytes, err = ioutil.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	resp.Close = true
 
 	// clean up stale connections
 	client.CloseIdleConnections()
 
-	if err != nil && statusCode == 400 {
+	if err != nil {
+		// when read error, even if 200, still return error
 		outResponseProtoBufObjectPtr = nil
 		return statusCode, err
 	}
 
-	if statusCode != 200 {
+	if statusCode < 200 || statusCode >= 300 {
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Post ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
 
@@ -571,6 +665,16 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 //
 //	Content-Type: application/x-protobuf
 func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
+	mu.RLock()
+	timeout := clientTimeoutSeconds
+	mu.RUnlock()
+
+	if timeout <= 0 {
+		timeout = 30 // default timeout 30 seconds
+	} else if timeout > 300 {
+		timeout = 300 // max timeout 5 minutes
+	}
+
 	// create http client
 	var client *http.Client
 
@@ -583,6 +687,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 
 		client = &http.Client{
 			Transport: tr,
+			Timeout:   time.Duration(timeout) * time.Second,
 		}
 	}
 
@@ -637,19 +742,20 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 
 	var respBytes []byte
 
-	respBytes, err = ioutil.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	resp.Close = true
 
 	// clean up stale connections
 	client.CloseIdleConnections()
 
-	if err != nil && statusCode == 400 {
+	if err != nil {
+		// when read error, even if 200, still return error
 		outResponseProtoBufObjectPtr = nil
 		return statusCode, err
 	}
 
-	if statusCode != 200 {
+	if statusCode < 200 || statusCode >= 300 {
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Put ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
 
@@ -675,6 +781,16 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 //
 //	Content-Type: application/x-protobuf
 func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
+	mu.RLock()
+	timeout := clientTimeoutSeconds
+	mu.RUnlock()
+
+	if timeout <= 0 {
+		timeout = 30 // default timeout 30 seconds
+	} else if timeout > 300 {
+		timeout = 300 // max timeout 5 minutes
+	}
+
 	// create http client
 	var client *http.Client
 
@@ -687,6 +803,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 
 		client = &http.Client{
 			Transport: tr,
+			Timeout:   time.Duration(timeout) * time.Second,
 		}
 	}
 
@@ -728,19 +845,20 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 
 	var respBytes []byte
 
-	respBytes, err = ioutil.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	resp.Close = true
 
 	// clean up stale connections
 	client.CloseIdleConnections()
 
-	if err != nil && statusCode == 400 {
+	if err != nil {
+		// when read error, even if 200, still return error
 		outResponseProtoBufObjectPtr = nil
 		return statusCode, err
 	}
 
-	if statusCode != 200 {
+	if statusCode < 200 || statusCode >= 300 {
 		outResponseProtoBufObjectPtr = nil
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Delete ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}

@@ -109,6 +109,7 @@ type HeaderKeyValue struct {
 func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
+	tls := clientTlsConfig
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -120,11 +121,13 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	// create http client
 	var client *http.Client
 
-	if clientTlsConfig == nil {
-		client = &http.Client{}
+	if tls == nil {
+		client = &http.Client{
+			Timeout: time.Duration(timeout) * time.Second,
+		}
 	} else {
 		tr := &http.Transport{
-			TLSClientConfig: clientTlsConfig,
+			TLSClientConfig: tls,
 		}
 
 		client = &http.Client{
@@ -189,6 +192,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
+	tls := clientTlsConfig
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -200,11 +204,13 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	// create http client
 	var client *http.Client
 
-	if clientTlsConfig == nil {
-		client = &http.Client{}
+	if tls == nil {
+		client = &http.Client{
+			Timeout: time.Duration(timeout) * time.Second,
+		}
 	} else {
 		tr := &http.Transport{
-			TLSClientConfig: clientTlsConfig,
+			TLSClientConfig: tls,
 		}
 
 		client = &http.Client{
@@ -278,6 +284,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
+	tls := clientTlsConfig
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -289,11 +296,13 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	// create http client
 	var client *http.Client
 
-	if clientTlsConfig == nil {
-		client = &http.Client{}
+	if tls == nil {
+		client = &http.Client{
+			Timeout: time.Duration(timeout) * time.Second,
+		}
 	} else {
 		tr := &http.Transport{
-			TLSClientConfig: clientTlsConfig,
+			TLSClientConfig: tls,
 		}
 
 		client = &http.Client{
@@ -367,6 +376,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
+	tls := clientTlsConfig
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -378,11 +388,13 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	// create http client
 	var client *http.Client
 
-	if clientTlsConfig == nil {
-		client = &http.Client{}
+	if tls == nil {
+		client = &http.Client{
+			Timeout: time.Duration(timeout) * time.Second,
+		}
 	} else {
 		tr := &http.Transport{
-			TLSClientConfig: clientTlsConfig,
+			TLSClientConfig: tls,
 		}
 
 		client = &http.Client{
@@ -445,6 +457,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
+	tls := clientTlsConfig
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -456,11 +469,13 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	// create http client
 	var client *http.Client
 
-	if clientTlsConfig == nil {
-		client = &http.Client{}
+	if tls == nil {
+		client = &http.Client{
+			Timeout: time.Duration(timeout) * time.Second,
+		}
 	} else {
 		tr := &http.Transport{
-			TLSClientConfig: clientTlsConfig,
+			TLSClientConfig: tls,
 		}
 
 		client = &http.Client{
@@ -550,6 +565,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
+	tls := clientTlsConfig
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -561,11 +577,13 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	// create http client
 	var client *http.Client
 
-	if clientTlsConfig == nil {
-		client = &http.Client{}
+	if tls == nil {
+		client = &http.Client{
+			Timeout: time.Duration(timeout) * time.Second,
+		}
 	} else {
 		tr := &http.Transport{
-			TLSClientConfig: clientTlsConfig,
+			TLSClientConfig: tls,
 		}
 
 		client = &http.Client{
@@ -667,6 +685,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
+	tls := clientTlsConfig
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -678,11 +697,13 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	// create http client
 	var client *http.Client
 
-	if clientTlsConfig == nil {
-		client = &http.Client{}
+	if tls == nil {
+		client = &http.Client{
+			Timeout: time.Duration(timeout) * time.Second,
+		}
 	} else {
 		tr := &http.Transport{
-			TLSClientConfig: clientTlsConfig,
+			TLSClientConfig: tls,
 		}
 
 		client = &http.Client{
@@ -783,6 +804,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
+	tls := clientTlsConfig
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -794,11 +816,13 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	// create http client
 	var client *http.Client
 
-	if clientTlsConfig == nil {
-		client = &http.Client{}
+	if tls == nil {
+		client = &http.Client{
+			Timeout: time.Duration(timeout) * time.Second,
+		}
 	} else {
 		tr := &http.Transport{
-			TLSClientConfig: clientTlsConfig,
+			TLSClientConfig: tls,
 		}
 
 		client = &http.Client{

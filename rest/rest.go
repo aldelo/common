@@ -1,7 +1,7 @@
 package rest
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -255,7 +254,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 
 	var respBytes []byte
 
-	respBytes, err = ioutil.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	resp.Close = true
 
@@ -347,7 +346,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 
 	var respBytes []byte
 
-	respBytes, err = ioutil.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	resp.Close = true
 

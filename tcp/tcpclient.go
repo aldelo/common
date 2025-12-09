@@ -1,7 +1,7 @@
 package tcp
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,12 @@ package tcp
 import (
 	"bytes"
 	"fmt"
-	util "github.com/aldelo/common"
 	"net"
 	"strings"
+	"sync"
 	"time"
+
+	util "github.com/aldelo/common"
 )
 
 // TCPClient defines tcp client connection struct
@@ -36,6 +38,8 @@ import (
 // ReadDeadLineDuration = default: 1000ms, defines the amount of time given to read action before timeout, valid range is 250ms - 5000ms
 // WriteDeadLineDuration = default: 0, duration value used to control write timeouts, this value is added to current time during write timeout set action
 type TCPClient struct {
+	mu sync.RWMutex
+
 	// tcp server targets
 	ServerIP   string
 	ServerPort uint
@@ -58,21 +62,34 @@ type TCPClient struct {
 // resolveTcpAddr takes tcp server ip and port defined within TCPClient struct,
 // and resolve to net.TCPAddr target
 func (c *TCPClient) resolveTcpAddr() (*net.TCPAddr, error) {
-	if util.LenTrim(c.ServerIP) == 0 {
+	if c == nil {
+		return nil, fmt.Errorf("TCP Client Cannot Be Nil")
+	}
+
+	c.mu.RLock()
+	serverIP := c.ServerIP
+	serverPort := c.ServerPort
+	c.mu.RUnlock()
+
+	if util.LenTrim(serverIP) == 0 {
 		return nil, fmt.Errorf("TCP Server IP is Required")
 	}
 
-	if c.ServerPort == 0 || c.ServerPort > 65535 {
+	if serverPort == 0 || serverPort > 65535 {
 		return nil, fmt.Errorf("TCP Server Port Must Be 1 - 65535")
 	}
 
-	return net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.ServerIP, c.ServerPort))
+	return net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", serverIP, serverPort))
 }
 
 // Dial will dial tcp client to the remote tcp server host ip and port defined within the TCPClient struct,
 // if Dial failed, an error is returned,
 // if Dial succeeded, nil is returned
 func (c *TCPClient) Dial() error {
+	if c == nil {
+		return fmt.Errorf("TCP Client Cannot Be Nil")
+	}
+
 	if c.ReceiveHandler == nil {
 		return fmt.Errorf("TCP Client ReceiveHandler Must Be Defined")
 	}
@@ -84,6 +101,9 @@ func (c *TCPClient) Dial() error {
 	if tcpAddr, err := c.resolveTcpAddr(); err != nil {
 		return err
 	} else {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+
 		if c._tcpConn, err = net.DialTCP("tcp", nil, tcpAddr); err != nil {
 			return err
 		} else {
@@ -94,6 +114,13 @@ func (c *TCPClient) Dial() error {
 
 // Close will close the tcp connection for the current TCPClient struct object
 func (c *TCPClient) Close() {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c._tcpConn != nil {
 		_ = c._tcpConn.Close()
 		c._tcpConn = nil
@@ -102,7 +129,16 @@ func (c *TCPClient) Close() {
 
 // Write will write data into tcp connection stream, and deliver to the TCP Server host currently connected
 func (c *TCPClient) Write(data []byte) error {
-	if c._tcpConn == nil {
+	if c == nil {
+		return fmt.Errorf("TCP Client Cannot Be Nil")
+	}
+
+	c.mu.RLock()
+	_tcpConn := c._tcpConn
+	writeDeadlineDuration := c.WriteDeadLineDuration
+	c.mu.RUnlock()
+
+	if _tcpConn == nil {
 		return fmt.Errorf("TCP Server Not Yet Connected")
 	}
 
@@ -110,12 +146,12 @@ func (c *TCPClient) Write(data []byte) error {
 		return fmt.Errorf("Data Required When Write to TCP Server")
 	}
 
-	if c.WriteDeadLineDuration > 0 {
-		_ = c._tcpConn.SetWriteDeadline(time.Now().Add(c.WriteDeadLineDuration))
-		defer c._tcpConn.SetWriteDeadline(time.Time{})
+	if writeDeadlineDuration > 0 {
+		_ = _tcpConn.SetWriteDeadline(time.Now().Add(writeDeadlineDuration))
+		defer _tcpConn.SetWriteDeadline(time.Time{})
 	}
 
-	if _, err := c._tcpConn.Write(data); err != nil {
+	if _, err := _tcpConn.Write(data); err != nil {
 		return fmt.Errorf("Write Data to TCP Server Failed: %s", err.Error())
 	} else {
 		return nil
@@ -125,24 +161,34 @@ func (c *TCPClient) Write(data []byte) error {
 // Read will read data into tcp client from TCP Server host,
 // Read will block until read deadlined timeout, then loop continues to read again
 func (c *TCPClient) Read() (data []byte, timeout bool, err error) {
-	if c._tcpConn == nil {
+	if c == nil {
+		return nil, false, fmt.Errorf("TCP Client Cannot Be Nil")
+	}
+
+	c.mu.RLock()
+	_tcpConn := c._tcpConn
+	readDeadlineDuration := c.ReadDeadLineDuration
+	readBufferSize := c.ReadBufferSize
+	c.mu.RUnlock()
+
+	if _tcpConn == nil {
 		return nil, false, fmt.Errorf("TCP Server Not Yet Connected")
 	}
 
 	readDeadLine := 1000 * time.Millisecond
-	if c.ReadDeadLineDuration >= 250*time.Millisecond && c.ReadDeadLineDuration <= 5000*time.Millisecond {
-		readDeadLine = c.ReadDeadLineDuration
+	if readDeadlineDuration >= 250*time.Millisecond && readDeadlineDuration <= 5000*time.Millisecond {
+		readDeadLine = readDeadlineDuration
 	}
-	_ = c._tcpConn.SetReadDeadline(time.Now().Add(readDeadLine))
-	defer c._tcpConn.SetReadDeadline(time.Time{})
+	_ = _tcpConn.SetReadDeadline(time.Now().Add(readDeadLine))
+	defer _tcpConn.SetReadDeadline(time.Time{})
 
-	if c.ReadBufferSize == 0 || c.ReadBufferSize > 65535 {
-		c.ReadBufferSize = 1024
+	if readBufferSize == 0 || readBufferSize > 65535 {
+		readBufferSize = 1024
 	}
 
-	data = make([]byte, c.ReadBufferSize)
+	data = make([]byte, readBufferSize)
 
-	if _, err = c._tcpConn.Read(data); err != nil {
+	if _, err = _tcpConn.Read(data); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "timeout") {
 			return nil, true, fmt.Errorf("Read Data From TCP Server Timeout: %s", err)
 		} else {
@@ -156,9 +202,21 @@ func (c *TCPClient) Read() (data []byte, timeout bool, err error) {
 // StartReader will start the tcp client reader service,
 // it will continuously read data from tcp server
 func (c *TCPClient) StartReader() error {
-	if c._tcpConn == nil {
+	if c == nil {
+		return fmt.Errorf("TCP Client Cannot Be Nil")
+	}
+
+	c.mu.RLock()
+	_tcpConn := c._tcpConn
+	readerYieldDuration := c.ReaderYieldDuration
+	c.mu.RUnlock()
+
+	if _tcpConn == nil {
 		return fmt.Errorf("TCP Server Not Yet Connected")
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	if !c._readerStarted {
 		c._readerEnd = make(chan bool)
@@ -167,8 +225,8 @@ func (c *TCPClient) StartReader() error {
 
 	yield := 25 * time.Millisecond
 
-	if c.ReaderYieldDuration > 0 && c.ReaderYieldDuration <= 1000*time.Millisecond {
-		yield = c.ReaderYieldDuration
+	if readerYieldDuration > 0 && readerYieldDuration <= 1000*time.Millisecond {
+		yield = readerYieldDuration
 	}
 
 	// start reader loop and continue until Reader End
@@ -225,6 +283,13 @@ func (c *TCPClient) StartReader() error {
 
 // StopReader will end the tcp client reader service
 func (c *TCPClient) StopReader() {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c._readerStarted {
 		c._readerEnd <- true
 	}

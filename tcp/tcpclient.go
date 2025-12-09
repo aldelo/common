@@ -55,7 +55,7 @@ type TCPClient struct {
 
 	// tcp connection
 	_tcpConn       net.Conn
-	_readerEnd     chan bool
+	_readerEnd     chan struct{}
 	_readerStarted bool
 }
 
@@ -117,6 +117,9 @@ func (c *TCPClient) Close() {
 	if c == nil {
 		return
 	}
+
+	// stop reader first to avoid races with a closing connection
+	c.StopReader()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -209,6 +212,8 @@ func (c *TCPClient) StartReader() error {
 	c.mu.RLock()
 	_tcpConn := c._tcpConn
 	readerYieldDuration := c.ReaderYieldDuration
+	receiveHandler := c.ReceiveHandler
+	errorHandler := c.ErrorHandler
 	c.mu.RUnlock()
 
 	if _tcpConn == nil {
@@ -216,56 +221,59 @@ func (c *TCPClient) StartReader() error {
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !c._readerStarted {
-		c._readerEnd = make(chan bool)
-		c._readerStarted = true
+	if c._readerStarted {
+		c.mu.Unlock()
+		return nil // already started
 	}
+	c._readerEnd = make(chan struct{}, 1) // buffered to avoid blocking StopReader
+	c._readerStarted = true
+	readerEnd := c._readerEnd
+	c.mu.Unlock()
 
 	yield := 25 * time.Millisecond
-
 	if readerYieldDuration > 0 && readerYieldDuration <= 1000*time.Millisecond {
 		yield = readerYieldDuration
 	}
 
 	// start reader loop and continue until Reader End
 	go func() {
+		defer func() {
+			c.mu.Lock()
+			c._readerStarted = false
+			c._readerEnd = nil
+			c.mu.Unlock()
+		}()
+
 		for {
 			select {
-			case <-c._readerEnd:
+			case <-readerEnd:
 				// command received to end tcp reader service
-				c._readerStarted = false
 				return
 
 			default:
 				// perform read action on connected tcp server
 				if data, timeout, err := c.Read(); err != nil && !timeout {
 					// read fail, not timeout, deliver error data to handler, stop reader
-					if c.ErrorHandler != nil {
+					if errorHandler != nil {
 						// send error to error handler
 						if strings.Contains(strings.ToLower(err.Error()), "eof") {
-							c.ErrorHandler(fmt.Errorf("TCP Client Socket Closed By Remote Host"), c.Close)
+							errorHandler(fmt.Errorf("TCP Client Socket Closed By Remote Host"), c.Close)
 						} else {
-							c.ErrorHandler(err, nil)
+							errorHandler(err, nil)
 						}
 					}
-
-					// end reader service
-					c._readerStarted = false
 					return
+
 				} else if !timeout {
 					// read successful, deliver read data to handler
-					if c.ReceiveHandler != nil {
+					if receiveHandler != nil {
 						// send received data to receive handler
-						c.ReceiveHandler(data)
+						receiveHandler(data)
 					} else {
 						// if error handler is not defined, end reader service
-						if c.ErrorHandler != nil {
-							c.ErrorHandler(fmt.Errorf("TCP Client Receive Handler Undefined"), c.Close)
+						if errorHandler != nil {
+							errorHandler(fmt.Errorf("TCP Client Receive Handler Undefined"), c.Close)
 						}
-
-						c._readerStarted = false
 						return
 					}
 				}
@@ -288,9 +296,21 @@ func (c *TCPClient) StopReader() {
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	if !c._readerStarted || c._readerEnd == nil {
+		c.mu.Unlock()
+		return // not started
+	}
+	readerEnd := c._readerEnd
 
-	if c._readerStarted {
-		c._readerEnd <- true
+	// mark stopped; goroutine's defer will also mark stopped, but this ensures
+	// we don't start another while a stop is in progress
+	c._readerStarted = false
+	c._readerEnd = nil
+	c.mu.Unlock()
+
+	// non-blocking stop signal so it won't deadlock if the reader already exited
+	select {
+	case readerEnd <- struct{}{}:
+	default:
 	}
 }

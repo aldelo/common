@@ -281,10 +281,6 @@ func (s *TCPServer) handleClientConnection(conn net.Conn, clientIP string) {
 		readDeadline = s.ReadDeadlineDuration
 	}
 
-	if s._clientEnd == nil {
-		s._clientEnd = make(map[string]chan struct{})
-	}
-
 	// get the stop channel once (under lock) to avoid map races
 	s._mux.Lock()
 	stopCh := s._clientEnd[clientIP]

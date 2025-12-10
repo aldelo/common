@@ -58,15 +58,23 @@ type TCPServer struct {
 	_tcpListener net.Listener
 	_serving     bool
 	_clients     map[string]net.Conn
-	_clientEnd   map[string]chan bool
-	_mux         sync.Mutex
+	_clientEnd   map[string]chan struct{}
+
+	_mux sync.RWMutex
 }
 
 // Serve will startup TCP Server and begin accepting TCP Client connections, and initiates connection processing
 func (s *TCPServer) Serve() (err error) {
+	if s == nil {
+		return fmt.Errorf("TCP Server Object Is Nil")
+	}
+
+	s._mux.Lock()
 	if s._serving {
+		s._mux.Unlock()
 		return fmt.Errorf("TCP Server Already Serving, Use Close() To Stop")
 	}
+	s._mux.Unlock()
 
 	if s.Port == 0 || s.Port > 65535 {
 		return fmt.Errorf("TCP Server Listening Port Must Be 1 - 65535")
@@ -76,11 +84,9 @@ func (s *TCPServer) Serve() (err error) {
 		return err
 	} else {
 		s._mux.Lock()
-
 		s._serving = true
 		s._clients = make(map[string]net.Conn)
-		s._clientEnd = make(map[string]chan bool)
-
+		s._clientEnd = make(map[string]chan struct{})
 		s._mux.Unlock()
 
 		// start continuous loop to accept incoming tcp client,
@@ -100,35 +106,34 @@ func (s *TCPServer) Serve() (err error) {
 
 					// clean up clients
 					s._mux.Lock()
-
 					for _, v := range s._clients {
 						if v != nil {
 							_ = v.Close()
 						}
 					}
-
-					// stop serving
 					s._clients = nil
+					s._clientEnd = nil
 					s._serving = false
-
 					s._mux.Unlock()
 
 					return
 				} else {
 					// tcp client connected accepted
+					clientIP := c.RemoteAddr().String()
+
 					s._mux.Lock()
+					s._clients[clientIP] = c
 
-					// register client connection to map
-					s._clients[c.RemoteAddr().String()] = c
-
+					// create stop channel once per client, buffered to avoid blocking
+					s._clientEnd[clientIP] = make(chan struct{}, 1)
 					s._mux.Unlock()
 
 					// handle client connection
-					go s.handleClientConnection(c)
+					go s.handleClientConnection(c, clientIP)
 
 					// notify accept event
 					if s.ListenerAcceptHandler != nil {
-						s.ListenerAcceptHandler(c.RemoteAddr().String())
+						s.ListenerAcceptHandler(clientIP)
 					}
 				}
 
@@ -145,13 +150,16 @@ func (s *TCPServer) Serve() (err error) {
 
 // Close will shut down TCP Server, and clean up resources allocated
 func (s *TCPServer) Close() {
+	if s == nil {
+		return
+	}
+
 	if s._tcpListener != nil {
 		_ = s._tcpListener.Close()
 	}
 
 	// clean up clients
 	s._mux.Lock()
-
 	for _, v := range s._clients {
 		if v != nil {
 			_ = v.Close()
@@ -160,25 +168,25 @@ func (s *TCPServer) Close() {
 
 	// stop serving
 	s._clients = nil
+	s._clientEnd = nil
 	s._serving = false
-
 	s._mux.Unlock()
 }
 
 // GetConnectedClients returns list of connected tcp clients
 func (s *TCPServer) GetConnectedClients() (clientsList []string) {
+	if s == nil {
+		return []string{}
+	}
+
 	s._mux.Lock()
 	defer s._mux.Unlock()
 
-	if s._clients == nil {
+	if s._clients == nil || len(s._clients) == 0 {
 		return []string{}
 	}
 
-	if len(s._clients) == 0 {
-		return []string{}
-	}
-
-	for k, _ := range s._clients {
+	for k := range s._clients {
 		clientsList = append(clientsList, k)
 	}
 
@@ -187,14 +195,31 @@ func (s *TCPServer) GetConnectedClients() (clientsList []string) {
 
 // DisconnectClient will close client connection and end the client reader service
 func (s *TCPServer) DisconnectClient(clientIP string) {
-	if s._clientEnd != nil {
-		s._clientEnd[clientIP] = make(chan bool)
-		s._clientEnd[clientIP] <- true
+	if s == nil {
+		return
+	}
+
+	s._mux.Lock()
+	ch, ok := s._clientEnd[clientIP]
+	s._mux.Unlock()
+
+	if !ok || ch == nil {
+		return
+	}
+
+	// non-blocking stop signal; channel is buffered
+	select {
+	case ch <- struct{}{}:
+	default:
 	}
 }
 
 // WriteToClient accepts byte slice and clientIP target, for writing data to the target client
 func (s *TCPServer) WriteToClient(writeData []byte, clientIP string) error {
+	if s == nil {
+		return fmt.Errorf("TCP Server Object Is Nil")
+	}
+
 	if writeData == nil {
 		return nil
 	}
@@ -208,38 +233,36 @@ func (s *TCPServer) WriteToClient(writeData []byte, clientIP string) error {
 	}
 
 	s._mux.Lock()
-	defer s._mux.Unlock()
+	c, ok := s._clients[clientIP]
+	s._mux.Unlock()
 
-	if s._clients == nil {
-		return fmt.Errorf("Write To Client Failed: No TCP Client Connections Exist")
-	}
-
-	if len(s._clients) == 0 {
-		return fmt.Errorf("Write To Client Failed: TCP Client Connections Count is Zero")
-	}
-
-	// obtain client connection
-	if c, ok := s._clients[clientIP]; !ok {
+	if c == nil || !ok {
 		return fmt.Errorf("Write To Client IP %s Failed: Client Not Found in TCP Client Connections", clientIP)
-	} else {
-		// write data to tcp client connection
-		if s.WriteDeadLineDuration > 0 {
-			_ = c.SetWriteDeadline(time.Now().Add(s.WriteDeadLineDuration))
-			defer c.SetWriteDeadline(time.Time{})
-		}
-
-		if _, e := c.Write(writeData); e != nil {
-			return fmt.Errorf("Write To Client IP %s Failed: %s", clientIP, e.Error())
-		} else {
-			// write successful
-			return nil
-		}
 	}
+
+	// write data to tcp client connection
+	if s.WriteDeadLineDuration > 0 {
+		_ = c.SetWriteDeadline(time.Now().Add(s.WriteDeadLineDuration))
+		defer c.SetWriteDeadline(time.Time{})
+	}
+
+	if _, e := c.Write(writeData); e != nil {
+		return fmt.Errorf("Write To Client IP %s Failed: %s", clientIP, e.Error())
+	}
+	return nil
 }
 
 // handleClientConnection is an internal method invoked by Serve,
 // handleClientConnection stores tcp client connection into map, and begins the read loop to continuously acquire client data upon arrival
-func (s *TCPServer) handleClientConnection(conn net.Conn) {
+func (s *TCPServer) handleClientConnection(conn net.Conn, clientIP string) {
+	if s == nil || conn == nil {
+		return
+	}
+
+	if util.LenTrim(clientIP) == 0 {
+		return
+	}
+
 	// clean up upon exit method
 	defer conn.Close()
 
@@ -259,25 +282,26 @@ func (s *TCPServer) handleClientConnection(conn net.Conn) {
 	}
 
 	if s._clientEnd == nil {
-		s._clientEnd = make(map[string]chan bool)
+		s._clientEnd = make(map[string]chan struct{})
 	}
+
+	// get the stop channel once (under lock) to avoid map races
+	s._mux.Lock()
+	stopCh := s._clientEnd[clientIP]
+	s._mux.Unlock()
 
 	for {
 		select {
-		case <-s._clientEnd[conn.RemoteAddr().String()]:
-			// command received to end tcp client connection handler
-			//_ = conn.Close() // already has defer close
-
+		case <-stopCh:
 			s._mux.Lock()
-			delete(s._clients, conn.RemoteAddr().String())
+			delete(s._clients, clientIP)
+			delete(s._clientEnd, clientIP)
 			s._mux.Unlock()
-
 			return
 
 		default:
 			// read data from client continuously
 			readBytes := make([]byte, readBufferSize)
-
 			_ = conn.SetReadDeadline(time.Now().Add(readDeadline))
 
 			if _, e := conn.Read(readBytes); e != nil {
@@ -295,20 +319,16 @@ func (s *TCPServer) handleClientConnection(conn net.Conn) {
 
 				if s.ClientErrorHandler != nil {
 					if !eof {
-						s.ClientErrorHandler(conn.RemoteAddr().String(), e)
+						s.ClientErrorHandler(clientIP, e)
 					} else {
-						s.ClientErrorHandler(conn.RemoteAddr().String(), fmt.Errorf("TCP Client Socket Closed By Remote Host"))
+						s.ClientErrorHandler(clientIP, fmt.Errorf("TCP Client Socket Closed By Remote Host"))
 					}
 				}
 
-				// remove connection from map
-				// _ = conn.Close() // already has defer close
-
 				s._mux.Lock()
-				delete(s._clients, conn.RemoteAddr().String())
+				delete(s._clients, clientIP)
+				delete(s._clientEnd, clientIP)
 				s._mux.Unlock()
-
-				// end client handler
 				return
 
 			} else {
@@ -317,15 +337,12 @@ func (s *TCPServer) handleClientConnection(conn net.Conn) {
 				// read ok
 				if s.ClientReceiveHandler != nil {
 					// send client data received to client handler for processing
-					s.ClientReceiveHandler(conn.RemoteAddr().String(), bytes.Trim(readBytes, "\x00"), s.WriteToClient)
+					s.ClientReceiveHandler(clientIP, bytes.Trim(readBytes, "\x00"), s.WriteToClient)
 				} else {
-					// if client receive handler is not defined, end the client handler service
-					// _ = conn.Close() // already has defer close
-
 					s._mux.Lock()
-					delete(s._clients, conn.RemoteAddr().String())
+					delete(s._clients, clientIP)
+					delete(s._clientEnd, clientIP)
 					s._mux.Unlock()
-
 					return
 				}
 			}

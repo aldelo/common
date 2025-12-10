@@ -20,7 +20,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 )
 
@@ -58,7 +58,7 @@ func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
 	if len(clientCaCertPemPath) > 0 {
 		for _, v := range clientCaCertPemPath {
 			if len(strings.TrimSpace(v)) > 0 {
-				if clientCa, e := ioutil.ReadFile(v); e != nil {
+				if clientCa, e := os.ReadFile(v); e != nil {
 					return nil, fmt.Errorf("Read Client CA Pem Failed: (%s) %s", v, e.Error())
 				} else {
 					if !certPool.AppendCertsFromPEM(clientCa) {
@@ -85,10 +85,15 @@ func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
 		},
 		PreferServerCipherSuites: true,
 		CipherSuites: []uint16{
+			// Modern TLS 1.2 suites (PFS + AEAD)
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+
+			// obsolete
+			// tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			// tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
 
@@ -124,7 +129,7 @@ func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
 
 	for _, v := range serverCaCertPemPath {
 		if len(strings.TrimSpace(v)) > 0 {
-			if serverCa, e := ioutil.ReadFile(v); e != nil {
+			if serverCa, e := os.ReadFile(v); e != nil {
 				return nil, fmt.Errorf("Read Server CA Pem Failed: (%s) %s", v, e.Error())
 			} else {
 				if !certPool.AppendCertsFromPEM(serverCa) {
@@ -136,7 +141,8 @@ func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
 	}
 
 	config := &tls.Config{
-		RootCAs: certPool,
+		RootCAs:    certPool,
+		MinVersion: tls.VersionTLS12,
 	}
 
 	// for mTls set client cert

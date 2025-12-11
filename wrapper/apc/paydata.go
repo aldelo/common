@@ -1,7 +1,7 @@
 package apc
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,8 @@ package apc
 import (
 	"context"
 	"errors"
+	"sync"
+
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aldelo/common/wrapper/xray"
@@ -49,7 +51,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	pycryptoData "github.com/aws/aws-sdk-go/service/paymentcryptographydata"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
-	"net/http"
 )
 
 // ================================================================================================================
@@ -74,6 +75,29 @@ type PaymentCryptoData struct {
 	pyDataClient *pycryptoData.PaymentCryptographyData
 
 	_parentSegment *xray.XRayParentSegment
+	mu             sync.RWMutex
+}
+
+// ================================================================================================================
+// internal helpers
+// ================================================================================================================
+
+func (k *PaymentCryptoData) getClient() *pycryptoData.PaymentCryptographyData {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.pyDataClient
+}
+
+func (k *PaymentCryptoData) getParentSegment() *xray.XRayParentSegment {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k._parentSegment
+}
+
+func (k *PaymentCryptoData) getKeyArn() string {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.KeyArn
 }
 
 // ================================================================================================================
@@ -88,10 +112,12 @@ type PaymentCryptoData struct {
 func (k *PaymentCryptoData) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
+			k.mu.Lock()
 			k._parentSegment = parentSegment[0]
+			k.mu.Unlock()
 		}
 
-		seg := xray.NewSegment("PaymentCryptoData-Connect", k._parentSegment)
+		seg := xray.NewSegment("PaymentCryptoData-Connect", k.getParentSegment())
 		defer seg.Close()
 		defer func() {
 			_ = seg.Seg.AddMetadata("KDS-AWS-Region", k.AwsRegion)
@@ -104,73 +130,83 @@ func (k *PaymentCryptoData) Connect(parentSegment ...*xray.XRayParentSegment) (e
 		err = k.connectInternal()
 
 		if err == nil {
-			awsxray.AWS(k.pyDataClient.Client)
+			if c := k.getClient(); c != nil {
+				awsxray.AWS(c.Client)
+			}
 		}
-
 		return err
-	} else {
-		return k.connectInternal()
 	}
+
+	return k.connectInternal()
 }
 
 // Connect will establish a connection to the PaymentCryptography Data service
 func (k *PaymentCryptoData) connectInternal() error {
-	// clean up prior session reference
-	k.sess = nil
+	k.mu.RLock()
+	region := k.AwsRegion
+	httpOpts := k.HttpOptions
+	k.mu.RUnlock()
 
-	if !k.AwsRegion.Valid() || k.AwsRegion == awsregion.UNKNOWN {
+	k.mu.Lock()
+	k.sess = nil
+	k.pyDataClient = nil
+	k.mu.Unlock()
+
+	if !region.Valid() || region == awsregion.UNKNOWN {
 		return errors.New("Connect To PaymentCryptoData Failed: (AWS Session Error) " + "Region is Required")
 	}
 
-	// create custom http2 client if needed
-	var httpCli *http.Client
-	var httpErr error
-
-	if k.HttpOptions == nil {
-		k.HttpOptions = new(awshttp2.HttpClientSettings)
+	if httpOpts == nil {
+		httpOpts = new(awshttp2.HttpClientSettings)
 	}
 
 	// use custom http2 client
 	h2 := &awshttp2.AwsHttp2Client{
-		Options: k.HttpOptions,
+		Options: httpOpts,
 	}
 
-	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
+	httpCli, httpErr := h2.NewHttp2Client()
+	if httpErr != nil {
 		return errors.New("Connect to PaymentCryptoData Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
 	}
 
 	// establish aws session connection and keep session object in struct
-	if sess, err := session.NewSession(
+	sess, err := session.NewSession(
 		&aws.Config{
 			Region:     aws.String(k.AwsRegion.Key()),
 			HTTPClient: httpCli,
-		}); err != nil {
+		})
+	if err != nil {
 		// aws session error
 		return errors.New("Connect To PaymentCryptoData Failed: (AWS Session Error) " + err.Error())
-	} else {
-		// aws session obtained
-		k.sess = sess
-
-		// create cached objects for shared use
-		k.pyDataClient = pycryptoData.New(k.sess)
-
-		if k.pyDataClient == nil {
-			return errors.New("Connect To PaymentCryptoData Client Failed: (New PaymentCryptography Client Connection) " + "Connection Object Nil")
-		}
-
-		// session stored to struct
-		return nil
 	}
+
+	client := pycryptoData.New(sess)
+	if client == nil {
+		return errors.New("Connect To PaymentCryptoData Client Failed: (New PaymentCryptography Client Connection) " + "Connection Object Nil")
+	}
+
+	k.mu.Lock()
+	k.HttpOptions = httpOpts
+	k.sess = sess
+	k.pyDataClient = client
+	k.mu.Unlock()
+
+	return nil
 }
 
 // Disconnect will disjoin from aws session by clearing it
 func (k *PaymentCryptoData) Disconnect() {
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	k.pyDataClient = nil
 	k.sess = nil
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (k *PaymentCryptoData) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	k._parentSegment = parentSegment
 }
 
@@ -187,9 +223,8 @@ func awsNilString(input string) *string {
 
 func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycryptoData.EncryptionDecryptionAttributes) (cipherText string, err error) {
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptoData-encrypt", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptoData-encrypt", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -202,13 +237,14 @@ func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycr
 		}()
 	}
 
-	// validate
-	if k.pyDataClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("encrypt with PaymentCryptoData key Failed: " + "PaymentCryptoData Client is Required")
 		return "", err
 	}
 
-	if len(k.KeyArn) <= 0 {
+	keyArn := k.getKeyArn()
+	if len(keyArn) <= 0 {
 		err = errors.New("encrypt with PaymentCryptoData key Failed: " + "PaymentCryptoData KeyArn is Required")
 		return "", err
 	}
@@ -224,9 +260,9 @@ func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycr
 	}
 
 	if segCtx == nil {
-		encryptedOutput, e = k.pyDataClient.EncryptData(encryptDataInput)
+		encryptedOutput, e = client.EncryptData(encryptDataInput)
 	} else {
-		encryptedOutput, e = k.pyDataClient.EncryptDataWithContext(segCtx, encryptDataInput)
+		encryptedOutput, e = client.EncryptDataWithContext(segCtx, encryptDataInput)
 	}
 
 	if e != nil {
@@ -242,9 +278,8 @@ func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycr
 func (k *PaymentCryptoData) decrypt(cipherText string, decryptionAttributes *pycryptoData.EncryptionDecryptionAttributes) (plainText string, err error) {
 
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptoData-decrypt", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptoData-decrypt", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -257,13 +292,14 @@ func (k *PaymentCryptoData) decrypt(cipherText string, decryptionAttributes *pyc
 		}()
 	}
 
-	// validate
-	if k.pyDataClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("decrypt with PaymentCryptoData Key Failed: " + "PaymentCryptoData Client is Required")
 		return "", err
 	}
 
-	if len(k.KeyArn) <= 0 {
+	keyArn := k.getKeyArn()
+	if len(keyArn) <= 0 {
 		err = errors.New("decrypt with PaymentCryptoData Key Failed: " + "PaymentCryptoData Key Name is Required")
 		return "", err
 	}
@@ -284,9 +320,9 @@ func (k *PaymentCryptoData) decrypt(cipherText string, decryptionAttributes *pyc
 	}
 
 	if segCtx == nil {
-		decryptedOutput, e = k.pyDataClient.DecryptData(decryptInput)
+		decryptedOutput, e = client.DecryptData(decryptInput)
 	} else {
-		decryptedOutput, e = k.pyDataClient.DecryptDataWithContext(segCtx, decryptInput)
+		decryptedOutput, e = client.DecryptDataWithContext(segCtx, decryptInput)
 	}
 
 	if e != nil {
@@ -398,12 +434,15 @@ func (k *PaymentCryptoData) decryptAES(cipherText string, iv, mode string) (plai
 func (k *PaymentCryptoData) EncryptViaAesECB(plainText string) (cipherText string, err error) {
 	return k.encryptAES(plainText, "", pycryptoData.EncryptionModeEcb)
 }
+
 func (k *PaymentCryptoData) EncryptViaAesCBC(plainText, iv string) (cipherText string, err error) {
 	return k.encryptAES(plainText, iv, pycryptoData.EncryptionModeCbc)
 }
+
 func (k *PaymentCryptoData) EncryptViaAesCFB(plainText, iv string) (cipherText string, err error) {
 	return k.encryptAES(plainText, iv, pycryptoData.EncryptionModeCfb)
 }
+
 func (k *PaymentCryptoData) EncryptViaAesOFB(plainText, iv string) (cipherText string, err error) {
 	return k.encryptAES(plainText, iv, pycryptoData.EncryptionModeOfb)
 }
@@ -411,12 +450,15 @@ func (k *PaymentCryptoData) EncryptViaAesOFB(plainText, iv string) (cipherText s
 func (k *PaymentCryptoData) DecryptViaAesECB(cipherText string) (plainText string, err error) {
 	return k.decryptAES(cipherText, "", pycryptoData.EncryptionModeEcb)
 }
+
 func (k *PaymentCryptoData) DecryptViaAesCBC(cipherText, iv string) (plainText string, err error) {
 	return k.decryptAES(cipherText, iv, pycryptoData.EncryptionModeCbc)
 }
+
 func (k *PaymentCryptoData) DecryptViaAesCFB(cipherText, iv string) (plainText string, err error) {
 	return k.decryptAES(cipherText, iv, pycryptoData.EncryptionModeCfb)
 }
+
 func (k *PaymentCryptoData) DecryptViaAesOFB(cipherText, iv string) (plainText string, err error) {
 	return k.decryptAES(cipherText, iv, pycryptoData.EncryptionModeOfb)
 }

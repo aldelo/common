@@ -1,7 +1,7 @@
 package apc
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ package apc
 import (
 	"context"
 	"errors"
-	"net/http"
+	"sync"
 	"time"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
@@ -73,6 +73,23 @@ type PaymentCryptography struct {
 	pycClient *pycrypto.PaymentCryptography
 
 	_parentSegment *xray.XRayParentSegment
+	mu             sync.RWMutex
+}
+
+// ================================================================================================================
+// internal helpers
+// ================================================================================================================
+
+func (k *PaymentCryptography) getClient() *pycrypto.PaymentCryptography {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.pycClient
+}
+
+func (k *PaymentCryptography) getParentSegment() *xray.XRayParentSegment {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k._parentSegment
 }
 
 // ================================================================================================================
@@ -87,7 +104,9 @@ type PaymentCryptography struct {
 func (k *PaymentCryptography) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
+			k.mu.Lock()
 			k._parentSegment = parentSegment[0]
+			k.mu.Unlock()
 		}
 
 		seg := xray.NewSegment("PaymentCryptography-Connect", k._parentSegment)
@@ -103,7 +122,9 @@ func (k *PaymentCryptography) Connect(parentSegment ...*xray.XRayParentSegment) 
 		err = k.connectInternal()
 
 		if err == nil {
-			awsxray.AWS(k.pycClient.Client)
+			if client := k.getClient(); client != nil {
+				awsxray.AWS(client.Client)
+			}
 		}
 
 		return err
@@ -114,62 +135,72 @@ func (k *PaymentCryptography) Connect(parentSegment ...*xray.XRayParentSegment) 
 
 // Connect will establish a connection to the PaymentCryptography service
 func (k *PaymentCryptography) connectInternal() error {
-	// clean up prior session reference
-	k.sess = nil
+	k.mu.RLock()
+	region := k.AwsRegion
+	httpOpts := k.HttpOptions
+	k.mu.RUnlock()
 
-	if !k.AwsRegion.Valid() || k.AwsRegion == awsregion.UNKNOWN {
+	// clean up prior session reference
+	k.mu.Lock()
+	k.sess = nil
+	k.pycClient = nil
+	k.mu.Unlock()
+
+	if !region.Valid() || region == awsregion.UNKNOWN {
 		return errors.New("Connect To PaymentCryptography Failed: (AWS Session Error) " + "Region is Required")
 	}
 
 	// create custom http2 client if needed
-	var httpCli *http.Client
-	var httpErr error
-
-	if k.HttpOptions == nil {
-		k.HttpOptions = new(awshttp2.HttpClientSettings)
+	if httpOpts == nil {
+		httpOpts = new(awshttp2.HttpClientSettings)
 	}
 
-	// use custom http2 client
 	h2 := &awshttp2.AwsHttp2Client{
-		Options: k.HttpOptions,
+		Options: httpOpts,
 	}
 
-	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
+	httpCli, httpErr := h2.NewHttp2Client()
+	if httpErr != nil {
 		return errors.New("Connect to PaymentCryptography Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
 	}
 
 	// establish aws session connection and keep session object in struct
-	if sess, err := session.NewSession(
+	sess, err := session.NewSession(
 		&aws.Config{
 			Region:     aws.String(k.AwsRegion.Key()),
 			HTTPClient: httpCli,
-		}); err != nil {
+		})
+	if err != nil {
 		// aws session error
 		return errors.New("Connect To PaymentCryptography Failed: (AWS Session Error) " + err.Error())
-	} else {
-		// aws session obtained
-		k.sess = sess
-
-		// create cached objects for shared use
-		k.pycClient = pycrypto.New(k.sess)
-
-		if k.pycClient == nil {
-			return errors.New("Connect To PaymentCryptography Client Failed: (New PaymentCryptography Client Connection) " + "Connection Object Nil")
-		}
-
-		// session stored to struct
-		return nil
 	}
+
+	client := pycrypto.New(sess)
+	if client == nil {
+		return errors.New("Connect To PaymentCryptography Client Failed: (New PaymentCryptography Client Connection) " + "Connection Object Nil")
+	}
+
+	k.mu.Lock()
+	k.HttpOptions = httpOpts
+	k.sess = sess
+	k.pycClient = client
+	k.mu.Unlock()
+
+	return nil
 }
 
 // Disconnect will disjoin from aws session by clearing it
 func (k *PaymentCryptography) Disconnect() {
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	k.pycClient = nil
 	k.sess = nil
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (k *PaymentCryptography) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	k._parentSegment = parentSegment
 }
 
@@ -205,11 +236,12 @@ func (k *PaymentCryptography) generateRSAKey(KeyAlgorithm string) (keyArn string
 		}()
 	}
 
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("generateRSAKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return "", err
 	}
+
 	// prepare key info
 	dataKeyInput := pycrypto.CreateKeyInput{
 		Enabled:    aws.Bool(true),
@@ -239,9 +271,9 @@ func (k *PaymentCryptography) generateRSAKey(KeyAlgorithm string) (keyArn string
 	var e error
 
 	if segCtx == nil {
-		dataKeyOutput, e = k.pycClient.CreateKey(&dataKeyInput)
+		dataKeyOutput, e = client.CreateKey(&dataKeyInput)
 	} else {
-		dataKeyOutput, e = k.pycClient.CreateKeyWithContext(segCtx, &dataKeyInput)
+		dataKeyOutput, e = client.CreateKeyWithContext(segCtx, &dataKeyInput)
 	}
 
 	if e != nil {
@@ -259,9 +291,8 @@ func (k *PaymentCryptography) generateRSAKey(KeyAlgorithm string) (keyArn string
 // GenerateAES256Key generates an AES key of 256 bits
 func (k *PaymentCryptography) GenerateAES256Key() (keyArn string, err error) {
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptography-GenerateAES256Key", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptography-GenerateAES256Key", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -274,8 +305,8 @@ func (k *PaymentCryptography) GenerateAES256Key() (keyArn string, err error) {
 		}()
 	}
 
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("GenerateAES256Key with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return "", err
 	}
@@ -309,9 +340,9 @@ func (k *PaymentCryptography) GenerateAES256Key() (keyArn string, err error) {
 	var e error
 
 	if segCtx == nil {
-		dataKeyOutput, e = k.pycClient.CreateKey(&dataKeyInput)
+		dataKeyOutput, e = client.CreateKey(&dataKeyInput)
 	} else {
-		dataKeyOutput, e = k.pycClient.CreateKeyWithContext(segCtx, &dataKeyInput)
+		dataKeyOutput, e = client.CreateKeyWithContext(segCtx, &dataKeyInput)
 	}
 
 	if e != nil {
@@ -330,9 +361,8 @@ func (k *PaymentCryptography) GenerateAES256Key() (keyArn string, err error) {
 func (k *PaymentCryptography) GetRSAPublicKey(keyArn string) (cert, certChain string, err error) {
 
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptography-GetRSAPublicKey", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptography-GetRSAPublicKey", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -345,8 +375,8 @@ func (k *PaymentCryptography) GetRSAPublicKey(keyArn string) (cert, certChain st
 		}()
 	}
 
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("GetRSAPublicKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return "", "", err
 	}
@@ -363,9 +393,9 @@ func (k *PaymentCryptography) GetRSAPublicKey(keyArn string) (cert, certChain st
 	}
 
 	if segCtx == nil {
-		publicKeyOutput, e = k.pycClient.GetPublicKeyCertificate(pbKeyInput)
+		publicKeyOutput, e = client.GetPublicKeyCertificate(pbKeyInput)
 	} else {
-		publicKeyOutput, e = k.pycClient.GetPublicKeyCertificateWithContext(segCtx, pbKeyInput)
+		publicKeyOutput, e = client.GetPublicKeyCertificateWithContext(segCtx, pbKeyInput)
 	}
 
 	if e != nil {
@@ -379,9 +409,8 @@ func (k *PaymentCryptography) GetRSAPublicKey(keyArn string) (cert, certChain st
 func (k *PaymentCryptography) SetKeyAlias(keyArn, KeyAliasName string) (respAliasName string, err error) {
 
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptography-SetKeyAlias", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptography-SetKeyAlias", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -394,8 +423,8 @@ func (k *PaymentCryptography) SetKeyAlias(keyArn, KeyAliasName string) (respAlia
 		}()
 	}
 
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("SetKeyAlias with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return "", err
 	}
@@ -440,9 +469,8 @@ func (k *PaymentCryptography) SetKeyAlias(keyArn, KeyAliasName string) (respAlia
 func (k *PaymentCryptography) ImportRootCAPublicKey(publicKey string) (keyArn string, err error) {
 
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptography-ImportRootCAPublicKey", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptography-ImportRootCAPublicKey", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -455,8 +483,8 @@ func (k *PaymentCryptography) ImportRootCAPublicKey(publicKey string) (keyArn st
 		}()
 	}
 
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("ImportRootCAPublicKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return "", err
 	}
@@ -487,9 +515,9 @@ func (k *PaymentCryptography) ImportRootCAPublicKey(publicKey string) (keyArn st
 	var imOutput *pycrypto.ImportKeyOutput
 	var e error
 	if segCtx == nil {
-		imOutput, e = k.pycClient.ImportKey(imInput)
+		imOutput, e = client.ImportKey(imInput)
 	} else {
-		imOutput, e = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+		imOutput, e = client.ImportKeyWithContext(segCtx, imInput)
 	}
 
 	if e != nil {
@@ -507,9 +535,8 @@ func (k *PaymentCryptography) ImportRootCAPublicKey(publicKey string) (keyArn st
 func (k *PaymentCryptography) ImportIntermediateCAPublicKey(capkArn, publicKey string) (keyArn string, err error) {
 
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptography-ImportIntermediateCAPublicKey", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptography-ImportIntermediateCAPublicKey", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -522,9 +549,14 @@ func (k *PaymentCryptography) ImportIntermediateCAPublicKey(capkArn, publicKey s
 		}()
 	}
 
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("ImportIntermediateCAPublicKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return "", err
+	}
+
+	if capkArn == "" {
+		err = errors.New("ImportIntermediateCAPublicKey with PaymentCryptography Failed: (capkArn is empty) ")
 		return "", err
 	}
 
@@ -555,9 +587,9 @@ func (k *PaymentCryptography) ImportIntermediateCAPublicKey(capkArn, publicKey s
 	var imOutput *pycrypto.ImportKeyOutput
 	var e error
 	if segCtx == nil {
-		imOutput, e = k.pycClient.ImportKey(imInput)
+		imOutput, e = client.ImportKey(imInput)
 	} else {
-		imOutput, e = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+		imOutput, e = client.ImportKeyWithContext(segCtx, imInput)
 	}
 
 	if e != nil {
@@ -574,9 +606,8 @@ func (k *PaymentCryptography) ImportIntermediateCAPublicKey(capkArn, publicKey s
 
 func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock string, nonce *string) (keyArn string, err error) {
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptography-ImportKEKey", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptography-ImportKEKey", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -589,8 +620,8 @@ func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock str
 		}()
 	}
 
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("ImportKEKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return "", err
 	}
@@ -642,9 +673,8 @@ func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock str
 func (k *PaymentCryptography) ImportTR31Key(keyBlock, warpKeyArn string) (keyArn string, err error) {
 
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptography-ImportTR31Key", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptography-ImportTR31Key", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -657,8 +687,8 @@ func (k *PaymentCryptography) ImportTR31Key(keyBlock, warpKeyArn string) (keyArn
 		}()
 	}
 
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("ImportTR31Key with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return "", err
 	}
@@ -707,9 +737,8 @@ func (k *PaymentCryptography) ImportTR31Key(keyBlock, warpKeyArn string) (keyArn
 func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token string, parametersValidUntilTimestamp *time.Time, err error) {
 
 	var segCtx context.Context
-	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptography-GetParamsForImportKEKey", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptography-GetParamsForImportKEKey", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -722,8 +751,8 @@ func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token 
 		}()
 	}
 
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("GetParamsForImportKEKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return "", "", "", nil, err
 	}
@@ -754,8 +783,8 @@ func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token 
 }
 
 func (k *PaymentCryptography) ListAlias() (output *pycrypto.ListAliasesOutput, err error) {
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("ListAlias with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return nil, err
 	}
@@ -765,7 +794,7 @@ func (k *PaymentCryptography) ListAlias() (output *pycrypto.ListAliasesOutput, e
 	var aliasOutput *pycrypto.ListAliasesOutput
 	var e error
 
-	aliasOutput, e = k.pycClient.ListAliases(aliasInput)
+	aliasOutput, e = client.ListAliases(aliasInput)
 
 	if e != nil {
 		err = errors.New("ListAlias with PaymentCryptography Failed: (ListAlias) " + e.Error())
@@ -773,9 +802,10 @@ func (k *PaymentCryptography) ListAlias() (output *pycrypto.ListAliasesOutput, e
 	}
 	return aliasOutput, nil
 }
+
 func (k *PaymentCryptography) ListAliasNextPage(nextTK string) (output *pycrypto.ListAliasesOutput, err error) {
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("ListAliasNextPage with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return nil, err
 	}
@@ -784,13 +814,14 @@ func (k *PaymentCryptography) ListAliasNextPage(nextTK string) (output *pycrypto
 	var aliasInput *pycrypto.ListAliasesInput
 	var aliasOutput *pycrypto.ListAliasesOutput
 	var e error
+
 	if nextTK != "" {
 		aliasInput = &pycrypto.ListAliasesInput{
 			NextToken: aws.String(nextTK),
 		}
 	}
 
-	aliasOutput, e = k.pycClient.ListAliases(aliasInput)
+	aliasOutput, e = client.ListAliases(aliasInput)
 
 	if e != nil {
 		err = errors.New("ListAliasNextPage with PaymentCryptography Failed: (ListAlias) " + e.Error())
@@ -800,8 +831,8 @@ func (k *PaymentCryptography) ListAliasNextPage(nextTK string) (output *pycrypto
 }
 
 func (k *PaymentCryptography) GetKey(keyArn string) (output *pycrypto.GetKeyOutput, err error) {
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("GetKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return nil, err
 	}
@@ -825,8 +856,8 @@ func (k *PaymentCryptography) GetKey(keyArn string) (output *pycrypto.GetKeyOutp
 }
 
 func (k *PaymentCryptography) GetKeyByAlias(keyAlias string) (output *pycrypto.GetAliasOutput, err error) {
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("GetKeyByAlias with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return nil, err
 	}
@@ -850,8 +881,8 @@ func (k *PaymentCryptography) GetKeyByAlias(keyAlias string) (output *pycrypto.G
 }
 
 func (k *PaymentCryptography) ListKeys() (output *pycrypto.ListKeysOutput, err error) {
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("ListKeys with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return nil, err
 	}
@@ -871,8 +902,8 @@ func (k *PaymentCryptography) ListKeys() (output *pycrypto.ListKeysOutput, err e
 }
 
 func (k *PaymentCryptography) StopKeyUsage(keyArn string) (err error) {
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("DisableKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return err
 	}
@@ -889,7 +920,7 @@ func (k *PaymentCryptography) StopKeyUsage(keyArn string) (err error) {
 	//var respOutput *pycrypto.StopKeyUsageOutput
 	var e error
 
-	_, e = k.pycClient.StopKeyUsage(reqInput)
+	_, e = client.StopKeyUsage(reqInput)
 
 	if e != nil {
 		err = errors.New("DisableKey with PaymentCryptography Failed: (DisableKey) " + e.Error())
@@ -902,8 +933,8 @@ func (k *PaymentCryptography) StopKeyUsage(keyArn string) (err error) {
 }
 
 func (k *PaymentCryptography) StartKeyUsage(keyArn string) (err error) {
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("EnableKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return err
 	}
@@ -933,8 +964,8 @@ func (k *PaymentCryptography) StartKeyUsage(keyArn string) (err error) {
 }
 
 func (k *PaymentCryptography) DeleteKey(keyArn string) (err error) {
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("DeleteKey with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return err
 	}
@@ -951,7 +982,7 @@ func (k *PaymentCryptography) DeleteKey(keyArn string) (err error) {
 	//var respOutput *pycrypto.DeleteKeyOutput
 	var e error
 
-	_, e = k.pycClient.DeleteKey(reqInput)
+	_, e = client.DeleteKey(reqInput)
 
 	if e != nil {
 		err = errors.New("DeleteKey with PaymentCryptography Failed: (DeleteKey) " + e.Error())
@@ -962,8 +993,8 @@ func (k *PaymentCryptography) DeleteKey(keyArn string) (err error) {
 }
 
 func (k *PaymentCryptography) DeleteAlias(aliasName string) (err error) {
-	// validate
-	if k.pycClient == nil {
+	client := k.getClient()
+	if client == nil {
 		err = errors.New("DeleteAlias with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
 		return err
 	}
@@ -980,7 +1011,7 @@ func (k *PaymentCryptography) DeleteAlias(aliasName string) (err error) {
 
 	var e error
 
-	_, e = k.pycClient.DeleteAlias(reqInput)
+	_, e = client.DeleteAlias(reqInput)
 
 	if e != nil {
 		err = errors.New("DeleteAlias with PaymentCryptography Failed: (DeleteAlias) " + e.Error())

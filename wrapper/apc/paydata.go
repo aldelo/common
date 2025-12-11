@@ -173,7 +173,7 @@ func (k *PaymentCryptoData) connectInternal() error {
 	// establish aws session connection and keep session object in struct
 	sess, err := session.NewSession(
 		&aws.Config{
-			Region:     aws.String(k.AwsRegion.Key()),
+			Region:     aws.String(region.Key()),
 			HTTPClient: httpCli,
 		})
 	if err != nil {
@@ -255,7 +255,7 @@ func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycr
 
 	encryptDataInput := &pycryptoData.EncryptDataInput{
 		EncryptionAttributes: encryptionAttributes,
-		KeyIdentifier:        aws.String(k.KeyArn),
+		KeyIdentifier:        aws.String(keyArn),
 		PlainText:            aws.String(plainText),
 	}
 
@@ -316,7 +316,7 @@ func (k *PaymentCryptoData) decrypt(cipherText string, decryptionAttributes *pyc
 	decryptInput := &pycryptoData.DecryptDataInput{
 		CipherText:           aws.String(cipherText),
 		DecryptionAttributes: decryptionAttributes,
-		KeyIdentifier:        aws.String(k.KeyArn),
+		KeyIdentifier:        aws.String(keyArn),
 	}
 
 	if segCtx == nil {

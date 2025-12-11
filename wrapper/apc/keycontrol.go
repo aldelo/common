@@ -449,9 +449,9 @@ func (k *PaymentCryptography) SetKeyAlias(keyArn, KeyAliasName string) (respAlia
 	var e error
 
 	if segCtx == nil {
-		aliasKeyOutput, e = k.pycClient.CreateAlias(&aliasInput)
+		aliasKeyOutput, e = client.CreateAlias(&aliasInput)
 	} else {
-		aliasKeyOutput, e = k.pycClient.CreateAliasWithContext(segCtx, &aliasInput)
+		aliasKeyOutput, e = client.CreateAliasWithContext(segCtx, &aliasInput)
 	}
 	if e != nil {
 		err = errors.New("SetKeyAlias with PaymentCryptography Failed: (CreateAlias) " + e.Error())
@@ -652,9 +652,9 @@ func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock str
 	var imOutput *pycrypto.ImportKeyOutput
 	var e error
 	if segCtx == nil {
-		imOutput, e = k.pycClient.ImportKey(imInput)
+		imOutput, e = client.ImportKey(imInput)
 	} else {
-		imOutput, e = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+		imOutput, e = client.ImportKeyWithContext(segCtx, imInput)
 	}
 
 	if e != nil {
@@ -717,9 +717,9 @@ func (k *PaymentCryptography) ImportTR31Key(keyBlock, warpKeyArn string) (keyArn
 	var imOutput *pycrypto.ImportKeyOutput
 	var e error
 	if segCtx == nil {
-		imOutput, e = k.pycClient.ImportKey(imInput)
+		imOutput, e = client.ImportKey(imInput)
 	} else {
-		imOutput, e = k.pycClient.ImportKeyWithContext(segCtx, imInput)
+		imOutput, e = client.ImportKeyWithContext(segCtx, imInput)
 	}
 	if e != nil {
 		return "", e
@@ -765,9 +765,9 @@ func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token 
 	var pmsOutput *pycrypto.GetParametersForImportOutput
 	var e error
 	if segCtx == nil {
-		pmsOutput, e = k.pycClient.GetParametersForImport(pmsInput)
+		pmsOutput, e = client.GetParametersForImport(pmsInput)
 	} else {
-		pmsOutput, e = k.pycClient.GetParametersForImportWithContext(segCtx, pmsInput)
+		pmsOutput, e = client.GetParametersForImportWithContext(segCtx, pmsInput)
 	}
 	if e != nil {
 		return "", "", "", nil, e
@@ -892,7 +892,7 @@ func (k *PaymentCryptography) ListKeys() (output *pycrypto.ListKeysOutput, err e
 	var aliasOutput *pycrypto.ListKeysOutput
 	var e error
 
-	aliasOutput, e = k.pycClient.ListKeys(aliasInput)
+	aliasOutput, e = client.ListKeys(aliasInput)
 
 	if e != nil {
 		err = errors.New("ListKeys with PaymentCryptography Failed: (ListKeys) " + e.Error())
@@ -951,7 +951,7 @@ func (k *PaymentCryptography) StartKeyUsage(keyArn string) (err error) {
 	//var respOutput *pycrypto.StartKeyUsageOutput
 	var e error
 
-	_, e = k.pycClient.StartKeyUsage(reqInput)
+	_, e = client.StartKeyUsage(reqInput)
 
 	if e != nil {
 		err = errors.New("EnableKey with PaymentCryptography Failed: (StartKeyUsage) " + e.Error())

@@ -167,7 +167,7 @@ func (k *PaymentCryptography) connectInternal() error {
 	// establish aws session connection and keep session object in struct
 	sess, err := session.NewSession(
 		&aws.Config{
-			Region:     aws.String(k.AwsRegion.Key()),
+			Region:     aws.String(region.Key()),
 			HTTPClient: httpCli,
 		})
 	if err != nil {

@@ -1,7 +1,7 @@
 package cloudmap
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -204,7 +204,8 @@ func (sd *CloudMap) connectInternal() error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return errors.New("Connect to CloudMap Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		log.Printf("CloudMap Connect: custom http2 client creation failed, falling back to default client: %v", httpErr)
+		httpCli = &http.Client{}
 	}
 
 	// establish aws session connection
@@ -1680,6 +1681,10 @@ func (sd *CloudMap) ListServices(filter []string,
 			err = errors.New("CloudMap ListServices Failed: " + "MaxResults Must Be Greater Than Zero")
 			return nil, "", err
 		}
+		if *maxResults > 100 {
+			err = errors.New("CloudMap ListServices Failed: " + "MaxResults Cannot Exceed 100")
+			return nil, "", err
+		}
 	}
 
 	// define input
@@ -1815,6 +1820,10 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 	if maxResults != nil {
 		if *maxResults <= 0 {
 			err = errors.New("CloudMap ListServicesPages Failed: " + "MaxResults Must Be Greater Than Zero")
+			return nil, "", err
+		}
+		if *maxResults > 100 {
+			err = errors.New("CloudMap ListServicesPages Failed: " + "MaxResults Cannot Exceed 100")
 			return nil, "", err
 		}
 	}
@@ -2505,6 +2514,10 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 			err = errors.New("CloudMap GetInstancesHealthStatus Failed: " + "MaxResults Must Be Greater Than Zero")
 			return nil, "", err
 		}
+		if *maxResults > 100 {
+			err = errors.New("CloudMap GetInstancesHealthStatus Failed: " + "MaxResults Cannot Exceed 100")
+			return nil, "", err
+		}
 	}
 
 	// define input
@@ -2633,6 +2646,10 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 			err = errors.New("CloudMap GetInstancesHealthStatusPages Failed: " + "MaxResults Must Be Greater Than Zero")
 			return nil, "", err
 		}
+		if *maxResults > 100 {
+			err = errors.New("CloudMap GetInstancesHealthStatusPages Failed: " + "MaxResults Cannot Exceed 100")
+			return nil, "", err
+		}
 	}
 
 	// define input
@@ -2726,8 +2743,6 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 
 	segCtx := context.Background()
 	segCtxSet := false
-
-	log.Println("DiscoverInstances Entered")
 
 	sd._parentSegmentMutex.RLock()
 	seg := xray.NewSegmentNullable("Cloudmap-DiscoverInstances", sd._parentSegment)
@@ -2891,6 +2906,10 @@ func (sd *CloudMap) ListInstances(serviceId string,
 			err = errors.New("CloudMap ListInstances Failed: " + "MaxResults Must Be Greater Than Zero")
 			return nil, "", err
 		}
+		if *maxResults > 100 {
+			err = errors.New("CloudMap ListInstances Failed: " + "MaxResults Cannot Be Greater Than 100")
+			return nil, "", err
+		}
 	}
 
 	// define input
@@ -3006,6 +3025,10 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 	if maxResults != nil {
 		if *maxResults <= 0 {
 			err = errors.New("CloudMap ListInstancesPages Failed: " + "MaxResults Must Be Greater Than Zero")
+			return nil, "", err
+		}
+		if *maxResults > 100 {
+			err = errors.New("CloudMap ListInstancesPages Failed: " + "MaxResults Cannot Be Greater Than 100")
 			return nil, "", err
 		}
 	}

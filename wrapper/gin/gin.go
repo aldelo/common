@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -287,14 +287,22 @@ func NewServer(name string, port uint, releaseMode bool, customRecovery bool, cu
 			if customRecovery {
 				gw._ginEngine = gin.New()
 				gw._ginEngine.Use(gin.Logger())
-				gw._ginEngine.Use(NiceRecovery(func(c *gin.Context, err interface{}) {
+				gw._ginEngine.Use(NiceRecovery(func(c *gin.Context, rec interface{}) {
+					msg := ""
+
+					switch v := rec.(type) {
+					case error:
+						msg = v.Error()
+					default:
+						msg = fmt.Sprint(v)
+					}
+
 					if gw.HttpStatusErrorHandler == nil {
-						c.String(500, err.(error).Error())
+						c.String(500, msg)
 					} else {
-						gw.HttpStatusErrorHandler(500, err.(error).Error(), c)
+						gw.HttpStatusErrorHandler(500, msg, c)
 					}
 				}))
-
 				log.Println("Using Custom Recovery...")
 			} else {
 				gw._ginEngine = gin.Default()
@@ -305,11 +313,20 @@ func NewServer(name string, port uint, releaseMode bool, customRecovery bool, cu
 		if customRecovery {
 			gw._ginEngine = gin.New()
 			gw._ginEngine.Use(gin.Logger())
-			gw._ginEngine.Use(NiceRecovery(func(c *gin.Context, err interface{}) {
+			gw._ginEngine.Use(NiceRecovery(func(c *gin.Context, rec interface{}) {
+				msg := ""
+
+				switch v := rec.(type) {
+				case error:
+					msg = v.Error()
+				default:
+					msg = fmt.Sprint(v)
+				}
+
 				if gw.HttpStatusErrorHandler == nil {
-					c.String(500, err.(error).Error())
+					c.String(500, msg)
 				} else {
-					gw.HttpStatusErrorHandler(500, err.(error).Error(), c)
+					gw.HttpStatusErrorHandler(500, msg, c)
 				}
 			}))
 			log.Println("Using Custom Recovery...")
@@ -317,6 +334,31 @@ func NewServer(name string, port uint, releaseMode bool, customRecovery bool, cu
 			gw._ginEngine = gin.Default()
 			log.Println("Using Default Recovery, Logger...")
 		}
+	}
+
+	if customRecovery {
+		gw._ginEngine = gin.New()
+		gw._ginEngine.Use(gin.Logger())
+		gw._ginEngine.Use(NiceRecovery(func(c *gin.Context, rec interface{}) {
+			msg := ""
+
+			switch v := rec.(type) {
+			case error:
+				msg = v.Error()
+			default:
+				msg = fmt.Sprint(v)
+			}
+
+			if gw.HttpStatusErrorHandler == nil {
+				c.String(500, msg)
+			} else {
+				gw.HttpStatusErrorHandler(500, msg, c)
+			}
+		}))
+		log.Println("Using Custom Recovery...")
+	} else {
+		gw._ginEngine = gin.Default()
+		log.Println("Using Default Recovery, Logger...")
 	}
 
 	return gw
@@ -889,8 +931,7 @@ func (g *Gin) setupPerClientIpQpsMiddleware(rg gin.IRoutes, qps int, burst int, 
 		rg.Use(fn(func(c *gin.Context) string {
 			return c.ClientIP()
 		}, func(c *gin.Context) (*rate.Limiter, time.Duration) {
-			n := 1000000 / qps
-			return rate.NewLimiter(rate.Every(time.Duration(n)*time.Microsecond), burst), ttl
+			return rate.NewLimiter(rate.Limit(qps), burst), ttl
 		}, func(c *gin.Context) {
 			c.AbortWithStatus(429) // exceed rate limit request
 		})) // code based on github.com/yangxikun/gin-limit-by-key

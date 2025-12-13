@@ -67,7 +67,7 @@ import (
 
 // CloudMap struct encapsulates the AWS CloudMap access functionality
 type CloudMap struct {
-	// define the AWS region that KMS is located at
+	// define the AWS region that cloudmap is located at
 	AwsRegion awsregion.AWSRegion
 
 	// custom http2 client options
@@ -1672,7 +1672,7 @@ func (sd *CloudMap) ListServices(filter []string,
 
 	// validate
 	if sdClient == nil {
-		err = errors.New("CloudMap ListService Failed: " + "SD Client is Required")
+		err = errors.New("CloudMap ListServices Failed: " + "SD Client is Required")
 		return nil, "", err
 	}
 

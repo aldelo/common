@@ -1,7 +1,7 @@
 package dynamodb
 
 /*
- * Copyright 2020-2025 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1093,7 +1093,11 @@ func (d *DynamoDB) connectInternal() error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return errors.New("Connect to DynamoDB Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		log.Printf("Connect to DynamoDB Failed: (AWS Session Error) "+"Create Custom Http2 Client Errored = %s", httpErr.Error())
+		httpCli = &http.Client{}
+	}
+	if httpCli == nil {
+		httpCli = &http.Client{}
 	}
 
 	// establish aws session connection and connect to dynamodb service

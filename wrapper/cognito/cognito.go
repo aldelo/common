@@ -147,12 +147,15 @@ func (s *Cognito) connectInternal(ctx context.Context) error {
 		// fallback to default client
 		httpCli = &http.Client{}
 	}
+	if httpCli == nil {
+		httpCli = &http.Client{}
+	}
 
 	// establish aws session connection with region and http client
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(s.AwsRegion.String()))
 	if err != nil {
 		// aws session error
-		return errors.New("Connect to Cognito Failed: (AWS Session Error) " + err.Error())
+		return errors.New("Connect to Cognito Failed: " + err.Error())
 	}
 
 	// create cached object for shared use
@@ -166,7 +169,7 @@ func (s *Cognito) connectInternal(ctx context.Context) error {
 	return nil
 }
 
-// Disconnect will clear sqs client
+// Disconnect will clear cognito client
 func (s *Cognito) Disconnect() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -3,7 +3,7 @@ package bedrockruntime
 import (
 	"context"
 	"errors"
-	"net/http"
+	"sync"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -14,7 +14,7 @@ import (
 )
 
 /*
- * Copyright 2020-2024 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,6 +68,26 @@ type BedrockRuntime struct {
 	bedrockruntimeClient *bedrockruntime.Client
 
 	_parentSegment *xray.XRayParentSegment
+	mu             sync.RWMutex
+}
+
+// internal helpers
+func (s *BedrockRuntime) getClient() *bedrockruntime.Client {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.bedrockruntimeClient
+}
+
+func (s *BedrockRuntime) getParentSegment() *xray.XRayParentSegment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s._parentSegment
+}
+
+func (s *BedrockRuntime) getOptions() (*awshttp2.HttpClientSettings, awsregion.AWSRegion) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.HttpOptions, s.AwsRegion
 }
 
 // ================================================================================================================
@@ -82,10 +102,12 @@ type BedrockRuntime struct {
 func (s *BedrockRuntime) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
+			s.mu.Lock()
 			s._parentSegment = parentSegment[0]
+			s.mu.Unlock()
 		}
 
-		seg := xray.NewSegment("BedrockRuntime-Connect", s._parentSegment)
+		seg := xray.NewSegment("BedrockRuntime-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
 			_ = seg.Seg.AddMetadata("BedrockRuntime-AWS-Region", s.AwsRegion)
@@ -105,54 +127,63 @@ func (s *BedrockRuntime) Connect(parentSegment ...*xray.XRayParentSegment) (err 
 
 // Connect will establish a connection to the BedrockRuntime service
 func (s *BedrockRuntime) connectInternal(ctx context.Context) error {
-	// clean up prior bedrockruntime client reference
-	s.bedrockruntimeClient = nil
+	// snapshot options/region under lock
+	httpOpts, region := s.getOptions()
 
-	if !s.AwsRegion.Valid() || s.AwsRegion == awsregion.UNKNOWN {
+	// clean up prior client reference
+	s.mu.Lock()
+	s.bedrockruntimeClient = nil
+	s.mu.Unlock()
+
+	if !region.Valid() || region == awsregion.UNKNOWN {
 		return errors.New("Connect to BedrockRuntime Failed: (AWS Session Error) " + "Region is Required")
 	}
 
 	// create custom http2 client if needed
-	var httpCli *http.Client
-	var httpErr error
-
-	if s.HttpOptions == nil {
-		s.HttpOptions = new(awshttp2.HttpClientSettings)
+	if httpOpts == nil {
+		httpOpts = new(awshttp2.HttpClientSettings)
 	}
 
-	// use custom http2 client
 	h2 := &awshttp2.AwsHttp2Client{
-		Options: s.HttpOptions,
+		Options: httpOpts,
 	}
 
-	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
+	httpCli, httpErr := h2.NewHttp2Client()
+	if httpErr != nil {
 		return errors.New("Connect to BedrockRuntime Failed: (AWS Session Error) " + "Create Custom http2 Client Errored = " + httpErr.Error())
 	}
 
-	// establish aws session connection
-	if cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli)); err != nil {
+	// establish aws session connection with custom http client and region
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(region.Key()))
+	if err != nil {
 		// aws session error
 		return errors.New("Connect to BedrockRuntime Failed: (AWS Session Error) " + err.Error())
-	} else {
-		// create cached objects for shared use
-		s.bedrockruntimeClient = bedrockruntime.NewFromConfig(cfg)
-
-		if s.bedrockruntimeClient == nil {
-			return errors.New("Connect to BedrockRuntime Client Failed: (New BedrockRuntime Client Connection) " + "Connection Object Nil")
-		}
-
-		// connect successful
-		return nil
 	}
+
+	client := bedrockruntime.NewFromConfig(cfg)
+	if client == nil {
+		return errors.New("Connect to BedrockRuntime Client Failed: (New BedrockRuntime Client Connection) " + "Connection Object Nil")
+	}
+
+	s.mu.Lock()
+	s.HttpOptions = httpOpts
+	s.bedrockruntimeClient = client
+	s.mu.Unlock()
+
+	return nil
 }
 
 // Disconnect will clear bedrockruntime client
 func (s *BedrockRuntime) Disconnect() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.bedrockruntimeClient = nil
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *BedrockRuntime) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s._parentSegment = parentSegment
 }
 
@@ -169,7 +200,7 @@ func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (respon
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("BedrockRuntime-InvokeModel", s._parentSegment)
+	seg := xray.NewSegmentNullable("BedrockRuntime-InvokeModel", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -186,7 +217,8 @@ func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (respon
 	}
 
 	// validation
-	if s.bedrockruntimeClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("InvokeModel Failed: " + "BedrockRuntime Client is Required")
 		return nil, err
 	}
@@ -213,9 +245,9 @@ func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (respon
 	var output *bedrockruntime.InvokeModelOutput
 
 	if segCtxSet {
-		output, err = s.bedrockruntimeClient.InvokeModel(segCtx, input)
+		output, err = client.InvokeModel(segCtx, input)
 	} else {
-		output, err = s.bedrockruntimeClient.InvokeModel(context.Background(), input)
+		output, err = client.InvokeModel(context.Background(), input)
 	}
 
 	// evaluate result

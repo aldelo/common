@@ -1,15 +1,20 @@
 package aws
 
-import "github.com/aws/aws-sdk-go/aws/awserr"
+import (
+	"errors"
+
+	"github.com/aws/aws-sdk-go/aws/awserr"
+)
 
 func ToAwsError(err error) awserr.Error {
 	if err == nil {
 		return nil
 	}
 
-	if e, ok := err.(awserr.Error); ok {
+	var e awserr.Error
+	if errors.As(err, &e) {
 		return e
 	} else {
-		return awserr.New(err.Error(), err.Error(), nil)
+		return awserr.New("UnknownError", err.Error(), err)
 	}
 }

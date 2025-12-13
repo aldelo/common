@@ -1,7 +1,7 @@
 package cognito
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -64,10 +65,22 @@ type Cognito struct {
 	// custom http2 client options
 	HttpOptions *awshttp2.HttpClientSettings
 
+	// optional token duration override (seconds); if 0, defaults to 86400 (1 day)
+	TokenDurationSeconds int64
+
 	// store Cognito client object
 	cognitoClient *awscognito.Client
 
 	_parentSegment *xray.XRayParentSegment
+
+	mu sync.RWMutex
+}
+
+// getParentSegment safely returns the current parent segment
+func (s *Cognito) getParentSegment() *xray.XRayParentSegment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s._parentSegment
 }
 
 // ================================================================================================================
@@ -82,10 +95,12 @@ type Cognito struct {
 func (s *Cognito) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
+			s.mu.Lock()
 			s._parentSegment = parentSegment[0]
+			s.mu.Unlock()
 		}
 
-		seg := xray.NewSegment("Cognito-Connect", s._parentSegment)
+		seg := xray.NewSegment("Cognito-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
 			_ = seg.Seg.AddMetadata("Cognito-AWS-Region", s.AwsRegion)
@@ -105,6 +120,9 @@ func (s *Cognito) Connect(parentSegment ...*xray.XRayParentSegment) (err error) 
 
 // Connect will establish a connection to the Cognito service
 func (s *Cognito) connectInternal(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// clean up prior sqs client reference
 	s.cognitoClient = nil
 
@@ -126,33 +144,39 @@ func (s *Cognito) connectInternal(ctx context.Context) error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return errors.New("Connect to Cognito Failed: (AWS Session Error) " + "Create Custom http2 Client Errored = " + httpErr.Error())
+		// fallback to default client
+		httpCli = &http.Client{}
 	}
 
-	// establish aws session connection
-	if cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli)); err != nil {
+	// establish aws session connection with region and http client
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(s.AwsRegion.String()))
+	if err != nil {
 		// aws session error
 		return errors.New("Connect to Cognito Failed: (AWS Session Error) " + err.Error())
-	} else {
-		// create cached objects for shared use
-		s.cognitoClient = awscognito.NewFromConfig(cfg)
-
-		if s.cognitoClient == nil {
-			return errors.New("Connect to Cognito Client Failed: (New Cognito Client Connection) " + "Connection Object Nil")
-		}
-
-		// connect successful
-		return nil
 	}
+
+	// create cached object for shared use
+	s.cognitoClient = awscognito.NewFromConfig(cfg)
+
+	if s.cognitoClient == nil {
+		return errors.New("Connect to Cognito Client Failed: (New Cognito Client Connection) " + "Connection Object Nil")
+	}
+
+	// connect successful
+	return nil
 }
 
 // Disconnect will clear sqs client
 func (s *Cognito) Disconnect() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.cognitoClient = nil
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *Cognito) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s._parentSegment = parentSegment
 }
 
@@ -177,7 +201,7 @@ func (s *Cognito) getOpenIdTokenForDeveloperIdentity(identityPoolId, developerPr
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Cognito-GetOpenIdTokenForDeveloperIdentity", s._parentSegment)
+	seg := xray.NewSegmentNullable("Cognito-GetOpenIdTokenForDeveloperIdentity", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -194,8 +218,13 @@ func (s *Cognito) getOpenIdTokenForDeveloperIdentity(identityPoolId, developerPr
 		}()
 	}
 
+	s.mu.RLock()
+	client := s.cognitoClient
+	tokenDuration := s.TokenDurationSeconds
+	s.mu.RUnlock()
+
 	// validation
-	if s.cognitoClient == nil {
+	if client == nil {
 		err = errors.New("GetOpenIdTokenForDeveloperIdentity Failed: " + "Cognito Client is Required")
 		return "", "", err
 	}
@@ -215,14 +244,18 @@ func (s *Cognito) getOpenIdTokenForDeveloperIdentity(identityPoolId, developerPr
 		return "", "", err
 	}
 
+	if tokenDuration <= 0 {
+		tokenDuration = 86400 // default to 1 day
+	}
+
 	// create input object
 	input := &awscognito.GetOpenIdTokenForDeveloperIdentityInput{
 		IdentityPoolId: aws.String(identityPoolId),
 		Logins: map[string]string{
 			developerProviderName: developerProviderID,
 		},
-		IdentityId:    existingIdentityId, // If you have a existing Identity ID, you can set it to refresh the matching Token; otherwise, leave it nil to create a new Identity ID
-		TokenDuration: aws.Int64(86400),   // Token duration in seconds (1 day)
+		IdentityId:    existingIdentityId,       // If you have a existing Identity ID, you can set it to refresh the matching Token; otherwise, leave it nil to create a new Identity ID
+		TokenDuration: aws.Int64(tokenDuration), // Token duration in seconds (1 day)
 	}
 
 	// perform action
@@ -238,11 +271,11 @@ func (s *Cognito) getOpenIdTokenForDeveloperIdentity(identityPoolId, developerPr
 	if err != nil {
 		return "", "", err
 	}
-	if len(*output.IdentityId) == 0 {
-		return "", "", errors.New("GetOpenIdTokenForDeveloperIdentity Failed: " + "No Identity ID Found")
+	if output == nil || output.IdentityId == nil || len(*output.IdentityId) == 0 {
+		return "", "", errors.New("GetOpenIdTokenForDeveloperIdentity Failed: No Identity ID found")
 	}
-	if len(*output.Token) == 0 {
-		return "", "", errors.New("GetOpenIdTokenForDeveloperIdentity Failed: " + "No OpenID Token Found")
+	if output.Token == nil || len(*output.Token) == 0 {
+		return "", "", errors.New("GetOpenIdTokenForDeveloperIdentity Failed: No OpenID token found")
 	}
 
 	return *output.IdentityId, *output.Token, nil

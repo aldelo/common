@@ -192,7 +192,7 @@ func (gz *GZipConfig) GetGZipExcludedPaths() gzip.Option {
 	}
 }
 
-// GetGZipExcludedPathsRegex return gzip option for excluded paths refex if any
+// GetGZipExcludedPathsRegex return gzip option for excluded paths regex if any
 func (gz *GZipConfig) GetGZipExcludedPathsRegex() gzip.Option {
 	if len(gz.ExcludedPathsRegex) > 0 {
 		return gzip.WithExcludedPathsRegexs(gz.ExcludedPathsRegex)
@@ -334,31 +334,6 @@ func NewServer(name string, port uint, releaseMode bool, customRecovery bool, cu
 			gw._ginEngine = gin.Default()
 			log.Println("Using Default Recovery, Logger...")
 		}
-	}
-
-	if customRecovery {
-		gw._ginEngine = gin.New()
-		gw._ginEngine.Use(gin.Logger())
-		gw._ginEngine.Use(NiceRecovery(func(c *gin.Context, rec interface{}) {
-			msg := ""
-
-			switch v := rec.(type) {
-			case error:
-				msg = v.Error()
-			default:
-				msg = fmt.Sprint(v)
-			}
-
-			if gw.HttpStatusErrorHandler == nil {
-				c.String(500, msg)
-			} else {
-				gw.HttpStatusErrorHandler(500, msg, c)
-			}
-		}))
-		log.Println("Using Custom Recovery...")
-	} else {
-		gw._ginEngine = gin.Default()
-		log.Println("Using Default Recovery, Logger...")
 	}
 
 	return gw

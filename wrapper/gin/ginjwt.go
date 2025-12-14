@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -361,6 +362,15 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 			// loginFields struct represents the login form fields serialized from context input
 			var loginRequestData interface{}
 			loginRequestData = j.LoginRequestDataPtr
+
+			if loginRequestData == nil {
+				loginRequestData = &UserLogin{}
+			} else {
+				// clone per request to avoid shared mutations
+				if t := util.ReflectGetType(loginRequestData); t != nil && t.Kind() == reflect.Ptr {
+					loginRequestData = util.ReflectObjectNewPtr(t.Elem())
+				}
+			}
 
 			if err := g.bindInput(c, j.AuthenticateBindingType, loginRequestData); err != nil {
 				return nil, fmt.Errorf(jwt.ErrMissingLoginValues.Error() + ": " + err.Error())

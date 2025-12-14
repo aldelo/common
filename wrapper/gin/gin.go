@@ -468,7 +468,10 @@ func (g *Gin) BindPostForm(outputPtr interface{}, tagName string, c *gin.Context
 					case reflect.String:
 						o.SetString(v)
 					case reflect.Bool:
-						b, _ := util.ParseBool(v)
+						b, ok := util.ParseBool(v)
+						if !ok {
+							return fmt.Errorf("BindPostForm parse bool failed for tag %q value %q", tag, v)
+						}
 						o.SetBool(b)
 					case reflect.Int8:
 						fallthrough
@@ -479,18 +482,18 @@ func (g *Gin) BindPostForm(outputPtr interface{}, tagName string, c *gin.Context
 					case reflect.Int32:
 						fallthrough
 					case reflect.Int64:
-						if i64, ok := util.ParseInt64(v); ok {
-							if !o.OverflowInt(i64) {
-								o.SetInt(i64)
-							}
+						if i64, ok := util.ParseInt64(v); ok && !o.OverflowInt(i64) {
+							o.SetInt(i64)
+						} else {
+							return fmt.Errorf("BindPostForm parse int failed for tag %q value %q", tag, v)
 						}
 					case reflect.Float32:
 						fallthrough
 					case reflect.Float64:
-						if f64, ok := util.ParseFloat64(v); ok {
-							if !o.OverflowFloat(f64) {
-								o.SetFloat(f64)
-							}
+						if f64, ok := util.ParseFloat64(v); ok && !o.OverflowFloat(f64) {
+							o.SetFloat(f64)
+						} else {
+							return fmt.Errorf("BindPostForm parse float failed for tag %q value %q", tag, v)
 						}
 					case reflect.Uint8:
 						fallthrough
@@ -501,9 +504,10 @@ func (g *Gin) BindPostForm(outputPtr interface{}, tagName string, c *gin.Context
 					case reflect.Uint32:
 						fallthrough
 					case reflect.Uint64:
-						ui := uint64(util.StrToUint(v))
-						if !o.OverflowUint(ui) {
+						if ui, ok := util.ParseUint64(v); ok && !o.OverflowUint(ui) {
 							o.SetUint(ui)
+						} else {
+							return fmt.Errorf("BindPostForm parse uint failed for tag %q value %q", tag, v)
 						}
 					default:
 						switch f := o.Interface().(type) {
@@ -876,6 +880,22 @@ func (g *Gin) setupMaxLimitMiddleware(rg gin.IRoutes, maxLimit int) {
 	}
 }
 
+// helper to derive a client key, preferring proxy headers if present
+func clientKeyFromRequest(c *gin.Context) string {
+	if xff := c.GetHeader("X-Forwarded-For"); util.LenTrim(xff) > 0 {
+		parts := strings.Split(xff, ",")
+		for _, p := range parts {
+			if ip := strings.TrimSpace(p); util.LenTrim(ip) > 0 {
+				return ip
+			}
+		}
+	}
+	if xr := c.GetHeader("X-Real-IP"); util.LenTrim(xr) > 0 {
+		return strings.TrimSpace(xr)
+	}
+	return c.ClientIP()
+}
+
 // setupPerClientIpQpsMiddleware sets up per client ip qps limiter middleware
 func (g *Gin) setupPerClientIpQpsMiddleware(rg gin.IRoutes, qps int, burst int, ttl time.Duration) {
 	if rg != nil && g._limiterCache != nil && qps > 0 && qps <= 1000000 && burst > 0 && ttl > 0 {
@@ -904,7 +924,7 @@ func (g *Gin) setupPerClientIpQpsMiddleware(rg gin.IRoutes, qps int, burst int, 
 		}
 
 		rg.Use(fn(func(c *gin.Context) string {
-			return c.ClientIP()
+			return clientKeyFromRequest(c)
 		}, func(c *gin.Context) (*rate.Limiter, time.Duration) {
 			return rate.NewLimiter(rate.Limit(qps), burst), ttl
 		}, func(c *gin.Context) {

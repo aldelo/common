@@ -147,6 +147,22 @@ func ParseInt64(s string) (int64, bool) {
 	return result, true
 }
 
+// ParseUint64 tests and parses if input string is big integer (whole number greater 64 bits)
+func ParseUint64(s string) (uint64, bool) {
+	if strings.Index(s, ".") >= 0 {
+		s = SplitString(s, ".", 0)
+	}
+
+	var result uint64
+	var err error
+
+	if result, err = strconv.ParseUint(strings.TrimSpace(s), 10, 64); err != nil {
+		return 0, false
+	}
+
+	return result, true
+}
+
 // ParseFloat32 tests and parses if input string is float 32 bit (decimal point value)
 func ParseFloat32(s string) (float32, bool) {
 	var result float64

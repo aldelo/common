@@ -48,15 +48,14 @@ func NiceRecoveryWithWriter(f func(c *gin.Context, err interface{}), out io.Writ
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				goErr := errors.Wrap(err, 3)
-
 				if logger != nil {
 					httpRequest, _ := httputil.DumpRequest(c.Request, false)
+					goErr := errors.Wrap(err, 3)
 					reset := string([]byte{27, 91, 48, 109})
 					logger.Printf(fmt.Sprintf("[Recovery] Panic Recovered:\n\n%s %s\n\n%s%s", httpRequest, goErr.Error(), goErr.Stack(), reset))
 				}
 
-				f(c, fmt.Errorf("Internal Server Error: %s", goErr.Error()))
+				f(c, fmt.Errorf("Internal Server Error"))
 			}
 		}()
 

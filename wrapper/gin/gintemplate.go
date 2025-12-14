@@ -20,6 +20,7 @@ import (
 	"fmt"
 	util "github.com/aldelo/common"
 	"github.com/gin-contrib/multitemplate"
+	"log"
 	"path/filepath"
 )
 
@@ -78,67 +79,51 @@ func (t *GinTemplate) LoadHtmlTemplates() error {
 		return fmt.Errorf("Html Template Definition is Required")
 	}
 
+	base := filepath.Clean(t.TemplateBaseDir)
 	r := multitemplate.NewRenderer()
 
-	if util.Right(t.TemplateBaseDir, 1) == "/" {
-		t.TemplateBaseDir = util.Left(t.TemplateBaseDir, len(t.TemplateBaseDir)-1)
-	}
-
 	for _, td := range t.Templates {
-		if util.LenTrim(td.LayoutPath) > 0 {
-			layout := td.LayoutPath
-			page := td.PagePath
+		if util.LenTrim(td.LayoutPath) == 0 {
+			continue
+		}
 
-			if util.Left(layout, 1) != "/" {
-				layout = "/" + layout
+		layoutPattern := filepath.Join(base, td.LayoutPath)
+		layoutFiles, err := filepath.Glob(layoutPattern)
+
+		if err != nil {
+			log.Printf("LoadHtmlTemplates: glob layout failed for pattern %q: %v", layoutPattern, err)
+			continue
+		}
+		if len(layoutFiles) == 0 {
+			log.Printf("LoadHtmlTemplates: no layout files match pattern %q", layoutPattern)
+			continue
+		}
+
+		if util.LenTrim(td.PagePath) == 0 {
+			if tp := r.AddFromFiles(filepath.Base(layoutFiles[0]), layoutFiles...); tp != nil {
+				t._htmlTemplatesCount = len(layoutFiles)
 			}
+			continue
+		}
 
-			if util.LenTrim(page) > 0 {
-				if util.Left(page, 1) != "/" {
-					page = "/" + page
-				}
-			}
+		pagePattern := filepath.Join(base, td.PagePath)
+		pageFiles, err := filepath.Glob(pagePattern)
+		if err != nil {
+			log.Printf("LoadHtmlTemplates: glob pages failed for pattern %q: %v", pagePattern, err)
+			continue
+		}
+		if len(pageFiles) == 0 {
+			log.Printf("LoadHtmlTemplates: no page files match pattern %q", pagePattern)
+			continue
+		}
 
-			// get all files matching layout pattern
-			layoutFiles, err := filepath.Glob(t.TemplateBaseDir + layout)
+		for _, f := range pageFiles {
+			layoutCopy := make([]string, len(layoutFiles))
+			copy(layoutCopy, layoutFiles)
+			files := append(layoutCopy, f)
 
-			if err != nil {
-				continue
-			}
-
-			if len(layoutFiles) == 0 {
-				continue
-			}
-
-			if util.LenTrim(page) == 0 {
-				// only layout files to add to renderer
-				// template name is not important for 'AddFromFiles' (based on AddFromFiles source)
-				if tp := r.AddFromFiles(filepath.Base(layoutFiles[0]), layoutFiles...); tp != nil {
-					t._htmlTemplatesCount = len(layoutFiles)
-				}
-			} else {
-				// has layout and page files to add to renderer
-				pageFiles, err := filepath.Glob(t.TemplateBaseDir + page)
-
-				if err != nil {
-					continue
-				}
-
-				if len(pageFiles) == 0 {
-					continue
-				}
-
-				// layout with page files to add to renderer
-				// template name is not important for 'AddFromFiles' (based on AddFromFiles source)
-				for _, f := range pageFiles {
-					layoutCopy := make([]string, len(layoutFiles))
-					copy(layoutCopy, layoutFiles)
-					files := append(layoutCopy, f)
-
-					if tp := r.AddFromFiles(filepath.Base(f), files...); tp != nil {
-						t._htmlTemplatesCount++
-					}
-				}
+			if tp := r.AddFromFiles(filepath.Base(f), files...); tp != nil {
+				t._htmlTemplatesCount++
 			}
 		}
 	}
@@ -146,10 +131,10 @@ func (t *GinTemplate) LoadHtmlTemplates() error {
 	if t._htmlTemplatesCount <= 0 {
 		t._htmlrenderer = nil
 		return fmt.Errorf("No Html Templates Loaded Into Renderer")
-	} else {
-		t._htmlrenderer = r
-		return nil
 	}
+
+	t._htmlrenderer = r
+	return nil
 }
 
 // SetHtmlRenderer will set the existing html renderer into gin engine's HTMLRender property

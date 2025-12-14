@@ -206,11 +206,6 @@ func (s *IoT) AttachPolicy(policyName, target string) (err error) {
 	}
 
 	// validation
-	if s.iotClient == nil {
-		err = errors.New("AttachPolicy Failed: " + "IoT Client is Required")
-		return err
-	}
-
 	client := s.getClient()
 
 	if client == nil {

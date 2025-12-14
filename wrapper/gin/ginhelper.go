@@ -3,6 +3,7 @@ package gin
 import (
 	"bytes"
 	"fmt"
+
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/rest"
 	"github.com/gin-gonic/gin"
@@ -14,12 +15,12 @@ type ResponseBodyWriterInterceptor struct {
 	RespBody *bytes.Buffer
 }
 
-func (r ResponseBodyWriterInterceptor) Write(b []byte) (int, error) {
+func (r *ResponseBodyWriterInterceptor) Write(b []byte) (int, error) {
 	r.RespBody.Write(b)
 	return r.ResponseWriter.Write(b)
 }
 
-func (r ResponseBodyWriterInterceptor) WriteString(s string) (int, error) {
+func (r *ResponseBodyWriterInterceptor) WriteString(s string) (int, error) {
 	r.RespBody.WriteString(s)
 	return r.ResponseWriter.WriteString(s)
 }
@@ -32,17 +33,14 @@ type ReCAPTCHAResponseIFace interface {
 // BindPostDataFailed will return a 412 response to caller via gin context
 func BindPostDataFailed(c *gin.Context) {
 	if c != nil {
-		c.String(412, func() string{
-			rawBody, _ := c.GetRawData()
-			return fmt.Sprintf(`{"errortype":"bind-post-data","error":"%s"}`, "Bind Post Data to Struct Failed: " + string(rawBody))
-		}())
+		c.String(412, `{"errortype":"bind-post-data","error":"Bind Post Data to Struct Failed"}`)
 	}
 }
 
 // VerifyGoogleReCAPTCHAv2Failed will return a 412 response to caller via gin context
 func VerifyGoogleReCAPTCHAv2Failed(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(412, func() string{
+		c.String(412, func() string {
 			return fmt.Sprintf(`{"errortype":"verify-google-recaptcha-v2","error":"%s"}`, errInfo)
 		}())
 	}
@@ -51,7 +49,7 @@ func VerifyGoogleReCAPTCHAv2Failed(c *gin.Context, errInfo string) {
 // MarshalQueryParametersFailed will return a 412 response to caller via gin context
 func MarshalQueryParametersFailed(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(412, func() string{
+		c.String(412, func() string {
 			return fmt.Sprintf(`{"errortype":"marshal-query-parameters","error":"%s"}`, errInfo)
 		}())
 	}
@@ -60,7 +58,7 @@ func MarshalQueryParametersFailed(c *gin.Context, errInfo string) {
 // ActionServerFailed will return a 500 response to caller via gin context
 func ActionServerFailed(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(500, func() string{
+		c.String(500, func() string {
 			return fmt.Sprintf(`{"errortype":"action-server-failed","error":"%s"}`, errInfo)
 		}())
 	}
@@ -69,7 +67,7 @@ func ActionServerFailed(c *gin.Context, errInfo string) {
 // ActionStatusNotOK will return a 404 response to caller via gin context
 func ActionStatusNotOK(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(404, func() string{
+		c.String(404, func() string {
 			return fmt.Sprintf(`{"errortype":"action-status-not-ok","error":"%s"}`, errInfo)
 		}())
 	}
@@ -104,6 +102,9 @@ func VerifyGoogleReCAPTCHAv2(c *gin.Context, recaptchaResponse string, recaptcha
 			}
 		}
 	} else {
+		if recaptchaRequired {
+			return fmt.Errorf("Google ReCAPTCHA v2 Secret Missing in Context")
+		}
 		return nil
 	}
 }

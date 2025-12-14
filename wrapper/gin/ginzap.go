@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@ package gin
 
 import (
 	"fmt"
-	util "github.com/aldelo/common"
-	"go.uber.org/zap"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -27,6 +25,9 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+
+	util "github.com/aldelo/common"
+	"go.uber.org/zap"
 
 	"github.com/aldelo/common/wrapper/zap"
 	"github.com/gin-gonic/gin"

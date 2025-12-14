@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,14 @@ package gin
 
 import (
 	"bytes"
+	"log"
+	"net/http"
+	"strings"
+
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/xray"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 	"github.com/gin-gonic/gin"
-	"log"
-	"net/http"
-	"strings"
 )
 
 const X_AMZN_TRACE_ID string = "X-Amzn-Trace-Id"
@@ -203,9 +204,22 @@ func getAmznTraceHeader(req *http.Request, seg *awsxray.Segment) string {
 		seg.ParentID = trace["Parent"]
 	}
 
+	// build outbound header with Root, Parent, Sampled
+	parentID := seg.ID
+	sampled := "0"
+	if seg.Sampled {
+		sampled = "1"
+	}
+
 	buf := bytes.Buffer{}
 	buf.WriteString("Root=")
 	buf.WriteString(seg.TraceID)
+	if util.LenTrim(parentID) > 0 {
+		buf.WriteString(";Parent=")
+		buf.WriteString(parentID)
+	}
+	buf.WriteString(";Sampled=")
+	buf.WriteString(sampled)
 
 	return buf.String()
 }

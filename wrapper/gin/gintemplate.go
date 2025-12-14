@@ -1,7 +1,7 @@
 package gin
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@ package gin
 
 import (
 	"fmt"
-	util "github.com/aldelo/common"
-	"github.com/gin-contrib/multitemplate"
 	"log"
 	"path/filepath"
+
+	util "github.com/aldelo/common"
+	"github.com/gin-contrib/multitemplate"
 )
 
 // NewTemplate creates new html template render worker object

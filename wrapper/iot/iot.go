@@ -1,7 +1,7 @@
 package iot
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ package iot
 import (
 	"context"
 	"errors"
-	"net/http"
+	"sync"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -68,11 +68,25 @@ type IoT struct {
 	iotClient *awsiot.Client
 
 	_parentSegment *xray.XRayParentSegment
+
+	mu sync.RWMutex
 }
 
 // ================================================================================================================
 // STRUCTS FUNCTIONS
 // ================================================================================================================
+
+func (s *IoT) getClient() *awsiot.Client {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.iotClient
+}
+
+func (s *IoT) getParentSegment() *xray.XRayParentSegment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s._parentSegment
+}
 
 // ----------------------------------------------------------------------------------------------------------------
 // connection functions
@@ -82,10 +96,12 @@ type IoT struct {
 func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
+			s.mu.Lock()
 			s._parentSegment = parentSegment[0]
+			s.mu.Unlock()
 		}
 
-		seg := xray.NewSegment("IoT-Connect", s._parentSegment)
+		seg := xray.NewSegment("IoT-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
 			_ = seg.Seg.AddMetadata("IoT-AWS-Region", s.AwsRegion)
@@ -106,53 +122,61 @@ func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 // Connect will establish a connection to the IoT service
 func (s *IoT) connectInternal(ctx context.Context) error {
 	// clean up prior sqs client reference
+	s.mu.Lock()
 	s.iotClient = nil
+	region := s.AwsRegion
+	httpOpts := s.HttpOptions
+	if httpOpts == nil {
+		httpOpts = new(awshttp2.HttpClientSettings)
+		s.HttpOptions = httpOpts
+	}
+	s.mu.Unlock()
 
-	if !s.AwsRegion.Valid() || s.AwsRegion == awsregion.UNKNOWN {
+	if !region.Valid() || region == awsregion.UNKNOWN {
 		return errors.New("Connect to IoT Failed: (AWS Session Error) " + "Region is Required")
 	}
 
-	// create custom http2 client if needed
-	var httpCli *http.Client
-	var httpErr error
-
-	if s.HttpOptions == nil {
-		s.HttpOptions = new(awshttp2.HttpClientSettings)
-	}
-
-	// use custom http2 client
 	h2 := &awshttp2.AwsHttp2Client{
-		Options: s.HttpOptions,
+		Options: httpOpts,
 	}
 
-	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
+	httpCli, httpErr := h2.NewHttp2Client()
+	if httpErr != nil {
 		return errors.New("Connect to IoT Failed: (AWS Session Error) " + "Create Custom http2 Client Errored = " + httpErr.Error())
 	}
 
 	// establish aws session connection
-	if cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli)); err != nil {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(region.String()))
+	if err != nil {
 		// aws session error
 		return errors.New("Connect to IoT Failed: (AWS Session Error) " + err.Error())
-	} else {
-		// create cached objects for shared use
-		s.iotClient = awsiot.NewFromConfig(cfg)
-
-		if s.iotClient == nil {
-			return errors.New("Connect to IoT Client Failed: (New IoT Client Connection) " + "Connection Object Nil")
-		}
-
-		// connect successful
-		return nil
 	}
+
+	// create cached objects for shared use
+	client := awsiot.NewFromConfig(cfg)
+	if client == nil {
+		return errors.New("Connect to IoT Client Failed: (New IoT Client Connection) " + "Connection Object Nil")
+	}
+
+	s.mu.Lock()
+	s.iotClient = client
+	s.mu.Unlock()
+
+	// connect successful
+	return nil
 }
 
 // Disconnect will clear iot client
 func (s *IoT) Disconnect() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.iotClient = nil
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *IoT) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s._parentSegment = parentSegment
 }
 
@@ -164,7 +188,7 @@ func (s *IoT) AttachPolicy(policyName, target string) (err error) {
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("IoT-AttachPolicy", s._parentSegment)
+	seg := xray.NewSegmentNullable("IoT-AttachPolicy", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -187,6 +211,13 @@ func (s *IoT) AttachPolicy(policyName, target string) (err error) {
 		return err
 	}
 
+	client := s.getClient()
+
+	if client == nil {
+		err = errors.New("AttachPolicy Failed: " + "IoT Client is Required")
+		return err
+	}
+
 	if len(policyName) <= 0 {
 		err = errors.New("AttachPolicy Failed: " + "Policy Name is Required")
 		return err
@@ -204,9 +235,9 @@ func (s *IoT) AttachPolicy(policyName, target string) (err error) {
 	}
 
 	if segCtxSet {
-		_, err = s.iotClient.AttachPolicy(segCtx, input)
+		_, err = client.AttachPolicy(segCtx, input)
 	} else {
-		_, err = s.iotClient.AttachPolicy(context.Background(), input)
+		_, err = client.AttachPolicy(context.Background(), input)
 	}
 
 	// evaluate result

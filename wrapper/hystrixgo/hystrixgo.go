@@ -1,7 +1,7 @@
 package hystrixgo
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,15 @@ package hystrixgo
 import (
 	"context"
 	"errors"
+	"net"
+	"net/http"
+	"strconv"
+
 	"github.com/afex/hystrix-go/hystrix"
 	metricCollector "github.com/afex/hystrix-go/hystrix/metric_collector"
 	"github.com/afex/hystrix-go/plugins"
 	util "github.com/aldelo/common"
 	data "github.com/aldelo/common/wrapper/zap"
-	"net"
-	"net/http"
-	"strconv"
 )
 
 // CircuitBreaker defines one specific circuit breaker by command name

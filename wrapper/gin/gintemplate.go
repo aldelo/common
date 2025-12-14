@@ -101,7 +101,7 @@ func (t *GinTemplate) LoadHtmlTemplates() error {
 
 		if util.LenTrim(td.PagePath) == 0 {
 			if tp := r.AddFromFiles(filepath.Base(layoutFiles[0]), layoutFiles...); tp != nil {
-				t._htmlTemplatesCount = len(layoutFiles)
+				t._htmlTemplatesCount += len(layoutFiles)
 			}
 			continue
 		}

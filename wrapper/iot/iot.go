@@ -94,6 +94,10 @@ func (s *IoT) getParentSegment() *xray.XRayParentSegment {
 
 // Connect will establish a connection to the IoT service
 func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	s.mu.RLock()
+	region := s.AwsRegion
+	s.mu.RUnlock()
+
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
 			s.mu.Lock()
@@ -104,7 +108,7 @@ func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("IoT-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("IoT-AWS-Region", s.AwsRegion)
+			_ = seg.Seg.AddMetadata("IoT-AWS-Region", region)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)

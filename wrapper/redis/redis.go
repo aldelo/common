@@ -42,6 +42,10 @@ package redis
 import (
 	"crypto/tls"
 	"strings"
+	"sync"
+
+	"errors"
+	"time"
 
 	"github.com/aldelo/common/wrapper/redis/redisbitop"
 	"github.com/aldelo/common/wrapper/redis/redisdatatype"
@@ -50,9 +54,6 @@ import (
 	"github.com/aldelo/common/wrapper/redis/redissetcondition"
 	"github.com/aldelo/common/wrapper/xray"
 	"github.com/go-redis/redis/v8"
-
-	"errors"
-	"time"
 
 	util "github.com/aldelo/common"
 )
@@ -103,6 +104,8 @@ type Redis struct {
 	UTILS      *UTILS
 
 	_parentSegment *xray.XRayParentSegment
+
+	connectMU sync.Mutex
 }
 
 // BIT defines redis BIT operations
@@ -170,6 +173,9 @@ type UTILS struct {
 
 // Connect will establish connection to aws elasticCache redis writer and reader endpoint connections.
 func (r *Redis) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	r.connectMU.Lock()
+	defer r.connectMU.Unlock()
+
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
 			r._parentSegment = parentSegment[0]
@@ -308,6 +314,13 @@ func (r *Redis) connectInternal() error {
 
 	if r.cnReader == nil {
 		return errors.New("Connect To Redis Failed: (Reader Endpoint) " + "Obtain Client Yielded Nil")
+	}
+
+	if err := r.cnWriter.Ping(r.cnWriter.Context()).Err(); err != nil {
+		return errors.New("Connect To Redis Failed: (Writer Endpoint) ping failed: " + err.Error())
+	}
+	if err := r.cnReader.Ping(r.cnReader.Context()).Err(); err != nil {
+		return errors.New("Connect To Redis Failed: (Reader Endpoint) ping failed: " + err.Error())
 	}
 
 	// once writer and readers are all connected, set reference to helper struct objects
@@ -1795,7 +1808,7 @@ func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err 
 //	kvMap = map of key string, and interface{} value
 func (r *Redis) msetInternal(kvMap map[string]interface{}, setIfNotExists ...bool) error {
 	// validate
-	if kvMap == nil {
+	if kvMap == nil || len(kvMap) == 0 {
 		return errors.New("Redis MSet Failed: " + "KVMap is Required")
 	}
 
@@ -4201,10 +4214,6 @@ func (h *HASH) hscanInternal(key string, cursor uint64, match string, count int6
 		return nil, 0, errors.New("Redis HScan Failed: " + "Key is Required")
 	}
 
-	if len(match) <= 0 {
-		return nil, 0, errors.New("Redis HScan Failed: " + "Match is Required")
-	}
-
 	if count < 0 {
 		return nil, 0, errors.New("Redis HScan Failed: " + "Count Must Be Zero or Greater")
 	}
@@ -4895,10 +4904,6 @@ func (s *SET) sscanInternal(key string, cursor uint64, match string, count int64
 
 	if len(key) <= 0 {
 		return nil, 0, errors.New("Redis SScan Failed: " + "Key is Required")
-	}
-
-	if len(match) <= 0 {
-		return nil, 0, errors.New("Redis SScan Failed: " + "Match is Required")
 	}
 
 	if count < 0 {
@@ -6681,10 +6686,6 @@ func (z *SORTED_SET) zscanInternal(key string, cursor uint64, match string, coun
 		return nil, 0, errors.New("Redis ZScan Failed: " + "Key is Required")
 	}
 
-	if len(match) <= 0 {
-		return nil, 0, errors.New("Redis ZScan Failed: " + "Match is Required")
-	}
-
 	if count < 0 {
 		return nil, 0, errors.New("Redis ZScan Failed: " + "Count Must Be Zero or Greater")
 	}
@@ -7082,8 +7083,10 @@ func cloneAndNormalizeGeoQuery(query *redis.GeoRadiusQuery, allowStore bool) *re
 		case "M", "KM", "MI", "FT":
 			q.Unit = strings.ToLower(q.Unit)
 		default:
-			q.Unit = "mi"
+			q.Unit = "m"
 		}
+	} else {
+		q.Unit = "m"
 	}
 
 	// drop store options when not allowed (read-only helpers)

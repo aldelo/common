@@ -50,6 +50,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	util "github.com/aldelo/common"
@@ -590,6 +591,10 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 		}()
 	}
 
+	if strings.TrimSpace(keyName) == "" {
+		return nil, errors.New("GenerateEncryptionDecryptionKeyRsa2048 with KMS CMK Failed: keyName (alias) is required")
+	}
+
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
@@ -654,7 +659,10 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 		}()
 	}
 
-	// validate
+	if strings.TrimSpace(keyName) == "" {
+		return nil, errors.New("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: keyName (alias) is required")
+	}
+
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
 		err = errors.New("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: " + cliErr.Error())

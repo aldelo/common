@@ -681,16 +681,17 @@ func (svr *MySql) openWithXRay() (err error) {
 func (svr *MySql) Close() error {
 	svr.cleanUpAllSqlTransactions()
 
-	if svr.db != nil {
-		if err := svr.db.Close(); err != nil {
+	svr.mux.Lock()
+	db := svr.db
+	svr.db = nil
+	svr._parentSegment = nil
+	svr.lastPing = time.Now()
+	svr.mux.Unlock()
+
+	if db != nil {
+		if err := db.Close(); err != nil {
 			return err
 		}
-
-		// clean up
-		svr.db = nil
-		svr._parentSegment = nil
-		svr.lastPing = time.Time{}
-		return nil
 	}
 
 	return nil
@@ -698,16 +699,21 @@ func (svr *MySql) Close() error {
 
 // Ping tests if current database connection is still active and ready
 func (svr *MySql) Ping() (err error) {
-	if svr.db == nil {
+	svr.mux.RLock()
+	db := svr.db
+	lastPing := svr.lastPing
+	svr.mux.RUnlock()
+
+	if db == nil {
 		return errors.New("MySQL Server Not Connected")
 	}
 
-	if time.Now().Sub(svr.lastPing) < 90*time.Second {
+	if time.Since(lastPing) < 90*time.Second {
 		return nil
 	}
 
 	if !xray.XRayServiceOn() {
-		if err := svr.db.Ping(); err != nil {
+		if err := db.Ping(); err != nil {
 			return err
 		}
 	} else {
@@ -721,13 +727,15 @@ func (svr *MySql) Ping() (err error) {
 			}
 		}()
 
-		if err = svr.db.PingContext(trace.Ctx); err != nil {
+		if err = db.PingContext(trace.Ctx); err != nil {
 			return err
 		}
 	}
 
 	// database ok
+	svr.mux.Lock()
 	svr.lastPing = time.Now()
+	svr.mux.Unlock()
 	return nil
 }
 
@@ -754,10 +762,12 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 				closed:     false,
 				_xrayTxSeg: nil,
 			}
+			svr.mux.Lock()
 			if svr.txMap == nil {
 				svr.txMap = make(map[string]*MySqlTransaction)
 			}
 			svr.txMap[myTx.id] = myTx
+			svr.mux.Unlock()
 			return myTx, nil
 		}
 	} else {
@@ -781,10 +791,13 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 				closed:     false,
 				_xrayTxSeg: xseg,
 			}
+			svr.mux.Lock()
 			if svr.txMap == nil {
 				svr.txMap = make(map[string]*MySqlTransaction)
 			}
 			svr.txMap[myTx.id] = myTx
+			svr.mux.Unlock()
+
 			subXSeg.Close()
 			return myTx, nil
 		}

@@ -743,31 +743,34 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 		return nil, err
 	}
 
-	if PendingWindowInDays < 7 {
-		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: " + "PendingWindowInDays Must Be At Least 7 Days")
+	if PendingWindowInDays < 7 || PendingWindowInDays > 30 {
+		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: PendingWindowInDays must be between 7 and 30 (inclusive)")
 		return nil, err
-
 	}
 
 	aliasName := "alias/" + alias // Change to your desired alias name
 
-	result, err := cli.GetPublicKey(&kms.GetPublicKeyInput{
+	descOut, e1 := cli.DescribeKey(&kms.DescribeKeyInput{
 		KeyId: aws.String(aliasName),
 	})
-	if err != nil {
-		return nil, err
+	if e1 != nil {
+		return nil, fmt.Errorf("KeyDeleteWithAlias with KMS CMK Failed: describe key: %w", e1)
+	}
+	keyId := descOut.KeyMetadata.KeyId
+	if keyId == nil || *keyId == "" {
+		return nil, errors.New("KeyDeleteWithAlias with KMS CMK Failed: key id is empty after DescribeKey")
 	}
 
 	var e error
 
 	if segCtx == nil {
 		output, e = cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
-			KeyId:               result.KeyId,
+			KeyId:               keyId,
 			PendingWindowInDays: aws.Int64(PendingWindowInDays),
 		})
 	} else {
 		output, e = cli.ScheduleKeyDeletionWithContext(segCtx, &kms.ScheduleKeyDeletionInput{
-			KeyId:               result.KeyId,
+			KeyId:               keyId,
 			PendingWindowInDays: aws.Int64(PendingWindowInDays),
 		})
 	}
@@ -1774,6 +1777,18 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 	if cliErr != nil {
 		err = errors.New("ECDH with KMS Failed: " + cliErr.Error())
 		return nil, err
+	}
+
+	descOut, e := cli.DescribeKey(&kms.DescribeKeyInput{KeyId: aws.String(keyArn)})
+	if e != nil {
+		return nil, fmt.Errorf("ECDH with KMS Failed: describe key: %w", e)
+	}
+	km := descOut.KeyMetadata
+	if km == nil || km.KeySpec == nil || km.KeyUsage == nil {
+		return nil, errors.New("ECDH with KMS Failed: key metadata is missing")
+	}
+	if *km.KeyUsage != kms.KeyUsageTypeKeyAgreement {
+		return nil, fmt.Errorf("ECDH with KMS Failed: key usage must be KEY_AGREEMENT, got %s", aws.StringValue(km.KeyUsage))
 	}
 
 	//derive temp ECC public key

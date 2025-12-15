@@ -230,11 +230,16 @@ type MySqlTransaction struct {
 	tx         *sqlx.Tx
 	closed     bool
 	_xrayTxSeg *xray.XSegment
+
+	mu sync.Mutex
 }
 
 // Commit will commit the current mysql transaction and close off from further uses (if commit was successful).
 // on commit error, transaction will not close off
 func (t *MySqlTransaction) Commit() (err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if t._xrayTxSeg != nil {
 		defer func() {
 			if err != nil {
@@ -319,6 +324,9 @@ func (t *MySqlTransaction) Commit() (err error) {
 
 // Rollback will rollback the current mysql transaction and close off from further uses (whether rollback succeeds or failures)
 func (t *MySqlTransaction) Rollback() (err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if t._xrayTxSeg != nil {
 		defer func() {
 			if err != nil {
@@ -386,6 +394,9 @@ func (t *MySqlTransaction) Rollback() (err error) {
 
 // ready checks if MySqlTransaction
 func (t *MySqlTransaction) ready() error {
+	t.mu.Unlock()
+	defer t.mu.Unlock()
+
 	if t.closed {
 		return fmt.Errorf("MySql Transaction Not Valid, Transaction Already Closed")
 	} else if util.LenTrim(t.id) == 0 {
@@ -487,19 +498,36 @@ func (svr *MySql) GetDsn() (string, error) {
 // cleanUpAllSqlTransactions is a helper that cleans up (rolls back) any outstanding sql transactions in the txMap
 func (svr *MySql) cleanUpAllSqlTransactions() {
 	svr.mux.Lock()
+	var txs []*MySqlTransaction
 	if svr.txMap != nil && len(svr.txMap) > 0 {
+		txs = make([]*MySqlTransaction, 0, len(svr.txMap))
 		for k, v := range svr.txMap {
-			if v != nil && !v.closed && v.tx != nil {
-				_ = v.tx.Rollback()
-				if v._xrayTxSeg != nil {
-					v._xrayTxSeg.Close()
-				}
-			}
+			txs = append(txs, v)
 			delete(svr.txMap, k)
 		}
+	}
+	if svr.txMap != nil {
 		svr.txMap = make(map[string]*MySqlTransaction)
 	}
 	svr.mux.Unlock()
+
+	// rollback without holding svr.mux to avoid blocking other operations
+	for _, v := range txs {
+		if v != nil {
+			v.mu.Lock()
+			alreadyClosed := v.closed
+			tx := v.tx
+			seg := v._xrayTxSeg
+			if !alreadyClosed && tx != nil {
+				_ = tx.Rollback()
+				if seg != nil {
+					seg.Close()
+				}
+				v.closed = true
+			}
+			v.mu.Unlock()
+		}
+	}
 }
 
 // Open will open a database either as normal or with xray tracing,

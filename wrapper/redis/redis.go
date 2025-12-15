@@ -1995,7 +1995,7 @@ func (r *Redis) getRangeInternal(key string, start int64, end int64) (val string
 	if notFound, err = r.handleStringCmd(cmd, redisdatatype.String, &val, "Redis GetRange Failed: "); err != nil {
 		return "", false, err
 	} else {
-		return val, false, nil
+		return val, notFound, nil
 	}
 }
 

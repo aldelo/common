@@ -1784,11 +1784,17 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 		return nil, fmt.Errorf("ECDH with KMS Failed: describe key: %w", e)
 	}
 	km := descOut.KeyMetadata
-	if km == nil || km.KeySpec == nil || km.KeyUsage == nil {
+	if km == nil || km.KeySpec == nil || km.KeyUsage == nil || km.KeyState == nil {
 		return nil, errors.New("ECDH with KMS Failed: key metadata is missing")
+	}
+	if !strings.HasPrefix(aws.StringValue(km.KeySpec), "ECC_") {
+		return nil, fmt.Errorf("ECDH with KMS Failed: key spec must be ECC, got %s", aws.StringValue(km.KeySpec))
 	}
 	if *km.KeyUsage != kms.KeyUsageTypeKeyAgreement {
 		return nil, fmt.Errorf("ECDH with KMS Failed: key usage must be KEY_AGREEMENT, got %s", aws.StringValue(km.KeyUsage))
+	}
+	if *km.KeyState != kms.KeyStateEnabled {
+		return nil, fmt.Errorf("ECDH with KMS Failed: key state must be Enabled, got %s", aws.StringValue(km.KeyState))
 	}
 
 	//derive temp ECC public key

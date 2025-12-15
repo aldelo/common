@@ -820,8 +820,8 @@ func (k *KMS) KeyDeleteWithArnID(arn string, PendingWindowInDays int64) (output 
 		return nil, err
 	}
 
-	if PendingWindowInDays < 7 {
-		err = errors.New("KeyDeleteWithArnID with KMS CMK Failed: " + "PendingWindowInDays Must Be At Least 7 Days")
+	if PendingWindowInDays < 7 || PendingWindowInDays > 30 {
+		err = errors.New("KeyDeleteWithArnID with KMS CMK Failed: PendingWindowInDays must be between 7 and 30 (inclusive)")
 		return nil, err
 	}
 

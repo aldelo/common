@@ -50,7 +50,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 
 	util "github.com/aldelo/common"
@@ -206,7 +205,7 @@ func (k *KMS) connectInternal() error {
 
 	// use custom http2 client
 	h2 := &awshttp2.AwsHttp2Client{
-		Options: k.HttpOptions,
+		Options: httpOpts,
 	}
 
 	httpCli, httpErr := h2.NewHttp2Client()
@@ -1792,7 +1791,6 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 		return nil, e2
 	}
 
-	log.Println("outputResp: ", outputResp)
 	return outputResp.SharedSecret, nil
 }
 

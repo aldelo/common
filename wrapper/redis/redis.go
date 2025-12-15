@@ -2353,7 +2353,20 @@ func (r *Redis) strLenInternal(key string) (length int64, notFound bool, err err
 	}
 
 	cmd := r.cnReader.StrLen(r.cnReader.Context(), key)
-	return r.handleIntCmd(cmd, "Redis StrLen Failed: ")
+	if length, _, err = r.handleIntCmd(cmd, "Redis StrLen Failed: "); err != nil {
+		return 0, false, err
+	}
+
+	// Redis returns 0 for missing keys; detect that and surface notFound=true
+	if length == 0 {
+		if exists, _, existsErr := r.handleIntCmd(r.cnReader.Exists(r.cnReader.Context(), key), "Redis StrLen Failed: (Exists) "); existsErr != nil {
+			return 0, false, existsErr
+		} else if exists == 0 {
+			return 0, true, nil
+		}
+	}
+
+	return length, false, nil
 }
 
 // Append will append a value to the existing value under the given key in redis,
@@ -3039,8 +3052,7 @@ func (l *LIST) lpushInternal(key string, keyMustExist bool, value ...interface{}
 		cmd = l.core.cnWriter.LPushX(l.core.cnWriter.Context(), key, value...)
 	}
 
-	_, _, err := l.core.handleIntCmd(cmd, "Redis LPush Failed: ")
-	return err
+	return l.core.handleIntCmd2(cmd, "Redis LPush Failed: ")
 }
 
 // RPush stores all the specified values at the tail of the list as defined by the key,
@@ -3106,8 +3118,7 @@ func (l *LIST) rpushInternal(key string, keyMustExist bool, value ...interface{}
 		cmd = l.core.cnWriter.RPushX(l.core.cnWriter.Context(), key, value...)
 	}
 
-	_, _, err := l.core.handleIntCmd(cmd, "Redis RPush Failed: ")
-	return err
+	return l.core.handleIntCmd2(cmd, "Redis RPush Failed: ")
 }
 
 // LPop will remove and return the first element from the list stored at key

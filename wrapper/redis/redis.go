@@ -7069,6 +7069,44 @@ func (g *GEO) GeoRadius(key string, longitude float64, latitude float64, query *
 	}
 }
 
+// helper to defensively copy and normalize GeoRadiusQuery to avoid mutating caller input
+func cloneAndNormalizeGeoQuery(query *redis.GeoRadiusQuery, allowStore bool) *redis.GeoRadiusQuery {
+	if query == nil {
+		return nil
+	}
+
+	// shallow copy is enough because fields are value types / slices
+	q := *query
+
+	// sanitize Sort
+	if util.LenTrim(q.Sort) > 0 {
+		switch strings.ToUpper(q.Sort) {
+		case "ASC", "DESC":
+			q.Sort = strings.ToUpper(q.Sort)
+		default:
+			q.Sort = ""
+		}
+	}
+
+	// sanitize Unit
+	if util.LenTrim(q.Unit) > 0 {
+		switch strings.ToUpper(q.Unit) {
+		case "M", "KM", "MI", "FT":
+			q.Unit = strings.ToLower(q.Unit)
+		default:
+			q.Unit = "mi"
+		}
+	}
+
+	// drop store options when not allowed (read-only helpers)
+	if !allowStore {
+		q.Store = ""
+		q.StoreDist = ""
+	}
+
+	return &q
+}
+
 // geoRadiusInternal returns the members of a sorted set populated with geospatial information using GeoAdd,
 // which are within the borders of the area specified with the center location and the maximum distance from the center (the radius)
 //
@@ -7101,43 +7139,9 @@ func (g *GEO) geoRadiusInternal(key string, longitude float64, latitude float64,
 		return nil, errors.New("Redis GeoRadius Failed: " + "Query is Required")
 	}
 
-	// remove invalid query fields
-	if util.LenTrim(query.Sort) > 0 {
-		switch strings.ToUpper(query.Sort) {
-		case "ASC":
-			// valid
-		case "DESC":
-			// valid
-		default:
-			// not valid
-			query.Sort = ""
-		}
-	}
+	q := cloneAndNormalizeGeoQuery(query, false)
 
-	if util.LenTrim(query.Store) > 0 {
-		// this function is read only
-		query.Store = ""
-	}
-
-	if util.LenTrim(query.StoreDist) > 0 {
-		// this function is read only
-		query.StoreDist = ""
-	}
-
-	if util.LenTrim(query.Unit) > 0 {
-		switch strings.ToUpper(query.Unit) {
-		case "M":
-		case "KM":
-		case "MI":
-		case "FT":
-			// valid
-		default:
-			// not valid
-			query.Unit = "mi"
-		}
-	}
-
-	return g.core.cnReader.GeoRadius(g.core.cnReader.Context(), key, longitude, latitude, query), nil
+	return g.core.cnReader.GeoRadius(g.core.cnReader.Context(), key, longitude, latitude, q), nil
 }
 
 // GeoRadiusStore will store the members of a sorted set populated with geospatial information using GeoAdd,
@@ -7210,33 +7214,9 @@ func (g *GEO) geoRadiusStoreInternal(key string, longitude float64, latitude flo
 		return errors.New("Redis GeoRadiusStore Failed: " + "Query is Required")
 	}
 
-	// remove invalid query fields
-	if util.LenTrim(query.Sort) > 0 {
-		switch strings.ToUpper(query.Sort) {
-		case "ASC":
-			// valid
-		case "DESC":
-			// valid
-		default:
-			// not valid
-			query.Sort = ""
-		}
-	}
+	q := cloneAndNormalizeGeoQuery(query, true)
 
-	if util.LenTrim(query.Unit) > 0 {
-		switch strings.ToUpper(query.Unit) {
-		case "M":
-		case "KM":
-		case "MI":
-		case "FT":
-			// valid
-		default:
-			// not valid
-			query.Unit = "mi"
-		}
-	}
-
-	cmd := g.core.cnWriter.GeoRadiusStore(g.core.cnWriter.Context(), key, longitude, latitude, query)
+	cmd := g.core.cnWriter.GeoRadiusStore(g.core.cnWriter.Context(), key, longitude, latitude, q)
 	_, _, err := g.core.handleIntCmd(cmd, "Redis GeoRadiusStore Failed: ")
 	return err
 }
@@ -7319,43 +7299,9 @@ func (g *GEO) geoRadiusByMemberInternal(key string, member string, query *redis.
 		return nil, errors.New("Redis GeoRadiusByMember Failed: " + "Query is Required")
 	}
 
-	// remove invalid query fields
-	if util.LenTrim(query.Sort) > 0 {
-		switch strings.ToUpper(query.Sort) {
-		case "ASC":
-			// valid
-		case "DESC":
-			// valid
-		default:
-			// not valid
-			query.Sort = ""
-		}
-	}
+	q := cloneAndNormalizeGeoQuery(query, false)
 
-	if util.LenTrim(query.Store) > 0 {
-		// this function is read only
-		query.Store = ""
-	}
-
-	if util.LenTrim(query.StoreDist) > 0 {
-		// this function is read only
-		query.StoreDist = ""
-	}
-
-	if util.LenTrim(query.Unit) > 0 {
-		switch strings.ToUpper(query.Unit) {
-		case "M":
-		case "KM":
-		case "MI":
-		case "FT":
-			// valid
-		default:
-			// not valid
-			query.Unit = "mi"
-		}
-	}
-
-	return g.core.cnReader.GeoRadiusByMember(g.core.cnReader.Context(), key, member, query), nil
+	return g.core.cnReader.GeoRadiusByMember(g.core.cnReader.Context(), key, member, q), nil
 }
 
 // GeoRadiusByMemberStore is same as GeoRadiusStore, except instead of taking as the center of the area to query (long lat),
@@ -7435,33 +7381,9 @@ func (g *GEO) geoRadiusByMemberStoreInternal(key string, member string, query *r
 		return errors.New("Redis GeoRadiusByMemberStore Failed: " + "Query is Required")
 	}
 
-	// remove invalid query fields
-	if util.LenTrim(query.Sort) > 0 {
-		switch strings.ToUpper(query.Sort) {
-		case "ASC":
-			// valid
-		case "DESC":
-			// valid
-		default:
-			// not valid
-			query.Sort = ""
-		}
-	}
+	q := cloneAndNormalizeGeoQuery(query, true)
 
-	if util.LenTrim(query.Unit) > 0 {
-		switch strings.ToUpper(query.Unit) {
-		case "M":
-		case "KM":
-		case "MI":
-		case "FT":
-			// valid
-		default:
-			// not valid
-			query.Unit = "mi"
-		}
-	}
-
-	cmd := g.core.cnWriter.GeoRadiusByMemberStore(g.core.cnWriter.Context(), key, member, query)
+	cmd := g.core.cnWriter.GeoRadiusByMemberStore(g.core.cnWriter.Context(), key, member, q)
 	_, _, err := g.core.handleIntCmd(cmd, "Redis GeoRadiusByMemberStore Failed: ")
 	return err
 }

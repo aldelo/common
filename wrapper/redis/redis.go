@@ -9507,6 +9507,8 @@ func (u *UTILS) typeInternal(key string) (val rediskeytype.RedisKeyType, err err
 			return rediskeytype.Hash, nil
 		case "STREAM":
 			return rediskeytype.Stream, nil
+		case "NONE":
+			return rediskeytype.UNKNOWN, nil
 		default:
 			return rediskeytype.UNKNOWN, errors.New("Redis Type Failed: " + "Type '" + v + "' Not Expected Value")
 		}

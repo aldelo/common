@@ -7075,9 +7075,10 @@ func (g *GEO) GeoRadius(key string, longitude float64, latitude float64, query *
 }
 
 // helper to defensively copy and normalize GeoRadiusQuery to avoid mutating caller input
-func cloneAndNormalizeGeoQuery(query *redis.GeoRadiusQuery, allowStore bool) *redis.GeoRadiusQuery {
+// now also validates radius > 0 and STORE / STOREDIST compatibility
+func validateGeoRadiusQuery(query *redis.GeoRadiusQuery, allowStore bool) (*redis.GeoRadiusQuery, error) {
 	if query == nil {
-		return nil
+		return nil, errors.New("Redis GeoRadius Failed: Query is Required")
 	}
 
 	// shallow copy is enough because fields are value types / slices
@@ -7099,19 +7100,26 @@ func cloneAndNormalizeGeoQuery(query *redis.GeoRadiusQuery, allowStore bool) *re
 		case "M", "KM", "MI", "FT":
 			q.Unit = strings.ToLower(q.Unit)
 		default:
-			q.Unit = "m"
+			return nil, errors.New("Redis GeoRadius Failed: Unit must be one of m|km|mi|ft")
 		}
 	} else {
 		q.Unit = "m"
+	}
+
+	// validate radius
+	if q.Radius <= 0 {
+		return nil, errors.New("Redis GeoRadius Failed: Radius must be greater than 0")
 	}
 
 	// drop store options when not allowed (read-only helpers)
 	if !allowStore {
 		q.Store = ""
 		q.StoreDist = ""
+	} else if util.LenTrim(q.Store) > 0 && util.LenTrim(q.StoreDist) > 0 {
+		return nil, errors.New("Redis GeoRadius Failed: STORE and STOREDIST cannot both be set")
 	}
 
-	return &q
+	return &q, nil
 }
 
 // geoRadiusInternal returns the members of a sorted set populated with geospatial information using GeoAdd,
@@ -7142,11 +7150,10 @@ func (g *GEO) geoRadiusInternal(key string, longitude float64, latitude float64,
 		return nil, errors.New("Redis GeoRadius Failed: " + "Key is Required")
 	}
 
-	if query == nil {
-		return nil, errors.New("Redis GeoRadius Failed: " + "Query is Required")
+	q, err := validateGeoRadiusQuery(query, false)
+	if err != nil {
+		return nil, err
 	}
-
-	q := cloneAndNormalizeGeoQuery(query, false)
 
 	return g.core.cnReader.GeoRadius(g.core.cnReader.Context(), key, longitude, latitude, q), nil
 }
@@ -7217,14 +7224,13 @@ func (g *GEO) geoRadiusStoreInternal(key string, longitude float64, latitude flo
 		return errors.New("Redis GeoRadiusStore Failed: " + "Key is Required")
 	}
 
-	if query == nil {
-		return errors.New("Redis GeoRadiusStore Failed: " + "Query is Required")
+	q, err := validateGeoRadiusQuery(query, true) // <-- validation added
+	if err != nil {
+		return err
 	}
 
-	q := cloneAndNormalizeGeoQuery(query, true)
-
 	cmd := g.core.cnWriter.GeoRadiusStore(g.core.cnWriter.Context(), key, longitude, latitude, q)
-	_, _, err := g.core.handleIntCmd(cmd, "Redis GeoRadiusStore Failed: ")
+	_, _, err = g.core.handleIntCmd(cmd, "Redis GeoRadiusStore Failed: ")
 	return err
 }
 
@@ -7302,11 +7308,10 @@ func (g *GEO) geoRadiusByMemberInternal(key string, member string, query *redis.
 		return nil, errors.New("Redis GeoRadiusByMember Failed: " + "Member is Required")
 	}
 
-	if query == nil {
-		return nil, errors.New("Redis GeoRadiusByMember Failed: " + "Query is Required")
+	q, err := validateGeoRadiusQuery(query, false) // <-- validation added
+	if err != nil {
+		return nil, err
 	}
-
-	q := cloneAndNormalizeGeoQuery(query, false)
 
 	return g.core.cnReader.GeoRadiusByMember(g.core.cnReader.Context(), key, member, q), nil
 }
@@ -7384,14 +7389,13 @@ func (g *GEO) geoRadiusByMemberStoreInternal(key string, member string, query *r
 		return errors.New("Redis GeoRadiusByMemberStore Failed: " + "Member is Required")
 	}
 
-	if query == nil {
-		return errors.New("Redis GeoRadiusByMemberStore Failed: " + "Query is Required")
+	q, err := validateGeoRadiusQuery(query, true) // <-- validation added
+	if err != nil {
+		return err
 	}
 
-	q := cloneAndNormalizeGeoQuery(query, true)
-
 	cmd := g.core.cnWriter.GeoRadiusByMemberStore(g.core.cnWriter.Context(), key, member, q)
-	_, _, err := g.core.handleIntCmd(cmd, "Redis GeoRadiusByMemberStore Failed: ")
+	_, _, err = g.core.handleIntCmd(cmd, "Redis GeoRadiusByMemberStore Failed: ")
 	return err
 }
 
@@ -8393,7 +8397,8 @@ func (x *STREAM) xtrimInternal(key string, maxLen int64) error {
 	}
 
 	cmd := x.core.cnWriter.XTrim(x.core.cnWriter.Context(), key, maxLen)
-	return x.core.handleIntCmd2(cmd, "Redis XTrim Failed: ")
+	_, _, err := x.core.handleIntCmd(cmd, "Redis XTrim Failed: ")
+	return err
 }
 
 // XTrimApprox trims the stream to a given number of items, evicting older items (items with lower IDs) if needed
@@ -8439,7 +8444,8 @@ func (x *STREAM) xtrimApproxInternal(key string, maxLen int64) error {
 	}
 
 	cmd := x.core.cnWriter.XTrimApprox(x.core.cnWriter.Context(), key, maxLen)
-	return x.core.handleIntCmd2(cmd, "Redis XTrimApprox Failed: ")
+	_, _, err := x.core.handleIntCmd(cmd, "Redis XTrimApprox Failed: ")
+	return err
 }
 
 // ----------------------------------------------------------------------------------------------------------------

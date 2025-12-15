@@ -51,7 +51,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"sync"
 
 	util "github.com/aldelo/common"
@@ -126,6 +125,30 @@ func (k *KMS) getAWSRegion() awsregion.AWSRegion {
 	return ar
 }
 
+func (k *KMS) getHttpOptions() *awshttp2.HttpClientSettings {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.HttpOptions
+}
+
+func (k *KMS) getAesKeyName() string {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.AesKmsKeyName
+}
+
+func (k *KMS) getRsaKeyName() string {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.RsaKmsKeyName
+}
+
+func (k *KMS) getSigKeyName() string {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.SignatureKmsKeyName
+}
+
 // ================================================================================================================
 // STRUCTS FUNCTIONS
 // ================================================================================================================
@@ -176,12 +199,9 @@ func (k *KMS) connectInternal() error {
 		return errors.New("Connect To KMS Failed: (AWS Session Error) " + "Region is Required")
 	}
 
-	// create custom http2 client if needed
-	var httpCli *http.Client
-	var httpErr error
-
-	if k.HttpOptions == nil {
-		k.HttpOptions = new(awshttp2.HttpClientSettings)
+	httpOpts := k.getHttpOptions()
+	if httpOpts == nil {
+		httpOpts = &awshttp2.HttpClientSettings{}
 	}
 
 	// use custom http2 client
@@ -189,7 +209,8 @@ func (k *KMS) connectInternal() error {
 		Options: k.HttpOptions,
 	}
 
-	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
+	httpCli, httpErr := h2.NewHttp2Client()
+	if httpErr != nil {
 		return errors.New("Connect to KMS Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
 	}
 
@@ -243,7 +264,7 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-EncryptViaCmkAes256-AES-KMS-KeyName", k.AesKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-EncryptViaCmkAes256-AES-KMS-KeyName", k.getAesKeyName())
 			_ = seg.Seg.AddMetadata("KMS-EncryptViaCmkAes256-PlainText-Length", len(plainText))
 			_ = seg.Seg.AddMetadata("KMS-EncryptViaCmkAes256-Result-CipherText-Length", len(cipherText))
 
@@ -260,7 +281,8 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 		return "", err
 	}
 
-	if len(k.AesKmsKeyName) <= 0 {
+	aesKeyName := k.getAesKeyName()
+	if len(aesKeyName) <= 0 {
 		err = errors.New("EncryptViaCmkAes256 with KMS CMK Failed: " + "AES KMS Key Name is Required")
 		return "", err
 	}
@@ -271,7 +293,7 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.AesKmsKeyName
+	keyId := "alias/" + aesKeyName
 
 	// encrypt symmetric using kms cmk
 	var encryptedOutput *kms.EncryptOutput
@@ -315,7 +337,7 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkAes256-Source-AES-KMS-KeyName", k.AesKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkAes256-Source-AES-KMS-KeyName", k.getAesKeyName())
 			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkAes256-Target-AES-KMS-KeyName", targetKmsKeyName)
 			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkAes256-SourceCipherText-Length", len(sourceCipherText))
 			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkAes256-Result-Target-CipherText-Length", len(targetCipherText))
@@ -333,7 +355,8 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 		return "", err
 	}
 
-	if len(k.AesKmsKeyName) <= 0 {
+	aesKeyName := k.getAesKeyName()
+	if len(aesKeyName) <= 0 {
 		err = errors.New("ReEncryptViaCmkAes256 with KMS CMK Failed: " + "AES KMS Key Name is Required")
 		return "", err
 	}
@@ -349,7 +372,7 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.AesKmsKeyName
+	keyId := "alias/" + aesKeyName
 
 	// convert hex to bytes
 	cipherBytes, ce := util.HexToByte(sourceCipherText)
@@ -405,7 +428,7 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-DecryptViaCmkAes256-AES-KMS-KeyName", k.AesKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-DecryptViaCmkAes256-AES-KMS-KeyName", k.getAesKeyName())
 			_ = seg.Seg.AddMetadata("KMS-DecryptViaCmkAes256-CipherText-Length", len(cipherText))
 			_ = seg.Seg.AddMetadata("KMS-DecryptViaCmkAes256-Result-PlainText-Length", len(plainText))
 
@@ -422,7 +445,8 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 		return "", err
 	}
 
-	if len(k.AesKmsKeyName) <= 0 {
+	aesKeyName := k.getAesKeyName()
+	if len(aesKeyName) <= 0 {
 		err = errors.New("DecryptViaCmkAes256 with KMS CMK Failed: " + "AES KMS Key Name is Required")
 		return "", err
 	}
@@ -433,7 +457,7 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.AesKmsKeyName
+	keyId := "alias/" + aesKeyName
 	cipherBytes, ce := util.HexToByte(cipherText)
 
 	if ce != nil {
@@ -560,7 +584,7 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-GenerateEncryptionDecryptionKeyRsa2048-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-GenerateEncryptionDecryptionKeyRsa2048-RSA-KMS-KeyName", k.getRsaKeyName())
 			if err != nil {
 				_ = seg.Seg.AddError(err)
 			}
@@ -624,7 +648,7 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-GenerateSignVerifyKeyRsa2048-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-GenerateSignVerifyKeyRsa2048-RSA-KMS-KeyName", k.getRsaKeyName())
 			if err != nil {
 				_ = seg.Seg.AddError(err)
 			}
@@ -693,7 +717,7 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-KeyDeleteWithAlias-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-KeyDeleteWithAlias-RSA-KMS-KeyName", k.getRsaKeyName())
 			if err != nil {
 				_ = seg.Seg.AddError(err)
 			}
@@ -830,7 +854,7 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-EncryptViaCmkRsa2048-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-EncryptViaCmkRsa2048-RSA-KMS-KeyName", k.getRsaKeyName())
 			_ = seg.Seg.AddMetadata("KMS-EncryptViaCmkRsa2048-PlainText-Length", len(plainText))
 			_ = seg.Seg.AddMetadata("KMS-EncryptViaCmkRsa2048-Result-CipherText-Length", len(cipherText))
 
@@ -847,7 +871,8 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 		return "", err
 	}
 
-	if len(k.RsaKmsKeyName) <= 0 {
+	rsaKeyName := k.RsaKmsKeyName
+	if len(rsaKeyName) <= 0 {
 		err = errors.New("EncryptViaCmkRsa2048 with KMS CMK Failed: " + "RSA KMS Key Name is Required")
 		return "", err
 	}
@@ -857,13 +882,13 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 		return "", err
 	}
 
-	if len(plainText) > 214 {
-		err = errors.New("EncryptViaCmkRsa2048 with KMS CMK Failed: " + "PlainText Cannot Exceed 214 Bytes")
+	if len(plainText) > 190 {
+		err = errors.New("EncryptViaCmkRsa2048 with KMS CMK Failed: " + "PlainText Cannot Exceed 190 Bytes")
 		return "", err
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.RsaKmsKeyName
+	keyId := "alias/" + rsaKeyName
 
 	// encrypt asymmetric using kms cmk
 	var encryptedOutput *kms.EncryptOutput
@@ -905,7 +930,7 @@ func (k *KMS) GetRSAPublicKey(alias string) (output *kms.GetPublicKeyOutput, err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-GetRSAPublicKey-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-GetRSAPublicKey-RSA-KMS-KeyName", k.getRsaKeyName())
 			if err != nil {
 				_ = seg.Seg.AddError(err)
 			}
@@ -956,7 +981,7 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkRsa2048-Source-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkRsa2048-Source-RSA-KMS-KeyName", k.getRsaKeyName())
 			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkRsa2048-Target-RSA-KMS-KeyName", targetKmsKeyName)
 			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkRsa2048-Source-CipherText-Length", len(sourceCipherText))
 			_ = seg.Seg.AddMetadata("KMS-ReEncryptViaCmkRsa2048-Result-Target-CipherText-Length", len(targetCipherText))
@@ -974,7 +999,8 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 		return "", err
 	}
 
-	if len(k.RsaKmsKeyName) <= 0 {
+	rsaKeyName := k.getRsaKeyName()
+	if len(rsaKeyName) <= 0 {
 		err = errors.New("ReEncryptViaCmkRsa2048 with KMS CMK Failed: " + "RSA KMS Key Name is Required")
 		return "", err
 	}
@@ -990,7 +1016,7 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.RsaKmsKeyName
+	keyId := "alias/" + rsaKeyName
 
 	// convert hex to bytes
 	cipherBytes, ce := util.HexToByte(sourceCipherText)
@@ -1046,7 +1072,7 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-DecryptViaCmkRsa2048-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-DecryptViaCmkRsa2048-RSA-KMS-KeyName", k.getRsaKeyName())
 			_ = seg.Seg.AddMetadata("KMS-DecryptViaCmkRsa2048-CipherText-Length", len(cipherText))
 			_ = seg.Seg.AddMetadata("KMS-DecryptViaCmkRsa2048-Result-PlainText-Length", len(plainText))
 
@@ -1063,7 +1089,8 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 		return "", err
 	}
 
-	if len(k.RsaKmsKeyName) <= 0 {
+	rsaKeyName := k.getRsaKeyName()
+	if len(rsaKeyName) <= 0 {
 		err = errors.New("DecryptViaCmkRsa2048 with KMS CMK Failed: " + "RSA KMS Key Name is Required")
 		return "", err
 	}
@@ -1074,7 +1101,7 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.RsaKmsKeyName
+	keyId := "alias/" + rsaKeyName
 	cipherBytes, ce := util.HexToByte(cipherText)
 
 	if ce != nil {
@@ -1128,7 +1155,7 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-decryptViaCmkRsa2048Base-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-decryptViaCmkRsa2048Base-RSA-KMS-KeyName", k.getRsaKeyName())
 			_ = seg.Seg.AddMetadata("KMS-decryptViaCmkRsa2048Base-CipherText-Length", len(cipherText))
 			_ = seg.Seg.AddMetadata("KMS-decryptViaCmkRsa2048Base-Result-PlainText-Length", len(plainText))
 
@@ -1145,7 +1172,8 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 		return "", err
 	}
 
-	if len(k.RsaKmsKeyName) <= 0 {
+	rsaKeyName := k.getRsaKeyName()
+	if len(rsaKeyName) <= 0 {
 		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: " + "RSA KMS Key Name is Required")
 		return "", err
 	}
@@ -1156,7 +1184,7 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.RsaKmsKeyName
+	keyId := "alias/" + rsaKeyName
 	cipherBytes, ce := util.HexToByte(cipherText)
 
 	if ce != nil {
@@ -1209,7 +1237,7 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-SignViaCmkRsa2048-Signature-KMS-KeyName", k.SignatureKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-SignViaCmkRsa2048-Signature-KMS-KeyName", k.getSigKeyName())
 			_ = seg.Seg.AddMetadata("KMS-SignViaCmkRsa2048-DataToSign-Length", len(dataToSign))
 			_ = seg.Seg.AddMetadata("KMS-SignViaCmkRsa2048-Result-Signature", signature)
 
@@ -1226,7 +1254,8 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 		return "", err
 	}
 
-	if len(k.SignatureKmsKeyName) <= 0 {
+	sigKeyName := k.getSigKeyName()
+	if len(sigKeyName) <= 0 {
 		err = errors.New("SignViaCmkRsa2048 with KMS Failed: " + "Signature KMS Key Name is Required")
 		return "", err
 	}
@@ -1237,7 +1266,7 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.SignatureKmsKeyName
+	keyId := "alias/" + sigKeyName
 
 	// perform sign action using kms rsa sign/verify cmk
 	var signOutput *kms.SignOutput
@@ -1288,7 +1317,7 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-VerifyViaCmkRsa2048-Signature-KMS-KeyName", k.SignatureKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-VerifyViaCmkRsa2048-Signature-KMS-KeyName", k.getSigKeyName())
 			_ = seg.Seg.AddMetadata("KMS-VerifyViaCmkRsa2048-DataToVerify-Length", len(dataToVerify))
 			_ = seg.Seg.AddMetadata("KMS-VerifyViaCmkRsa2048-Signature-To-Verify", signatureToVerify)
 			_ = seg.Seg.AddMetadata("KMS-VerifyViaCmkRsa2048-Result-SignatureValid", signatureValid)
@@ -1306,7 +1335,8 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 		return false, err
 	}
 
-	if len(k.SignatureKmsKeyName) <= 0 {
+	sigKeyName := k.getSigKeyName()
+	if len(sigKeyName) <= 0 {
 		err = errors.New("VerifyViaCmkRsa2048 with KMS Failed: " + "Signature KMS Key Name is Required")
 		return false, err
 	}
@@ -1322,7 +1352,7 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.SignatureKmsKeyName
+	keyId := "alias/" + sigKeyName
 	signatureBytes, ce := util.HexToByte(signatureToVerify)
 
 	if ce != nil {
@@ -1382,7 +1412,7 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-GenerateDataKeyAes256-AES-KMS-KeyName", k.AesKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-GenerateDataKeyAes256-AES-KMS-KeyName", k.getAesKeyName())
 			_ = seg.Seg.AddMetadata("KMS-GenerateDataKeyAes256-Result-CipherKey-Length", len(cipherKey))
 
 			if err != nil {
@@ -1398,13 +1428,14 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 		return "", err
 	}
 
-	if len(k.AesKmsKeyName) <= 0 {
+	keyName := k.getAesKeyName()
+	if len(keyName) <= 0 {
 		err = errors.New("GenerateDataKeyAes256 with KMS Failed: " + "AES KMS Key Name is Required")
 		return "", err
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.AesKmsKeyName
+	keyId := "alias/" + keyName
 	keySpec := "AES_256" // always use AES 256
 	dataKeyInput := kms.GenerateDataKeyWithoutPlaintextInput{
 		KeyId:   aws.String(keyId),
@@ -1445,7 +1476,7 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-EncryptWithDataKeyAes256-AES-KMS-KeyName", k.AesKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-EncryptWithDataKeyAes256-AES-KMS-KeyName", k.getAesKeyName())
 			_ = seg.Seg.AddMetadata("KMS-EncryptWithDataKeyAes256-PlainText-Length", len(plainText))
 			_ = seg.Seg.AddMetadata("KMS-EncryptWithDataKeyAes256-CipherKey-Length", len(cipherKey))
 			_ = seg.Seg.AddMetadata("KMS-EncryptWithDataKeyAes256-Result-CipherText-Length", len(cipherText))
@@ -1463,7 +1494,8 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 		return "", err
 	}
 
-	if len(k.AesKmsKeyName) <= 0 {
+	keyName := k.getAesKeyName()
+	if len(keyName) <= 0 {
 		err = errors.New("EncryptWithDataKeyAes256 with KMS Failed: " + "AES KMS Key Name is Required")
 		return "", err
 	}
@@ -1479,7 +1511,7 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.AesKmsKeyName
+	keyId := "alias/" + keyName
 	cipherBytes, ce := util.HexToByte(cipherKey)
 
 	if ce != nil {
@@ -1544,7 +1576,7 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-DecryptWithDataKeyAes256-AES-KMS-KeyName", k.AesKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-DecryptWithDataKeyAes256-AES-KMS-KeyName", k.getAesKeyName())
 			_ = seg.Seg.AddMetadata("KMS-DecryptWithDataKeyAes256-CipherText-Length", len(cipherText))
 			_ = seg.Seg.AddMetadata("KMS-DecryptWithDataKeyAes256-CipherKey-Length", len(cipherKey))
 			_ = seg.Seg.AddMetadata("KMS-DecryptWithDataKeyAes256-Result-PlainText-Length", len(plainText))
@@ -1562,7 +1594,8 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 		return "", err
 	}
 
-	if len(k.AesKmsKeyName) <= 0 {
+	keyName := k.getAesKeyName()
+	if len(keyName) <= 0 {
 		err = errors.New("DecryptWithDataKeyAes256 with KMS Failed: " + "AES KMS Key Name is Required")
 		return "", err
 	}
@@ -1578,7 +1611,7 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	}
 
 	// prepare key info
-	keyId := "alias/" + k.AesKmsKeyName
+	keyId := "alias/" + keyName
 	cipherBytes, ce := util.HexToByte(cipherKey)
 
 	if ce != nil {
@@ -1768,7 +1801,7 @@ func parseECCPublicKey(eccPub []byte) (*ecdsa.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	tpubK, ok := tempPubKey.(*ecdsa.PublicKey)
 	if !ok {
 		return nil, fmt.Errorf("input key is not a ecc public key")

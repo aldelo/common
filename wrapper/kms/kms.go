@@ -790,7 +790,7 @@ func (k *KMS) KeyDeleteWithArnID(arn string, PendingWindowInDays int64) (output 
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("KMS-KeyDeleteWithArnID-RSA-KMS-KeyName", k.RsaKmsKeyName)
+			_ = seg.Seg.AddMetadata("KMS-KeyDeleteWithArnID-RSA-KMS-KeyName", k.getRsaKeyName())
 			if err != nil {
 				_ = seg.Seg.AddError(err)
 			}
@@ -870,7 +870,7 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 		return "", err
 	}
 
-	rsaKeyName := k.RsaKmsKeyName
+	rsaKeyName := k.getRsaKeyName()
 	if len(rsaKeyName) <= 0 {
 		err = errors.New("EncryptViaCmkRsa2048 with KMS CMK Failed: " + "RSA KMS Key Name is Required")
 		return "", err

@@ -509,7 +509,9 @@ func (svr *MySql) Open(parentSegment ...*xray.XRayParentSegment) error {
 		return svr.openNormal()
 	} else {
 		if len(parentSegment) > 0 {
+			svr.mux.Lock()
 			svr._parentSegment = parentSegment[0]
+			svr.mux.Unlock()
 		}
 
 		return svr.openWithXRay()
@@ -519,7 +521,11 @@ func (svr *MySql) Open(parentSegment ...*xray.XRayParentSegment) error {
 // openNormal opens a database by connecting to it, using the dsn properties defined in the struct fields
 func (svr *MySql) openNormal() error {
 	// clean up first
+	// clear _parentSegment since XRay is not in use
+	svr.mux.Lock()
 	svr.db = nil
+	svr._parentSegment = nil
+	svr.mux.Unlock()
 	svr.cleanUpAllSqlTransactions()
 
 	// declare
@@ -539,36 +545,40 @@ func (svr *MySql) openNormal() error {
 	}
 
 	// now ready to open mysql database
-	svr.db, err = sqlx.Open("mysql", str)
+	newDB, err := sqlx.Open("mysql", str)
 
 	if err != nil {
 		return err
 	}
 
 	// test mysql server state object
-	if err = svr.db.Ping(); err != nil {
-		svr.db = nil
+	if err = newDB.Ping(); err != nil {
 		return err
 	}
-	svr.lastPing = time.Now()
 
 	if svr.MaxOpenConns > 0 {
-		svr.db.SetMaxOpenConns(svr.MaxOpenConns)
+		newDB.SetMaxOpenConns(svr.MaxOpenConns)
 	}
 
 	if svr.MaxIdleConns > 0 {
 		if svr.MaxIdleConns <= svr.MaxOpenConns || svr.MaxOpenConns == 0 {
-			svr.db.SetMaxIdleConns(svr.MaxIdleConns)
+			newDB.SetMaxIdleConns(svr.MaxIdleConns)
 		} else {
-			svr.db.SetMaxIdleConns(svr.MaxOpenConns)
+			newDB.SetMaxIdleConns(svr.MaxOpenConns)
 		}
 	}
 
 	if svr.MaxConnIdleTime > 0 {
-		svr.db.SetConnMaxIdleTime(svr.MaxConnIdleTime)
+		newDB.SetConnMaxIdleTime(svr.MaxConnIdleTime)
 	}
 
-	svr.db.SetConnMaxLifetime(0)
+	newDB.SetConnMaxLifetime(0)
+
+	// set db and lastPing under lock
+	svr.mux.Lock()
+	svr.db = newDB
+	svr.lastPing = time.Now()
+	svr.mux.Unlock()
 
 	// mysql server state object successfully opened
 	return nil
@@ -576,7 +586,11 @@ func (svr *MySql) openNormal() error {
 
 // openWithXRay opens a database by connecting to it, wrap with XRay tracing, using the dsn properties defined in the struct fields
 func (svr *MySql) openWithXRay() (err error) {
-	trace := xray.NewSegment("MySql-Open-Entry", svr._parentSegment)
+	svr.mux.RLock()
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
+	trace := xray.NewSegment("MySql-Open-Entry", parentSeg)
 	defer trace.Close()
 	defer func() {
 		_ = trace.Seg.AddMetadata("DB-Host", svr.Host)
@@ -594,7 +608,10 @@ func (svr *MySql) openWithXRay() (err error) {
 	}()
 
 	// clean up first
+	// note: _parentSegment is NOT cleared here - it was set by Open() and will be used by all query methods
+	svr.mux.Lock()
 	svr.db = nil
+	svr.mux.Unlock()
 	svr.cleanUpAllSqlTransactions()
 
 	// declare
@@ -616,6 +633,7 @@ func (svr *MySql) openWithXRay() (err error) {
 		return err
 	}
 
+	var newDB *sqlx.DB
 	trace.Capture("Get-SQL-Context", func() error {
 		// now ready to open mysql database
 		baseDb, e := awsxray.SQLContext("mysql", str)
@@ -625,7 +643,7 @@ func (svr *MySql) openWithXRay() (err error) {
 			return err
 		}
 
-		svr.db = sqlx.NewDb(baseDb, "mysql")
+		newDB = sqlx.NewDb(baseDb, "mysql")
 		return nil
 	})
 
@@ -643,11 +661,9 @@ func (svr *MySql) openWithXRay() (err error) {
 	}()
 
 	subTrace.Capture("Ping", func() error {
-		if err = svr.db.PingContext(trace.Ctx); err != nil {
-			svr.db = nil
+		if err = newDB.PingContext(trace.Ctx); err != nil {
 			return err
 		}
-		svr.lastPing = time.Now()
 		return nil
 	})
 
@@ -656,22 +672,28 @@ func (svr *MySql) openWithXRay() (err error) {
 	}
 
 	if svr.MaxOpenConns > 0 {
-		svr.db.SetMaxOpenConns(svr.MaxOpenConns)
+		newDB.SetMaxOpenConns(svr.MaxOpenConns)
 	}
 
 	if svr.MaxIdleConns > 0 {
 		if svr.MaxIdleConns <= svr.MaxOpenConns || svr.MaxOpenConns == 0 {
-			svr.db.SetMaxIdleConns(svr.MaxIdleConns)
+			newDB.SetMaxIdleConns(svr.MaxIdleConns)
 		} else {
-			svr.db.SetMaxIdleConns(svr.MaxOpenConns)
+			newDB.SetMaxIdleConns(svr.MaxOpenConns)
 		}
 	}
 
 	if svr.MaxConnIdleTime > 0 {
-		svr.db.SetConnMaxIdleTime(svr.MaxConnIdleTime)
+		newDB.SetConnMaxIdleTime(svr.MaxConnIdleTime)
 	}
 
-	svr.db.SetConnMaxLifetime(0)
+	newDB.SetConnMaxLifetime(0)
+
+	// set db and lastPing under lock
+	svr.mux.Lock()
+	svr.db = newDB
+	svr.lastPing = time.Now()
+	svr.mux.Unlock()
 
 	// mysql server state object successfully opened
 	return nil
@@ -702,6 +724,7 @@ func (svr *MySql) Ping() (err error) {
 	svr.mux.RLock()
 	db := svr.db
 	lastPing := svr.lastPing
+	parentSeg := svr._parentSegment
 	svr.mux.RUnlock()
 
 	if db == nil {
@@ -717,7 +740,7 @@ func (svr *MySql) Ping() (err error) {
 			return err
 		}
 	} else {
-		trace := xray.NewSegment("MySql-Ping", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Ping", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("Ping-Timestamp-UTC", time.Now().UTC())
@@ -748,9 +771,14 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 		return nil, err
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	if !xray.XRayServiceOn() {
 		// begin transaction on database
-		if tx, err := svr.db.Beginx(); err != nil {
+		if tx, err := db.Beginx(); err != nil {
 			// begin failed
 			return nil, err
 		} else {
@@ -772,10 +800,10 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 		}
 	} else {
 		// begin transaction on database
-		xseg := xray.NewSegment("MySql-Transaction", svr._parentSegment)
+		xseg := xray.NewSegment("MySql-Transaction", parentSeg)
 		subXSeg := xseg.NewSubSegment("Begin-Transaction")
 
-		if tx, err := svr.db.BeginTxx(subXSeg.Ctx, &sql.TxOptions{Isolation: 0, ReadOnly: false}); err != nil {
+		if tx, err := db.BeginTxx(subXSeg.Ctx, &sql.TxOptions{Isolation: 0, ReadOnly: false}); err != nil {
 			// begin failed
 			_ = subXSeg.Seg.AddError(err)
 			_ = xseg.Seg.AddError(err)
@@ -829,15 +857,20 @@ func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interfa
 		return false, err
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// perform select action, and unmarshal result rows into target struct slice
 	var err error
 
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		err = svr.db.Select(dest, query, args...)
+		err = db.Select(dest, query, args...)
 	} else {
-		trace := xray.NewSegment("MySql-Select-GetStructSlice", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Select-GetStructSlice", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", query)
@@ -848,7 +881,7 @@ func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interfa
 			}
 		}()
 
-		err = svr.db.SelectContext(trace.Ctx, dest, query, args...)
+		err = db.SelectContext(trace.Ctx, dest, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -941,15 +974,20 @@ func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{})
 		return false, err
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// perform select action, and unmarshal result row (single row) into target struct (single object)
 	var err error
 
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		err = svr.db.Get(dest, query, args...)
+		err = db.Get(dest, query, args...)
 	} else {
-		trace := xray.NewSegment("MySql-Select-GetStruct", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Select-GetStruct", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", query)
@@ -960,7 +998,7 @@ func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{})
 			}
 		}()
 
-		err = svr.db.GetContext(trace.Ctx, dest, query, args...)
+		err = db.GetContext(trace.Ctx, dest, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -1064,6 +1102,11 @@ func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sq
 		return nil, err
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
@@ -1071,9 +1114,9 @@ func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sq
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		rows, err = svr.db.Queryx(query, args...)
+		rows, err = db.Queryx(query, args...)
 	} else {
-		trace := xray.NewSegment("MySql-Select-GetRowsByOrdinalParams", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Select-GetRowsByOrdinalParams", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", query)
@@ -1084,7 +1127,7 @@ func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sq
 			}
 		}()
 
-		rows, err = svr.db.QueryxContext(trace.Ctx, query, args...)
+		rows, err = db.QueryxContext(trace.Ctx, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -1200,6 +1243,11 @@ func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface
 		return nil, err
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
@@ -1207,9 +1255,9 @@ func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		rows, err = svr.db.NamedQuery(query, args)
+		rows, err = db.NamedQuery(query, args)
 	} else {
-		trace := xray.NewSegment("MySql-Select-GetRowsByNamedMapParam", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Select-GetRowsByNamedMapParam", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", query)
@@ -1220,7 +1268,7 @@ func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface
 			}
 		}()
 
-		rows, err = svr.db.NamedQueryContext(trace.Ctx, query, args)
+		rows, err = db.NamedQueryContext(trace.Ctx, query, args)
 	}
 
 	if err != nil && err == sql.ErrNoRows {
@@ -1342,6 +1390,11 @@ func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Ro
 		return nil, err
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
@@ -1349,9 +1402,9 @@ func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Ro
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		rows, err = svr.db.NamedQuery(query, args)
+		rows, err = db.NamedQuery(query, args)
 	} else {
-		trace := xray.NewSegment("MySql-Select-GetRowsByStructParam", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Select-GetRowsByStructParam", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", query)
@@ -1362,7 +1415,7 @@ func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Ro
 			}
 		}()
 
-		rows, err = svr.db.NamedQueryContext(trace.Ctx, query, args)
+		rows, err = db.NamedQueryContext(trace.Ctx, query, args)
 	}
 
 	if err != nil && err == sql.ErrNoRows {
@@ -1457,12 +1510,12 @@ func (t *MySqlTransaction) GetRowsByStructParam(query string, args interface{}) 
 // [ Parameters ]
 //
 //	rows = *sqlx.Rows
-//	dest = pointer or address to slice, such as: variable to "*[]string", or variable to "&cList for declaration cList []string"
+//	dest = pointer to slice, such as: variable to "*[]interface{}", this will receive the scanned data
 //
 // [ Return Values ]
 //  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop (rows will be closed automatically)
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
-func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool, err error) {
+func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows bool, err error) {
 	// ensure rows pointer is set
 	if rows == nil {
 		return true, nil
@@ -1472,12 +1525,15 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 	if !xray.XRayServiceOn() {
 		if rows.Next() {
 			// now slice scan
-			dest, err = rows.SliceScan()
+			var scanned []interface{}
+			scanned, err = rows.SliceScan()
 
 			// if err is sql.ErrNoRows then treat as no error
 			if err != nil && err == sql.ErrNoRows {
 				endOfRows = true
-				dest = nil
+				if dest != nil {
+					*dest = nil
+				}
 				err = nil
 				_ = rows.Close()
 				return
@@ -1486,21 +1542,33 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 			if err != nil {
 				// has error
 				endOfRows = false // although error but may not be at end of rows
-				dest = nil
+				if dest != nil {
+					*dest = nil
+				}
+				_ = rows.Close()
 				return
 			}
 
 			// slice scan success, but may not be at end of rows
-			// exit function, and inform caller not endOfRows
+			// assign scanned data to caller's destination
+			if dest != nil {
+				*dest = scanned
+			}
 			return false, nil
 		} else {
 			endOfRows = true
-			dest = nil
+			if dest != nil {
+				*dest = nil
+			}
 			err = nil
 			_ = rows.Close()
 		}
 	} else {
-		trace := xray.NewSegment("MySql-InMemory-ScanSlice", svr._parentSegment)
+		svr.mux.RLock()
+		parentSeg := svr._parentSegment
+		svr.mux.RUnlock()
+
+		trace := xray.NewSegment("MySql-InMemory-ScanSlice", parentSeg)
 		defer trace.Close()
 		defer func() {
 			if err != nil {
@@ -1511,12 +1579,15 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 		trace.Capture("ScanSlice-Do", func() error {
 			if rows.Next() {
 				// now slice scan
-				dest, err = rows.SliceScan()
+				var scanned []interface{}
+				scanned, err = rows.SliceScan()
 
 				// if err is sql.ErrNoRows then treat as no error
 				if err != nil && err == sql.ErrNoRows {
 					endOfRows = true
-					dest = nil
+					if dest != nil {
+						*dest = nil
+					}
 					err = nil
 					_ = rows.Close()
 					return nil
@@ -1525,17 +1596,25 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool
 				if err != nil {
 					// has error
 					endOfRows = false // although error but may not be at end of rows
-					dest = nil
+					if dest != nil {
+						*dest = nil
+					}
+					_ = rows.Close()
 					return err
 				}
 
 				// slice scan success, but may not be at end of rows
-				// exit function, and inform caller not endOfRows
+				// assign scanned data to caller's destination
+				if dest != nil {
+					*dest = scanned
+				}
 				endOfRows = false
 				return nil
 			} else {
 				endOfRows = true
-				dest = nil
+				if dest != nil {
+					*dest = nil
+				}
 				err = nil
 				_ = rows.Close()
 				return nil
@@ -1581,7 +1660,6 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 			// if err is sql.ErrNoRows then treat as no error
 			if err != nil && err == sql.ErrNoRows {
 				endOfRows = true
-				dest = nil
 				err = nil
 				_ = rows.Close()
 				return
@@ -1590,7 +1668,7 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 			if err != nil {
 				// has error
 				endOfRows = false // although error but may not be at end of rows
-				dest = nil
+				_ = rows.Close()
 				return
 			}
 
@@ -1598,12 +1676,15 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 			return false, nil
 		} else {
 			endOfRows = true
-			dest = nil
 			err = nil
 			_ = rows.Close()
 		}
 	} else {
-		trace := xray.NewSegment("MySql-InMemory-ScanStruct", svr._parentSegment)
+		svr.mux.RLock()
+		parentSeg := svr._parentSegment
+		svr.mux.RUnlock()
+
+		trace := xray.NewSegment("MySql-InMemory-ScanStruct", parentSeg)
 		defer trace.Close()
 		defer func() {
 			if err != nil {
@@ -1619,7 +1700,6 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 				// if err is sql.ErrNoRows then treat as no error
 				if err != nil && err == sql.ErrNoRows {
 					endOfRows = true
-					dest = nil
 					err = nil
 					_ = rows.Close()
 					return nil
@@ -1628,7 +1708,7 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 				if err != nil {
 					// has error
 					endOfRows = false // although error but may not be at end of rows
-					dest = nil
+					_ = rows.Close()
 					return err
 				}
 
@@ -1637,7 +1717,6 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 				return nil
 			} else {
 				endOfRows = true
-				dest = nil
 				err = nil
 				_ = rows.Close()
 				return nil
@@ -1682,6 +1761,11 @@ func (svr *MySql) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, er
 		return nil, err
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// perform select action, and return sqlx row
 	var row *sqlx.Row
 	var err error
@@ -1689,9 +1773,9 @@ func (svr *MySql) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, er
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		row = svr.db.QueryRowx(query, args...)
+		row = db.QueryRowx(query, args...)
 	} else {
-		trace := xray.NewSegment("MySql-Select-GetSingleRow", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Select-GetSingleRow", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", query)
@@ -1702,7 +1786,7 @@ func (svr *MySql) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, er
 			}
 		}()
 
-		row = svr.db.QueryRowxContext(trace.Ctx, query, args...)
+		row = db.QueryRowxContext(trace.Ctx, query, args...)
 	}
 
 	if row == nil {
@@ -1806,38 +1890,53 @@ func (t *MySqlTransaction) GetSingleRow(query string, args ...interface{}) (*sql
 // [ Parameters ]
 //
 //	row = *sqlx.Row
-//	dest = pointer or address to slice, such as: variable to "*[]string", or variable to "&cList for declaration cList []string"
+//	dest = pointer to slice, such as: variable to "*[]interface{}", this will receive the scanned data
 //
 // [ Return Values ]
 //  1. notFound = true if no row is found in current scan
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
-func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bool, err error) {
+func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFound bool, err error) {
 	// if row is nil, treat as no row and not an error
 	if row == nil {
-		dest = nil
+		if dest != nil {
+			*dest = nil
+		}
 		return true, nil
 	}
 
 	// perform slice scan on the given row
 	if !xray.XRayServiceOn() {
-		dest, err = row.SliceScan()
+		var scanned []interface{}
+		scanned, err = row.SliceScan()
 
 		// if err is sql.ErrNoRows then treat as no error
 		if err != nil && err == sql.ErrNoRows {
-			dest = nil
+			if dest != nil {
+				*dest = nil
+			}
 			return true, nil
 		}
 
 		if err != nil {
 			// has error
-			dest = nil
+			if dest != nil {
+				*dest = nil
+			}
 			return false, err // although error but may not be not found
 		}
 
+		// assign scanned data to caller's destination
+		if dest != nil {
+			*dest = scanned
+		}
 		notFound = false
 		err = nil
 	} else {
-		trace := xray.NewSegment("MySql-InMemory-ScanSliceByRow", svr._parentSegment)
+		svr.mux.RLock()
+		parentSeg := svr._parentSegment
+		svr.mux.RUnlock()
+
+		trace := xray.NewSegment("MySql-InMemory-ScanSliceByRow", parentSeg)
 		defer trace.Close()
 		defer func() {
 			if err != nil {
@@ -1846,11 +1945,14 @@ func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bo
 		}()
 
 		trace.Capture("ScanSliceByRow-Do", func() error {
-			dest, err = row.SliceScan()
+			var scanned []interface{}
+			scanned, err = row.SliceScan()
 
 			// if err is sql.ErrNoRows then treat as no error
 			if err != nil && err == sql.ErrNoRows {
-				dest = nil
+				if dest != nil {
+					*dest = nil
+				}
 				notFound = true
 				err = nil
 				return nil
@@ -1859,10 +1961,16 @@ func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bo
 			if err != nil {
 				// has error
 				notFound = false
-				dest = nil
+				if dest != nil {
+					*dest = nil
+				}
 				return err // although error but may not be not found
 			}
 
+			// assign scanned data to caller's destination
+			if dest != nil {
+				*dest = scanned
+			}
 			notFound = false
 			err = nil
 			return nil
@@ -1893,7 +2001,6 @@ func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bo
 func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound bool, err error) {
 	// if row is nil, treat as no row and not an error
 	if row == nil {
-		dest = nil
 		return true, nil
 	}
 
@@ -1903,20 +2010,22 @@ func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound boo
 
 		// if err is sql.ErrNoRows then treat as no error
 		if err != nil && err == sql.ErrNoRows {
-			dest = nil
 			return true, nil
 		}
 
 		if err != nil {
 			// has error
-			dest = nil
 			return false, err // although error but may not be not found
 		}
 
 		notFound = false
 		err = nil
 	} else {
-		trace := xray.NewSegment("MySql-InMemory-ScanStructByRow", svr._parentSegment)
+		svr.mux.RLock()
+		parentSeg := svr._parentSegment
+		svr.mux.RUnlock()
+
+		trace := xray.NewSegment("MySql-InMemory-ScanStructByRow", parentSeg)
 		defer trace.Close()
 		defer func() {
 			if err != nil {
@@ -1929,7 +2038,6 @@ func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound boo
 
 			// if err is sql.ErrNoRows then treat as no error
 			if err != nil && err == sql.ErrNoRows {
-				dest = nil
 				notFound = true
 				err = nil
 				return nil
@@ -1937,7 +2045,6 @@ func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound boo
 
 			if err != nil {
 				// has error
-				dest = nil
 				notFound = false
 				return err // although error but may not be not found
 			}
@@ -1999,7 +2106,11 @@ func (svr *MySql) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound
 		notFound = false
 		err = nil
 	} else {
-		trace := xray.NewSegment("MySql-InMemory-ScanColumnsByRow", svr._parentSegment)
+		svr.mux.RLock()
+		parentSeg := svr._parentSegment
+		svr.mux.RUnlock()
+
+		trace := xray.NewSegment("MySql-InMemory-ScanColumnsByRow", parentSeg)
 		defer trace.Close()
 		defer func() {
 			if err != nil {
@@ -2058,15 +2169,20 @@ func (svr *MySql) GetScalarString(query string, args ...interface{}) (retVal str
 		return "", false, err
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// get row using query string and parameters
 	var row *sqlx.Row
 
 	// not in transaction
 	// use db object
 	if !xray.XRayServiceOn() {
-		row = svr.db.QueryRowx(query, args...)
+		row = db.QueryRowx(query, args...)
 	} else {
-		trace := xray.NewSegment("MySql-Select-GetScalarString", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Select-GetScalarString", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", query)
@@ -2077,7 +2193,7 @@ func (svr *MySql) GetScalarString(query string, args ...interface{}) (retVal str
 			}
 		}()
 
-		row = svr.db.QueryRowxContext(trace.Ctx, query, args...)
+		row = db.QueryRowxContext(trace.Ctx, query, args...)
 	}
 
 	if row == nil {
@@ -2198,15 +2314,20 @@ func (svr *MySql) GetScalarNullString(query string, args ...interface{}) (retVal
 		return sql.NullString{}, false, err
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// get row using query string and parameters
 	var row *sqlx.Row
 
 	// not in transaction
 	// use db object
 	if !xray.XRayServiceOn() {
-		row = svr.db.QueryRowx(query, args...)
+		row = db.QueryRowx(query, args...)
 	} else {
-		trace := xray.NewSegment("MySql-Select-GetScalarNullString", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Select-GetScalarNullString", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", query)
@@ -2217,7 +2338,7 @@ func (svr *MySql) GetScalarNullString(query string, args ...interface{}) (retVal
 			}
 		}()
 
-		row = svr.db.QueryRowxContext(trace.Ctx, query, args...)
+		row = db.QueryRowxContext(trace.Ctx, query, args...)
 	}
 
 	if row == nil {
@@ -2342,6 +2463,11 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// is new insertion?
 	var isInsert bool
 
@@ -2358,11 +2484,11 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 	if !xray.XRayServiceOn() {
 		// not in transaction mode,
 		// action using db object
-		result, err = svr.db.Exec(actionQuery, args...)
+		result, err = db.Exec(actionQuery, args...)
 	} else {
 		// not in transaction mode,
 		// action using db object
-		trace := xray.NewSegment("MySql-Exec-ExecByOrdinalParams", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Exec-ExecByOrdinalParams", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
@@ -2373,7 +2499,7 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 			}
 		}()
 
-		result, err = svr.db.ExecContext(trace.Ctx, actionQuery, args...)
+		result, err = db.ExecContext(trace.Ctx, actionQuery, args...)
 	}
 
 	if err != nil {
@@ -2518,6 +2644,11 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// is new insertion?
 	var isInsert bool
 
@@ -2534,11 +2665,11 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 	if !xray.XRayServiceOn() {
 		// not in transaction mode,
 		// action using db object
-		result, err = svr.db.NamedExec(actionQuery, args)
+		result, err = db.NamedExec(actionQuery, args)
 	} else {
 		// not in transaction mode,
 		// action using db object
-		trace := xray.NewSegment("MySql-Exec-ExecByNamedMapParam", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Exec-ExecByNamedMapParam", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
@@ -2549,7 +2680,7 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 			}
 		}()
 
-		result, err = svr.db.NamedExecContext(trace.Ctx, actionQuery, args)
+		result, err = db.NamedExecContext(trace.Ctx, actionQuery, args)
 	}
 
 	if err != nil {
@@ -2700,6 +2831,11 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
+	svr.mux.RLock()
+	db := svr.db
+	parentSeg := svr._parentSegment
+	svr.mux.RUnlock()
+
 	// is new insertion?
 	var isInsert bool
 
@@ -2716,11 +2852,11 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 	if !xray.XRayServiceOn() {
 		// not in transaction mode,
 		// action using db object
-		result, err = svr.db.NamedExec(actionQuery, args)
+		result, err = db.NamedExec(actionQuery, args)
 	} else {
 		// not in transaction mode,
 		// action using db object
-		trace := xray.NewSegment("MySql-Exec-ExecByStructParam", svr._parentSegment)
+		trace := xray.NewSegment("MySql-Exec-ExecByStructParam", parentSeg)
 		defer trace.Close()
 		defer func() {
 			_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
@@ -2731,7 +2867,7 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 			}
 		}()
 
-		result, err = svr.db.NamedExecContext(trace.Ctx, actionQuery, args)
+		result, err = db.NamedExecContext(trace.Ctx, actionQuery, args)
 	}
 
 	if err != nil {

@@ -869,11 +869,7 @@ func (r *Redis) handleSliceCmd(sliceCmd *redis.SliceCmd, errorTextPrefix ...stri
 				return nil, false, errors.New(prefix + "[Result to Slice Errored] " + err.Error())
 			} else {
 				// success
-				if len(outputSlice) > 0 {
-					return outputSlice, false, nil
-				} else {
-					return nil, true, nil
-				}
+				return outputSlice, false, nil
 			}
 		}
 	}
@@ -906,11 +902,7 @@ func (r *Redis) handleStringSliceCmd(stringSliceCmd *redis.StringSliceCmd, error
 				return nil, false, errors.New(prefix + "[Result to String Slice Errored] " + err.Error())
 			} else {
 				// success
-				if len(outputSlice) > 0 {
-					return outputSlice, false, nil
-				} else {
-					return nil, true, nil
-				}
+				return outputSlice, false, nil
 			}
 		}
 	}
@@ -943,11 +935,7 @@ func (r *Redis) handleIntSliceCmd(intSliceCmd *redis.IntSliceCmd, errorTextPrefi
 				return nil, false, errors.New(prefix + "[Result to Int64 Slice Errored] " + err.Error())
 			} else {
 				// success
-				if len(outputSlice) > 0 {
-					return outputSlice, false, nil
-				} else {
-					return nil, true, nil
-				}
+				return outputSlice, false, nil
 			}
 		}
 	}

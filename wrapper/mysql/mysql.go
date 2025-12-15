@@ -521,6 +521,7 @@ func (svr *MySql) Open(parentSegment ...*xray.XRayParentSegment) error {
 // openNormal opens a database by connecting to it, using the dsn properties defined in the struct fields
 func (svr *MySql) openNormal() error {
 	// clean up first
+	// clear _parentSegment since XRay is not in use
 	svr.mux.Lock()
 	svr.db = nil
 	svr._parentSegment = nil
@@ -607,6 +608,7 @@ func (svr *MySql) openWithXRay() (err error) {
 	}()
 
 	// clean up first
+	// note: _parentSegment is NOT cleared here - it was set by Open() and will be used by all query methods
 	svr.mux.Lock()
 	svr.db = nil
 	svr.mux.Unlock()

@@ -1,7 +1,7 @@
 package redis
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -724,6 +724,10 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 			switch outputDataType {
 			case redisdatatype.Bool:
 				// result to bool
+				dst, ok := outputObjectPtr.(*bool)
+				if !ok {
+					return false, errors.New(prefix + "[Result to Bool Errored] Output Object Pointer Type Assertion to *bool Failed")
+				}
 				if val, e := stringCmd.Result(); e != nil {
 					return false, errors.New(prefix + "[Result to Bool Errored] " + e.Error())
 				} else {
@@ -731,44 +735,60 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					if output, success := util.ParseBool(val); !success {
 						return false, errors.New(prefix + "[Result to Bool Errored] Parse Str to Bool Not OK")
 					} else {
-						outputObjectPtr = output
+						*dst = output
 						return false, nil
 					}
 				}
 			case redisdatatype.Int:
 				// result to int
+				dst, ok := outputObjectPtr.(*int)
+				if !ok {
+					return false, errors.New(prefix + "[Result to Int Errored] Output Object Pointer Type Assertion to *int Failed")
+				}
 				if val, e := stringCmd.Int(); e != nil {
 					return false, errors.New(prefix + "[Result to Int Errored] " + e.Error())
 				} else {
 					// success
-					outputObjectPtr = val
+					*dst = val
 					return false, nil
 				}
 			case redisdatatype.Int64:
 				// result to int64
+				dst, ok := outputObjectPtr.(*int64)
+				if !ok {
+					return false, errors.New(prefix + "[Result to Int64 Errored] Output Object Pointer Type Assertion to *int64 Failed")
+				}
 				if val, e := stringCmd.Int64(); e != nil {
 					return false, errors.New(prefix + "[Result to Int64 Errored] " + e.Error())
 				} else {
 					// success
-					outputObjectPtr = val
+					*dst = val
 					return false, nil
 				}
 			case redisdatatype.Float64:
 				// result to float64
+				dst, ok := outputObjectPtr.(*float64)
+				if !ok {
+					return false, errors.New(prefix + "[Result to Float64 Errored] Output Object Pointer Type Assertion to *float64 Failed")
+				}
 				if val, e := stringCmd.Float64(); e != nil {
 					return false, errors.New(prefix + "[Result to Float64 Errored] " + e.Error())
 				} else {
 					// success
-					outputObjectPtr = val
+					*dst = val
 					return false, nil
 				}
 			case redisdatatype.Bytes:
 				// result to []byte
+				dst, ok := outputObjectPtr.(*[]byte)
+				if !ok {
+					return false, errors.New(prefix + "[Result to Bytes Errored] Output Object Pointer Type Assertion to *[]byte Failed")
+				}
 				if val, e := stringCmd.Bytes(); e != nil {
 					return false, errors.New(prefix + "[Result to Bytes Errored] " + e.Error())
 				} else {
 					// success
-					outputObjectPtr = val
+					*dst = val
 					return false, nil
 				}
 			case redisdatatype.Json:
@@ -793,20 +813,28 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 				}
 			case redisdatatype.Time:
 				// result to int
+				dst, ok := outputObjectPtr.(*time.Time)
+				if !ok {
+					return false, errors.New(prefix + "[Result to Time Errored] Output Object Pointer Type Assertion to *time.Time Failed")
+				}
 				if val, e := stringCmd.Time(); e != nil {
 					return false, errors.New(prefix + "[Result to Time Errored] " + e.Error())
 				} else {
 					// success
-					outputObjectPtr = val
+					*dst = val
 					return false, nil
 				}
 			default:
 				// default is string
+				dst, ok := outputObjectPtr.(*string)
+				if !ok {
+					return false, errors.New(prefix + "[Result to String Errored] Output Object Pointer Type Assertion to *string Failed")
+				}
 				if str, e := stringCmd.Result(); e != nil {
 					return false, errors.New(prefix + "[Result to String Errored] " + e.Error())
 				} else {
 					// success
-					outputObjectPtr = str
+					*dst = str
 					return false, nil
 				}
 			}
@@ -1850,7 +1878,7 @@ func (r *Redis) mgetInternal(key ...string) (results []interface{}, notFound boo
 		return nil, false, errors.New("Redis MGet Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnReader.MGet(r.cnWriter.Context(), key...)
+	cmd := r.cnReader.MGet(r.cnReader.Context(), key...)
 	return r.handleSliceCmd(cmd, "Redis MGet Failed: ")
 }
 
@@ -5921,9 +5949,9 @@ func (z *SORTED_SET) zpopMinInternal(key string, count ...int64) (outputSlice []
 	var cmd *redis.ZSliceCmd
 
 	if len(count) <= 0 {
-		z.core.cnWriter.ZPopMin(z.core.cnWriter.Context(), key)
+		cmd = z.core.cnWriter.ZPopMin(z.core.cnWriter.Context(), key)
 	} else {
-		z.core.cnWriter.ZPopMin(z.core.cnWriter.Context(), key, count...)
+		cmd = z.core.cnWriter.ZPopMin(z.core.cnWriter.Context(), key, count...)
 	}
 
 	return z.core.handleZSliceCmd(cmd, "Redis ZPopMin Failed: ")

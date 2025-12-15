@@ -1755,6 +1755,13 @@ func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk 
 }
 
 func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, err error) {
+	if keyArn == "" {
+		return nil, errors.New("ECDH with KMS Failed: keyArn is required")
+	}
+	if ephemeralPublicKeyB64 == "" {
+		return nil, errors.New("ECDH with KMS Failed: ephemeral public key is required")
+	}
+
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
 		err = errors.New("ECDH with KMS Failed: " + cliErr.Error())
@@ -1764,7 +1771,7 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 	//derive temp ECC public key
 	eccPubBytes, e1 := base64.StdEncoding.DecodeString(ephemeralPublicKeyB64)
 	if e1 != nil {
-		return nil, e1
+		return nil, errors.New("ECDH with KMS Failed: Invalid Base64 Public Key, " + e1.Error())
 	}
 
 	//eccPubKey, err := parseECCPublicKey(eccPubBytes)

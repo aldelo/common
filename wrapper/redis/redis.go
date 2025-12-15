@@ -267,6 +267,8 @@ func (r *Redis) connectInternal() error {
 		r.cnReader = nil
 	}
 
+	r.cnAreReady = false
+
 	// validate
 	if util.LenTrim(r.AwsRedisWriterEndpoint) <= 0 {
 		// writer endpoint works against the primary node
@@ -366,6 +368,9 @@ func (r *Redis) connectInternal() error {
 
 // Disconnect will close aws redis writer and reader endpoints
 func (r *Redis) Disconnect() {
+	r.connectMU.Lock()
+	defer r.connectMU.Unlock()
+
 	// clean up prior cn reference
 	if r.BIT != nil {
 		r.BIT.core = nil

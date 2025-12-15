@@ -394,7 +394,7 @@ func (t *MySqlTransaction) Rollback() (err error) {
 
 // ready checks if MySqlTransaction
 func (t *MySqlTransaction) ready() error {
-	t.mu.Unlock()
+	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.closed {

@@ -40,6 +40,7 @@ package redis
 // =================================================================================================================
 
 import (
+	"context"
 	"crypto/tls"
 	"strings"
 	"sync"
@@ -318,10 +319,14 @@ func (r *Redis) connectInternal() error {
 		return errors.New("Connect To Redis Failed: (Reader Endpoint) " + "Obtain Client Yielded Nil")
 	}
 
-	if err := r.cnWriter.Ping(r.cnWriter.Context()).Err(); err != nil {
+	// bounded ping to avoid indefinite hangs
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := r.cnWriter.Ping(ctx).Err(); err != nil {
 		return errors.New("Connect To Redis Failed: (Writer Endpoint) ping failed: " + err.Error())
 	}
-	if err := r.cnReader.Ping(r.cnReader.Context()).Err(); err != nil {
+	if err := r.cnReader.Ping(ctx).Err(); err != nil {
 		return errors.New("Connect To Redis Failed: (Reader Endpoint) ping failed: " + err.Error())
 	}
 
@@ -8966,10 +8971,11 @@ func (t *TTL) ttlInternal(key string, bGetMilliseconds bool) (valTTL int64, notF
 		return 0, false, err
 	}
 
-	if d == -2 {
+	if notFound || d == -2 {
 		// not found
 		return 0, true, nil
-	} else if d == -1 {
+	}
+	if d == -1 {
 		// forever living
 		return -1, false, nil
 	}
@@ -8980,7 +8986,7 @@ func (t *TTL) ttlInternal(key string, bGetMilliseconds bool) (valTTL int64, notF
 		valTTL = int64(d.Seconds())
 	}
 
-	return valTTL, notFound, err
+	return valTTL, false, err
 }
 
 // Expire sets a timeout on key (seconds or milliseconds based on input parameter)

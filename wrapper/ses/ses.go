@@ -668,6 +668,10 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 		return nil, err
 	}
 
+	if output == nil {
+		return nil, errors.New("GetSendQuota Failed: nil output from AWS SDK")
+	}
+
 	sq = &SendQuota{
 		Max24HourSendLimit:    util.Float64ToInt(aws.Float64Value(output.Max24HourSend)),
 		MaxPerSecondSendLimit: util.Float64ToInt(aws.Float64Value(output.MaxSendRate)),
@@ -756,6 +760,14 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 		if err = s.handleSESError(err); err != nil {
 			return "", err
 		}
+	}
+
+	if output == nil || output.MessageId == nil {
+		return "", errors.New("SendEmail Failed: nil output or MessageId from AWS SDK")
+	}
+
+	if output == nil || output.MessageId == nil {
+		return "", errors.New("SendRawEmail Failed: nil output or MessageId from AWS SDK")
 	}
 
 	// email sent successfully
@@ -1306,10 +1318,14 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 	if err != nil {
 		err = errors.New("SendTemplateEmailFailed: (Send Action) " + err.Error())
 		return "", err
-	} else {
-		messageId = *output.MessageId
-		return messageId, nil
 	}
+
+	if output == nil || output.MessageId == nil {
+		return "", errors.New("SendTemplateEmailFailed: nil output or MessageId from AWS SDK")
+	}
+
+	messageId = *output.MessageId
+	return messageId, nil
 }
 
 // SendBulkTemplateEmail will send out bulk email via ses using template
@@ -1456,6 +1472,10 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 		}
 	}
 
+	if len(input.Destinations) == 0 {
+		return nil, 0, errors.New("SendBulkTemplateEmail Failed: no valid destinations after validation")
+	}
+
 	if util.LenTrim(s.ConfigurationSetName) > 0 {
 		input.ConfigurationSetName = aws.String(s.ConfigurationSetName)
 	}
@@ -1480,6 +1500,10 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 	if err != nil {
 		err = errors.New("SendBulkTemplateEmail Failed: (Send Action) " + err.Error())
 		return nil, 0, err
+	}
+
+	if output == nil {
+		return nil, 0, errors.New("SendBulkTemplateEmail Failed: nil output from AWS SDK")
 	}
 
 	for _, v := range output.Status {
@@ -1869,9 +1893,13 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 		// failure
 		err = errors.New("SendCustomVerificationEmail Failed: (Send Action) " + err.Error())
 		return "", err
-	} else {
-		// success
-		messageId = *output.MessageId
-		return messageId, nil
 	}
+
+	if output == nil || output.MessageId == nil {
+		return "", errors.New("SendCustomVerificationEmail Failed: nil output or MessageId from AWS SDK")
+	}
+
+	// success
+	messageId = *output.MessageId
+	return messageId, nil
 }

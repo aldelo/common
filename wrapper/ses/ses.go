@@ -450,10 +450,6 @@ func (e *Email) GenerateSendRawEmailInput(attachmentFileName string, attachmentC
 		h.Set("CC", util.SliceStringToCSVString(e.CC, false))
 	}
 
-	if len(e.BCC) > 0 {
-		h.Set("BCC", util.SliceStringToCSVString(e.BCC, false))
-	}
-
 	if util.LenTrim(e.ReturnPath) > 0 {
 		h.Set("Return-Path", e.ReturnPath)
 	}
@@ -1418,6 +1414,11 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 
 	if len(emailTargetList) <= 0 {
 		err = errors.New("SendBulkTemplateEmail Failed: " + "Email Target List is Required")
+		return nil, 0, err
+	}
+
+	if len(emailTargetList) > 50 {
+		err = fmt.Errorf("SendBulkTemplateEmail Failed: AWS SES bulk send is limited to 50 destinations per call (got %d). Please batch the requests.", len(emailTargetList))
 		return nil, 0, err
 	}
 

@@ -189,18 +189,45 @@ func validateSenderID(id string) error {
 
 // smsLength returns the per-encoding limit and the used character count.
 func smsLength(message string) (limit int, used int, encoding string) {
-	gsm7 := true
+	// GSM 7-bit default and extended tables per 3GPP TS 23.038
+	var (
+		gsm7Default = map[rune]bool{
+			'@': true, '£': true, '$': true, '¥': true, 'è': true, 'é': true, 'ù': true, 'ì': true, 'ò': true,
+			'Ç': true, '\n': true, 'Ø': true, 'ø': true, '\r': true, 'Å': true, 'å': true, 'Δ': true, '_': true,
+			'Φ': true, 'Γ': true, 'Λ': true, 'Ω': true, 'Π': true, 'Ψ': true, 'Σ': true, 'Θ': true, 'Ξ': true,
+			'Æ': true, 'æ': true, 'ß': true, 'É': true, ' ': true, '!': true, '"': true, '#': true, '¤': true,
+			'%': true, '&': true, '\'': true, '(': true, ')': true, '*': true, '+': true, ',': true, '-': true,
+			'.': true, '/': true, '0': true, '1': true, '2': true, '3': true, '4': true, '5': true, '6': true,
+			'7': true, '8': true, '9': true, ':': true, ';': true, '<': true, '=': true, '>': true, '?': true,
+			'¡': true, 'A': true, 'B': true, 'C': true, 'D': true, 'E': true, 'F': true, 'G': true, 'H': true,
+			'I': true, 'J': true, 'K': true, 'L': true, 'M': true, 'N': true, 'O': true, 'P': true, 'Q': true,
+			'R': true, 'S': true, 'T': true, 'U': true, 'V': true, 'W': true, 'X': true, 'Y': true, 'Z': true,
+			'Ä': true, 'Ö': true, 'Ñ': true, 'Ü': true, '§': true, '¿': true, 'a': true, 'b': true, 'c': true,
+			'd': true, 'e': true, 'f': true, 'g': true, 'h': true, 'i': true, 'j': true, 'k': true, 'l': true,
+			'm': true, 'n': true, 'o': true, 'p': true, 'q': true, 'r': true, 's': true, 't': true, 'u': true,
+			'v': true, 'w': true, 'x': true, 'y': true, 'z': true, 'ä': true, 'ö': true, 'ñ': true, 'ü': true, 'à': true,
+		}
+		gsm7Extended = map[rune]bool{
+			'^': true, '{': true, '}': true, '\\': true, '[': true, '~': true, ']': true, '|': true, '€': true,
+		}
+	)
+
+	septets := 0
 	for _, r := range message {
-		if r > 127 {
-			gsm7 = false
-			break
+		switch {
+		case gsm7Default[r]:
+			septets += 1
+		case gsm7Extended[r]:
+			septets += 2 // escape + char
+		default:
+			// not representable in GSM-7 -> UCS-2
+			used = utf8.RuneCountInString(message)
+			return 70, used, "UCS-2"
 		}
 	}
-	used = utf8.RuneCountInString(message)
-	if gsm7 {
-		return 140, used, "GSM-7"
-	}
-	return 70, used, "UCS-2"
+
+	used = septets
+	return 160, used, "GSM-7"
 }
 
 // ================================================================================================================

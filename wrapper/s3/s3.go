@@ -575,7 +575,12 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 		return "", false, err
 	}
 
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+		if err != nil || notFound {
+			_ = os.Remove(writeToFilePath)
+		}
+	}()
 
 	// define key
 	key := targetKey
@@ -943,7 +948,7 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("S3 Delete Batch Failed Failed: (Delete Objects) " + err.Error())
+		err = errors.New("S3 Delete Batch Failed: (Delete Objects) " + err.Error())
 		return nil, nil, err
 	} else {
 		if len(output.Deleted) > 0 {

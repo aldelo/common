@@ -818,7 +818,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					// found str value,
 					// unmarshal to json
 					if util.LenTrim(str) <= 0 {
-						return true, nil
+						return false, nil
 					} else {
 						if err = util.UnmarshalJSON(str, outputObjectPtr); err != nil {
 							// unmarshal error
@@ -1689,7 +1689,7 @@ func (r *Redis) GetJson(key string, resultObjectPtr interface{}) (notFound bool,
 				// found str value,
 				// unmarshal to json
 				if util.LenTrim(valStr) <= 0 {
-					return true, nil
+					return false, nil
 				} else {
 					if err = util.UnmarshalJSON(valStr, resultObjectPtr); err != nil {
 						// unmarshal error

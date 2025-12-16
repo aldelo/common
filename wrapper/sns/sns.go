@@ -1,7 +1,7 @@
 package sns
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,9 @@ package sns
 import (
 	"context"
 	"errors"
+	"net/http"
+	"time"
+
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	awsregion "github.com/aldelo/common/wrapper/aws/awsregion"
@@ -58,8 +61,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sns"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
-	"net/http"
-	"time"
 )
 
 // ================================================================================================================
@@ -1595,8 +1596,16 @@ func (s *SNS) Publish(topicArn string,
 		return "", err
 	}
 
-	if util.LenTrim(topicArn) <= 0 && util.LenTrim(targetArn) <= 0 {
+	hasTopic := util.LenTrim(topicArn) > 0
+	hasTarget := util.LenTrim(targetArn) > 0
+
+	if !hasTopic && !hasTarget {
 		err = errors.New("Publish Failed: " + "Either Topic ARN or Target ARN is Required")
+		return "", err
+	}
+
+	if hasTopic && hasTarget {
+		err = errors.New("Publish Failed: " + "Specify only one of Topic ARN or Target ARN, not both")
 		return "", err
 	}
 
@@ -1617,11 +1626,11 @@ func (s *SNS) Publish(topicArn string,
 		Message: aws.String(message),
 	}
 
-	if util.LenTrim(topicArn) > 0 {
+	if hasTopic {
 		input.TopicArn = aws.String(topicArn)
 	}
 
-	if util.LenTrim(targetArn) > 0 {
+	if hasTarget {
 		input.TargetArn = aws.String(targetArn)
 	}
 

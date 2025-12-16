@@ -202,6 +202,8 @@ func (r *Redis) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 
 // connectInternal performs the actual redis writer and reader connection
 func (r *Redis) connectInternal() error {
+	r.cnAreReady = false
+
 	// clean up prior cn reference
 	if r.BIT != nil {
 		r.BIT.core = nil
@@ -267,8 +269,6 @@ func (r *Redis) connectInternal() error {
 		_ = r.cnReader.Close()
 		r.cnReader = nil
 	}
-
-	r.cnAreReady = false
 
 	// validate
 	if util.LenTrim(r.AwsRedisWriterEndpoint) <= 0 {
@@ -376,6 +376,8 @@ func (r *Redis) Disconnect() {
 	r.connectMU.Lock()
 	defer r.connectMU.Unlock()
 
+	r.cnAreReady = false
+
 	// clean up prior cn reference
 	if r.BIT != nil {
 		r.BIT.core = nil
@@ -441,8 +443,6 @@ func (r *Redis) Disconnect() {
 		_ = r.cnReader.Close()
 		r.cnReader = nil
 	}
-
-	r.cnAreReady = false
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil

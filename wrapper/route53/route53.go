@@ -1,7 +1,7 @@
 package route53
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
@@ -212,6 +213,7 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 		return errors.New("Route53 CreateUpdateResourceRecordset Failed: (Struct Pointer Nil) " + "Route53 Struct Pointer is Nil")
 	}
 
+	recordType = strings.ToUpper(strings.TrimSpace(recordType))
 	if recordType != "A" {
 		return errors.New("Route53 CreateUpdateResourceRecordset Failed: " + "Only 'A' Record Type is Supported")
 	}
@@ -242,25 +244,28 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 
 	r.r53ClientMutex.RLock()
 	r53Client := r.r53Client
-	r.r53ClientMutex.RUnlock()
 
 	// validate
 	if r53Client == nil {
+		r.r53ClientMutex.RUnlock()
 		err = errors.New("CreateUpdateResourceRecordset Failed: " + "Route53 Client is Required")
 		return err
 	}
 
 	if len(hostedZoneID) <= 0 {
+		r.r53ClientMutex.RUnlock()
 		err = errors.New("CreateUpdateResourceRecordset Failed: " + "Hosted Zone ID is Required")
 		return err
 	}
 
 	if len(url) <= 0 {
+		r.r53ClientMutex.RUnlock()
 		err = errors.New("CreateUpdateResourceRecordset Failed: " + "URL is Required")
 		return err
 	}
 
 	if len(ip) <= 0 {
+		r.r53ClientMutex.RUnlock()
 		err = errors.New("CreateUpdateResourceRecordset Failed: " + "IP is Required")
 		return err
 	}
@@ -271,10 +276,6 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 		ttl = 15
 	} else if ttl > 300 {
 		ttl = 300
-	}
-
-	if recordType != "A" {
-		recordType = "A"
 	}
 
 	// create
@@ -304,6 +305,7 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 	} else {
 		_, err = r53Client.ChangeResourceRecordSetsWithContext(segCtx, input)
 	}
+	r.r53ClientMutex.RUnlock()
 
 	if err != nil {
 		err = errors.New("CreateUpdateResourceRecordset Failed: " + err.Error())
@@ -325,6 +327,7 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 		return errors.New("Route53 DeleteResourceRecordset Failed: (Struct Pointer Nil) " + "Route53 Struct Pointer is Nil")
 	}
 
+	recordType = strings.ToUpper(strings.TrimSpace(recordType))
 	if recordType != "A" {
 		return errors.New("Route53 DeleteResourceRecordset Failed: " + "Only 'A' Record Type is Supported")
 	}
@@ -355,25 +358,28 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 
 	r.r53ClientMutex.RLock()
 	r53Client := r.r53Client
-	r.r53ClientMutex.RUnlock()
 
 	// validate
 	if r53Client == nil {
+		r.r53ClientMutex.RUnlock()
 		err = errors.New("DeleteResourceRecordset Failed: " + "Route53 Client is Required")
 		return err
 	}
 
 	if len(hostedZoneID) <= 0 {
+		r.r53ClientMutex.RUnlock()
 		err = errors.New("DeleteResourceRecordset Failed: " + "Hosted Zone ID is Required")
 		return err
 	}
 
 	if len(url) <= 0 {
+		r.r53ClientMutex.RUnlock()
 		err = errors.New("DeleteResourceRecordset Failed: " + "URL is Required")
 		return err
 	}
 
 	if len(ip) <= 0 {
+		r.r53ClientMutex.RUnlock()
 		err = errors.New("DeleteResourceRecordset Failed: " + "IP is Required")
 		return err
 	}
@@ -384,10 +390,6 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 		ttl = 15
 	} else if ttl > 300 {
 		ttl = 300
-	}
-
-	if recordType != "A" {
-		recordType = "A"
 	}
 
 	// create
@@ -417,6 +419,7 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 	} else {
 		_, err = r53Client.ChangeResourceRecordSetsWithContext(segCtx, input)
 	}
+	r.r53ClientMutex.RUnlock()
 
 	if err != nil {
 		err = errors.New("DeleteResourceRecordset Failed: " + err.Error())

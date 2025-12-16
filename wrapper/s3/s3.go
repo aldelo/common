@@ -1,7 +1,7 @@
 package s3
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,6 +45,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -86,6 +87,8 @@ type S3 struct {
 	downloader *s3manager.Downloader
 
 	_parentSegment *xray.XRayParentSegment
+
+	s3Mutex sync.RWMutex
 }
 
 // S3ErrorResult struct represents a Delete... batch operation error result
@@ -105,6 +108,10 @@ type S3ErrorResult struct {
 
 // Connect will establish a connection to the s3 service
 func (s *S3) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if s == nil {
+		return errors.New("Connect To S3 Failed: (S3 Struct Nil)")
+	}
+
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
 			s._parentSegment = parentSegment[0]
@@ -124,7 +131,11 @@ func (s *S3) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		err = s.connectInternal()
 
 		if err == nil {
-			awsxray.AWS(s.s3Obj.Client)
+			s.s3Mutex.RLock()
+			if s.s3Obj != nil {
+				awsxray.AWS(s.s3Obj.Client)
+			}
+			s.s3Mutex.RUnlock()
 		}
 
 		return err
@@ -135,6 +146,13 @@ func (s *S3) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 
 // Connect will establish a connection to the s3 service
 func (s *S3) connectInternal() error {
+	if s == nil {
+		return errors.New("Connect To S3 Failed: (S3 Struct Nil)")
+	}
+
+	s.s3Mutex.Lock()
+	defer s.s3Mutex.Unlock()
+
 	// clean up prior session reference
 	s.sess = nil
 
@@ -197,6 +215,13 @@ func (s *S3) connectInternal() error {
 
 // Disconnect will disjoin from aws session by clearing it
 func (s *S3) Disconnect() {
+	if s == nil {
+		return
+	}
+
+	s.s3Mutex.Lock()
+	defer s.s3Mutex.Unlock()
+
 	s.s3Obj = nil
 	s.uploader = nil
 	s.downloader = nil
@@ -205,6 +230,9 @@ func (s *S3) Disconnect() {
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *S3) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
 	s._parentSegment = parentSegment
 }
 
@@ -243,6 +271,9 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 			}
 		}()
 	}
+
+	s.s3Mutex.RLock()
+	defer s.s3Mutex.RUnlock()
 
 	// validate
 	if s.uploader == nil {
@@ -369,6 +400,9 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 		}()
 	}
 
+	s.s3Mutex.RLock()
+	defer s.s3Mutex.RUnlock()
+
 	// validate
 	if s.uploader == nil {
 		err = errors.New("S3 Upload Failed: " + "Uploader is Required")
@@ -489,6 +523,9 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 			}
 		}()
 	}
+
+	s.s3Mutex.RLock()
+	defer s.s3Mutex.RUnlock()
 
 	// validate
 	if s.downloader == nil {
@@ -613,6 +650,9 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 		}()
 	}
 
+	s.s3Mutex.RLock()
+	defer s.s3Mutex.RUnlock()
+
 	// validate
 	if s.downloader == nil {
 		err = errors.New("S3 Download Failed: " + "Downloader is Required")
@@ -723,6 +763,9 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 		}()
 	}
 
+	s.s3Mutex.RLock()
+	defer s.s3Mutex.RUnlock()
+
 	// validate
 	if s.s3Obj == nil {
 		err = errors.New("S3 Delete Failed: " + "S3 Object is Required")
@@ -820,6 +863,9 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 			}
 		}()
 	}
+
+	s.s3Mutex.RLock()
+	defer s.s3Mutex.RUnlock()
 
 	// validate
 	if s.s3Obj == nil {
@@ -933,6 +979,9 @@ func (s *S3) ListFileKeys(timeOutDuration *time.Duration, nextToken string, maxR
 			}
 		}()
 	}
+
+	s.s3Mutex.RLock()
+	defer s.s3Mutex.RUnlock()
 
 	// validate
 	if util.LenTrim(s.BucketName) <= 0 {

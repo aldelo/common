@@ -1,7 +1,7 @@
 package ses
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,6 +45,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"mime/multipart"
+	"net/http"
+	"net/textproto"
+	"path/filepath"
+	"strings"
+	"time"
+
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -54,12 +61,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ses"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
-	"mime/multipart"
-	"net/http"
-	"net/textproto"
-	"path/filepath"
-	"strings"
-	"time"
 )
 
 // ================================================================================================================
@@ -668,9 +669,9 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 	}
 
 	sq = &SendQuota{
-		Max24HourSendLimit:    util.Float64ToInt(*output.Max24HourSend),
-		MaxPerSecondSendLimit: util.Float64ToInt(*output.MaxSendRate),
-		SentLast24Hours:       util.Float64ToInt(*output.SentLast24Hours),
+		Max24HourSendLimit:    util.Float64ToInt(aws.Float64Value(output.Max24HourSend)),
+		MaxPerSecondSendLimit: util.Float64ToInt(aws.Float64Value(output.MaxSendRate)),
+		SentLast24Hours:       util.Float64ToInt(aws.Float64Value(output.SentLast24Hours)),
 	}
 
 	return sq, nil
@@ -811,16 +812,16 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 
 	if util.LenTrim(attachmentFileName) > 0 {
 		if attachmentData, err = util.FileReadBytes(attachmentFileName); err != nil {
-			err = fmt.Errorf("SendRawEmail Failed: (Load Attachment File '"+attachmentFileName+"' Error)", err)
+			err = fmt.Errorf("SendRawEmail Failed: Load Attachment File '%s' Error: %w", attachmentFileName, err)
 			return "", err
 		} else {
 			if len(attachmentData) == 0 {
-				err = fmt.Errorf("SendRawEmail Failed: ", "Attachment Data From File is Empty")
+				err = fmt.Errorf("SendRawEmail Failed: Attachment Data From File is Empty")
 				return "", err
 			}
 
 			if util.LenTrim(attachmentContentType) == 0 {
-				err = fmt.Errorf("SendRawEmail Failed: ", "Attachment Content-Type is Required")
+				err = fmt.Errorf("SendRawEmail Failed: Attachment Content-Type is Required")
 				return "", err
 			}
 		}

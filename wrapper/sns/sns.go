@@ -222,12 +222,27 @@ func smsLength(message string) (limit int, used int, encoding string) {
 		default:
 			// not representable in GSM-7 -> UCS-2
 			used = utf8.RuneCountInString(message)
-			return 70, used, "UCS-2"
+			encoding = "UCS-2"
+			limit = 70
+			// allow multipart UCS-2 (67 chars/segment after UDH)
+			if used > limit {
+				segments := (used + 66) / 67
+				limit = segments * 67
+			}
+			return limit, used, encoding
 		}
 	}
 
+	// GSM-7 path
 	used = septets
-	return 160, used, "GSM-7"
+	encoding = "GSM-7"
+	limit = 160
+	// allow multipart GSM-7 (153 septets/segment after UDH)
+	if used > limit {
+		segments := (used + 152) / 153
+		limit = segments * 153
+	}
+	return limit, used, encoding
 }
 
 // ================================================================================================================
@@ -273,9 +288,6 @@ func (s *SNS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 
 // Connect will establish a connection to the SNS service
 func (s *SNS) connectInternal() error {
-	// clean up prior object
-	s.clearClient()
-
 	if !s.AwsRegion.Valid() || s.AwsRegion == awsregion.UNKNOWN {
 		return errors.New("Connect To SNS Failed: (AWS Session Error) " + "Region is Required")
 	}

@@ -53,6 +53,7 @@ import (
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aldelo/common/wrapper/xray"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
@@ -96,6 +97,24 @@ type S3ErrorResult struct {
 	Key     string
 	Code    string
 	Message string
+}
+
+// isNotFoundErr returns true when the error corresponds to S3 "not found" conditions.
+func isNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if awsErr, ok := err.(awserr.Error); ok {
+		code := awsErr.Code()
+		if code == s3.ErrCodeNoSuchKey || code == "NotFound" {
+			return true
+		}
+		if reqFail, ok := awsErr.(awserr.RequestFailure); ok && reqFail.StatusCode() == http.StatusNotFound {
+			return true
+		}
+	}
+	return false
 }
 
 // ================================================================================================================
@@ -598,21 +617,20 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 
 	// evaluate result
 	if err != nil {
-		// download error
+		if isNotFoundErr(err) {
+			_ = os.Remove(writeToFilePath)
+			return "", true, nil
+		}
+
 		err = errors.New("S3 DownloadFile Failed: (Download File) " + err.Error())
 		return "", false, err
-	} else {
-		// download successful
-		if bytesCount <= 0 {
-			// not found
-			notFound = true
-			return "", notFound, nil
-		} else {
-			// found
-			location = writeToFilePath
-			return location, false, nil
-		}
 	}
+
+	_ = bytesCount
+
+	// found
+	location = writeToFilePath
+	return location, false, nil
 }
 
 // Download will download an object from S3 bucket by key and return via byte slice
@@ -712,21 +730,18 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 
 	// evaluate result
 	if err != nil {
-		// download error
+		if isNotFoundErr(err) {
+			return nil, true, nil
+		}
+
 		err = errors.New("S3 Download Failed: (Download Bytes) " + err.Error())
 		return nil, false, err
-	} else {
-		// download successful
-		if bytesCount <= 0 {
-			// not found
-			notFound = true
-			return nil, notFound, nil
-		} else {
-			// found
-			data = buf.Bytes()
-			return data, false, nil
-		}
 	}
+
+	// download successful
+	_ = bytesCount
+	data = buf.Bytes()
+	return data, false, nil
 }
 
 // Delete will delete an object from S3 bucket by key
@@ -883,10 +898,23 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 		return nil, nil, err
 	}
 
+	if len(targetKeys) > 1000 {
+		err = errors.New("S3 Delete Batch Failed: " + "Target Keys Exceeds Maximum of 1000")
+		return nil, nil, err
+	}
+
 	// create input object
 	objects := make([]*s3.ObjectIdentifier, len(targetKeys))
-	for i, key := range targetKeys {
-		objects[i] = &s3.ObjectIdentifier{Key: aws.String(key)}
+	for _, key := range targetKeys {
+		if util.LenTrim(key) == 0 {
+			continue
+		}
+		objects = append(objects, &s3.ObjectIdentifier{Key: aws.String(key)})
+	}
+
+	if len(objects) == 0 {
+		err = errors.New("S3 Delete Batch Failed: All provided target keys are empty")
+		return nil, nil, err
 	}
 
 	input := &s3.DeleteObjectsInput{

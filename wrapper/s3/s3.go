@@ -904,7 +904,7 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 	}
 
 	// create input object
-	objects := make([]*s3.ObjectIdentifier, len(targetKeys))
+	objects := make([]*s3.ObjectIdentifier, 0, len(targetKeys))
 	for _, key := range targetKeys {
 		if util.LenTrim(key) == 0 {
 			continue
@@ -921,7 +921,7 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 		Bucket: aws.String(s.BucketName),
 		Delete: &s3.Delete{
 			Objects: objects,
-			Quiet:   aws.Bool(true), // Response suppresses details, reducing the payload size
+			Quiet:   aws.Bool(false),
 		},
 	}
 

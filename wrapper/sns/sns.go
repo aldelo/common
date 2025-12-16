@@ -42,7 +42,7 @@ package sns
 import (
 	"context"
 	"errors"
-	"net/http"
+	"sync"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -85,6 +85,8 @@ type SNS struct {
 	snsClient *sns.SNS
 
 	_parentSegment *xray.XRayParentSegment
+
+	mu sync.RWMutex
 }
 
 // SubscribedTopic struct encapsulates the AWS SNS subscribed topic data
@@ -94,6 +96,65 @@ type SubscribedTopic struct {
 	Protocol        snsprotocol.SNSProtocol
 	Endpoint        string
 	Owner           string
+}
+
+// --- internal helpers (thread-safe accessors) ---
+
+func (s *SNS) getAwsRegion() awsregion.AWSRegion {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.AwsRegion
+}
+
+func (s *SNS) getSMSSenderName() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.SMSSenderName
+}
+
+func (s *SNS) getSMSTransactional() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.SMSTransactional
+}
+
+func (s *SNS) getClient() *sns.SNS {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.snsClient
+}
+
+func (s *SNS) setClient(cli *sns.SNS) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.snsClient = cli
+}
+
+func (s *SNS) clearClient() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.snsClient = nil
+}
+
+func (s *SNS) ensureHttpOptions() *awshttp2.HttpClientSettings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.HttpOptions == nil {
+		s.HttpOptions = new(awshttp2.HttpClientSettings)
+	}
+	return s.HttpOptions
+}
+
+func (s *SNS) setParentSegment(seg *xray.XRayParentSegment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s._parentSegment = seg
+}
+
+func (s *SNS) getParentSegment() *xray.XRayParentSegment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s._parentSegment
 }
 
 // ================================================================================================================
@@ -106,17 +167,17 @@ type SubscribedTopic struct {
 
 // Connect will establish a connection to the SNS service
 func (s *SNS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
-	if xray.XRayServiceOn() {
-		if len(parentSegment) > 0 {
-			s._parentSegment = parentSegment[0]
-		}
+	if len(parentSegment) > 0 {
+		s.setParentSegment(parentSegment[0])
+	}
 
-		seg := xray.NewSegment("SNS-Connect", s._parentSegment)
+	if xray.XRayServiceOn() {
+		seg := xray.NewSegment("SNS-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-AWS-Region", s.AwsRegion)
-			_ = seg.Seg.AddMetadata("SNS-SMS-Sender-Name", s.SMSSenderName)
-			_ = seg.Seg.AddMetadata("SNS-SMS-Transactional", s.SMSTransactional)
+			_ = seg.Seg.AddMetadata("SNS-AWS-Region", s.getAwsRegion())
+			_ = seg.Seg.AddMetadata("SNS-SMS-Sender-Name", s.getSMSSenderName())
+			_ = seg.Seg.AddMetadata("SNS-SMS-Transactional", s.getSMSTransactional())
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)
@@ -126,70 +187,65 @@ func (s *SNS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		err = s.connectInternal()
 
 		if err == nil {
-			awsxray.AWS(s.snsClient.Client)
+			if cli := s.getClient(); cli != nil {
+				awsxray.AWS(cli.Client)
+			}
 		}
 
 		return err
-	} else {
-		return s.connectInternal()
 	}
+
+	return s.connectInternal()
 }
 
 // Connect will establish a connection to the SNS service
 func (s *SNS) connectInternal() error {
 	// clean up prior object
-	s.snsClient = nil
+	s.clearClient()
 
 	if !s.AwsRegion.Valid() || s.AwsRegion == awsregion.UNKNOWN {
 		return errors.New("Connect To SNS Failed: (AWS Session Error) " + "Region is Required")
 	}
 
 	// create custom http2 client if needed
-	var httpCli *http.Client
-	var httpErr error
-
-	if s.HttpOptions == nil {
-		s.HttpOptions = new(awshttp2.HttpClientSettings)
-	}
-
-	// use custom http2 client
+	httpOpts := s.ensureHttpOptions()
 	h2 := &awshttp2.AwsHttp2Client{
-		Options: s.HttpOptions,
+		Options: httpOpts,
 	}
 
-	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
+	httpCli, httpErr := h2.NewHttp2Client()
+	if httpErr != nil {
 		return errors.New("Connect to SNS Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
 	}
 
 	// establish aws session connection and keep session object in struct
-	if sess, err := session.NewSession(
+	sess, err := session.NewSession(
 		&aws.Config{
 			Region:     aws.String(s.AwsRegion.Key()),
 			HTTPClient: httpCli,
-		}); err != nil {
+		})
+	if err != nil {
 		// aws session error
 		return errors.New("Connect To SNS Failed: (AWS Session Error) " + err.Error())
-	} else {
-		// create cached objects for shared use
-		s.snsClient = sns.New(sess)
-
-		if s.snsClient == nil {
-			return errors.New("Connect To SNS Client Failed: (New SNS Client Connection) " + "Connection Object Nil")
-		}
-
-		// session stored to struct
-		return nil
 	}
+
+	cli := sns.New(sess)
+	if cli == nil {
+		return errors.New("Connect To SNS Failed: (New SNS Client Connection) " + "Connection Object Nil")
+	}
+
+	s.setClient(cli)
+	return nil
 }
 
 // Disconnect will disjoin from aws session by clearing it
 func (s *SNS) Disconnect() {
-	s.snsClient = nil
+	s.clearClient()
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *SNS) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
-	s._parentSegment = parentSegment
+	s.setParentSegment(parentSegment)
 }
 
 // ----------------------------------------------------------------------------------------------------------------
@@ -480,7 +536,7 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-CreateTopic", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-CreateTopic", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -499,7 +555,8 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("CreateTopic Failed: " + "SNS Client is Required")
 		return "", err
 	}
@@ -525,12 +582,12 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.CreateTopicWithContext(ctx, input)
+		output, err = client.CreateTopicWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.CreateTopicWithContext(segCtx, input)
+			output, err = client.CreateTopicWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.CreateTopic(input)
+			output, err = client.CreateTopic(input)
 		}
 	}
 
@@ -540,7 +597,7 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 		return "", err
 	}
 
-	topicArn = *output.TopicArn
+	topicArn = aws.StringValue(output.TopicArn)
 	return topicArn, nil
 }
 
@@ -550,7 +607,7 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-DeleteTopic", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-DeleteTopic", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -567,7 +624,8 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("DeleteTopic Failed: " + "SNS Client is Required")
 		return err
 	}
@@ -587,12 +645,12 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.snsClient.DeleteTopicWithContext(ctx, input)
+		_, err = client.DeleteTopicWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.snsClient.DeleteTopicWithContext(segCtx, input)
+			_, err = client.DeleteTopicWithContext(segCtx, input)
 		} else {
-			_, err = s.snsClient.DeleteTopic(input)
+			_, err = client.DeleteTopic(input)
 		}
 	}
 
@@ -600,9 +658,9 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 	if err != nil {
 		err = errors.New("DeleteTopic Failed: (Delete Action) " + err.Error())
 		return err
-	} else {
-		return nil
 	}
+
+	return nil
 }
 
 // ListTopics will list SNS topics, with optional nextToken for retrieving more list from a prior call
@@ -619,7 +677,7 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ListTopics", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ListTopics", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -638,7 +696,8 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("ListTopics Failed: " + "SNS Client is Required")
 		return nil, "", err
 	}
@@ -657,12 +716,12 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.ListTopicsWithContext(ctx, input)
+		output, err = client.ListTopicsWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.ListTopicsWithContext(segCtx, input)
+			output, err = client.ListTopicsWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.ListTopics(input)
+			output, err = client.ListTopics(input)
 		}
 	}
 
@@ -715,7 +774,7 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-GetTopicAttributes", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-GetTopicAttributes", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -733,7 +792,8 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("GetTopicAttributes Failed: " + "SNS Client is Required")
 		return nil, err
 	}
@@ -755,12 +815,12 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.GetTopicAttributesWithContext(ctx, input)
+		output, err = client.GetTopicAttributesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.GetTopicAttributesWithContext(segCtx, input)
+			output, err = client.GetTopicAttributesWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.GetTopicAttributes(input)
+			output, err = client.GetTopicAttributes(input)
 		}
 	}
 
@@ -783,7 +843,7 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-SetTopicAttribute", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-SetTopicAttribute", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -802,7 +862,8 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SetTopicAttribute Failed: " + "SNS Client is Required")
 		return err
 	}
@@ -829,12 +890,12 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.snsClient.SetTopicAttributesWithContext(ctx, input)
+		_, err = client.SetTopicAttributesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.snsClient.SetTopicAttributesWithContext(segCtx, input)
+			_, err = client.SetTopicAttributesWithContext(segCtx, input)
 		} else {
-			_, err = s.snsClient.SetTopicAttributes(input)
+			_, err = client.SetTopicAttributes(input)
 		}
 	}
 
@@ -941,7 +1002,7 @@ func (s *SNS) Subscribe(topicArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-Subscribe", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-Subscribe", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -962,7 +1023,8 @@ func (s *SNS) Subscribe(topicArn string,
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("Subscribe Failed: " + "SNS Client is Required")
 		return "", err
 	}
@@ -1000,12 +1062,12 @@ func (s *SNS) Subscribe(topicArn string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.SubscribeWithContext(ctx, input)
+		output, err = client.SubscribeWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.SubscribeWithContext(segCtx, input)
+			output, err = client.SubscribeWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.Subscribe(input)
+			output, err = client.Subscribe(input)
 		}
 	}
 
@@ -1015,7 +1077,7 @@ func (s *SNS) Subscribe(topicArn string,
 		return "", err
 	}
 
-	subscriptionArn = *output.SubscriptionArn
+	subscriptionArn = aws.StringValue(output.SubscriptionArn)
 	return subscriptionArn, nil
 }
 
@@ -1029,7 +1091,7 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-Unsubscribe", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-Unsubscribe", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1046,7 +1108,8 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("Unsubscribe Failed: " + "SNS Client is Required")
 		return err
 	}
@@ -1066,12 +1129,12 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.snsClient.UnsubscribeWithContext(ctx, input)
+		_, err = client.UnsubscribeWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.snsClient.UnsubscribeWithContext(segCtx, input)
+			_, err = client.UnsubscribeWithContext(segCtx, input)
 		} else {
-			_, err = s.snsClient.Unsubscribe(input)
+			_, err = client.Unsubscribe(input)
 		}
 	}
 
@@ -1105,7 +1168,7 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ConfirmSubscription", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ConfirmSubscription", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1124,7 +1187,8 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("ConfirmSubscription Failed: " + "SNS Client is Required")
 		return "", err
 	}
@@ -1152,12 +1216,12 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.ConfirmSubscriptionWithContext(ctx, input)
+		output, err = client.ConfirmSubscriptionWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.ConfirmSubscriptionWithContext(segCtx, input)
+			output, err = client.ConfirmSubscriptionWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.ConfirmSubscription(input)
+			output, err = client.ConfirmSubscription(input)
 		}
 	}
 
@@ -1167,7 +1231,7 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 		return "", err
 	}
 
-	subscriptionArn = *output.SubscriptionArn
+	subscriptionArn = aws.StringValue(output.SubscriptionArn)
 	return subscriptionArn, nil
 }
 
@@ -1185,7 +1249,7 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ListSubscriptions", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ListSubscriptions", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1204,7 +1268,8 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("ListSubscriptions Failed: " + "SNS Client is Required")
 		return nil, "", err
 	}
@@ -1223,12 +1288,12 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.ListSubscriptionsWithContext(ctx, input)
+		output, err = client.ListSubscriptionsWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.ListSubscriptionsWithContext(segCtx, input)
+			output, err = client.ListSubscriptionsWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.ListSubscriptions(input)
+			output, err = client.ListSubscriptions(input)
 		}
 	}
 
@@ -1275,7 +1340,7 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ListSubscriptionsByTopic", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ListSubscriptionsByTopic", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1295,7 +1360,8 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("ListSubscriptionsByTopic Failed: " + "SNS Client is Required")
 		return nil, "", err
 	}
@@ -1321,12 +1387,12 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.ListSubscriptionsByTopicWithContext(ctx, input)
+		output, err = client.ListSubscriptionsByTopicWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.ListSubscriptionsByTopicWithContext(segCtx, input)
+			output, err = client.ListSubscriptionsByTopicWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.ListSubscriptionsByTopic(input)
+			output, err = client.ListSubscriptionsByTopic(input)
 		}
 	}
 
@@ -1388,7 +1454,7 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-GetSubscriptionAttributes", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-GetSubscriptionAttributes", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1406,7 +1472,8 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("GetSubscriptionAttributes Failed: " + "SNS Client is Required")
 		return nil, err
 	}
@@ -1428,12 +1495,12 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.GetSubscriptionAttributesWithContext(ctx, input)
+		output, err = client.GetSubscriptionAttributesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.GetSubscriptionAttributesWithContext(segCtx, input)
+			output, err = client.GetSubscriptionAttributesWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.GetSubscriptionAttributes(input)
+			output, err = client.GetSubscriptionAttributes(input)
 		}
 	}
 
@@ -1456,7 +1523,7 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-SetSubscriptionAttribute", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-SetSubscriptionAttribute", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1475,7 +1542,8 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SetSubscriptionAttribute Failed: " + "SNS Client is Required")
 		return err
 	}
@@ -1502,12 +1570,12 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.snsClient.SetSubscriptionAttributesWithContext(ctx, input)
+		_, err = client.SetSubscriptionAttributesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.snsClient.SetSubscriptionAttributesWithContext(segCtx, input)
+			_, err = client.SetSubscriptionAttributesWithContext(segCtx, input)
 		} else {
-			_, err = s.snsClient.SetSubscriptionAttributes(input)
+			_, err = client.SetSubscriptionAttributes(input)
 		}
 	}
 
@@ -1569,7 +1637,7 @@ func (s *SNS) Publish(topicArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-Publish", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-Publish", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1591,7 +1659,8 @@ func (s *SNS) Publish(topicArn string,
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("Publish Failed: " + "SNS Client is Required")
 		return "", err
 	}
@@ -1649,12 +1718,12 @@ func (s *SNS) Publish(topicArn string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.PublishWithContext(ctx, input)
+		output, err = client.PublishWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.PublishWithContext(segCtx, input)
+			output, err = client.PublishWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.Publish(input)
+			output, err = client.Publish(input)
 		}
 	}
 
@@ -1663,7 +1732,7 @@ func (s *SNS) Publish(topicArn string,
 		err = errors.New("Publish Failed: (Publish Action) " + err.Error())
 		return "", err
 	} else {
-		messageId = *output.MessageId
+		messageId = aws.StringValue(output.MessageId)
 		return messageId, nil
 	}
 }
@@ -1704,7 +1773,7 @@ func (s *SNS) SendSMS(phoneNumber string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-SendSMS", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-SendSMS", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1723,7 +1792,8 @@ func (s *SNS) SendSMS(phoneNumber string,
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SendSMS Failed: " + "SNS Client is Required")
 		return "", err
 	}
@@ -1746,13 +1816,13 @@ func (s *SNS) SendSMS(phoneNumber string,
 	// fixed attributes
 	m := make(map[string]*sns.MessageAttributeValue)
 
-	if util.LenTrim(s.SMSSenderName) > 0 {
-		m["AWS.SNS.SMS.SenderID"] = &sns.MessageAttributeValue{StringValue: aws.String(s.SMSSenderName), DataType: aws.String("String")}
+	if util.LenTrim(s.getSMSSenderName()) > 0 {
+		m["AWS.SNS.SMS.SenderID"] = &sns.MessageAttributeValue{StringValue: aws.String(s.getSMSSenderName()), DataType: aws.String("String")}
 	}
 
 	smsTypeName := "Promotional"
 
-	if s.SMSTransactional {
+	if s.getSMSTransactional() {
 		smsTypeName = "Transactional"
 	}
 
@@ -1772,12 +1842,12 @@ func (s *SNS) SendSMS(phoneNumber string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.PublishWithContext(ctx, input)
+		output, err = client.PublishWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.PublishWithContext(segCtx, input)
+			output, err = client.PublishWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.Publish(input)
+			output, err = client.Publish(input)
 		}
 	}
 
@@ -1786,7 +1856,7 @@ func (s *SNS) SendSMS(phoneNumber string,
 		err = errors.New("SendSMS Failed: (SMS Send Action) " + err.Error())
 		return "", err
 	} else {
-		messageId = *output.MessageId
+		messageId = aws.StringValue(output.MessageId)
 		return messageId, nil
 	}
 }
@@ -1801,7 +1871,7 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-OptInPhoneNumber", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-OptInPhoneNumber", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1818,13 +1888,14 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("OptInPhoneNumber Failed: " + "SNS Client is Required")
 		return err
 	}
 
 	if util.LenTrim(phoneNumber) <= 0 {
-		err = errors.New("OptInPhoneNumber Failed: " + "Phone Number is Required, in E.164 Format (i.e. +12095551212)")
+		err = errors.New("OptInPhoneNumber Failed: " + "Phone Number is Required, in E.164 Format (i.e. +19255551212)")
 		return err
 	}
 
@@ -1838,12 +1909,12 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.snsClient.OptInPhoneNumberWithContext(ctx, input)
+		_, err = client.OptInPhoneNumberWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.snsClient.OptInPhoneNumberWithContext(segCtx, input)
+			_, err = client.OptInPhoneNumberWithContext(segCtx, input)
 		} else {
-			_, err = s.snsClient.OptInPhoneNumber(input)
+			_, err = client.OptInPhoneNumber(input)
 		}
 	}
 
@@ -1869,7 +1940,7 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-CheckIfPhoneNumberIsOptedOutParentSegment", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-CheckIfPhoneNumberIsOptedOutParentSegment", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1887,13 +1958,14 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("CheckIfPhoneNumberIsOptedOut Failed: " + "SNS Client is Required")
 		return false, err
 	}
 
 	if util.LenTrim(phoneNumber) <= 0 {
-		err = errors.New("CheckIfPhoneNumberIsOptedOut Failed: " + "Phone Number is Required, in E.164 Format (i.e. +12095551212)")
+		err = errors.New("CheckIfPhoneNumberIsOptedOut Failed: " + "Phone Number is Required, in E.164 Format (i.e. +19255551212)")
 		return false, err
 	}
 
@@ -1909,12 +1981,12 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.CheckIfPhoneNumberIsOptedOutWithContext(ctx, input)
+		output, err = client.CheckIfPhoneNumberIsOptedOutWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.CheckIfPhoneNumberIsOptedOutWithContext(segCtx, input)
+			output, err = client.CheckIfPhoneNumberIsOptedOutWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.CheckIfPhoneNumberIsOptedOut(input)
+			output, err = client.CheckIfPhoneNumberIsOptedOut(input)
 		}
 	}
 
@@ -1923,7 +1995,7 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 		err = errors.New("CheckIfPhoneNumberIsOptedOut Failed: (Action) " + err.Error())
 		return false, err
 	} else {
-		optedOut = *output.IsOptedOut
+		optedOut = aws.BoolValue(output.IsOptedOut)
 		return optedOut, nil
 	}
 }
@@ -1942,7 +2014,7 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ListPhoneNumbersOptedOut", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ListPhoneNumbersOptedOut", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1961,7 +2033,8 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("ListPhoneNumbersOptedOut Failed: " + "SNS Client is Required")
 		return nil, "", err
 	}
@@ -1980,12 +2053,12 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.ListPhoneNumbersOptedOutWithContext(ctx, input)
+		output, err = client.ListPhoneNumbersOptedOutWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.ListPhoneNumbersOptedOutWithContext(segCtx, input)
+			output, err = client.ListPhoneNumbersOptedOutWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.ListPhoneNumbersOptedOut(input)
+			output, err = client.ListPhoneNumbersOptedOut(input)
 		}
 	}
 
@@ -2050,7 +2123,7 @@ func (s *SNS) CreatePlatformApplication(name string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-CreatePlatformApplication", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-CreatePlatformApplication", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2070,7 +2143,8 @@ func (s *SNS) CreatePlatformApplication(name string,
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("CreatePlatformApplication Failed: " + "SNS Client is Required")
 		return "", err
 	}
@@ -2104,12 +2178,12 @@ func (s *SNS) CreatePlatformApplication(name string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.CreatePlatformApplicationWithContext(ctx, input)
+		output, err = client.CreatePlatformApplicationWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.CreatePlatformApplicationWithContext(segCtx, input)
+			output, err = client.CreatePlatformApplicationWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.CreatePlatformApplication(input)
+			output, err = client.CreatePlatformApplication(input)
 		}
 	}
 
@@ -2118,7 +2192,7 @@ func (s *SNS) CreatePlatformApplication(name string,
 		err = errors.New("CreatePlatformApplication Failed: (Create Action) " + err.Error())
 		return "", err
 	} else {
-		platformApplicationArn = *output.PlatformApplicationArn
+		platformApplicationArn = aws.StringValue(output.PlatformApplicationArn)
 		return platformApplicationArn, nil
 	}
 }
@@ -2133,7 +2207,7 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-DeletePlatformApplication", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-DeletePlatformApplication", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2150,7 +2224,8 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("DeletePlatformApplication Failed: " + "SNS Client is Required")
 		return err
 	}
@@ -2170,12 +2245,12 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.snsClient.DeletePlatformApplicationWithContext(ctx, input)
+		_, err = client.DeletePlatformApplicationWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.snsClient.DeletePlatformApplicationWithContext(segCtx, input)
+			_, err = client.DeletePlatformApplicationWithContext(segCtx, input)
 		} else {
-			_, err = s.snsClient.DeletePlatformApplication(input)
+			_, err = client.DeletePlatformApplication(input)
 		}
 	}
 
@@ -2202,7 +2277,7 @@ func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ListPlatformApplications", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ListPlatformApplications", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2221,7 +2296,8 @@ func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("ListPlatformApplications Failed: " + "SNS Client is Required")
 		return nil, "", err
 	}
@@ -2240,12 +2316,12 @@ func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.ListPlatformApplicationsWithContext(ctx, input)
+		output, err = client.ListPlatformApplicationsWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.ListPlatformApplicationsWithContext(segCtx, input)
+			output, err = client.ListPlatformApplicationsWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.ListPlatformApplications(input)
+			output, err = client.ListPlatformApplications(input)
 		}
 	}
 
@@ -2281,7 +2357,7 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-GetPlatformApplicationAttributes", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-GetPlatformApplicationAttributes", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2299,7 +2375,8 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("GetPlatformApplicationAttributes Failed: " + "SNS Client is Required")
 		return nil, err
 	}
@@ -2321,12 +2398,12 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.GetPlatformApplicationAttributesWithContext(ctx, input)
+		output, err = client.GetPlatformApplicationAttributesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.GetPlatformApplicationAttributesWithContext(segCtx, input)
+			output, err = client.GetPlatformApplicationAttributesWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.GetPlatformApplicationAttributes(input)
+			output, err = client.GetPlatformApplicationAttributes(input)
 		}
 	}
 
@@ -2348,7 +2425,7 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-SetPlatformApplicationAttributes", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-SetPlatformApplicationAttributes", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2365,7 +2442,8 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 		}()
 	}
 
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SetPlatformApplicationAttributes Failed: " + "SNS Client is Required")
 		return err
 	}
@@ -2391,12 +2469,12 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.snsClient.SetPlatformApplicationAttributesWithContext(ctx, input)
+		_, err = client.SetPlatformApplicationAttributesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.snsClient.SetPlatformApplicationAttributesWithContext(segCtx, input)
+			_, err = client.SetPlatformApplicationAttributesWithContext(segCtx, input)
 		} else {
-			_, err = s.snsClient.SetPlatformApplicationAttributes(input)
+			_, err = client.SetPlatformApplicationAttributes(input)
 		}
 	}
 
@@ -2432,7 +2510,7 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-CreatePlatformEndpoint", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-CreatePlatformEndpoint", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2452,7 +2530,8 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("CreatePlatformEndpoint Failed: " + "SNS Client is Required")
 		return "", err
 	}
@@ -2484,12 +2563,12 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.CreatePlatformEndpointWithContext(ctx, input)
+		output, err = client.CreatePlatformEndpointWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.CreatePlatformEndpointWithContext(segCtx, input)
+			output, err = client.CreatePlatformEndpointWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.CreatePlatformEndpoint(input)
+			output, err = client.CreatePlatformEndpoint(input)
 		}
 	}
 
@@ -2513,7 +2592,7 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-DeletePlatformEndpoint", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-DeletePlatformEndpoint", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2530,7 +2609,8 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("DeletePlatformEndpoint Failed: " + "SNS Client is Required")
 		return err
 	}
@@ -2550,12 +2630,12 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.snsClient.DeleteEndpointWithContext(ctx, input)
+		_, err = client.DeleteEndpointWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.snsClient.DeleteEndpointWithContext(segCtx, input)
+			_, err = client.DeleteEndpointWithContext(segCtx, input)
 		} else {
-			_, err = s.snsClient.DeleteEndpoint(input)
+			_, err = client.DeleteEndpoint(input)
 		}
 	}
 
@@ -2585,7 +2665,7 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-ListEndpointsByPlatformApplication", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-ListEndpointsByPlatformApplication", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2605,7 +2685,8 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("ListEndpointsByPlatformApplication Failed: " + "SNS Client is Required")
 		return nil, "", err
 	}
@@ -2631,12 +2712,12 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.ListEndpointsByPlatformApplicationWithContext(ctx, input)
+		output, err = client.ListEndpointsByPlatformApplicationWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.ListEndpointsByPlatformApplicationWithContext(segCtx, input)
+			output, err = client.ListEndpointsByPlatformApplicationWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.ListEndpointsByPlatformApplication(input)
+			output, err = client.ListEndpointsByPlatformApplication(input)
 		}
 	}
 
@@ -2683,7 +2764,7 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-GetPlatformEndpointAttributes", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-GetPlatformEndpointAttributes", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2701,7 +2782,8 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("GetPlatformEndpointAttributes Failed: " + "SNS Client is Required")
 		return nil, err
 	}
@@ -2723,12 +2805,12 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.snsClient.GetEndpointAttributesWithContext(ctx, input)
+		output, err = client.GetEndpointAttributesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.snsClient.GetEndpointAttributesWithContext(segCtx, input)
+			output, err = client.GetEndpointAttributesWithContext(segCtx, input)
 		} else {
-			output, err = s.snsClient.GetEndpointAttributes(input)
+			output, err = client.GetEndpointAttributes(input)
 		}
 	}
 
@@ -2750,7 +2832,7 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SNS-SetPlatformEndpointAttributes", s._parentSegment)
+	seg := xray.NewSegmentNullable("SNS-SetPlatformEndpointAttributes", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -2768,7 +2850,8 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 	}
 
 	// validation
-	if s.snsClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SetPlatformEndpointAttributes Failed: " + "SNS Client is Required")
 		return err
 	}
@@ -2794,12 +2877,12 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.snsClient.SetEndpointAttributesWithContext(ctx, input)
+		_, err = client.SetEndpointAttributesWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.snsClient.SetEndpointAttributesWithContext(segCtx, input)
+			_, err = client.SetEndpointAttributesWithContext(segCtx, input)
 		} else {
-			_, err = s.snsClient.SetEndpointAttributes(input)
+			_, err = client.SetEndpointAttributes(input)
 		}
 	}
 

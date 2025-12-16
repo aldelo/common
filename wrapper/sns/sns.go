@@ -42,8 +42,12 @@ package sns
 import (
 	"context"
 	"errors"
+	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
@@ -155,6 +159,48 @@ func (s *SNS) getParentSegment() *xray.XRayParentSegment {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s._parentSegment
+}
+
+var (
+	e164Regexp      = regexp.MustCompile(`^\+[1-9]\d{1,14}$`)
+	senderIDRegexp  = regexp.MustCompile(`^[A-Za-z0-9]{3,11}$`)
+	senderHasLetter = regexp.MustCompile(`[A-Za-z]`)
+)
+
+// validateE164Phone ensures the phone number is in E.164 format.
+func validateE164Phone(phone string) error {
+	if !e164Regexp.MatchString(phone) {
+		return fmt.Errorf("phone number must be E.164 formatted (e.g. +12095551212)")
+	}
+	return nil
+}
+
+// validateSenderID enforces AWS rules: 3-11 alphanumeric chars, at least one letter.
+func validateSenderID(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	id = strings.TrimSpace(id)
+	if !senderIDRegexp.MatchString(id) || !senderHasLetter.MatchString(id) {
+		return fmt.Errorf("SMSSenderName must be 3-11 alphanumeric chars and contain at least one letter")
+	}
+	return nil
+}
+
+// smsLength returns the per-encoding limit and the used character count.
+func smsLength(message string) (limit int, used int, encoding string) {
+	gsm7 := true
+	for _, r := range message {
+		if r > 127 {
+			gsm7 = false
+			break
+		}
+	}
+	used = utf8.RuneCountInString(message)
+	if gsm7 {
+		return 140, used, "GSM-7"
+	}
+	return 70, used, "UCS-2"
 }
 
 // ================================================================================================================
@@ -1683,11 +1729,12 @@ func (s *SNS) Publish(topicArn string,
 		return "", err
 	}
 
-	if len(subject) > 0 {
-		if util.LenTrim(subject) > 100 {
-			err = errors.New("Publish Failed: " + "Subject Maximum Characters is 100")
+	if trimmedSubject := strings.TrimSpace(subject); len(trimmedSubject) > 0 {
+		if utf8.RuneCountInString(trimmedSubject) > 100 {
+			err = errors.New("Publish Failed: Subject Maximum Characters is 100")
 			return "", err
 		}
+		subject = trimmedSubject
 	}
 
 	// create input object
@@ -1803,13 +1850,24 @@ func (s *SNS) SendSMS(phoneNumber string,
 		return "", err
 	}
 
+	if err = validateE164Phone(phoneNumber); err != nil {
+		err = errors.New("SendSMS Failed: " + err.Error())
+		return "", err
+	}
+
 	if util.LenTrim(message) <= 0 {
 		err = errors.New("SendSMS Failed: " + "Message is Required")
 		return "", err
 	}
 
-	if len(message) > 140 {
-		err = errors.New("SendSMS Failed: " + "SMS Text Message Maximum Characters Limited to 140")
+	limit, used, encoding := smsLength(message)
+	if used > limit {
+		err = fmt.Errorf("SendSMS Failed: message length %d exceeds %d characters for %s encoding", used, limit, encoding)
+		return "", err
+	}
+
+	if err = validateSenderID(s.getSMSSenderName()); err != nil {
+		err = errors.New("SendSMS Failed: " + err.Error())
 		return "", err
 	}
 
@@ -1899,6 +1957,11 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 		return err
 	}
 
+	if err = validateE164Phone(phoneNumber); err != nil {
+		err = errors.New("OptInPhoneNumber Failed: " + err.Error())
+		return err
+	}
+
 	// create input object
 	input := &sns.OptInPhoneNumberInput{
 		PhoneNumber: aws.String(phoneNumber),
@@ -1966,6 +2029,11 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 
 	if util.LenTrim(phoneNumber) <= 0 {
 		err = errors.New("CheckIfPhoneNumberIsOptedOut Failed: " + "Phone Number is Required, in E.164 Format (i.e. +19255551212)")
+		return false, err
+	}
+
+	if err = validateE164Phone(phoneNumber); err != nil {
+		err = errors.New("CheckIfPhoneNumberIsOptedOut Failed: " + err.Error())
 		return false, err
 	}
 

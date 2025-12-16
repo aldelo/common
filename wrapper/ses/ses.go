@@ -455,7 +455,7 @@ func (e *Email) GenerateSendRawEmailInput(attachmentFileName string, attachmentC
 	}
 
 	if len(e.ReplyTo) > 0 {
-		h.Set("Reply-To", e.ReplyTo[0])
+		h.Set("Reply-To", util.SliceStringToCSVString(e.ReplyTo, false))
 	}
 
 	h.Set("Subject", e.Subject)

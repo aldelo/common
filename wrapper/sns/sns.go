@@ -1768,6 +1768,12 @@ func (s *SNS) Publish(topicArn string,
 		return "", err
 	}
 
+	const maxSNSMessageBytes = 256 * 1024
+	if len([]byte(message)) > maxSNSMessageBytes {
+		err = fmt.Errorf("Publish Failed: message exceeds %d bytes SNS limit", maxSNSMessageBytes)
+		return "", err
+	}
+
 	if trimmedSubject := strings.TrimSpace(subject); len(trimmedSubject) > 0 {
 		if utf8.RuneCountInString(trimmedSubject) > 100 {
 			err = errors.New("Publish Failed: Subject Maximum Characters is 100")
@@ -1903,6 +1909,22 @@ func (s *SNS) SendSMS(phoneNumber string,
 	if used > limit {
 		err = fmt.Errorf("SendSMS Failed: message length %d exceeds %d characters for %s encoding", used, limit, encoding)
 		return "", err
+	}
+
+	// enforce AWS SMS segment caps (approx. 10 segments) to avoid runtime InvalidParameter errors
+	const maxGSM7Chars = 1600 // 10 * 160 (single) or 153/segment w/ UDH; AWS documented soft cap
+	const maxUCS2Chars = 670  // ~10 segments * 67 chars
+	switch encoding {
+	case "GSM-7":
+		if used > maxGSM7Chars {
+			err = fmt.Errorf("SendSMS Failed: message length %d exceeds AWS SMS limit of %d GSM-7 characters (~10 segments)", used, maxGSM7Chars)
+			return "", err
+		}
+	case "UCS-2":
+		if used > maxUCS2Chars {
+			err = fmt.Errorf("SendSMS Failed: message length %d exceeds AWS SMS limit of %d UCS-2 characters (~10 segments)", used, maxUCS2Chars)
+			return "", err
+		}
 	}
 
 	if err = validateSenderID(s.getSMSSenderName()); err != nil {
@@ -2650,6 +2672,11 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 
 	if util.LenTrim(token) <= 0 {
 		err = errors.New("CreatePlatformEndpoint Failed: " + "Token is Required")
+		return "", err
+	}
+
+	if util.LenTrim(customUserData) > 0 && len([]byte(customUserData)) > 2048 {
+		err = errors.New("CreatePlatformEndpoint Failed: CustomUserData must be < 2KB")
 		return "", err
 	}
 

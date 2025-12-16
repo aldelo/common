@@ -554,7 +554,7 @@ func (e *Email) GenerateSendRawEmailInput(attachmentFileName string, attachmentC
 
 	// assemble SendRawEmailInput object
 	input := &ses.SendRawEmailInput{
-		Destinations: aws.StringSlice(e.To),
+		Destinations: aws.StringSlice(destinations),
 		Source:       aws.String(e.From),
 		RawMessage:   &raw,
 	}
@@ -768,7 +768,8 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 	}
 
 	if output == nil || output.MessageId == nil {
-		return "", errors.New("SendRawEmail Failed: nil output or MessageId from AWS SDK")
+		// CHANGED: correct function name in error for clearer debugging
+		return "", errors.New("SendEmail Failed: nil output or MessageId from AWS SDK")
 	}
 
 	// email sent successfully

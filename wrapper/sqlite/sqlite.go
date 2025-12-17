@@ -332,6 +332,10 @@ func (svr *SQLite) Begin() error {
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 
+	if svr.db == nil {
+		return errors.New("SQLite Database is Not Connected")
+	}
+
 	// does transaction already exist
 	if svr.tx != nil {
 		return errors.New("Transaction Already Started")
@@ -362,6 +366,10 @@ func (svr *SQLite) Commit() error {
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 
+	if svr.db == nil {
+		return errors.New("SQLite Database is Not Connected")
+	}
+
 	// does transaction already exist
 	if svr.tx == nil {
 		return errors.New("Transaction Does Not Exist")
@@ -386,6 +394,10 @@ func (svr *SQLite) Rollback() error {
 
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
+
+	if svr.db == nil {
+		return errors.New("SQLite Database is Not Connected")
+	}
 
 	// does transaction already exist
 	if svr.tx == nil {
@@ -800,18 +812,27 @@ func (svr *SQLite) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, e
 		return nil, err
 	}
 
+	svr.mu.RLock()
+	tx := svr.tx
+	db := svr.db
+	svr.mu.RUnlock()
+
+	if db == nil {
+		return nil, errors.New("SQLite Database is Not Connected")
+	}
+
 	// perform select action, and return sqlx row
 	var row *sqlx.Row
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		row = svr.db.QueryRowx(query, args...)
+		row = db.QueryRowx(query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
-		row = svr.tx.QueryRowx(query, args...)
+		row = tx.QueryRowx(query, args...)
 	}
 
 	if row == nil {
@@ -820,7 +841,7 @@ func (svr *SQLite) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, e
 		err = row.Err()
 
 		if err != nil {
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				// no rows
 				row = nil
 				err = nil
@@ -968,17 +989,26 @@ func (svr *SQLite) GetScalarString(query string, args ...interface{}) (retVal st
 		return "", false, err
 	}
 
+	svr.mu.RLock()
+	tx := svr.tx
+	db := svr.db
+	svr.mu.RUnlock()
+
+	if db == nil {
+		return "", false, errors.New("SQLite Database is Not Connected")
+	}
+
 	// get row using query string and parameters
 	var row *sqlx.Row
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction
 		// use db object
-		row = svr.db.QueryRowx(query, args...)
+		row = db.QueryRowx(query, args...)
 	} else {
 		// in transaction
 		// use tx object
-		row = svr.tx.QueryRowx(query, args...)
+		row = tx.QueryRowx(query, args...)
 	}
 
 	if row == nil {
@@ -1025,17 +1055,26 @@ func (svr *SQLite) GetScalarNullString(query string, args ...interface{}) (retVa
 		return sql.NullString{}, false, err
 	}
 
+	svr.mu.RLock()
+	tx := svr.tx
+	db := svr.db
+	svr.mu.RUnlock()
+
+	if db == nil {
+		return sql.NullString{}, false, errors.New("SQLite Database is Not Connected")
+	}
+
 	// get row using query string and parameters
 	var row *sqlx.Row
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction
 		// use db object
-		row = svr.db.QueryRowx(query, args...)
+		row = db.QueryRowx(query, args...)
 	} else {
 		// in transaction
 		// use tx object
-		row = svr.tx.QueryRowx(query, args...)
+		row = tx.QueryRowx(query, args...)
 	}
 
 	if row == nil {
@@ -1089,6 +1128,10 @@ func (svr *SQLite) ExecByOrdinalParams(actionQuery string, args ...interface{}) 
 
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
+
+	if svr.db == nil {
+		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("SQLite Database is Not Connected")}
+	}
 
 	// perform exec action, and return to caller
 	var result sql.Result
@@ -1167,6 +1210,10 @@ func (svr *SQLite) ExecByNamedMapParam(actionQuery string, args map[string]inter
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 
+	if svr.db == nil {
+		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("SQLite Database is Not Connected")}
+	}
+
 	// perform exec action, and return to caller
 	var result sql.Result
 	var err error
@@ -1239,6 +1286,10 @@ func (svr *SQLite) ExecByStructParam(actionQuery string, args interface{}) SQLit
 
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
+
+	if svr.db == nil {
+		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("SQLite Database is Not Connected")}
+	}
 
 	// perform exec action, and return to caller
 	var result sql.Result

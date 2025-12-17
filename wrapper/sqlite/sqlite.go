@@ -19,6 +19,7 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -205,6 +206,18 @@ type SQLiteResult struct {
 	Err             error
 }
 
+// resetDest clears caller-owned pointer destinations on not-found results.
+func resetDest(dest interface{}) {
+	rv := reflect.ValueOf(dest)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return
+	}
+	ev := rv.Elem()
+	if ev.CanSet() {
+		ev.Set(reflect.Zero(ev.Type()))
+	}
+}
+
 // ================================================================================================================
 // STRUCT FUNCTIONS
 // ================================================================================================================
@@ -279,6 +292,7 @@ func (svr *SQLite) Open() error {
 		return e1
 	}
 	if e1 = db.Ping(); e1 != nil {
+		_ = db.Close()
 		return e1
 	}
 
@@ -447,9 +461,9 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
+	svr.mu.RUnlock()
 
 	if db == nil {
-		svr.mu.RUnlock()
 		return false, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -465,19 +479,15 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 		// query using tx object
 		err = tx.Select(dest, query, args...)
 	}
-	svr.mu.RUnlock()
 
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
-		notFound = true
-		dest = nil
-		err = nil
-	} else {
-		notFound = false
+		resetDest(dest)
+		return true, nil
 	}
 
 	// return error
-	return notFound, err
+	return false, err
 }
 
 // GetStruct performs query with optional variadic parameters, and unmarshal single result row into single target struct,
@@ -500,9 +510,9 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
+	svr.mu.RUnlock()
 
 	if db == nil {
-		svr.mu.RUnlock()
 		return false, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -518,19 +528,15 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 		// query using tx object
 		err = tx.Get(dest, query, args...)
 	}
-	svr.mu.RUnlock()
 
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
-		notFound = true
-		dest = nil
-		err = nil
-	} else {
-		notFound = false
+		resetDest(dest)
+		return true, nil
 	}
 
 	// return error
-	return notFound, err
+	return false, err
 }
 
 // ----------------------------------------------------------------------------------------------------------------

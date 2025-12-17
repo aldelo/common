@@ -1,7 +1,7 @@
 package sqlite
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"sync"
 
 	util "github.com/aldelo/common"
 	"github.com/jmoiron/sqlx"
@@ -190,6 +191,8 @@ type SQLite struct {
 	// sqlite database state object
 	db *sqlx.DB
 	tx *sqlx.Tx
+
+	mu sync.Mutex
 }
 
 // SQLiteResult defines sql action query result info
@@ -336,6 +339,9 @@ func (svr *SQLite) Begin() error {
 		return err
 	}
 
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
+
 	// does transaction already exist
 	if svr.tx != nil {
 		return errors.New("Transaction Already Started")
@@ -363,6 +369,9 @@ func (svr *SQLite) Commit() error {
 		return err
 	}
 
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
+
 	// does transaction already exist
 	if svr.tx == nil {
 		return errors.New("Transaction Does Not Exist")
@@ -384,6 +393,9 @@ func (svr *SQLite) Rollback() error {
 	if err := svr.Ping(); err != nil {
 		return err
 	}
+
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
 
 	// does transaction already exist
 	if svr.tx == nil {
@@ -440,7 +452,7 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		notFound = true
 		dest = nil
 		err = nil
@@ -483,7 +495,7 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		notFound = true
 		dest = nil
 		err = nil
@@ -538,7 +550,7 @@ func (svr *SQLite) GetRowsByOrdinalParams(query string, args ...interface{}) (*s
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		rows = nil
 		err = nil
 	}
@@ -595,7 +607,7 @@ func (svr *SQLite) GetRowsByNamedMapParam(query string, args map[string]interfac
 		rows, err = svr.tx.NamedQuery(query, args)
 	}
 
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		// no rows
 		rows = nil
 		err = nil
@@ -649,7 +661,7 @@ func (svr *SQLite) GetRowsByStructParam(query string, args interface{}) (*sqlx.R
 		rows, err = svr.tx.NamedQuery(query, args)
 	}
 
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		// no rows
 		rows = nil
 		err = nil
@@ -675,7 +687,7 @@ func (svr *SQLite) GetRowsByStructParam(query string, args interface{}) (*sqlx.R
 // [ Return Values ]
 //  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
-func (svr *SQLite) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool, err error) {
+func (svr *SQLite) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows bool, err error) {
 	// ensure rows pointer is set
 	if rows == nil {
 		return true, nil
@@ -683,25 +695,15 @@ func (svr *SQLite) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows boo
 
 	// call rows.Next() first to position the row
 	if rows.Next() {
-		// now slice scan
-		dest, err = rows.SliceScan()
-
-		// if err is sql.ErrNoRows then treat as no error
-		if err != nil && err == sql.ErrNoRows {
-			endOfRows = true
-			dest = nil
-			err = nil
-			return
-		}
-
+		var out []interface{}
+		out, err = rows.SliceScan()
 		if err != nil {
-			// has error
-			endOfRows = false // although error but may not be at end of rows
-			dest = nil
-			return
+			if errors.Is(err, sql.ErrNoRows) {
+				return true, nil
+			}
+			return false, err
 		}
-
-		// slice scan success, but may not be at end of rows
+		*dest = out
 		return false, nil
 	}
 
@@ -734,7 +736,7 @@ func (svr *SQLite) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool
 		err = rows.StructScan(dest)
 
 		// if err is sql.ErrNoRows then treat as no error
-		if err != nil && err == sql.ErrNoRows {
+		if err != nil && errors.Is(err, sql.ErrNoRows) {
 			endOfRows = true
 			dest = nil
 			err = nil
@@ -832,29 +834,22 @@ func (svr *SQLite) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, e
 // [ Return Values ]
 //  1. notFound = true if no row is found in current scan
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
-func (svr *SQLite) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bool, err error) {
+func (svr *SQLite) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFound bool, err error) {
 	// if row is nil, treat as no row and not an error
 	if row == nil {
-		dest = nil
 		return true, nil
 	}
 
-	// perform slice scan on the given row
-	dest, err = row.SliceScan()
-
-	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
-		dest = nil
-		return true, nil
-	}
-
+	var out []interface{}
+	out, err = row.SliceScan()
 	if err != nil {
-		// has error
-		dest = nil
-		return false, err // although error but may not be not found
+		if errors.Is(err, sql.ErrNoRows) {
+			return true, nil
+		}
+		return false, err
 	}
 
-	// slice scan success
+	*dest = out // assign back to caller
 	return false, nil
 }
 
@@ -881,7 +876,7 @@ func (svr *SQLite) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound bo
 	err = row.StructScan(dest)
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		dest = nil
 		return true, nil
 	}
@@ -925,7 +920,7 @@ func (svr *SQLite) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFoun
 	err = row.Scan(dest...)
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		return true, nil
 	}
 
@@ -977,7 +972,7 @@ func (svr *SQLite) GetScalarString(query string, args ...interface{}) (retVal st
 		retErr = row.Err()
 
 		if retErr != nil {
-			if retErr == sql.ErrNoRows {
+			if errors.Is(retErr, sql.ErrNoRows) {
 				// no rows
 				return "", true, nil
 			} else {
@@ -990,7 +985,7 @@ func (svr *SQLite) GetScalarString(query string, args ...interface{}) (retVal st
 	// get value via scan
 	retErr = row.Scan(&retVal)
 
-	if retErr == sql.ErrNoRows {
+	if errors.Is(retErr, sql.ErrNoRows) {
 		// no rows
 		return "", true, nil
 	} else {
@@ -1034,7 +1029,7 @@ func (svr *SQLite) GetScalarNullString(query string, args ...interface{}) (retVa
 		retErr = row.Err()
 
 		if retErr != nil {
-			if retErr == sql.ErrNoRows {
+			if errors.Is(retErr, sql.ErrNoRows) {
 				// no rows
 				return sql.NullString{}, true, nil
 			} else {
@@ -1047,7 +1042,7 @@ func (svr *SQLite) GetScalarNullString(query string, args ...interface{}) (retVa
 	// get value via scan
 	retErr = row.Scan(&retVal)
 
-	if retErr == sql.ErrNoRows {
+	if errors.Is(retErr, sql.ErrNoRows) {
 		// no rows
 		return sql.NullString{}, true, nil
 	} else {
@@ -1074,14 +1069,11 @@ func (svr *SQLite) ExecByOrdinalParams(actionQuery string, args ...interface{}) 
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
-	// is new insertion?
-	var isInsert bool
+	trimmed := strings.TrimSpace(strings.ToUpper(actionQuery))
+	isInsert := strings.HasPrefix(trimmed, "INSERT")
 
-	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
-		isInsert = true
-	} else {
-		isInsert = false
-	}
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
 
 	// perform exec action, and return to caller
 	var result sql.Result
@@ -1104,11 +1096,8 @@ func (svr *SQLite) ExecByOrdinalParams(actionQuery string, args ...interface{}) 
 
 	// if inserted, get last id if known
 	var newID int64
-	newID = 0
-
 	if isInsert {
 		newID, err = result.LastInsertId()
-
 		if err != nil {
 			err = errors.New("ExecByOrdinalParams() Get LastInsertId() Error: " + err.Error())
 			return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -1153,15 +1142,15 @@ func (svr *SQLite) ExecByNamedMapParam(actionQuery string, args map[string]inter
 	if err := svr.Ping(); err != nil {
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
-
-	// is new insertion?
-	var isInsert bool
-
-	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
-		isInsert = true
-	} else {
-		isInsert = false
+	if args == nil {
+		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByNamedMapParam() Error: args map cannot be nil")}
 	}
+
+	trimmed := strings.TrimSpace(strings.ToUpper(actionQuery))
+	isInsert := strings.HasPrefix(trimmed, "INSERT")
+
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
 
 	// perform exec action, and return to caller
 	var result sql.Result
@@ -1184,8 +1173,6 @@ func (svr *SQLite) ExecByNamedMapParam(actionQuery string, args map[string]inter
 
 	// if inserted, get last id if known
 	var newID int64
-	newID = 0
-
 	if isInsert {
 		newID, err = result.LastInsertId()
 
@@ -1228,15 +1215,15 @@ func (svr *SQLite) ExecByStructParam(actionQuery string, args interface{}) SQLit
 	if err := svr.Ping(); err != nil {
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
-
-	// is new insertion?
-	var isInsert bool
-
-	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
-		isInsert = true
-	} else {
-		isInsert = false
+	if args == nil {
+		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByStructParam() Error: args struct cannot be nil")}
 	}
+
+	trimmed := strings.TrimSpace(strings.ToUpper(actionQuery))
+	isInsert := strings.HasPrefix(trimmed, "INSERT")
+
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
 
 	// perform exec action, and return to caller
 	var result sql.Result
@@ -1259,8 +1246,6 @@ func (svr *SQLite) ExecByStructParam(actionQuery string, args interface{}) SQLit
 
 	// if inserted, get last id if known
 	var newID int64
-	newID = 0
-
 	if isInsert {
 		newID, err = result.LastInsertId()
 

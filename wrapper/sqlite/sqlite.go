@@ -341,13 +341,14 @@ func (svr *SQLite) Close() error {
 // Ping tests if current database connection is still active and ready
 func (svr *SQLite) Ping() error {
 	svr.mu.RLock()
-	defer svr.mu.RUnlock()
+	db := svr.db
+	svr.mu.RUnlock()
 
-	if svr.db == nil {
+	if db == nil {
 		return errors.New("SQLite Database is Not Connected")
 	}
 
-	return svr.db.Ping()
+	return db.Ping()
 }
 
 // Begin starts a database transaction, and stores the transaction object until commit or rollback

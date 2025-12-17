@@ -286,6 +286,13 @@ func (svr *SQLite) Open() error {
 		return errors.New("SQLite Database Connect String Generated Cannot Be Empty")
 	}
 
+	svr.mu.Lock() // protect existing db/tx state during open
+	if svr.db != nil {
+		defer svr.mu.Unlock()
+		return errors.New("SQLite Database is Already Connected") // CHANGED
+	}
+	svr.mu.Unlock()
+
 	// now ready to open sqlite database
 	db, e1 := sqlx.Open("sqlite3", str)
 	if e1 != nil {
@@ -444,9 +451,9 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return false, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -462,6 +469,7 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 		// query using tx object
 		err = tx.Select(dest, query, args...)
 	}
+	svr.mu.RUnlock()
 
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
@@ -493,9 +501,9 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return false, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -511,6 +519,7 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 		// query using tx object
 		err = tx.Get(dest, query, args...)
 	}
+	svr.mu.RUnlock()
 
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && errors.Is(err, sql.ErrNoRows) {

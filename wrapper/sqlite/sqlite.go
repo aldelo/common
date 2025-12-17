@@ -192,7 +192,7 @@ type SQLite struct {
 	db *sqlx.DB
 	tx *sqlx.Tx
 
-	mu sync.Mutex
+	mu sync.RWMutex
 }
 
 // SQLiteResult defines sql action query result info
@@ -267,43 +267,35 @@ func (svr *SQLite) Open() error {
 	str, err = svr.GetDsn()
 
 	if err != nil {
-		svr.tx = nil
-		svr.db = nil
 		return err
 	}
-
-	// validate connection string
-	if len(str) == 0 {
-		svr.tx = nil
-		svr.db = nil
+	if util.LenTrim(str) == 0 {
 		return errors.New("SQLite Database Connect String Generated Cannot Be Empty")
 	}
 
 	// now ready to open sqlite database
-	svr.db, err = sqlx.Open("sqlite3", str)
-
-	if err != nil {
-		svr.tx = nil
-		svr.db = nil
-		return err
+	db, e1 := sqlx.Open("sqlite3", str)
+	if e1 != nil {
+		return e1
+	}
+	if e1 = db.Ping(); e1 != nil {
+		return e1
 	}
 
-	// test sqlite database state object
-	if err = svr.db.Ping(); err != nil {
-		svr.tx = nil
-		svr.db = nil
-		return err
-	}
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
 
-	// upon open, transaction object already nil
+	svr.db = db
 	svr.tx = nil
 
-	// sqlite database state object successfully opened
 	return nil
 }
 
 // Close will close the database connection and set db to nil
 func (svr *SQLite) Close() error {
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
+
 	if svr.db != nil {
 		if err := svr.db.Close(); err != nil {
 			return err
@@ -312,7 +304,6 @@ func (svr *SQLite) Close() error {
 		// clean up
 		svr.tx = nil
 		svr.db = nil
-		return nil
 	}
 
 	return nil
@@ -320,16 +311,15 @@ func (svr *SQLite) Close() error {
 
 // Ping tests if current database connection is still active and ready
 func (svr *SQLite) Ping() error {
-	if svr.db == nil {
+	svr.mu.RLock()
+	db := svr.db
+	svr.mu.RUnlock()
+
+	if db == nil {
 		return errors.New("SQLite Database is Not Connected")
 	}
 
-	if err := svr.db.Ping(); err != nil {
-		return err
-	}
-
-	// database ok
-	return nil
+	return db.Ping()
 }
 
 // Begin starts a database transaction, and stores the transaction object until commit or rollback
@@ -438,17 +428,22 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 		return false, err
 	}
 
+	svr.mu.RLock()
+	tx := svr.tx
+	db := svr.db
+	svr.mu.RUnlock()
+
 	// perform select action, and unmarshal result rows into target struct slice
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		err = svr.db.Select(dest, query, args...)
+		err = db.Select(dest, query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
-		err = svr.tx.Select(dest, query, args...)
+		err = tx.Select(dest, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -481,17 +476,22 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 		return false, err
 	}
 
+	svr.mu.RLock()
+	tx := svr.tx
+	db := svr.db
+	svr.mu.RUnlock()
+
 	// perform select action, and unmarshal result row (single row) into target struct (single object)
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		err = svr.db.Get(dest, query, args...)
+		err = db.Get(dest, query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
-		err = svr.tx.Get(dest, query, args...)
+		err = tx.Get(dest, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -535,18 +535,23 @@ func (svr *SQLite) GetRowsByOrdinalParams(query string, args ...interface{}) (*s
 		return nil, err
 	}
 
+	svr.mu.RLock()
+	tx := svr.tx
+	db := svr.db
+	svr.mu.RUnlock()
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		rows, err = svr.db.Queryx(query, args...)
+		rows, err = db.Queryx(query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
-		rows, err = svr.tx.Queryx(query, args...)
+		rows, err = tx.Queryx(query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -593,18 +598,23 @@ func (svr *SQLite) GetRowsByNamedMapParam(query string, args map[string]interfac
 		return nil, err
 	}
 
+	svr.mu.RLock()
+	tx := svr.tx
+	db := svr.db
+	svr.mu.RUnlock()
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		rows, err = svr.db.NamedQuery(query, args)
+		rows, err = db.NamedQuery(query, args)
 	} else {
 		// in transaction mode
 		// query using tx object
-		rows, err = svr.tx.NamedQuery(query, args)
+		rows, err = tx.NamedQuery(query, args)
 	}
 
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
@@ -647,18 +657,23 @@ func (svr *SQLite) GetRowsByStructParam(query string, args interface{}) (*sqlx.R
 		return nil, err
 	}
 
+	svr.mu.RLock()
+	tx := svr.tx
+	db := svr.db
+	svr.mu.RUnlock()
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		rows, err = svr.db.NamedQuery(query, args)
+		rows, err = db.NamedQuery(query, args)
 	} else {
 		// in transaction mode
 		// query using tx object
-		rows, err = svr.tx.NamedQuery(query, args)
+		rows, err = tx.NamedQuery(query, args)
 	}
 
 	if err != nil && errors.Is(err, sql.ErrNoRows) {

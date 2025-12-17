@@ -288,7 +288,7 @@ func (svr *SQLite) Open() error {
 
 	svr.mu.Lock() // protect existing db/tx state during open
 	if svr.db != nil {
-		defer svr.mu.Unlock()
+		svr.mu.Unlock()
 		return errors.New("SQLite Database is Already Connected") // CHANGED
 	}
 	svr.mu.Unlock()
@@ -306,9 +306,13 @@ func (svr *SQLite) Open() error {
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 
+	if svr.db != nil { // close the just-opened handle if someone else connected meanwhile
+		_ = db.Close()
+		return errors.New("SQLite Database is Already Connected")
+	}
+
 	svr.db = db
 	svr.tx = nil
-
 	return nil
 }
 

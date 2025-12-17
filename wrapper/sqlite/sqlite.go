@@ -445,6 +445,10 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 	db := svr.db
 	svr.mu.RUnlock()
 
+	if db == nil {
+		return false, errors.New("SQLite Database is Not Connected")
+	}
+
 	// perform select action, and unmarshal result rows into target struct slice
 	var err error
 
@@ -492,6 +496,10 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 	tx := svr.tx
 	db := svr.db
 	svr.mu.RUnlock()
+
+	if db == nil {
+		return false, errors.New("SQLite Database is Not Connected")
+	}
 
 	// perform select action, and unmarshal result row (single row) into target struct (single object)
 	var err error
@@ -551,6 +559,10 @@ func (svr *SQLite) GetRowsByOrdinalParams(query string, args ...interface{}) (*s
 	tx := svr.tx
 	db := svr.db
 	svr.mu.RUnlock()
+
+	if db == nil {
+		return nil, errors.New("SQLite Database is Not Connected")
+	}
 
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
@@ -615,6 +627,10 @@ func (svr *SQLite) GetRowsByNamedMapParam(query string, args map[string]interfac
 	db := svr.db
 	svr.mu.RUnlock()
 
+	if db == nil {
+		return nil, errors.New("SQLite Database is Not Connected")
+	}
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
@@ -673,6 +689,10 @@ func (svr *SQLite) GetRowsByStructParam(query string, args interface{}) (*sqlx.R
 	tx := svr.tx
 	db := svr.db
 	svr.mu.RUnlock()
+
+	if db == nil {
+		return nil, errors.New("SQLite Database is Not Connected")
+	}
 
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows

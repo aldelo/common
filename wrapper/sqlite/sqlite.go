@@ -443,9 +443,9 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return false, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -455,11 +455,13 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 	if tx == nil {
 		// not in transaction mode
 		// query using db object
+		svr.mu.RUnlock()
 		err = db.Select(dest, query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
 		err = tx.Select(dest, query, args...)
+		svr.mu.RUnlock()
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -495,9 +497,9 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return false, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -507,11 +509,13 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 	if tx == nil {
 		// not in transaction mode
 		// query using db object
+		svr.mu.RUnlock()
 		err = db.Get(dest, query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
 		err = tx.Get(dest, query, args...)
+		svr.mu.RUnlock()
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -558,9 +562,9 @@ func (svr *SQLite) GetRowsByOrdinalParams(query string, args ...interface{}) (*s
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return nil, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -571,11 +575,13 @@ func (svr *SQLite) GetRowsByOrdinalParams(query string, args ...interface{}) (*s
 	if tx == nil {
 		// not in transaction mode
 		// query using db object
+		svr.mu.RUnlock()
 		rows, err = db.Queryx(query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
 		rows, err = tx.Queryx(query, args...)
+		svr.mu.RUnlock()
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -625,9 +631,9 @@ func (svr *SQLite) GetRowsByNamedMapParam(query string, args map[string]interfac
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return nil, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -638,11 +644,13 @@ func (svr *SQLite) GetRowsByNamedMapParam(query string, args map[string]interfac
 	if tx == nil {
 		// not in transaction mode
 		// query using db object
+		svr.mu.RUnlock()
 		rows, err = db.NamedQuery(query, args)
 	} else {
 		// in transaction mode
 		// query using tx object
 		rows, err = tx.NamedQuery(query, args)
+		svr.mu.RUnlock()
 	}
 
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
@@ -688,9 +696,9 @@ func (svr *SQLite) GetRowsByStructParam(query string, args interface{}) (*sqlx.R
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return nil, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -701,11 +709,13 @@ func (svr *SQLite) GetRowsByStructParam(query string, args interface{}) (*sqlx.R
 	if tx == nil {
 		// not in transaction mode
 		// query using db object
+		svr.mu.RUnlock()
 		rows, err = db.NamedQuery(query, args)
 	} else {
 		// in transaction mode
 		// query using tx object
 		rows, err = tx.NamedQuery(query, args)
+		svr.mu.RUnlock()
 	}
 
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
@@ -835,9 +845,9 @@ func (svr *SQLite) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, e
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return nil, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -848,11 +858,13 @@ func (svr *SQLite) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, e
 	if tx == nil {
 		// not in transaction mode
 		// query using db object
+		svr.mu.RUnlock()
 		row = db.QueryRowx(query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
 		row = tx.QueryRowx(query, args...)
+		svr.mu.RUnlock()
 	}
 
 	if row == nil {
@@ -1012,9 +1024,9 @@ func (svr *SQLite) GetScalarString(query string, args ...interface{}) (retVal st
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return "", false, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -1024,11 +1036,13 @@ func (svr *SQLite) GetScalarString(query string, args ...interface{}) (retVal st
 	if tx == nil {
 		// not in transaction
 		// use db object
+		svr.mu.RUnlock()
 		row = db.QueryRowx(query, args...)
 	} else {
 		// in transaction
 		// use tx object
 		row = tx.QueryRowx(query, args...)
+		svr.mu.RUnlock()
 	}
 
 	if row == nil {
@@ -1078,9 +1092,9 @@ func (svr *SQLite) GetScalarNullString(query string, args ...interface{}) (retVa
 	svr.mu.RLock()
 	tx := svr.tx
 	db := svr.db
-	svr.mu.RUnlock()
 
 	if db == nil {
+		svr.mu.RUnlock()
 		return sql.NullString{}, false, errors.New("SQLite Database is Not Connected")
 	}
 
@@ -1090,11 +1104,13 @@ func (svr *SQLite) GetScalarNullString(query string, args ...interface{}) (retVa
 	if tx == nil {
 		// not in transaction
 		// use db object
+		svr.mu.RUnlock()
 		row = db.QueryRowx(query, args...)
 	} else {
 		// in transaction
 		// use tx object
 		row = tx.QueryRowx(query, args...)
+		svr.mu.RUnlock()
 	}
 
 	if row == nil {

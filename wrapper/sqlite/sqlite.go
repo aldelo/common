@@ -330,23 +330,17 @@ func (svr *SQLite) Close() error {
 // Ping tests if current database connection is still active and ready
 func (svr *SQLite) Ping() error {
 	svr.mu.RLock()
-	db := svr.db
-	svr.mu.RUnlock()
+	defer svr.mu.RUnlock()
 
-	if db == nil {
+	if svr.db == nil {
 		return errors.New("SQLite Database is Not Connected")
 	}
 
-	return db.Ping()
+	return svr.db.Ping()
 }
 
 // Begin starts a database transaction, and stores the transaction object until commit or rollback
 func (svr *SQLite) Begin() error {
-	// verify if the database connection is good
-	if err := svr.Ping(); err != nil {
-		return err
-	}
-
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 
@@ -359,9 +353,7 @@ func (svr *SQLite) Begin() error {
 		return errors.New("Transaction Already Started")
 	}
 
-	// begin transaction on database
 	tx, err := svr.db.Beginx()
-
 	if err != nil {
 		return err
 	}
@@ -377,10 +369,6 @@ func (svr *SQLite) Begin() error {
 // Commit finalizes a database transaction, and commits changes to database
 func (svr *SQLite) Commit() error {
 	// verify if the database connection is good
-	if err := svr.Ping(); err != nil {
-		return err
-	}
-
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 
@@ -405,11 +393,6 @@ func (svr *SQLite) Commit() error {
 
 // Rollback cancels pending database changes for the current transaction and clears out transaction object
 func (svr *SQLite) Rollback() error {
-	// verify if the database connection is good
-	if err := svr.Ping(); err != nil {
-		return err
-	}
-
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 

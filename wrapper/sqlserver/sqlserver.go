@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 
 	util "github.com/aldelo/common"
 	"github.com/jmoiron/sqlx"
@@ -197,6 +198,8 @@ type SQLServer struct {
 	// SQLSvr state object
 	db *sqlx.DB
 	tx *sqlx.Tx
+
+	mu sync.Mutex
 }
 
 // SQLResult defines sql action query result info
@@ -393,15 +396,16 @@ func (svr *SQLServer) Open(useADOConnectString ...bool) error {
 
 // Close will close the database connection and set db to nil
 func (svr *SQLServer) Close() error {
-	if svr.db != nil {
-		if err := svr.db.Close(); err != nil {
+	svr.mu.Lock()
+	db := svr.db
+	svr.db = nil
+	svr.tx = nil
+	svr.mu.Unlock()
+
+	if db != nil {
+		if err := db.Close(); err != nil {
 			return err
 		}
-
-		// clean up
-		svr.tx = nil
-		svr.db = nil
-		return nil
 	}
 
 	return nil
@@ -409,11 +413,15 @@ func (svr *SQLServer) Close() error {
 
 // Ping tests if current database connection is still active and ready
 func (svr *SQLServer) Ping() error {
-	if svr.db == nil {
+	svr.mu.Lock()
+	db := svr.db
+	svr.mu.Unlock()
+
+	if db == nil {
 		return errors.New("SQL Server Not Connected")
 	}
 
-	if err := svr.db.Ping(); err != nil {
+	if err := db.Ping(); err != nil {
 		return err
 	}
 
@@ -428,21 +436,26 @@ func (svr *SQLServer) Begin() error {
 		return err
 	}
 
-	// does transaction already exist
+	svr.mu.Lock()
 	if svr.tx != nil {
+		svr.mu.Unlock()
 		return errors.New("Transaction Already Started")
 	}
+	db := svr.db
+	svr.mu.Unlock()
 
-	// begin transaction on database
-	tx, err := svr.db.Beginx()
+	if db == nil {
+		return errors.New("SQL Server Not Connected")
+	}
 
+	tx, err := db.Beginx()
 	if err != nil {
 		return err
 	}
 
-	// transaction begin successful,
-	// store tx into svr.tx field
+	svr.mu.Lock()
 	svr.tx = tx
+	svr.mu.Unlock()
 
 	// return nil as success
 	return nil
@@ -477,19 +490,24 @@ func (svr *SQLServer) Rollback() error {
 		return err
 	}
 
-	// does transaction already exist
-	if svr.tx == nil {
+	svr.mu.Lock()
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if tx == nil {
 		return errors.New("Transaction Does Not Exist")
 	}
 
-	// perform tx commit
-	if err := svr.tx.Rollback(); err != nil {
+	if err := tx.Rollback(); err != nil {
+		svr.mu.Lock()
 		svr.tx = nil
+		svr.mu.Unlock()
 		return err
 	}
 
-	// commit successful
+	svr.mu.Lock()
 	svr.tx = nil
+	svr.mu.Unlock()
 	return nil
 }
 
@@ -821,7 +839,7 @@ func (svr *SQLServer) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows b
 		err = rows.StructScan(dest)
 
 		// if err is sql.ErrNoRows then treat as no error
-		if err != nil && err == sql.ErrNoRows {
+		if err != nil && errors.Is(err, sql.ErrNoRows) {
 			endOfRows = true
 			dest = nil
 			err = nil
@@ -890,7 +908,7 @@ func (svr *SQLServer) GetSingleRow(query string, args ...interface{}) (*sqlx.Row
 		err = row.Err()
 
 		if err != nil {
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				// no rows
 				row = nil
 				err = nil
@@ -978,7 +996,7 @@ func (svr *SQLServer) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound
 	err = row.StructScan(dest)
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		dest = nil
 		return true, nil
 	}
@@ -1022,7 +1040,7 @@ func (svr *SQLServer) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notF
 	err = row.Scan(dest...)
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		return true, nil
 	}
 
@@ -1074,7 +1092,7 @@ func (svr *SQLServer) GetScalarString(query string, args ...interface{}) (retVal
 		retErr = row.Err()
 
 		if retErr != nil {
-			if retErr == sql.ErrNoRows {
+			if errors.Is(retErr, sql.ErrNoRows) {
 				// no rows
 				return "", true, nil
 			} else {
@@ -1087,7 +1105,7 @@ func (svr *SQLServer) GetScalarString(query string, args ...interface{}) (retVal
 	// get value via scan
 	retErr = row.Scan(&retVal)
 
-	if retErr == sql.ErrNoRows {
+	if errors.Is(retErr, sql.ErrNoRows) {
 		// no row
 		return "", true, nil
 	}
@@ -1131,7 +1149,7 @@ func (svr *SQLServer) GetScalarNullString(query string, args ...interface{}) (re
 		retErr = row.Err()
 
 		if retErr != nil {
-			if retErr == sql.ErrNoRows {
+			if errors.Is(retErr, sql.ErrNoRows) {
 				// no rows
 				return sql.NullString{}, true, nil
 			} else {
@@ -1144,7 +1162,7 @@ func (svr *SQLServer) GetScalarNullString(query string, args ...interface{}) (re
 	// get value via scan
 	retErr = row.Scan(&retVal)
 
-	if retErr == sql.ErrNoRows {
+	if errors.Is(retErr, sql.ErrNoRows) {
 		// no row
 		return sql.NullString{}, true, nil
 	}
@@ -1191,30 +1209,43 @@ func (svr *SQLServer) ExecByOrdinalParams(query string, args ...interface{}) SQL
 		query += "SELECT RowsAffected=@@ROWCOUNT;"
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByOrdinalParams() Error: Database Connection is Nil")}
+	}
+
 	// perform exec action, and return to caller
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode,
 		// action using db object
-		rows, err = svr.db.Queryx(query, args...)
+		rows, err = db.Queryx(query, args...)
 	} else {
 		// in transaction mode,
 		// action using tx object
-		rows, err = svr.tx.Queryx(query, args...)
+		rows, err = tx.Queryx(query, args...)
 	}
 
 	if err != nil {
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
-	// no row - error
 	if rows == nil {
-		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByOrdinalParams() Error: No Row Summary Returned")}
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByOrdinalParams() Error: Queryx Returned Nil Rows")}
 	}
 
+	defer rows.Close()
+
 	if rows.Next() == false {
+		if rows.Err() != nil {
+			return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: rows.Err()}
+		}
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByOrdinalParams() Error: Rows.Next() Yielded No Data")}
 	}
 
@@ -1222,25 +1253,18 @@ func (svr *SQLServer) ExecByOrdinalParams(query string, args ...interface{}) SQL
 	var affected int64
 	var newID int64
 
-	var returnErr error
-	returnErr = nil
-
 	if isInsert {
-		if err = rows.Scan(&newID, &affected); err != nil {
-			if err != sql.ErrNoRows {
-				returnErr = err
-			}
+		if err = rows.Scan(&newID, &affected); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	} else {
-		if err = rows.Scan(&affected); err != nil {
-			if err != sql.ErrNoRows {
-				returnErr = err
-			}
+		if err = rows.Scan(&affected); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
 
 	// return result
-	return SQLResult{RowsAffected: affected, NewlyInsertedID: newID, Err: returnErr}
+	return SQLResult{RowsAffected: affected, NewlyInsertedID: newID, Err: nil}
 }
 
 // ExecByNamedMapParam executes action query string with named map containing parameters to return result, if error, returns error object within result
@@ -1287,30 +1311,43 @@ func (svr *SQLServer) ExecByNamedMapParam(query string, args map[string]interfac
 		query += "SELECT RowsAffected=@@ROWCOUNT;"
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByNamedMapParam() Error: Database Connection is Nil")}
+	}
+
 	// perform exec action, and return to caller
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode,
 		// action using db object
-		rows, err = svr.db.NamedQuery(query, args)
+		rows, err = db.NamedQuery(query, args)
 	} else {
 		// in transaction mode,
 		// action using tx object
-		rows, err = svr.tx.NamedQuery(query, args)
+		rows, err = tx.NamedQuery(query, args)
 	}
 
 	if err != nil {
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
-	// no row - error
 	if rows == nil {
-		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByNamedMapParam() Error: No Row Summary Returned")}
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByNamedMapParam() Error: NamedQuery Returned Nil Rows")}
 	}
 
+	defer rows.Close()
+
 	if rows.Next() == false {
+		if rows.Err() != nil {
+			return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: rows.Err()}
+		}
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByNamedMapParam() Error: Rows.Next() Yielded No Data")}
 	}
 
@@ -1318,25 +1355,18 @@ func (svr *SQLServer) ExecByNamedMapParam(query string, args map[string]interfac
 	var affected int64
 	var newID int64
 
-	var returnErr error
-	returnErr = nil
-
 	if isInsert {
-		if err = rows.Scan(&newID, &affected); err != nil {
-			if err != sql.ErrNoRows {
-				returnErr = err
-			}
+		if err = rows.Scan(&newID, &affected); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	} else {
-		if err = rows.Scan(&affected); err != nil {
-			if err != sql.ErrNoRows {
-				returnErr = err
-			}
+		if err = rows.Scan(&affected); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
 
 	// return result
-	return SQLResult{RowsAffected: affected, NewlyInsertedID: newID, Err: returnErr}
+	return SQLResult{RowsAffected: affected, NewlyInsertedID: newID, Err: nil}
 }
 
 // ExecByStructParam executes action query string with struct containing parameters to return result, if error, returns error object within result,
@@ -1378,30 +1408,43 @@ func (svr *SQLServer) ExecByStructParam(query string, args interface{}) SQLResul
 		query += "SELECT RowsAffected=@@ROWCOUNT;"
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByStructParam() Error: Database Connection is Nil")}
+	}
+
 	// perform exec action, and return to caller
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode,
 		// action using db object
-		rows, err = svr.db.NamedQuery(query, args)
+		rows, err = db.NamedQuery(query, args)
 	} else {
 		// in transaction mode,
 		// action using tx object
-		rows, err = svr.tx.NamedQuery(query, args)
+		rows, err = tx.NamedQuery(query, args)
 	}
 
 	if err != nil {
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
-	// no row - error
 	if rows == nil {
-		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByStructParam() Error: No Row Summary Returned")}
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByStructParam() Error: NamedQuery Returned Nil Rows")}
 	}
 
+	defer rows.Close()
+
 	if rows.Next() == false {
+		if rows.Err() != nil {
+			return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: rows.Err()}
+		}
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByStructParam() Error: Rows.Next() Yielded No Data")}
 	}
 
@@ -1409,23 +1452,16 @@ func (svr *SQLServer) ExecByStructParam(query string, args interface{}) SQLResul
 	var affected int64
 	var newID int64
 
-	var returnErr error
-	returnErr = nil
-
 	if isInsert {
-		if err = rows.Scan(&newID, &affected); err != nil {
-			if err != sql.ErrNoRows {
-				returnErr = err
-			}
+		if err = rows.Scan(&newID, &affected); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	} else {
-		if err = rows.Scan(&affected); err != nil {
-			if err != sql.ErrNoRows {
-				returnErr = err
-			}
+		if err = rows.Scan(&affected); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
 
 	// return result
-	return SQLResult{RowsAffected: affected, NewlyInsertedID: newID, Err: returnErr}
+	return SQLResult{RowsAffected: affected, NewlyInsertedID: newID, Err: nil}
 }

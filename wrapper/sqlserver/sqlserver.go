@@ -1,7 +1,7 @@
 package sqlserver
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -532,7 +532,7 @@ func (svr *SQLServer) GetStructSlice(dest interface{}, query string, args ...int
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		notFound = true
 		dest = nil
 		err = nil
@@ -575,7 +575,7 @@ func (svr *SQLServer) GetStruct(dest interface{}, query string, args ...interfac
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		notFound = true
 		dest = nil
 		err = nil
@@ -630,7 +630,7 @@ func (svr *SQLServer) GetRowsByOrdinalParams(query string, args ...interface{}) 
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		rows = nil
 		err = nil
 	}
@@ -687,7 +687,7 @@ func (svr *SQLServer) GetRowsByNamedMapParam(query string, args map[string]inter
 		rows, err = svr.tx.NamedQuery(query, args)
 	}
 
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		// no rows
 		rows = nil
 		err = nil
@@ -741,7 +741,7 @@ func (svr *SQLServer) GetRowsByStructParam(query string, args interface{}) (*sql
 		rows, err = svr.tx.NamedQuery(query, args)
 	}
 
-	if err != nil && err == sql.ErrNoRows {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		// no rows
 		rows = nil
 		err = nil
@@ -767,7 +767,7 @@ func (svr *SQLServer) GetRowsByStructParam(query string, args interface{}) (*sql
 // [ Return Values ]
 //  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
-func (svr *SQLServer) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows bool, err error) {
+func (svr *SQLServer) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows bool, err error) {
 	// ensure rows pointer is set
 	if rows == nil {
 		return true, nil
@@ -775,25 +775,20 @@ func (svr *SQLServer) ScanSlice(rows *sqlx.Rows, dest []interface{}) (endOfRows 
 
 	// call rows.Next() first to position the row
 	if rows.Next() {
-		// now slice scan
-		dest, err = rows.SliceScan()
+		scanned, scanErr := rows.SliceScan()
 
 		// if err is sql.ErrNoRows then treat as no error
-		if err != nil && err == sql.ErrNoRows {
-			endOfRows = true
-			dest = nil
-			err = nil
-			return
+		if scanErr != nil && errors.Is(scanErr, sql.ErrNoRows) {
+			return true, nil
 		}
 
-		if err != nil {
+		if scanErr != nil {
 			// has error
-			endOfRows = false // although error but may not be at end of rows
-			dest = nil
-			return
+			return false, scanErr
 		}
 
-		// slice scan success, but may not be at end of rows
+		// slice scan successful, may not be at end of rows
+		*dest = scanned
 		return false, nil
 	}
 
@@ -924,29 +919,39 @@ func (svr *SQLServer) GetSingleRow(query string, args ...interface{}) (*sqlx.Row
 // [ Return Values ]
 //  1. notFound = true if no row is found in current scan
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
-func (svr *SQLServer) ScanSliceByRow(row *sqlx.Row, dest []interface{}) (notFound bool, err error) {
+func (svr *SQLServer) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFound bool, err error) {
 	// if row is nil, treat as no row and not an error
 	if row == nil {
-		dest = nil
+		if dest != nil {
+			*dest = nil
+		}
 		return true, nil
 	}
 
 	// perform slice scan on the given row
-	dest, err = row.SliceScan()
+	scanned, scanErr := row.SliceScan()
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && err == sql.ErrNoRows {
-		dest = nil
+	if scanErr != nil && errors.Is(scanErr, sql.ErrNoRows) {
+		if dest != nil {
+			*dest = nil
+		}
 		return true, nil
 	}
 
-	if err != nil {
+	if scanErr != nil {
 		// has error
-		dest = nil
-		return false, err // although error but may not be not found
+		if dest != nil {
+			*dest = nil
+		}
+		return false, scanErr // although error but may not be not found
 	}
 
 	// slice scan success
+	if dest != nil {
+		*dest = scanned
+	}
+
 	return false, nil
 }
 
@@ -1169,18 +1174,21 @@ func (svr *SQLServer) ExecByOrdinalParams(query string, args ...interface{}) SQL
 	// keep query trimmed
 	query = util.Trim(query)
 
-	// is insert?
-	isInsert := strings.ToUpper(query[:6]) == "INSERT"
+	if len(query) == 0 {
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByOrdinalParams() Error: Empty Query String")}
+	}
 
-	// append action result query
-	if query[len(query)-1:] != ";" {
+	normalized := strings.ToUpper(strings.TrimSpace(query))
+	isInsert := strings.HasPrefix(normalized, "INSERT")
+
+	if !strings.HasSuffix(query, ";") {
 		query += ";"
 	}
 
 	if isInsert {
-		query += ";SELECT PKID=SCOPE_IDENTITY(), RowsAffected=@@ROWCOUNT;"
+		query += "SELECT PKID=SCOPE_IDENTITY(), RowsAffected=@@ROWCOUNT;"
 	} else {
-		query += ";SELECT RowsAffected=@@ROWCOUNT;"
+		query += "SELECT RowsAffected=@@ROWCOUNT;"
 	}
 
 	// perform exec action, and return to caller
@@ -1262,18 +1270,21 @@ func (svr *SQLServer) ExecByNamedMapParam(query string, args map[string]interfac
 	// keep query trimmed
 	query = util.Trim(query)
 
-	// is insert?
-	isInsert := strings.ToUpper(query[:6]) == "INSERT"
+	if len(query) == 0 {
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByNamedMapParam() Error: Query is Empty")}
+	}
 
-	// append action result query
-	if query[len(query)-1:] != ";" {
+	normalized := strings.ToUpper(strings.TrimSpace(query))
+	isInsert := strings.HasPrefix(normalized, "INSERT")
+
+	if !strings.HasSuffix(query, ";") {
 		query += ";"
 	}
 
 	if isInsert {
-		query += ";SELECT PKID=SCOPE_IDENTITY(), RowsAffected=@@ROWCOUNT;"
+		query += "SELECT PKID=SCOPE_IDENTITY(), RowsAffected=@@ROWCOUNT;"
 	} else {
-		query += ";SELECT RowsAffected=@@ROWCOUNT;"
+		query += "SELECT RowsAffected=@@ROWCOUNT;"
 	}
 
 	// perform exec action, and return to caller
@@ -1350,18 +1361,21 @@ func (svr *SQLServer) ExecByStructParam(query string, args interface{}) SQLResul
 	// keep query trimmed
 	query = util.Trim(query)
 
-	// is insert?
-	isInsert := strings.ToUpper(query[:6]) == "INSERT"
+	if len(query) == 0 {
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByStructParam() Error: Query is Empty")}
+	}
 
-	// append action result query
-	if query[len(query)-1:] != ";" {
+	normalized := strings.ToUpper(strings.TrimSpace(query))
+	isInsert := strings.HasPrefix(normalized, "INSERT")
+
+	if !strings.HasSuffix(query, ";") {
 		query += ";"
 	}
 
 	if isInsert {
-		query += ";SELECT PKID=SCOPE_IDENTITY(), RowsAffected=@@ROWCOUNT;"
+		query += "SELECT PKID=SCOPE_IDENTITY(), RowsAffected=@@ROWCOUNT;"
 	} else {
-		query += ";SELECT RowsAffected=@@ROWCOUNT;"
+		query += "SELECT RowsAffected=@@ROWCOUNT;"
 	}
 
 	// perform exec action, and return to caller

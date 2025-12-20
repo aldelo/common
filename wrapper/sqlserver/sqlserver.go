@@ -468,18 +468,24 @@ func (svr *SQLServer) Commit() error {
 		return err
 	}
 
+	svr.mu.Lock()
+	tx := svr.tx
+	svr.mu.Unlock()
+
 	// does transaction already exist
-	if svr.tx == nil {
+	if tx == nil {
 		return errors.New("Transaction Does Not Exist")
 	}
 
 	// perform tx commit
-	if err := svr.tx.Commit(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 
 	// commit successful
+	svr.mu.Lock()
 	svr.tx = nil
+	svr.mu.Unlock()
 	return nil
 }
 
@@ -536,17 +542,26 @@ func (svr *SQLServer) GetStructSlice(dest interface{}, query string, args ...int
 		return false, err
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return false, errors.New("SQL Server Not Connected")
+	}
+
 	// perform select action, and unmarshal result rows into target struct slice
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		err = svr.db.Select(dest, query, args...)
+		err = db.Select(dest, query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
-		err = svr.tx.Select(dest, query, args...)
+		err = tx.Select(dest, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -579,17 +594,26 @@ func (svr *SQLServer) GetStruct(dest interface{}, query string, args ...interfac
 		return false, err
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return false, errors.New("SQL Server Not Connected")
+	}
+
 	// perform select action, and unmarshal result row (single row) into target struct (single object)
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		err = svr.db.Get(dest, query, args...)
+		err = db.Get(dest, query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
-		err = svr.tx.Get(dest, query, args...)
+		err = tx.Get(dest, query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -633,18 +657,27 @@ func (svr *SQLServer) GetRowsByOrdinalParams(query string, args ...interface{}) 
 		return nil, err
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return nil, errors.New("SQL Server Not Connected")
+	}
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		rows, err = svr.db.Queryx(query, args...)
+		rows, err = db.Queryx(query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
-		rows, err = svr.tx.Queryx(query, args...)
+		rows, err = tx.Queryx(query, args...)
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -691,18 +724,27 @@ func (svr *SQLServer) GetRowsByNamedMapParam(query string, args map[string]inter
 		return nil, err
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return nil, errors.New("SQL Server Not Connected")
+	}
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		rows, err = svr.db.NamedQuery(query, args)
+		rows, err = db.NamedQuery(query, args)
 	} else {
 		// in transaction mode
 		// query using tx object
-		rows, err = svr.tx.NamedQuery(query, args)
+		rows, err = tx.NamedQuery(query, args)
 	}
 
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
@@ -745,18 +787,27 @@ func (svr *SQLServer) GetRowsByStructParam(query string, args interface{}) (*sql
 		return nil, err
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return nil, errors.New("SQL Server Not Connected")
+	}
+
 	// perform select action, and return sqlx rows
 	var rows *sqlx.Rows
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		rows, err = svr.db.NamedQuery(query, args)
+		rows, err = db.NamedQuery(query, args)
 	} else {
 		// in transaction mode
 		// query using tx object
-		rows, err = svr.tx.NamedQuery(query, args)
+		rows, err = tx.NamedQuery(query, args)
 	}
 
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
@@ -888,39 +939,41 @@ func (svr *SQLServer) GetSingleRow(query string, args ...interface{}) (*sqlx.Row
 		return nil, err
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return nil, errors.New("SQL Server Not Connected")
+	}
+
 	// perform select action, and return sqlx row
 	var row *sqlx.Row
 	var err error
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction mode
 		// query using db object
-		row = svr.db.QueryRowx(query, args...)
+		row = db.QueryRowx(query, args...)
 	} else {
 		// in transaction mode
 		// query using tx object
-		row = svr.tx.QueryRowx(query, args...)
+		row = tx.QueryRowx(query, args...)
 	}
 
 	if row == nil {
-		err = errors.New("No Row Data Found From Query")
-	} else {
-		err = row.Err()
-
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				// no rows
-				row = nil
-				err = nil
-			} else {
-				// has error
-				row = nil
-			}
-		}
+		return nil, errors.New("Now Row Data Found From Query")
 	}
 
-	// return result
-	return row, err
+	if err = row.Err(); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return row, nil
 }
 
 // ----------------------------------------------------------------------------------------------------------------
@@ -1073,45 +1126,47 @@ func (svr *SQLServer) GetScalarString(query string, args ...interface{}) (retVal
 		return "", false, err
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return "", false, errors.New("SQL Server Not Connected")
+	}
+
 	// get row using query string and parameters
 	var row *sqlx.Row
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction
 		// use db object
-		row = svr.db.QueryRowx(query, args...)
+		row = db.QueryRowx(query, args...)
 	} else {
 		// in transaction
 		// use tx object
-		row = svr.tx.QueryRowx(query, args...)
+		row = tx.QueryRowx(query, args...)
 	}
 
 	if row == nil {
 		return "", false, errors.New("Scalar Query Yielded Empty Row")
-	} else {
-		retErr = row.Err()
+	}
 
-		if retErr != nil {
-			if errors.Is(retErr, sql.ErrNoRows) {
-				// no rows
-				return "", true, nil
-			} else {
-				// has error
-				return "", false, retErr
-			}
+	if err := row.Err(); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// no rows
+			return "", true, nil
 		}
+		return "", false, err
 	}
 
-	// get value via scan
-	retErr = row.Scan(&retVal)
-
-	if errors.Is(retErr, sql.ErrNoRows) {
-		// no row
+	if err := row.Scan(&retVal); errors.Is(err, sql.ErrNoRows) {
 		return "", true, nil
+	} else if err != nil {
+		return "", false, err
 	}
 
-	// return value
-	return retVal, false, retErr
+	return retVal, false, nil
 }
 
 // GetScalarNullString performs query with optional variadic parameters, and returns the first row and first column value in sql.NullString{} data type
@@ -1130,45 +1185,46 @@ func (svr *SQLServer) GetScalarNullString(query string, args ...interface{}) (re
 		return sql.NullString{}, false, err
 	}
 
+	svr.mu.Lock()
+	db := svr.db
+	tx := svr.tx
+	svr.mu.Unlock()
+
+	if db == nil {
+		return sql.NullString{}, false, errors.New("SQL Server Not Connected")
+	}
+
 	// get row using query string and parameters
 	var row *sqlx.Row
 
-	if svr.tx == nil {
+	if tx == nil {
 		// not in transaction
 		// use db object
-		row = svr.db.QueryRowx(query, args...)
+		row = db.QueryRowx(query, args...)
 	} else {
 		// in transaction
 		// use tx object
-		row = svr.tx.QueryRowx(query, args...)
+		row = tx.QueryRowx(query, args...)
 	}
 
 	if row == nil {
 		return sql.NullString{}, false, errors.New("Scalar Query Yielded Empty Row")
-	} else {
-		retErr = row.Err()
+	}
 
-		if retErr != nil {
-			if errors.Is(retErr, sql.ErrNoRows) {
-				// no rows
-				return sql.NullString{}, true, nil
-			} else {
-				// has error
-				return sql.NullString{}, false, retErr
-			}
+	if err := row.Err(); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return sql.NullString{}, true, nil
 		}
+		return sql.NullString{}, false, err
 	}
 
-	// get value via scan
-	retErr = row.Scan(&retVal)
-
-	if errors.Is(retErr, sql.ErrNoRows) {
-		// no row
+	if err := row.Scan(&retVal); errors.Is(err, sql.ErrNoRows) {
 		return sql.NullString{}, true, nil
+	} else if err != nil {
+		return sql.NullString{}, false, err
 	}
 
-	// return value
-	return retVal, false, retErr
+	return retVal, false, nil
 }
 
 // ----------------------------------------------------------------------------------------------------------------

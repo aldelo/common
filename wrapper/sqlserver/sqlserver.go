@@ -359,36 +359,50 @@ func (svr *SQLServer) Open(useADOConnectString ...bool) error {
 	}
 
 	if err != nil {
+		svr.mu.Lock()
 		svr.tx = nil
 		svr.db = nil
+		svr.mu.Unlock()
 		return err
 	}
 
 	// validate connection string
 	if len(str) == 0 {
+		svr.mu.Lock()
 		svr.tx = nil
 		svr.db = nil
+		svr.mu.Unlock()
 		return errors.New("SQL Server Connect String Generated Cannot Be Empty")
 	}
 
 	// now ready to open sql server database
-	svr.db, err = sqlx.Open("sqlserver", str)
+	db, err := sqlx.Open("sqlserver", str)
 
 	if err != nil {
+		svr.mu.Lock()
 		svr.tx = nil
 		svr.db = nil
+		svr.mu.Unlock()
 		return err
 	}
 
 	// test sql server state object
-	if err = svr.db.Ping(); err != nil {
+	if err = db.Ping(); err != nil {
+		_ = db.Close()
+
+		svr.mu.Lock()
 		svr.tx = nil
 		svr.db = nil
+		svr.mu.Unlock()
+
 		return err
 	}
 
 	// upon open, transaction object already nil
+	svr.mu.Lock()
+	svr.db = db
 	svr.tx = nil
+	svr.mu.Unlock()
 
 	// sql server state object successfully opened
 	return nil

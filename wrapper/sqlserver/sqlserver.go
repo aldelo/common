@@ -199,7 +199,8 @@ type SQLServer struct {
 	db *sqlx.DB
 	tx *sqlx.Tx
 
-	mu sync.Mutex
+	mu   sync.Mutex
+	txMu sync.RWMutex
 }
 
 // SQLResult defines sql action query result info
@@ -450,6 +451,9 @@ func (svr *SQLServer) Begin() error {
 		return err
 	}
 
+	svr.txMu.Lock()
+	defer svr.txMu.Unlock()
+
 	svr.mu.Lock()
 	if svr.tx != nil {
 		svr.mu.Unlock()
@@ -482,6 +486,9 @@ func (svr *SQLServer) Commit() error {
 		return err
 	}
 
+	svr.txMu.Lock()
+	defer svr.txMu.Unlock()
+
 	svr.mu.Lock()
 	tx := svr.tx
 	svr.mu.Unlock()
@@ -509,6 +516,9 @@ func (svr *SQLServer) Rollback() error {
 	if err := svr.Ping(); err != nil {
 		return err
 	}
+
+	svr.txMu.Lock()
+	defer svr.txMu.Unlock()
 
 	svr.mu.Lock()
 	tx := svr.tx
@@ -575,7 +585,9 @@ func (svr *SQLServer) GetStructSlice(dest interface{}, query string, args ...int
 	} else {
 		// in transaction mode
 		// query using tx object
+		svr.txMu.RLock()
 		err = tx.Select(dest, query, args...)
+		svr.txMu.RUnlock()
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
@@ -627,20 +639,20 @@ func (svr *SQLServer) GetStruct(dest interface{}, query string, args ...interfac
 	} else {
 		// in transaction mode
 		// query using tx object
+		svr.txMu.RLock()
 		err = tx.Get(dest, query, args...)
+		svr.txMu.RUnlock()
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && errors.Is(err, sql.ErrNoRows) {
-		notFound = true
-		dest = nil
-		err = nil
-	} else {
-		notFound = false
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return true, nil
+		}
+		return false, err
 	}
 
-	// return error
-	return notFound, err
+	return false, nil
 }
 
 // ----------------------------------------------------------------------------------------------------------------
@@ -680,28 +692,14 @@ func (svr *SQLServer) GetRowsByOrdinalParams(query string, args ...interface{}) 
 		return nil, errors.New("SQL Server Not Connected")
 	}
 
-	// perform select action, and return sqlx rows
-	var rows *sqlx.Rows
-	var err error
-
-	if tx == nil {
-		// not in transaction mode
-		// query using db object
-		rows, err = db.Queryx(query, args...)
-	} else {
-		// in transaction mode
-		// query using tx object
-		rows, err = tx.Queryx(query, args...)
+	if tx != nil {
+		svr.txMu.RLock()
+		rows, err := tx.Queryx(query, args...)
+		svr.txMu.RUnlock()
+		return rows, err
 	}
 
-	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && errors.Is(err, sql.ErrNoRows) {
-		rows = nil
-		err = nil
-	}
-
-	// return result
-	return rows, err
+	return db.Queryx(query, args...)
 }
 
 // GetRowsByNamedMapParam performs query with named map containing parameters to get ROWS of result, and returns *sqlx.Rows
@@ -1299,7 +1297,9 @@ func (svr *SQLServer) ExecByOrdinalParams(query string, args ...interface{}) SQL
 	} else {
 		// in transaction mode,
 		// action using tx object
+		svr.txMu.RLock()
 		rows, err = tx.Queryx(query, args...)
+		svr.txMu.RUnlock()
 	}
 
 	if err != nil {
@@ -1401,7 +1401,9 @@ func (svr *SQLServer) ExecByNamedMapParam(query string, args map[string]interfac
 	} else {
 		// in transaction mode,
 		// action using tx object
+		svr.txMu.RLock()
 		rows, err = tx.NamedQuery(query, args)
+		svr.txMu.RUnlock()
 	}
 
 	if err != nil {
@@ -1498,7 +1500,9 @@ func (svr *SQLServer) ExecByStructParam(query string, args interface{}) SQLResul
 	} else {
 		// in transaction mode,
 		// action using tx object
+		svr.txMu.RLock()
 		rows, err = tx.NamedQuery(query, args)
+		svr.txMu.RUnlock()
 	}
 
 	if err != nil {

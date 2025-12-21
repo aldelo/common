@@ -411,6 +411,9 @@ func (svr *SQLServer) Open(useADOConnectString ...bool) error {
 
 // Close will close the database connection and set db to nil
 func (svr *SQLServer) Close() error {
+	svr.txMu.Lock()
+	defer svr.txMu.Unlock()
+
 	svr.mu.Lock()
 	db := svr.db
 	svr.db = nil
@@ -591,16 +594,14 @@ func (svr *SQLServer) GetStructSlice(dest interface{}, query string, args ...int
 	}
 
 	// if err is sql.ErrNoRows then treat as no error
-	if err != nil && errors.Is(err, sql.ErrNoRows) {
-		notFound = true
-		dest = nil
-		err = nil
-	} else {
-		notFound = false
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return true, nil
+		}
+		return false, err
 	}
 
-	// return error
-	return notFound, err
+	return false, nil
 }
 
 // GetStruct performs query with optional variadic parameters, and unmarshal single result row into single target struct,
@@ -756,7 +757,9 @@ func (svr *SQLServer) GetRowsByNamedMapParam(query string, args map[string]inter
 	} else {
 		// in transaction mode
 		// query using tx object
+		svr.txMu.RLock()
 		rows, err = tx.NamedQuery(query, args)
+		svr.txMu.RUnlock()
 	}
 
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
@@ -819,7 +822,9 @@ func (svr *SQLServer) GetRowsByStructParam(query string, args interface{}) (*sql
 	} else {
 		// in transaction mode
 		// query using tx object
+		svr.txMu.RLock()
 		rows, err = tx.NamedQuery(query, args)
+		svr.txMu.RUnlock()
 	}
 
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
@@ -971,7 +976,9 @@ func (svr *SQLServer) GetSingleRow(query string, args ...interface{}) (*sqlx.Row
 	} else {
 		// in transaction mode
 		// query using tx object
+		svr.txMu.RLock()
 		row = tx.QueryRowx(query, args...)
+		svr.txMu.RUnlock()
 	}
 
 	if row == nil {
@@ -1157,7 +1164,9 @@ func (svr *SQLServer) GetScalarString(query string, args ...interface{}) (retVal
 	} else {
 		// in transaction
 		// use tx object
+		svr.txMu.RLock()
 		row = tx.QueryRowx(query, args...)
+		svr.txMu.RUnlock()
 	}
 
 	if row == nil {
@@ -1216,7 +1225,9 @@ func (svr *SQLServer) GetScalarNullString(query string, args ...interface{}) (re
 	} else {
 		// in transaction
 		// use tx object
+		svr.txMu.RLock()
 		row = tx.QueryRowx(query, args...)
+		svr.txMu.RUnlock()
 	}
 
 	if row == nil {

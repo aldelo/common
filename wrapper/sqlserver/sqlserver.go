@@ -977,7 +977,7 @@ func (svr *SQLServer) GetSingleRow(query string, args ...interface{}) (*sqlx.Row
 	}
 
 	if row == nil {
-		return nil, errors.New("Now Row Data Found From Query")
+		return nil, errors.New("No Row Data Found From Query")
 	}
 
 	if err = row.Err(); err != nil {

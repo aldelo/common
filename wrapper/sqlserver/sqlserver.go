@@ -1300,6 +1300,7 @@ func (svr *SQLServer) ExecByOrdinalParams(query string, args ...interface{}) SQL
 	// perform exec action, and return to caller
 	var rows *sqlx.Rows
 	var err error
+	var unlock func()
 
 	if tx == nil {
 		// not in transaction mode,
@@ -1309,8 +1310,12 @@ func (svr *SQLServer) ExecByOrdinalParams(query string, args ...interface{}) SQL
 		// in transaction mode,
 		// action using tx object
 		svr.txMu.RLock()
+		unlock = svr.txMu.RUnlock
 		rows, err = tx.Queryx(query, args...)
-		svr.txMu.RUnlock()
+	}
+
+	if unlock != nil {
+		defer unlock()
 	}
 
 	if err != nil {
@@ -1404,6 +1409,7 @@ func (svr *SQLServer) ExecByNamedMapParam(query string, args map[string]interfac
 	// perform exec action, and return to caller
 	var rows *sqlx.Rows
 	var err error
+	var unlock func()
 
 	if tx == nil {
 		// not in transaction mode,
@@ -1413,8 +1419,12 @@ func (svr *SQLServer) ExecByNamedMapParam(query string, args map[string]interfac
 		// in transaction mode,
 		// action using tx object
 		svr.txMu.RLock()
+		unlock = svr.txMu.RUnlock
 		rows, err = tx.NamedQuery(query, args)
-		svr.txMu.RUnlock()
+	}
+
+	if unlock != nil {
+		defer unlock()
 	}
 
 	if err != nil {
@@ -1503,6 +1513,7 @@ func (svr *SQLServer) ExecByStructParam(query string, args interface{}) SQLResul
 	// perform exec action, and return to caller
 	var rows *sqlx.Rows
 	var err error
+	var unlock func()
 
 	if tx == nil {
 		// not in transaction mode,
@@ -1512,8 +1523,12 @@ func (svr *SQLServer) ExecByStructParam(query string, args interface{}) SQLResul
 		// in transaction mode,
 		// action using tx object
 		svr.txMu.RLock()
+		unlock = svr.txMu.RUnlock
 		rows, err = tx.NamedQuery(query, args)
-		svr.txMu.RUnlock()
+	}
+
+	if unlock != nil {
+		defer unlock()
 	}
 
 	if err != nil {

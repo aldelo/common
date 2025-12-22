@@ -418,7 +418,7 @@ func (svr *SQLServer) Close() error {
 	db := svr.db
 	svr.db = nil
 	svr.tx = nil
-	svr.mu.Unlock()
+	defer svr.mu.Unlock()
 
 	if db != nil {
 		if err := db.Close(); err != nil {

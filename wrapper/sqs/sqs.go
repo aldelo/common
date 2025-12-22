@@ -1,7 +1,7 @@
 package sqs
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,10 @@ package sqs
 import (
 	"context"
 	"errors"
+	"net/http"
+	"strings"
+	"time"
+
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -54,9 +58,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	awssqs "github.com/aws/aws-sdk-go/service/sqs"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
-	"net/http"
-	"strings"
-	"time"
 )
 
 // ================================================================================================================

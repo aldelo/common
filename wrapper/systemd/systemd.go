@@ -1,7 +1,7 @@
 package systemd
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,9 @@ package systemd
  */
 
 import (
-	"github.com/kardianos/service"
 	"log"
+
+	"github.com/kardianos/service"
 )
 
 // =====================================================================================================================
@@ -182,17 +183,27 @@ func (p *ServiceProgram) Start(s service.Service) error {
 
 // run is async goroutine to handle service code
 func (p *ServiceProgram) run() {
-	// do actual work async in this go-routine
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Service Program Panic Recovered: %v", r)
+		}
+	}()
+
 	log.Println("Starting Service Program...")
 
-	if p != nil {
-		if p.Port >= 0 && p.Port < 65535 {
-			// run service handler
-			if p.StartServiceHandler != nil {
-				log.Println("Start Service Handler Invoked...")
-				p.StartServiceHandler(p.Port)
-			}
-		}
+	if p == nil {
+		return
+	}
+
+	if p.Port < 0 || p.Port > 65535 {
+		log.Printf("Service Program Invalid Port: (Skipping StartServiceHandler) %d", p.Port)
+		return
+	}
+
+	// run service handler
+	if p.StartServiceHandler != nil {
+		log.Println("Start Service Handler Invoked...")
+		p.StartServiceHandler(p.Port)
 	}
 }
 
@@ -201,11 +212,15 @@ func (p *ServiceProgram) Stop(s service.Service) error {
 	// stop the service, should not block
 	log.Println("Stopping Service Program...")
 
-	if p != nil {
-		if p.StopServiceHandler != nil {
-			log.Println("Stop Service Handler Invoked...")
-			p.StopServiceHandler()
-		}
+	if p != nil && p.StopServiceHandler != nil {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Service Program Panic Recovered: %v", r)
+			}
+		}()
+
+		log.Println("Stop Service Handler Invoked...")
+		p.StopServiceHandler()
 	}
 
 	return nil

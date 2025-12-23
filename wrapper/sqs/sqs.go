@@ -262,10 +262,11 @@ func (s *SQS) connectInternal() error {
 	var httpCli *http.Client
 	var httpErr error
 
-	if s.HttpOptions == nil {
-		s.setHttpOptions(new(awshttp2.HttpClientSettings))
-	}
 	opts := s.getHttpOptions()
+	if opts == nil {
+		opts = new(awshttp2.HttpClientSettings)
+		s.setHttpOptions(opts)
+	}
 
 	// use custom http2 client
 	h2 := &awshttp2.AwsHttp2Client{
@@ -2288,7 +2289,7 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 	}
 
 	if len(messageEntries) <= 0 {
-		err = errors.New("ChangeMessageVisibilityBatch Failed: Message Entries Required (count = 0")
+		err = errors.New("ChangeMessageVisibilityBatch Failed: Message Entries Required (count = 0)")
 		return nil, nil, err
 	}
 
@@ -2513,7 +2514,7 @@ func (s *SQS) DeleteMessageBatch(queueUrl string,
 	}
 
 	if len(entries) <= 0 {
-		err = errors.New("DeleteMessagseBatch Failed: Message Entries Elements Must Not Be Zero")
+		err = errors.New("DeleteMessageBatch Failed: Message Entries Elements Must Not Be Zero")
 		return nil, nil, err
 	}
 

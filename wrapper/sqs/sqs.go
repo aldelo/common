@@ -1494,7 +1494,15 @@ func (s *SQS) SendMessage(queueUrl string,
 		input.MessageAttributes = messageAttributes
 	}
 
-	if delaySeconds > 0 {
+	if delaySeconds != 0 {
+		if delaySeconds < 0 {
+			delaySeconds = 0
+		}
+
+		if delaySeconds > 900 {
+			delaySeconds = 900
+		}
+
 		input.DelaySeconds = aws.Int64(delaySeconds)
 	}
 
@@ -1772,6 +1780,9 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 			delay := v.DelaySeconds
 			if delay < 0 {
 				delay = 0
+			}
+			if delay > 900 {
+				delay = 900
 			}
 
 			entries = append(entries, &awssqs.SendMessageBatchRequestEntry{
@@ -2098,8 +2109,16 @@ func (s *SQS) ReceiveMessage(queueUrl string,
 		visibilityTimeOutSeconds = 0
 	}
 
+	if visibilityTimeOutSeconds > 43200 {
+		visibilityTimeOutSeconds = 43200
+	}
+
 	if waitTimeSeconds < 0 {
 		waitTimeSeconds = 0
+	}
+
+	if waitTimeSeconds > 20 {
+		waitTimeSeconds = 20 // aws max
 	}
 
 	// create input object
@@ -2224,6 +2243,10 @@ func (s *SQS) ChangeMessageVisibility(queueUrl string,
 		visibilityTimeOutSeconds = 0
 	}
 
+	if visibilityTimeOutSeconds > 43200 {
+		visibilityTimeOutSeconds = 43200
+	}
+
 	// create input object
 	input := &awssqs.ChangeMessageVisibilityInput{
 		QueueUrl:      aws.String(queueUrl),
@@ -2321,6 +2344,10 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 
 				if timeout < 0 {
 					timeout = 0
+				}
+
+				if timeout > 43200 {
+					timeout = 43200
 				}
 
 				entries = append(entries, &awssqs.ChangeMessageVisibilityBatchRequestEntry{

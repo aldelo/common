@@ -1764,12 +1764,21 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 	var entries []*awssqs.SendMessageBatchRequestEntry
 
 	for _, v := range messageEntries {
+		if v == nil {
+			continue
+		}
+
 		if util.LenTrim(v.Id) > 0 && util.LenTrim(v.MessageBody) > 0 {
+			delay := v.DelaySeconds
+			if delay < 0 {
+				delay = 0
+			}
+
 			entries = append(entries, &awssqs.SendMessageBatchRequestEntry{
 				Id:                aws.String(v.Id),
 				MessageBody:       aws.String(v.MessageBody),
 				MessageAttributes: v.MessageAttributes,
-				DelaySeconds:      aws.Int64(v.DelaySeconds),
+				DelaySeconds:      aws.Int64(delay),
 			})
 		}
 	}
@@ -1889,6 +1898,10 @@ func (s *SQS) SendMessageBatchFifo(queueUrl string,
 	var entries []*awssqs.SendMessageBatchRequestEntry
 
 	for _, v := range messageEntries {
+		if v == nil {
+			continue
+		}
+
 		if util.LenTrim(v.Id) > 0 && util.LenTrim(v.MessageBody) > 0 && util.LenTrim(v.MessageGroupId) > 0 && util.LenTrim(v.MessageDeduplicationId) > 0 {
 			entries = append(entries, &awssqs.SendMessageBatchRequestEntry{
 				Id:                     aws.String(v.Id),

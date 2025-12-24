@@ -1,7 +1,7 @@
 package viper
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@ package viper
 
 import (
 	"errors"
-	util "github.com/aldelo/common"
-	"github.com/spf13/viper"
 	"strings"
 	"time"
+
+	util "github.com/aldelo/common"
+	"github.com/spf13/viper"
 )
 
 // ViperConf struct info,

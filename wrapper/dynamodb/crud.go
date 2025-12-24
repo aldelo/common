@@ -28,6 +28,7 @@ import (
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	ddb "github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
@@ -2487,64 +2488,56 @@ func (c *Crud) CreateGlobalTable(tableName string,
 	}
 
 	// prepare
-	input := &ddb.CreateGlobalTableInput{
-		GlobalTableName: aws.String(tableName),
-	}
-
-	replicas := []*ddb.Replica{
-		{
-			RegionName: aws.String(_ddb.AwsRegion.Key()),
-		},
+	input := &ddb.UpdateTableInput{
+		TableName:      aws.String(tableName),
+		ReplicaUpdates: []*ddb.ReplicationGroupUpdate{},
 	}
 
 	for _, v := range replicaRegions {
-		if v.Valid() && v != awsregion.UNKNOWN {
-			replicas = append(replicas, &ddb.Replica{
-				RegionName: aws.String(v.Key()),
+		if v.Valid() && v != awsregion.UNKNOWN && _ddb.AwsRegion.Key() != v.Key() {
+			input.ReplicaUpdates = append(input.ReplicaUpdates, &ddb.ReplicationGroupUpdate{
+				Create: &ddb.CreateReplicationGroupMemberAction{
+					RegionName: aws.String(v.Key()),
+				},
 			})
 		}
 	}
 
-	if len(replicas) == 0 {
+	if len(input.ReplicaUpdates) == 0 {
 		return fmt.Errorf("CreateGlobalTable Failed: (Validater 8) Replicas' Region List is Required")
 	}
 
-	input.ReplicationGroup = replicas
-
 	// *
-	// * create replica region tables before creating global table
+	// * create a normal table before adding replicas
 	// *
 	if err := c.CreateTable(tableName, true, 0, 0, sse, true, lsi, gsi, attributes); err != nil {
-		return fmt.Errorf("CreateGlobalTable Failed: (Validater 9) Create Regional Primary Table Error, " + err.Error())
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 9) Create Regional Primary Table Error, %s", err.Error())
 	}
 
-	for _, r := range replicaRegions {
-		if r.Valid() && r != awsregion.UNKNOWN && _ddb.AwsRegion.Key() != r.Key() {
-			d := &DynamoDB{
-				AwsRegion:   r,
-				TableName:   tableName,
-				PKName:      "PK",
-				SKName:      "SK",
-				HttpOptions: _ddb.HttpOptions,
-				SkipDax:     true,
-				DaxEndpoint: "",
-			}
+	// Never call CreateGlobalTable that always creates a v1 (2017.11.29) Global Table, though AWS did not remove this API for backward compatibility
+	// The ONLY way to create v2 (2019.11.21) Global Tables: Create a normal table -> Add replicas using UpdateTable
 
-			if err := d.connectInternal(); err != nil {
-				return fmt.Errorf("CreateGlobalTable Failed: (Validater 10) Create Regional Replica to %s Table %s Error, %s", r.Key(), tableName, err.Error())
-			}
+	/* Check table is active
+	   Why 20 minutes?
+	   Replica creation + stream init + PITR checks can take:
+	   Small tables: 3–5 min
+	   Medium tables: 10–15 min
+	   Large tables / GSIs: 20+ min
+	   20 minutes is a sensible upper bound for infra automation.
+	*/
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
 
-			if err := c.CreateTable(tableName, true, 0, 0, sse, true, lsi, gsi, attributes, d); err != nil {
-				return fmt.Errorf("CreateGlobalTable Failed: (Validater 11) Create Regional Replica to %s to Table %s Error, %s", r.Key(), tableName, err.Error())
-			}
-		}
+	if err := _ddb.WaitUntilTableExists(&dynamodb.DescribeTableInput{TableName: aws.String(tableName)}, ctx); err != nil {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 10) Wait Until Table Exists Error, %s", err.Error())
+	}
+
+	if err := _ddb.WaitUntilTableFullyIdle(tableName, ctx); err != nil {
+		return fmt.Errorf("CreateGlobalTable Failed: (Validater 11) Wait Until Table Fully Idle Error, %s", err.Error())
 	}
 
 	// execute
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if output, err := _ddb.CreateGlobalTable(input, ctx); err != nil {
+	if output, err := _ddb.UpdateTable(input, ctx); err != nil {
 		return fmt.Errorf("CreateGlobalTable Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {

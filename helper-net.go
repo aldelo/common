@@ -20,13 +20,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/aldelo/common/rest"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/aldelo/common/rest"
 )
 
 // GetNetListener triggers the specified port to listen via tcp
@@ -64,11 +66,18 @@ func GetLocalIP() string {
 // if host is private on aws route 53, then lookup ip will work only when within given aws vpc that host was registered with
 func DnsLookupIps(host string) (ipList []net.IP) {
 	if ips, err := net.LookupIP(host); err != nil {
+		log.Printf("DNS Lookup IP Failed for Host: %v, %s", err, host)
 		return []net.IP{}
 	} else {
 		for _, ip := range ips {
 			ipList = append(ipList, ip)
 		}
+
+		if len(ipList) == 0 {
+			log.Printf("DNS Lookup IP Returned No Results for Host: %s", host)
+		}
+
+		log.Printf("DNS Lookup IP Returned %v for Host: %s", ipList, host)
 		return ipList
 	}
 }
@@ -77,12 +86,18 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 // if host is private on aws route 53, then lookup ip will work only when within given aws vpc that host was registered with
 func DnsLookupSrvs(host string) (ipList []string) {
 	if _, addrs, err := net.LookupSRV("", "", host); err != nil {
+		log.Printf("DNS Lookup SRV Failed for Host: %v, %s", err, host)
 		return []string{}
 	} else {
 		for _, v := range addrs {
 			ipList = append(ipList, fmt.Sprintf("%s:%d", v.Target, v.Port))
 		}
 
+		if len(ipList) == 0 {
+			log.Printf("DNS Lookup SRV Returned No Results for Host: %s", host)
+		}
+
+		log.Printf("DNS Lookup SRV Returned %v for Host: %s", ipList, host)
 		return ipList
 	}
 }

@@ -8951,3 +8951,95 @@ func (d *DynamoDB) UpdatePointInTimeBackup(input *dynamodb.UpdateContinuousBacku
 		return d.cn.UpdateContinuousBackupsWithContext(ctx[0], input)
 	}
 }
+
+// =====================================================================================================================
+// WaitUntilTableExists Utility Function
+// =====================================================================================================================
+
+// WaitUntilTableExists waits for a condition to be met before returning
+func (d *DynamoDB) WaitUntilTableExists(input *dynamodb.DescribeTableInput, ctx ...aws.Context) error {
+	if d == nil {
+		return fmt.Errorf("DynamoDB WaitUntilTableExists Failed: " + "DynamoDB Object is Nil")
+	}
+
+	if d.cn == nil {
+		return fmt.Errorf("DynamoDB WaitUntilTableExists Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if input == nil {
+		return fmt.Errorf("DynamoDB WaitUntilTableExists Failed: " + "Input Object is Required")
+	}
+
+	if len(ctx) <= 0 {
+		return d.cn.WaitUntilTableExists(input)
+	} else {
+		return d.cn.WaitUntilTableExistsWithContext(ctx[0], input)
+	}
+}
+
+// =====================================================================================================================
+// WaitUntilTableFullyIdle Utility Function
+// =====================================================================================================================
+
+// WaitUntilTableFullyIdle waits until the table is fully idle (active table status, active GSIs, active replicas)
+func (d *DynamoDB) WaitUntilTableFullyIdle(tableName string, ctx aws.Context) error {
+	if d == nil {
+		return fmt.Errorf("DynamoDB WaitUntilTableFullyIdle Failed: " + "DynamoDB Object is Nil")
+	}
+
+	if d.cn == nil {
+		return fmt.Errorf("DynamoDB WaitUntilTableFullyIdle Failed: " + "No DynamoDB Connection Available")
+	}
+
+	if util.LenTrim(tableName) <= 0 {
+		return fmt.Errorf("DynamoDB WaitUntilTableFullyIdle Failed: " + "Table Name is Required")
+	}
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+
+		case <-ticker.C:
+			out, err := d.cn.DescribeTableWithContext(
+				ctx,
+				&dynamodb.DescribeTableInput{
+					TableName: aws.String(tableName),
+				},
+			)
+			if err != nil {
+				return err
+			}
+
+			table := out.Table
+
+			// Table status
+			if aws.StringValue(table.TableStatus) != dynamodb.TableStatusActive {
+				continue
+			}
+
+			// Global Secondary Indexes
+			for _, gsi := range table.GlobalSecondaryIndexes {
+				if aws.StringValue(gsi.IndexStatus) != dynamodb.IndexStatusActive {
+					goto NOT_IDLE
+				}
+			}
+
+			// Replicas (Global Tables)
+			for _, replica := range table.Replicas {
+				if aws.StringValue(replica.ReplicaStatus) != dynamodb.ReplicaStatusActive {
+					goto NOT_IDLE
+				}
+			}
+
+			// Fully idle
+			return nil
+		}
+
+	NOT_IDLE:
+		continue
+	}
+}

@@ -131,11 +131,11 @@ func (s *Textract) getParentSegment() *xray.XRayParentSegment {
 
 // Connect will establish a connection to the Textract service
 func (s *Textract) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
-	if xray.XRayServiceOn() {
-		if len(parentSegment) > 0 {
-			s.setParentSegment(parentSegment[0])
-		}
+	if len(parentSegment) > 0 {
+		s.setParentSegment(parentSegment[0])
+	}
 
+	if xray.XRayServiceOn() {
 		seg := xray.NewSegment("Textract-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {

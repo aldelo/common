@@ -1,7 +1,7 @@
 package textract
 
 /*
- * Copyright 2020-2024 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -68,6 +69,56 @@ type Textract struct {
 	textractClient *textract.Client
 
 	_parentSegment *xray.XRayParentSegment
+
+	mu sync.RWMutex
+}
+
+func (s *Textract) getAwsRegion() awsregion.AWSRegion {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.AwsRegion
+}
+
+func (s *Textract) setAwsRegion(r awsregion.AWSRegion) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.AwsRegion = r
+}
+
+func (s *Textract) getHttpOptions() *awshttp2.HttpClientSettings {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.HttpOptions
+}
+
+func (s *Textract) setHttpOptions(o *awshttp2.HttpClientSettings) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.HttpOptions = o
+}
+
+func (s *Textract) setClient(cli *textract.Client) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.textractClient = cli
+}
+
+func (s *Textract) getClient() *textract.Client {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.textractClient
+}
+
+func (s *Textract) setParentSegment(p *xray.XRayParentSegment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s._parentSegment = p
+}
+
+func (s *Textract) getParentSegment() *xray.XRayParentSegment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s._parentSegment
 }
 
 // ================================================================================================================
@@ -82,13 +133,13 @@ type Textract struct {
 func (s *Textract) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
-			s._parentSegment = parentSegment[0]
+			s.setParentSegment(parentSegment[0])
 		}
 
-		seg := xray.NewSegment("Textract-Connect", s._parentSegment)
+		seg := xray.NewSegment("Textract-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Textract-AWS-Region", s.AwsRegion)
+			_ = seg.Seg.AddMetadata("Textract-AWS-Region", s.getAwsRegion())
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)
@@ -96,33 +147,34 @@ func (s *Textract) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 		}()
 
 		err = s.connectInternal(seg.Ctx)
-
 		return err
-	} else {
-		return s.connectInternal(context.Background())
 	}
+
+	return s.connectInternal(context.Background())
 }
 
 // Connect will establish a connection to the Textract service
 func (s *Textract) connectInternal(ctx context.Context) error {
 	// clean up prior textract client reference
-	s.textractClient = nil
+	s.setClient(nil)
 
-	if !s.AwsRegion.Valid() || s.AwsRegion == awsregion.UNKNOWN {
-		return errors.New("Connect to Textract Failed: (AWS Session Error) " + "Region is Required")
+	region := s.getAwsRegion()
+	if !region.Valid() || region == awsregion.UNKNOWN {
+		return errors.New("Connect to Textract Failed: (AWS Session Error) Region is Required")
 	}
 
 	// create custom http2 client if needed
 	var httpCli *http.Client
 	var httpErr error
 
-	if s.HttpOptions == nil {
-		s.HttpOptions = new(awshttp2.HttpClientSettings)
+	httpOpts := s.getHttpOptions()
+	if httpOpts == nil {
+		s.setHttpOptions(new(awshttp2.HttpClientSettings))
 	}
 
 	// use custom http2 client
 	h2 := &awshttp2.AwsHttp2Client{
-		Options: s.HttpOptions,
+		Options: s.getHttpOptions(),
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
@@ -135,11 +187,11 @@ func (s *Textract) connectInternal(ctx context.Context) error {
 		return errors.New("Connect to Textract Failed: (AWS Session Error) " + err.Error())
 	} else {
 		// create cached objects for shared use
-		s.textractClient = textract.NewFromConfig(cfg)
-
-		if s.textractClient == nil {
+		cli := textract.NewFromConfig(cfg)
+		if cli == nil {
 			return errors.New("Connect to Textract Client Failed: (New Textract Client Connection) " + "Connection Object Nil")
 		}
+		s.setClient(cli)
 
 		// connect successful
 		return nil
@@ -148,12 +200,12 @@ func (s *Textract) connectInternal(ctx context.Context) error {
 
 // Disconnect will clear textract client
 func (s *Textract) Disconnect() {
-	s.textractClient = nil
+	s.setClient(nil)
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *Textract) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
-	s._parentSegment = parentSegment
+	s.setParentSegment(parentSegment)
 }
 
 // ----------------------------------------------------------------------------------------------------------------
@@ -168,7 +220,7 @@ func (s *Textract) AnalyzeID(data []byte) (doc *types.IdentityDocument, err erro
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Textract-AnalyzeID", s._parentSegment)
+	seg := xray.NewSegmentNullable("Textract-AnalyzeID", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -185,7 +237,8 @@ func (s *Textract) AnalyzeID(data []byte) (doc *types.IdentityDocument, err erro
 	}
 
 	// validation
-	if s.textractClient == nil {
+	cli := s.getClient()
+	if cli == nil {
 		err = errors.New("AnalyzeID Failed: " + "Textract Client is Required")
 		return nil, err
 	}
@@ -208,9 +261,9 @@ func (s *Textract) AnalyzeID(data []byte) (doc *types.IdentityDocument, err erro
 	var output *textract.AnalyzeIDOutput
 
 	if segCtxSet {
-		output, err = s.textractClient.AnalyzeID(segCtx, input)
+		output, err = cli.AnalyzeID(segCtx, input)
 	} else {
-		output, err = s.textractClient.AnalyzeID(context.Background(), input)
+		output, err = cli.AnalyzeID(context.Background(), input)
 	}
 
 	// evaluate result
@@ -239,7 +292,7 @@ func (s *Textract) DetectDocumentText(data []byte) (blocks []types.Block, err er
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("Textract-DetectDocumentText", s._parentSegment)
+	seg := xray.NewSegmentNullable("Textract-DetectDocumentText", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -256,7 +309,8 @@ func (s *Textract) DetectDocumentText(data []byte) (blocks []types.Block, err er
 	}
 
 	// validation
-	if s.textractClient == nil {
+	cli := s.getClient()
+	if cli == nil {
 		err = errors.New("DetectDocumentText Failed: " + "Textract Client is Required")
 		return nil, err
 	}
@@ -277,9 +331,9 @@ func (s *Textract) DetectDocumentText(data []byte) (blocks []types.Block, err er
 	var output *textract.DetectDocumentTextOutput
 
 	if segCtxSet {
-		output, err = s.textractClient.DetectDocumentText(segCtx, input)
+		output, err = cli.DetectDocumentText(segCtx, input)
 	} else {
-		output, err = s.textractClient.DetectDocumentText(context.Background(), input)
+		output, err = cli.DetectDocumentText(context.Background(), input)
 	}
 
 	// evaluate result

@@ -2883,16 +2883,37 @@ func (c *Crud) DescribeGlobalTable(tableName string) (*ddb.GlobalTableDescriptio
 		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Validater 3) Global Table Name is Required")
 	}
 
-	// prepare
-	input := &ddb.DescribeGlobalTableInput{
-		GlobalTableName: aws.String(tableName),
-	}
+	// DescribeGlobalTable only works for Global Tables v1 (2017.11.29). It does NOT return v2 (2019.11.21) Global Tables.
+	// For v2 (2019.11.21), just treat it like a normal tables with replicas.
 
 	// execute
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if output, err := _ddb.DescribeGlobalTable(input, ctx); err != nil {
+	// Check for v2 (2019.11.21) Global Table
+	if output, err := _ddb.DescribeTable(&ddb.DescribeTableInput{TableName: aws.String(tableName)}, ctx); err != nil {
+		return nil, fmt.Errorf("DescribeTable Failed: (Exec 1) %s", err.Error())
+	} else {
+		if output == nil {
+			return nil, fmt.Errorf("DescribeTable Failed: (Exec 2) %s", "Output Response is Nil")
+		} else {
+			if output.Table == nil {
+				return nil, fmt.Errorf("DescribeTable Failed: (Exec 3) %s", "Table Description From Output is Nil")
+			} else {
+				if aws.StringValue(output.Table.GlobalTableVersion) == "2019.11.21" && len(output.Table.Replicas) > 0 {
+					return &ddb.GlobalTableDescription{
+						GlobalTableName:   output.Table.TableName,
+						GlobalTableArn:    output.Table.TableArn,
+						GlobalTableStatus: output.Table.TableStatus,
+						ReplicationGroup:  output.Table.Replicas,
+					}, nil
+				}
+			}
+		}
+	}
+
+	// Check for v1 (2017.11.29) Global Table
+	if output, err := _ddb.DescribeGlobalTable(&ddb.DescribeGlobalTableInput{GlobalTableName: aws.String(tableName)}, ctx); err != nil {
 		return nil, fmt.Errorf("DescribeGlobalTable Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {

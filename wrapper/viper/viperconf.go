@@ -282,12 +282,11 @@ func (v *ViperConf) Save() error {
 // Alias will create an alias for the related key,
 // this allows the alias name and key name both refer to the same stored config data
 func (v *ViperConf) Alias(key string, alias string) *ViperConf {
-	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	v.mu.Lock()
+	defer v.mu.Unlock()
 
-	if cli != nil && util.LenTrim(key) > 0 && util.LenTrim(alias) > 0 {
-		cli.RegisterAlias(alias, key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 && util.LenTrim(alias) > 0 {
+		v.viperClient.RegisterAlias(alias, key)
 	}
 
 	return v
@@ -296,11 +295,10 @@ func (v *ViperConf) Alias(key string, alias string) *ViperConf {
 // IsDefined indicates if a key is defined within the config file
 func (v *ViperConf) IsDefined(key string) bool {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.InConfig(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.InConfig(key)
 	}
 
 	return false
@@ -309,11 +307,10 @@ func (v *ViperConf) IsDefined(key string) bool {
 // IsSet indicates if a key's value was set within the config file
 func (v *ViperConf) IsSet(key string) bool {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.IsSet(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.IsSet(key)
 	}
 
 	return false
@@ -322,11 +319,10 @@ func (v *ViperConf) IsSet(key string) bool {
 // Size returns the given key's value in bytes
 func (v *ViperConf) Size(key string) int64 {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return int64(cli.GetSizeInBytes(key))
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return int64(v.viperClient.GetSizeInBytes(key))
 	}
 
 	return 0
@@ -335,11 +331,10 @@ func (v *ViperConf) Size(key string) int64 {
 // Get returns value by key
 func (v *ViperConf) Get(key string) interface{} {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.Get(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.Get(key)
 	}
 
 	return nil
@@ -348,11 +343,10 @@ func (v *ViperConf) Get(key string) interface{} {
 // GetInt returns value by key
 func (v *ViperConf) GetInt(key string) int {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetInt(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetInt(key)
 	}
 
 	return 0
@@ -361,11 +355,10 @@ func (v *ViperConf) GetInt(key string) int {
 // GetIntSlice returns value by key
 func (v *ViperConf) GetIntSlice(key string) []int {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetIntSlice(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetIntSlice(key)
 	}
 
 	return nil
@@ -374,11 +367,10 @@ func (v *ViperConf) GetIntSlice(key string) []int {
 // GetInt64 returns value by key
 func (v *ViperConf) GetInt64(key string) int64 {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetInt64(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetInt64(key)
 	}
 
 	return 0
@@ -387,11 +379,10 @@ func (v *ViperConf) GetInt64(key string) int64 {
 // GetFloat64 returns value by key
 func (v *ViperConf) GetFloat64(key string) float64 {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetFloat64(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetFloat64(key)
 	}
 
 	return 0.00
@@ -400,11 +391,10 @@ func (v *ViperConf) GetFloat64(key string) float64 {
 // GetBool returns value by key
 func (v *ViperConf) GetBool(key string) bool {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetBool(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetBool(key)
 	}
 
 	return false
@@ -413,11 +403,10 @@ func (v *ViperConf) GetBool(key string) bool {
 // GetTime returns value by key
 func (v *ViperConf) GetTime(key string) time.Time {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetTime(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetTime(key)
 	}
 
 	return time.Time{}
@@ -426,11 +415,10 @@ func (v *ViperConf) GetTime(key string) time.Time {
 // GetDuration returns value by key
 func (v *ViperConf) GetDuration(key string) time.Duration {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetDuration(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetDuration(key)
 	}
 
 	return 0
@@ -439,11 +427,10 @@ func (v *ViperConf) GetDuration(key string) time.Duration {
 // GetString returns value by key
 func (v *ViperConf) GetString(key string) string {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetString(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetString(key)
 	}
 
 	return ""
@@ -452,11 +439,10 @@ func (v *ViperConf) GetString(key string) string {
 // GetStringSlice returns value by key
 func (v *ViperConf) GetStringSlice(key string) []string {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetStringSlice(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetStringSlice(key)
 	}
 
 	return nil
@@ -465,11 +451,10 @@ func (v *ViperConf) GetStringSlice(key string) []string {
 // GetStringMapInterface returns value by key
 func (v *ViperConf) GetStringMapInterface(key string) map[string]interface{} {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetStringMap(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetStringMap(key)
 	}
 
 	return nil
@@ -478,11 +463,10 @@ func (v *ViperConf) GetStringMapInterface(key string) map[string]interface{} {
 // GetStringMapString returns value by key
 func (v *ViperConf) GetStringMapString(key string) map[string]string {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetStringMapString(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetStringMapString(key)
 	}
 
 	return nil
@@ -491,11 +475,10 @@ func (v *ViperConf) GetStringMapString(key string) map[string]string {
 // GetStringMapStringSlice returns value by key
 func (v *ViperConf) GetStringMapStringSlice(key string) map[string][]string {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil && util.LenTrim(key) > 0 {
-		return cli.GetStringMapStringSlice(key)
+	if v.viperClient != nil && util.LenTrim(key) > 0 {
+		return v.viperClient.GetStringMapStringSlice(key)
 	}
 
 	return nil
@@ -504,11 +487,10 @@ func (v *ViperConf) GetStringMapStringSlice(key string) map[string][]string {
 // AllKeys returns all keys in config file
 func (v *ViperConf) AllKeys() []string {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil {
-		return cli.AllKeys()
+	if v.viperClient != nil {
+		return v.viperClient.AllKeys()
 	}
 
 	return nil
@@ -517,11 +499,10 @@ func (v *ViperConf) AllKeys() []string {
 // AllSettings returns map of all settings in config file
 func (v *ViperConf) AllSettings() map[string]interface{} {
 	v.mu.RLock()
-	cli := v.viperClient
-	v.mu.RUnlock()
+	defer v.mu.RUnlock()
 
-	if cli != nil {
-		return cli.AllSettings()
+	if v.viperClient != nil {
+		return v.viperClient.AllSettings()
 	}
 
 	return nil

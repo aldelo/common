@@ -143,9 +143,15 @@ func (v *ViperConf) WatchConfig() {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
-	if v.viperClient != nil {
-		v.viperClient.WatchConfig()
+	if v.viperClient == nil {
+		return
 	}
+
+	if len(v.viperClient.ConfigFileUsed()) == 0 {
+		return
+	}
+
+	v.viperClient.WatchConfig()
 }
 
 // ConfigFileUsed returns the current config file full path in use

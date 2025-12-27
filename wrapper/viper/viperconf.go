@@ -48,13 +48,14 @@ type ViperConf struct {
 	// cache viper config object
 	viperClient *viper.Viper
 
-	mu *sync.RWMutex
+	muInitOnce sync.Once
+	mu         *sync.RWMutex
 }
 
 func (v *ViperConf) ensureMu() {
-	if v.mu == nil {
+	v.muInitOnce.Do(func() {
 		v.mu = &sync.RWMutex{}
-	}
+	})
 }
 
 func (v *ViperConf) getClient() *viper.Viper {

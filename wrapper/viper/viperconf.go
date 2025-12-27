@@ -138,15 +138,23 @@ func (v *ViperConf) Init() (bool, error) {
 
 // WatchConfig watches if config file does not exist, this call will panic
 func (v *ViperConf) WatchConfig() {
-	if cli := v.getClient(); cli != nil {
-		cli.WatchConfig()
+	v.ensureMu()
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	if v.viperClient != nil {
+		v.viperClient.WatchConfig()
 	}
 }
 
 // ConfigFileUsed returns the current config file full path in use
 func (v *ViperConf) ConfigFileUsed() string {
-	if cli := v.getClient(); cli != nil {
-		return cli.ConfigFileUsed()
+	v.ensureMu()
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	if v.viperClient != nil {
+		return v.viperClient.ConfigFileUsed()
 	}
 
 	return ""
@@ -195,7 +203,7 @@ func (v *ViperConf) Unmarshal(outputStructPtr interface{}, key ...string) error 
 
 	var err error
 
-	if len(key) <= 0 {
+	if len(key) <= 0 || util.LenTrim(key[0]) == 0 {
 		err = v.viperClient.Unmarshal(outputStructPtr)
 	} else {
 		err = v.viperClient.UnmarshalKey(key[0], outputStructPtr)
@@ -228,6 +236,7 @@ func (v *ViperConf) SubConf(key string) *ViperConf {
 				UseConfigPathHomeAppName:   v.UseConfigPathHomeAppName,
 				CustomConfigPath:           v.CustomConfigPath,
 				viperClient:                subViper,
+				mu:                         v.mu,
 			}
 		}
 	}

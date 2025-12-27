@@ -53,8 +53,14 @@ type ViperConf struct {
 }
 
 func (v *ViperConf) ensureMu() {
+	if v.mu != nil {
+		return
+	}
+
 	v.muInitOnce.Do(func() {
-		v.mu = &sync.RWMutex{}
+		if v.mu == nil {
+			v.mu = &sync.RWMutex{}
+		}
 	})
 }
 

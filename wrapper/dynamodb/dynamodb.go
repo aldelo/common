@@ -634,6 +634,7 @@ func (g *DynamoDBTransactionReads) MarshalSearchKeyValueMaps() (result []map[str
 
 	// loop thru each search key to marshal
 	g.resultItemKeyMutex.Lock()
+	g.resultItemKey = make([]string, 0, len(g.SearchKeys))
 	defer g.resultItemKeyMutex.Unlock()
 
 	if util.LenTrim(g.SKName) > 0 {
@@ -702,10 +703,14 @@ func (g *DynamoDBTransactionReads) UnmarshalResultItems(itemResponses []*dynamod
 
 	ddbResultItemAttributes := make([]map[string]*dynamodb.AttributeValue, 0)
 
+	g.resultItemKeyMutex.RLock()
+	keysCopy := append([]string(nil), g.resultItemKey...)
+	g.resultItemKeyMutex.RUnlock()
+
 	// loop thru itemKey to find matches from itemResponses, then extract the item attributes to ddbResultItemAttributes when matched
 	skDefined := util.LenTrim(g.SKName) > 0
 
-	for _, itemKey := range g.resultItemKey {
+	for _, itemKey := range keysCopy {
 		for _, itemResponse := range itemResponses {
 			if itemResponse != nil {
 				if itemResponse.Item != nil {

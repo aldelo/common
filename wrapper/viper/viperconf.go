@@ -19,6 +19,7 @@ package viper
 import (
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -46,14 +47,31 @@ type ViperConf struct {
 
 	// cache viper config object
 	viperClient *viper.Viper
+
+	mu sync.RWMutex
+}
+
+func (v *ViperConf) getClient() *viper.Viper {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.viperClient
+}
+
+func (v *ViperConf) setClient(c *viper.Viper) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.viperClient = c
 }
 
 // Init will initialize config and readInConfig
 // if config file does not exist, false is returned
 func (v *ViperConf) Init() (bool, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
 	// validate
 	if util.LenTrim(v.ConfigName) <= 0 && util.LenTrim(v.SpecificConfigFileFullPath) <= 0 {
-		return false, errors.New("Init Config Failed: " + "Either Config Name or Config Full Path is Required")
+		return false, errors.New("Init Config Failed: Either Config Name or Config Full Path is Required")
 	}
 
 	// create new viper client object if needed
@@ -98,38 +116,38 @@ func (v *ViperConf) Init() (bool, error) {
 
 	// read in config data
 	if err := v.viperClient.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) {
 			// config file not found, ignore error
 			return false, nil
-		} else {
-			// config file found, but other error occurred
-			return false, errors.New("Init Config Failed: (ReadInConfig Action) " + err.Error())
 		}
-	} else {
-		// read success
-		// v.viperClient.WatchConfig()
-		return true, nil
+		return false, errors.New("Init Config Failed: (ReadInConfig Action) " + err.Error())
 	}
+
+	return true, nil
 }
 
 // WatchConfig watches if config file does not exist, this call will panic
 func (v *ViperConf) WatchConfig() {
-	if v.viperClient != nil {
-		v.viperClient.WatchConfig()
+	if cli := v.getClient(); cli != nil {
+		cli.WatchConfig()
 	}
 }
 
 // ConfigFileUsed returns the current config file full path in use
 func (v *ViperConf) ConfigFileUsed() string {
-	if v.viperClient != nil {
-		return v.viperClient.ConfigFileUsed()
-	} else {
-		return ""
+	if cli := v.getClient(); cli != nil {
+		return cli.ConfigFileUsed()
 	}
+
+	return ""
 }
 
 // Default will set default key value pairs, allows method chaining
 func (v *ViperConf) Default(key string, value interface{}) *ViperConf {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
 	if v.viperClient == nil {
 		v.viperClient = viper.New()
 	}
@@ -153,12 +171,15 @@ func (v *ViperConf) Default(key string, value interface{}) *ViperConf {
 //			type Child struct { ChildKey string `mapstructure:"childkey"`  ChildKey2 string `mapstructure:"childkey_2"` }
 //			type Parent struct { ChildData Child `mapstructure:"parentkey"`}
 func (v *ViperConf) Unmarshal(outputStructPtr interface{}, key ...string) error {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
 	if v.viperClient == nil {
-		return errors.New("Unmarshal Config To Struct Failed: " + "Config Object Needs Initialized")
+		return errors.New("Unmarshal Config To Struct Failed: Config Object Needs Initialized")
 	}
 
 	if outputStructPtr == nil {
-		return errors.New("Unmarshal Config To Struct Failed: " + "Output Struct Ptr is Required")
+		return errors.New("Unmarshal Config To Struct Failed: Output Struct Ptr is Required")
 	}
 
 	var err error
@@ -171,13 +192,16 @@ func (v *ViperConf) Unmarshal(outputStructPtr interface{}, key ...string) error 
 
 	if err != nil {
 		return errors.New("Unmarshal Config To Struct Failed: (Unmarshal Error) " + err.Error())
-	} else {
-		return nil
 	}
+
+	return nil
 }
 
 // SubConf returns a sub config object based on the given key
 func (v *ViperConf) SubConf(key string) *ViperConf {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
 	if v.viperClient != nil {
 		subViper := v.viperClient.Sub(key)
 
@@ -193,16 +217,17 @@ func (v *ViperConf) SubConf(key string) *ViperConf {
 				CustomConfigPath:           v.CustomConfigPath,
 				viperClient:                subViper,
 			}
-		} else {
-			return nil
 		}
-	} else {
-		return nil
 	}
+
+	return nil
 }
 
 // Set will set key value pair into config object
 func (v *ViperConf) Set(key string, value interface{}) *ViperConf {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
 	if v.viperClient != nil && util.LenTrim(key) > 0 {
 		v.viperClient.Set(key, value)
 	}
@@ -212,14 +237,17 @@ func (v *ViperConf) Set(key string, value interface{}) *ViperConf {
 
 // Save will save the current config object into target config disk file
 func (v *ViperConf) Save() error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
 	if v.viperClient == nil {
-		return errors.New("Save Config Failed: " + "Config Client Not Initialized")
+		return errors.New("Save Config Failed: Config Client Not Initialized")
 	}
 
 	fileName := v.SpecificConfigFileFullPath
 
 	if util.LenTrim(fileName) <= 0 {
-		fileName = v.ConfigFileUsed()
+		fileName = v.viperClient.ConfigFileUsed()
 
 		if util.LenTrim(fileName) <= 0 {
 			fileName = "./" + v.ConfigName
@@ -242,20 +270,24 @@ func (v *ViperConf) Save() error {
 
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "invalid trailing UTF-8 octet") {
-			return errors.New("Save Config Failed: (WriteConfig Action) " + "Config File Name Must Not Be Same as Folder Name")
-		} else {
-			return errors.New("Save Config Failed: (WriteConfig Action) " + err.Error())
+			return errors.New("Save Config Failed: (WriteConfig Action) Config File Name Must Not Be Same as Folder Name")
 		}
-	} else {
-		return nil
+
+		return errors.New("Save Config Failed: (WriteConfig Action) " + err.Error())
 	}
+
+	return nil
 }
 
 // Alias will create an alias for the related key,
 // this allows the alias name and key name both refer to the same stored config data
 func (v *ViperConf) Alias(key string, alias string) *ViperConf {
-	if v.viperClient != nil && util.LenTrim(key) > 0 && util.LenTrim(alias) > 0 {
-		v.viperClient.RegisterAlias(alias, key)
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 && util.LenTrim(alias) > 0 {
+		cli.RegisterAlias(alias, key)
 	}
 
 	return v
@@ -263,162 +295,234 @@ func (v *ViperConf) Alias(key string, alias string) *ViperConf {
 
 // IsDefined indicates if a key is defined within the config file
 func (v *ViperConf) IsDefined(key string) bool {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.InConfig(key)
-	} else {
-		return false
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.InConfig(key)
 	}
+
+	return false
 }
 
 // IsSet indicates if a key's value was set within the config file
 func (v *ViperConf) IsSet(key string) bool {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.IsSet(key)
-	} else {
-		return false
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.IsSet(key)
 	}
+
+	return false
 }
 
 // Size returns the given key's value in bytes
 func (v *ViperConf) Size(key string) int64 {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return int64(v.viperClient.GetSizeInBytes(key))
-	} else {
-		return 0
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return int64(cli.GetSizeInBytes(key))
 	}
+
+	return 0
 }
 
 // Get returns value by key
 func (v *ViperConf) Get(key string) interface{} {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.Get(key)
-	} else {
-		return nil
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.Get(key)
 	}
+
+	return nil
 }
 
 // GetInt returns value by key
 func (v *ViperConf) GetInt(key string) int {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetInt(key)
-	} else {
-		return 0
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetInt(key)
 	}
+
+	return 0
 }
 
 // GetIntSlice returns value by key
 func (v *ViperConf) GetIntSlice(key string) []int {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetIntSlice(key)
-	} else {
-		return nil
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetIntSlice(key)
 	}
+
+	return nil
 }
 
 // GetInt64 returns value by key
 func (v *ViperConf) GetInt64(key string) int64 {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetInt64(key)
-	} else {
-		return 0
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetInt64(key)
 	}
+
+	return 0
 }
 
 // GetFloat64 returns value by key
 func (v *ViperConf) GetFloat64(key string) float64 {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetFloat64(key)
-	} else {
-		return 0.00
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetFloat64(key)
 	}
+
+	return 0.00
 }
 
 // GetBool returns value by key
 func (v *ViperConf) GetBool(key string) bool {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetBool(key)
-	} else {
-		return false
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetBool(key)
 	}
+
+	return false
 }
 
 // GetTime returns value by key
 func (v *ViperConf) GetTime(key string) time.Time {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetTime(key)
-	} else {
-		return time.Time{}
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetTime(key)
 	}
+
+	return time.Time{}
 }
 
 // GetDuration returns value by key
 func (v *ViperConf) GetDuration(key string) time.Duration {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetDuration(key)
-	} else {
-		return 0
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetDuration(key)
 	}
+
+	return 0
 }
 
 // GetString returns value by key
 func (v *ViperConf) GetString(key string) string {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetString(key)
-	} else {
-		return ""
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetString(key)
 	}
+
+	return ""
 }
 
 // GetStringSlice returns value by key
 func (v *ViperConf) GetStringSlice(key string) []string {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetStringSlice(key)
-	} else {
-		return nil
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetStringSlice(key)
 	}
+
+	return nil
 }
 
 // GetStringMapInterface returns value by key
 func (v *ViperConf) GetStringMapInterface(key string) map[string]interface{} {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetStringMap(key)
-	} else {
-		return nil
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetStringMap(key)
 	}
+
+	return nil
 }
 
 // GetStringMapString returns value by key
 func (v *ViperConf) GetStringMapString(key string) map[string]string {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetStringMapString(key)
-	} else {
-		return nil
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetStringMapString(key)
 	}
+
+	return nil
 }
 
 // GetStringMapStringSlice returns value by key
 func (v *ViperConf) GetStringMapStringSlice(key string) map[string][]string {
-	if v.viperClient != nil && util.LenTrim(key) > 0 {
-		return v.viperClient.GetStringMapStringSlice(key)
-	} else {
-		return nil
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil && util.LenTrim(key) > 0 {
+		return cli.GetStringMapStringSlice(key)
 	}
+
+	return nil
 }
 
 // AllKeys returns all keys in config file
 func (v *ViperConf) AllKeys() []string {
-	if v.viperClient != nil {
-		return v.viperClient.AllKeys()
-	} else {
-		return nil
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil {
+		return cli.AllKeys()
 	}
+
+	return nil
 }
 
 // AllSettings returns map of all settings in config file
 func (v *ViperConf) AllSettings() map[string]interface{} {
-	if v.viperClient != nil {
-		return v.viperClient.AllSettings()
-	} else {
-		return nil
+	v.mu.RLock()
+	cli := v.viperClient
+	v.mu.RUnlock()
+
+	if cli != nil {
+		return cli.AllSettings()
 	}
+
+	return nil
 }

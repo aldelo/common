@@ -48,16 +48,24 @@ type ViperConf struct {
 	// cache viper config object
 	viperClient *viper.Viper
 
-	mu sync.RWMutex
+	mu *sync.RWMutex
+}
+
+func (v *ViperConf) ensureMu() {
+	if v.mu == nil {
+		v.mu = &sync.RWMutex{}
+	}
 }
 
 func (v *ViperConf) getClient() *viper.Viper {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.viperClient
 }
 
 func (v *ViperConf) setClient(c *viper.Viper) {
+	v.ensureMu()
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.viperClient = c
@@ -66,6 +74,7 @@ func (v *ViperConf) setClient(c *viper.Viper) {
 // Init will initialize config and readInConfig
 // if config file does not exist, false is returned
 func (v *ViperConf) Init() (bool, error) {
+	v.ensureMu()
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -145,6 +154,7 @@ func (v *ViperConf) ConfigFileUsed() string {
 
 // Default will set default key value pairs, allows method chaining
 func (v *ViperConf) Default(key string, value interface{}) *ViperConf {
+	v.ensureMu()
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -171,6 +181,7 @@ func (v *ViperConf) Default(key string, value interface{}) *ViperConf {
 //			type Child struct { ChildKey string `mapstructure:"childkey"`  ChildKey2 string `mapstructure:"childkey_2"` }
 //			type Parent struct { ChildData Child `mapstructure:"parentkey"`}
 func (v *ViperConf) Unmarshal(outputStructPtr interface{}, key ...string) error {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -199,6 +210,7 @@ func (v *ViperConf) Unmarshal(outputStructPtr interface{}, key ...string) error 
 
 // SubConf returns a sub config object based on the given key
 func (v *ViperConf) SubConf(key string) *ViperConf {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -225,6 +237,7 @@ func (v *ViperConf) SubConf(key string) *ViperConf {
 
 // Set will set key value pair into config object
 func (v *ViperConf) Set(key string, value interface{}) *ViperConf {
+	v.ensureMu()
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -237,6 +250,7 @@ func (v *ViperConf) Set(key string, value interface{}) *ViperConf {
 
 // Save will save the current config object into target config disk file
 func (v *ViperConf) Save() error {
+	v.ensureMu()
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -282,6 +296,7 @@ func (v *ViperConf) Save() error {
 // Alias will create an alias for the related key,
 // this allows the alias name and key name both refer to the same stored config data
 func (v *ViperConf) Alias(key string, alias string) *ViperConf {
+	v.ensureMu()
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -294,6 +309,7 @@ func (v *ViperConf) Alias(key string, alias string) *ViperConf {
 
 // IsDefined indicates if a key is defined within the config file
 func (v *ViperConf) IsDefined(key string) bool {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -306,6 +322,7 @@ func (v *ViperConf) IsDefined(key string) bool {
 
 // IsSet indicates if a key's value was set within the config file
 func (v *ViperConf) IsSet(key string) bool {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -318,6 +335,7 @@ func (v *ViperConf) IsSet(key string) bool {
 
 // Size returns the given key's value in bytes
 func (v *ViperConf) Size(key string) int64 {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -330,6 +348,7 @@ func (v *ViperConf) Size(key string) int64 {
 
 // Get returns value by key
 func (v *ViperConf) Get(key string) interface{} {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -342,6 +361,7 @@ func (v *ViperConf) Get(key string) interface{} {
 
 // GetInt returns value by key
 func (v *ViperConf) GetInt(key string) int {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -354,6 +374,7 @@ func (v *ViperConf) GetInt(key string) int {
 
 // GetIntSlice returns value by key
 func (v *ViperConf) GetIntSlice(key string) []int {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -366,6 +387,7 @@ func (v *ViperConf) GetIntSlice(key string) []int {
 
 // GetInt64 returns value by key
 func (v *ViperConf) GetInt64(key string) int64 {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -378,6 +400,7 @@ func (v *ViperConf) GetInt64(key string) int64 {
 
 // GetFloat64 returns value by key
 func (v *ViperConf) GetFloat64(key string) float64 {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -390,6 +413,7 @@ func (v *ViperConf) GetFloat64(key string) float64 {
 
 // GetBool returns value by key
 func (v *ViperConf) GetBool(key string) bool {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -402,6 +426,7 @@ func (v *ViperConf) GetBool(key string) bool {
 
 // GetTime returns value by key
 func (v *ViperConf) GetTime(key string) time.Time {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -414,6 +439,7 @@ func (v *ViperConf) GetTime(key string) time.Time {
 
 // GetDuration returns value by key
 func (v *ViperConf) GetDuration(key string) time.Duration {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -426,6 +452,7 @@ func (v *ViperConf) GetDuration(key string) time.Duration {
 
 // GetString returns value by key
 func (v *ViperConf) GetString(key string) string {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -438,6 +465,7 @@ func (v *ViperConf) GetString(key string) string {
 
 // GetStringSlice returns value by key
 func (v *ViperConf) GetStringSlice(key string) []string {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -450,6 +478,7 @@ func (v *ViperConf) GetStringSlice(key string) []string {
 
 // GetStringMapInterface returns value by key
 func (v *ViperConf) GetStringMapInterface(key string) map[string]interface{} {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -462,6 +491,7 @@ func (v *ViperConf) GetStringMapInterface(key string) map[string]interface{} {
 
 // GetStringMapString returns value by key
 func (v *ViperConf) GetStringMapString(key string) map[string]string {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -474,6 +504,7 @@ func (v *ViperConf) GetStringMapString(key string) map[string]string {
 
 // GetStringMapStringSlice returns value by key
 func (v *ViperConf) GetStringMapStringSlice(key string) map[string][]string {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -486,6 +517,7 @@ func (v *ViperConf) GetStringMapStringSlice(key string) map[string][]string {
 
 // AllKeys returns all keys in config file
 func (v *ViperConf) AllKeys() []string {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 
@@ -498,6 +530,7 @@ func (v *ViperConf) AllKeys() []string {
 
 // AllSettings returns map of all settings in config file
 func (v *ViperConf) AllSettings() map[string]interface{} {
+	v.ensureMu()
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 

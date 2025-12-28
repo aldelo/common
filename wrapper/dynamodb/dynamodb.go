@@ -1022,6 +1022,38 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 	}
 }
 
+func cloneExpressionAttributeValues(src map[string]*dynamodb.AttributeValue) map[string]*dynamodb.AttributeValue { // CHANGE
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]*dynamodb.AttributeValue, len(src))
+	for k, v := range src {
+		if v == nil {
+			dst[k] = nil
+			continue
+		}
+		copied := *v
+		dst[k] = &copied
+	}
+	return dst
+}
+
+func cloneExpressionAttributeNames(src map[string]*string) map[string]*string { // CHANGE
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]*string, len(src))
+	for k, v := range src {
+		if v == nil {
+			dst[k] = nil
+			continue
+		}
+		val := *v
+		dst[k] = &val
+	}
+	return dst
+}
+
 // =====================================================================================================================
 // Public Utility Helpers
 // =====================================================================================================================
@@ -4454,18 +4486,22 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 		params := &dynamodb.QueryInput{
 			TableName:                 aws.String(d.TableName),
 			KeyConditionExpression:    aws.String(keyConditionExpression),
-			ExpressionAttributeValues: expressionAttributeValues,
+			ExpressionAttributeValues: cloneExpressionAttributeValues(expressionAttributeValues),
 		}
 
 		if expressionAttributeNames != nil {
-			params.ExpressionAttributeNames = expressionAttributeNames
+			params.ExpressionAttributeNames = cloneExpressionAttributeNames(expressionAttributeNames)
 		}
 
-		params.FilterExpression = expr.Filter()
+		if params.ExpressionAttributeValues == nil {
+			params.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
+		}
 
 		if params.ExpressionAttributeNames == nil {
 			params.ExpressionAttributeNames = make(map[string]*string)
 		}
+
+		params.FilterExpression = expr.Filter()
 
 		for k, v := range expr.Names() {
 			params.ExpressionAttributeNames[k] = v
@@ -4574,11 +4610,18 @@ func (d *DynamoDB) queryPaginationDataNormal(
 	params := &dynamodb.QueryInput{
 		TableName:                 aws.String(d.TableName),
 		KeyConditionExpression:    aws.String(keyConditionExpression),
-		ExpressionAttributeValues: expressionAttributeValues,
+		ExpressionAttributeValues: cloneExpressionAttributeValues(expressionAttributeValues),
 	}
 
 	if expressionAttributeNames != nil {
-		params.ExpressionAttributeNames = expressionAttributeNames
+		params.ExpressionAttributeNames = cloneExpressionAttributeNames(expressionAttributeNames)
+	}
+
+	if params.ExpressionAttributeValues == nil {
+		params.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
+	}
+	if params.ExpressionAttributeNames == nil {
+		params.ExpressionAttributeNames = make(map[string]*string)
 	}
 
 	params.FilterExpression = expr.Filter()
@@ -4877,11 +4920,15 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		params := &dynamodb.QueryInput{
 			TableName:                 aws.String(d.TableName),
 			KeyConditionExpression:    aws.String(keyConditionExpression),
-			ExpressionAttributeValues: expressionAttributeValues,
+			ExpressionAttributeValues: cloneExpressionAttributeValues(expressionAttributeValues),
 		}
 
 		if expressionAttributeNames != nil {
-			params.ExpressionAttributeNames = expressionAttributeNames
+			params.ExpressionAttributeNames = cloneExpressionAttributeNames(expressionAttributeNames)
+		}
+
+		if params.ExpressionAttributeValues == nil {
+			params.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
 		}
 
 		if filterSet {
@@ -5092,11 +5139,15 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 	params := &dynamodb.QueryInput{
 		TableName:                 aws.String(d.TableName),
 		KeyConditionExpression:    aws.String(keyConditionExpression),
-		ExpressionAttributeValues: expressionAttributeValues,
+		ExpressionAttributeValues: cloneExpressionAttributeValues(expressionAttributeValues),
 	}
 
 	if expressionAttributeNames != nil {
-		params.ExpressionAttributeNames = expressionAttributeNames
+		params.ExpressionAttributeNames = cloneExpressionAttributeNames(expressionAttributeNames)
+	}
+
+	if params.ExpressionAttributeValues == nil {
+		params.ExpressionAttributeValues = make(map[string]*dynamodb.AttributeValue)
 	}
 
 	if filterSet {

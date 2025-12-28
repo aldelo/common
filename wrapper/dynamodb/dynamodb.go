@@ -581,6 +581,9 @@ func (w *DynamoDBTransactionWrites) GetPutItems() interface{} {
 		return nil
 	}
 
+	w.allPutItemsMutex.RLock()
+	defer w.allPutItemsMutex.RUnlock()
+
 	if w.allPutItems == nil {
 		return nil
 	}
@@ -1259,12 +1262,18 @@ func (d *DynamoDB) do_PutItem(input *dynamodb.PutItemInput, ctx ...aws.Context) 
 	}
 
 	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
 	if err := safeCtx.Err(); err != nil {
 		return nil, err
 	}
 
 	call := func(callCtx aws.Context) (*dynamodb.PutItemOutput, error) {
 		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
 		if err := ctxToUse.Err(); err != nil {
 			return nil, err
 		}
@@ -1325,12 +1334,18 @@ func (d *DynamoDB) do_UpdateItem(input *dynamodb.UpdateItemInput, ctx ...aws.Con
 	}
 
 	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
 	if err := safeCtx.Err(); err != nil {
 		return nil, err
 	}
 
 	call := func(callCtx aws.Context) (*dynamodb.UpdateItemOutput, error) {
 		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
 		if err := ctxToUse.Err(); err != nil {
 			return nil, err
 		}
@@ -1389,12 +1404,18 @@ func (d *DynamoDB) do_DeleteItem(input *dynamodb.DeleteItemInput, ctx ...aws.Con
 	}
 
 	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
 	if err := safeCtx.Err(); err != nil {
 		return nil, err
 	}
 
 	call := func(callCtx aws.Context) (*dynamodb.DeleteItemOutput, error) {
 		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
 		if err := ctxToUse.Err(); err != nil {
 			return nil, err
 		}
@@ -1453,12 +1474,18 @@ func (d *DynamoDB) do_GetItem(input *dynamodb.GetItemInput, ctx ...aws.Context) 
 	}
 
 	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
 	if err := safeCtx.Err(); err != nil {
 		return nil, err
 	}
 
 	call := func(callCtx aws.Context) (*dynamodb.GetItemOutput, error) {
 		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
 		if err := ctxToUse.Err(); err != nil {
 			return nil, err
 		}
@@ -1516,12 +1543,18 @@ func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...a
 	}
 
 	safeCtx := ensureAwsContext(convertAwsContextSafely(awsCtx))
+	if safeCtx == nil {
+		safeCtx = context.Background()
+	}
 	if err := safeCtx.Err(); err != nil {
 		return nil, err
 	}
 
 	call := func(callCtx aws.Context) ([]map[string]*dynamodb.AttributeValue, error) {
 		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
 		if err := ctxToUse.Err(); err != nil {
 			return nil, err
 		}

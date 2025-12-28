@@ -1058,6 +1058,17 @@ func cloneExpressionAttributeNames(src map[string]*string) map[string]*string { 
 // Public Utility Helpers
 // =====================================================================================================================
 
+func (d *DynamoDB) getParentSegment() *xray.XRayParentSegment {
+	if d == nil {
+		return nil
+	}
+
+	d._parentSegmentMutex.RLock()
+	defer d._parentSegmentMutex.RUnlock()
+
+	return d._parentSegment
+}
+
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (d *DynamoDB) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 	if d == nil {
@@ -1105,7 +1116,7 @@ func (d *DynamoDB) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 			ContextMissingStrategy: ctxmissing.NewDefaultIgnoreErrorStrategy(),
 		})
 
-		seg := xray.NewSegment("DynamoDB-Connect", d._parentSegment)
+		seg := xray.NewSegment("DynamoDB-Connect", d.getParentSegment())
 		defer seg.Close()
 		defer func() {
 			_ = seg.Seg.AddMetadata("DynamoDB-AWS-Region", d.AwsRegion)
@@ -1199,7 +1210,7 @@ func (d *DynamoDB) EnableDax() (err error) {
 	}
 
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("DynamoDB-EnableDax", d._parentSegment)
+	seg := xray.NewSegmentNullable("DynamoDB-EnableDax", d.getParentSegment())
 
 	if seg != nil {
 		defer seg.Close()
@@ -2624,7 +2635,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-PutItem", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-PutItem", d.getParentSegment())
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -2982,7 +2993,7 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-UpdateItem", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-UpdateItem", d.getParentSegment())
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -3317,7 +3328,7 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-RemoveItemAttribute", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-RemoveItemAttribute", d.getParentSegment())
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -3637,7 +3648,7 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-DeleteItem", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-DeleteItem", d.getParentSegment())
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -3935,7 +3946,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-GetItem", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-GetItem", d.getParentSegment())
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -4454,7 +4465,7 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-QueryPaginationDataWithTrace", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-QueryPaginationDataWithTrace", d.getParentSegment())
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -4832,7 +4843,7 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-QueryItems", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-QueryItems", d.getParentSegment())
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -5740,7 +5751,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-ScanItems", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-ScanItems", d.getParentSegment())
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
@@ -6326,7 +6337,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-BatchWriteItems", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-BatchWriteItems", d.getParentSegment())
 	defer trace.Close()
 	defer func() {
 		if err != nil {
@@ -6969,7 +6980,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-BatchGetItems", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-BatchGetItems", d.getParentSegment())
 
 	defer trace.Close()
 	defer func() {
@@ -7596,7 +7607,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-TransactionWriteItems", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-TransactionWriteItems", d.getParentSegment())
 
 	defer trace.Close()
 
@@ -8211,7 +8222,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 		}
 	}
 
-	trace := xray.NewSegment("DynamoDB-TransactionGetItems", d._parentSegment)
+	trace := xray.NewSegment("DynamoDB-TransactionGetItems", d.getParentSegment())
 
 	defer trace.Close()
 	defer func() {

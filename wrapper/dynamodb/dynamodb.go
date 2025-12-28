@@ -2657,6 +2657,8 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 		}
 	}
 
+	conditionExpressionAttributeValues = cloneExpressionAttributeValues(conditionExpressionAttributeValues)
+
 	trace.Capture("PutItem", func() error {
 		if av, err := dynamodbattribute.MarshalMap(item); err != nil {
 			ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (MarshalMap)")
@@ -2744,6 +2746,8 @@ func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duratio
 			conditionExpressionAttributeValues = cond.ExpressionAttributeValues
 		}
 	}
+
+	conditionExpressionAttributeValues = cloneExpressionAttributeValues(conditionExpressionAttributeValues)
 
 	if av, err := dynamodbattribute.MarshalMap(item); err != nil {
 		ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (MarshalMap)")
@@ -3024,6 +3028,9 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 		return ddbErr
 	}
 
+	expressionAttributeValues = cloneExpressionAttributeValues(expressionAttributeValues)
+	expressionAttributeNames = cloneExpressionAttributeNames(expressionAttributeNames)
+
 	trace.Capture("UpdateItem", func() error {
 		// define key
 		m := make(map[string]*dynamodb.AttributeValue)
@@ -3140,6 +3147,9 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 	if expressionAttributeValues == nil {
 		return d.handleError(errors.New("DynamoDB UpdateItem Failed: " + "ExpressionAttributeValues is Required"))
 	}
+
+	expressionAttributeValues = cloneExpressionAttributeValues(expressionAttributeValues)
+	expressionAttributeNames = cloneExpressionAttributeNames(expressionAttributeNames)
 
 	// define key
 	m := make(map[string]*dynamodb.AttributeValue)
@@ -3373,7 +3383,7 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 				params.ConditionExpression = aws.String(conditionExpression)
 
 				if conditionExpressionSet[0].ExpressionAttributeValues != nil && len(conditionExpressionSet[0].ExpressionAttributeValues) > 0 {
-					params.ExpressionAttributeValues = conditionExpressionSet[0].ExpressionAttributeValues
+					params.ExpressionAttributeValues = cloneExpressionAttributeValues(conditionExpressionSet[0].ExpressionAttributeValues)
 				}
 			}
 		}
@@ -3479,7 +3489,7 @@ func (d *DynamoDB) removeItemAttributeNormal(pkValue string, skValue string, rem
 			params.ConditionExpression = aws.String(conditionExpression)
 
 			if conditionExpressionSet[0].ExpressionAttributeValues != nil && len(conditionExpressionSet[0].ExpressionAttributeValues) > 0 {
-				params.ExpressionAttributeValues = conditionExpressionSet[0].ExpressionAttributeValues
+				params.ExpressionAttributeValues = cloneExpressionAttributeValues(conditionExpressionSet[0].ExpressionAttributeValues)
 			}
 		}
 	}

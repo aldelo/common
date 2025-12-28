@@ -4495,8 +4495,13 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 	}
 
 	trace.Capture("QueryPaginationDataWithTrace", func() error {
+		pkName := d.PKName
+		if util.LenTrim(pkName) <= 0 {
+			pkName = "PK"
+		}
+
 		// compose filter expression and projection if applicable
-		expr, err := expression.NewBuilder().WithProjection(expression.NamesList(expression.Name("PK"))).Build()
+		expr, err := expression.NewBuilder().WithProjection(expression.NamesList(expression.Name(pkName))).Build()
 
 		if err != nil {
 			ddbErr = d.handleError(err, "QueryPaginationDataWithTrace Failed: (Filter/Projection Expression Build)")
@@ -4620,8 +4625,13 @@ func (d *DynamoDB) queryPaginationDataNormal(
 		return nil, d.handleError(errors.New("QueryPaginationDataNormal Failed: ExpressionAttributeValues is Required"))
 	}
 
+	pkName := d.PKName
+	if util.LenTrim(pkName) == 0 {
+		pkName = "PK"
+	}
+
 	// compose filter expression and projection if applicable
-	expr, err := expression.NewBuilder().WithProjection(expression.NamesList(expression.Name("PK"))).Build()
+	expr, err := expression.NewBuilder().WithProjection(expression.NamesList(expression.Name(pkName))).Build()
 
 	if err != nil {
 		return nil, d.handleError(err, "QueryPaginationDataNormal Failed: (Filter/Projection Expression Build)")

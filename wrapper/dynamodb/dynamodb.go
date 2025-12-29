@@ -4080,9 +4080,9 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 			return fmt.Errorf(ddbErr.ErrorMessage)
 		}
 
-		if result == nil {
-			ddbErr = d.handleError(errors.New("DynamoDB GetItem Failed: " + "Result Object Nil"))
-			return fmt.Errorf(ddbErr.ErrorMessage)
+		if result == nil || len(result.Item) == 0 {
+			ddbErr = nil // treat missing item as not found instead of unmarshal error
+			return nil
 		}
 
 		if err = dynamodbattribute.UnmarshalMap(result.Item, resultItemPtr); err != nil {
@@ -4231,8 +4231,8 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 		return d.handleError(err, "DynamoDB GetItem Failed: (GetItem)")
 	}
 
-	if result == nil {
-		return d.handleError(errors.New("DynamoDB GetItem Failed: " + "Result Object Nil"))
+	if result == nil || len(result.Item) == 0 {
+		return nil
 	}
 
 	if err = dynamodbattribute.UnmarshalMap(result.Item, resultItemPtr); err != nil {
@@ -9130,6 +9130,10 @@ func (d *DynamoDB) WaitUntilTableFullyIdle(tableName string, ctx aws.Context) er
 
 	if util.LenTrim(tableName) <= 0 {
 		return fmt.Errorf("DynamoDB WaitUntilTableFullyIdle Failed: " + "Table Name is Required")
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	ticker := time.NewTicker(30 * time.Second)

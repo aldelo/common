@@ -4996,12 +4996,13 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		}
 
 		if consistentRead != nil {
-			if *consistentRead && indexName != nil && len(*indexName) > 0 {
+			cr := aws.BoolValue(consistentRead)
+			if cr && indexName != nil && len(*indexName) > 0 {
 				// gsi not valid for consistent read, turn off consistent read
-				*consistentRead = false
+				cr = false
 			}
 
-			params.ConsistentRead = consistentRead
+			params.ConsistentRead = aws.Bool(cr)
 		}
 
 		if indexName != nil && util.LenTrim(*indexName) > 0 {
@@ -5215,12 +5216,13 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 	}
 
 	if consistentRead != nil {
-		if *consistentRead && indexName != nil && len(*indexName) > 0 {
+		cr := aws.BoolValue(consistentRead)
+		if cr && indexName != nil && len(*indexName) > 0 {
 			// gsi not valid for consistent read, turn off consistent read
-			*consistentRead = false
+			cr = false
 		}
 
-		params.ConsistentRead = consistentRead
+		params.ConsistentRead = aws.Bool(cr)
 	}
 
 	if indexName != nil && util.LenTrim(*indexName) > 0 {
@@ -5852,12 +5854,13 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 		}
 
 		if consistentRead != nil {
-			if *consistentRead && indexName != nil && len(*indexName) > 0 {
+			cr := aws.BoolValue(consistentRead)
+			if cr && indexName != nil && len(*indexName) > 0 {
 				// gsi not valid for consistent read, turn off consistent read
-				*consistentRead = false
+				cr = false
 			}
 
-			params.ConsistentRead = consistentRead
+			params.ConsistentRead = aws.Bool(cr)
 		}
 
 		if indexName != nil && util.LenTrim(*indexName) > 0 {
@@ -6015,12 +6018,13 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 	}
 
 	if consistentRead != nil {
-		if *consistentRead && indexName != nil && len(*indexName) > 0 {
+		cr := aws.BoolValue(consistentRead)
+		if cr && indexName != nil && len(*indexName) > 0 {
 			// gsi not valid for consistent read, turn off consistent read
-			*consistentRead = false
+			cr = false
 		}
 
-		params.ConsistentRead = consistentRead
+		params.ConsistentRead = aws.Bool(cr)
 	}
 
 	if indexName != nil && util.LenTrim(*indexName) > 0 {

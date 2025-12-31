@@ -131,7 +131,7 @@ type DynamoDBTableKeys struct {
 	ResultItemPtr interface{} `dynamodbav:"-"`
 	ResultError   error       `dynamodbav:"-"`
 
-	resultProcessed bool
+	resultProcessed bool `dynamodbav:"-"`
 }
 
 type DynamoDBTableKeyValue struct {
@@ -713,6 +713,11 @@ func (g *DynamoDBTransactionReads) UnmarshalResultItems(itemResponses []*dynamod
 	if len(itemResponses) == 0 {
 		// no items to unmarshal
 		return errors.New("UnmarshalResultItems Failed: (Validate) " + "Item Responses From DDB is Empty")
+	}
+
+	if len(itemResponses) == 0 {
+		g.ResultItemsCount = 0
+		return nil
 	}
 
 	ddbResultItemAttributes := make([]map[string]*dynamodb.AttributeValue, 0)
@@ -7178,67 +7183,80 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		d.LastExecuteParamsPayload = "BatchGetItems = " + params.String()
 		d.LastExecuteParamsPayloadMutex.Unlock()
 
-		// execute batch
-		var result *dynamodb.BatchGetItemOutput
+		// retry unprocessedkeys with bounded backoff and aggregate responses
+		combinedResponses := make(map[string][]map[string]*dynamodb.AttributeValue)
+		maxAttempts := 5
+		backoff := 50 * time.Millisecond
 
-		subTrace := trace.NewSubSegment("BatchGetItems_Do")
-		defer subTrace.Close()
-
-		var err1 error
-
+		var ctx aws.Context
 		if timeOutDuration != nil {
-			ctx, cancel := context.WithTimeout(subTrace.Ctx, *timeOutDuration)
+			c, cancel := context.WithTimeout(trace.Ctx, *timeOutDuration)
 			defer cancel()
-			result, err1 = d.do_BatchGetItem(params, ctx)
+			ctx = c
 		} else {
-			result, err1 = d.do_BatchGetItem(params, subTrace.Ctx)
+			ctx = trace.Ctx
 		}
 
-		// evaluate batch execute result
-		if err1 != nil {
-			notFound = false
-			err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
-			return fmt.Errorf(err.ErrorMessage)
-		}
+		for attempt := 0; ; attempt++ {
+			result, err1 := d.do_BatchGetItem(params, ctx)
+			if err1 != nil {
+				notFound = false
+				err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
+				return fmt.Errorf(err.ErrorMessage)
+			}
 
-		if result.Responses == nil {
-			// not found - nil
-			notFound = true
-			err = nil
-			return nil
-		} else if len(result.Responses) <= 0 {
-			// not found - empty
-			notFound = true
-			err = nil
-			return nil
-		} else {
-			//
-			// loop thru each searchKey set's TableName to receive response items into its corresponding ResultItemsSlicePtr
-			//
-			totalCount := 0
-
-			for _, searchSet := range multiGetRequestResponse {
-				if resp := result.Responses[searchSet.TableName]; resp != nil && len(resp) > 0 {
-					// unmarshal results
-					if err1 = dynamodbattribute.UnmarshalListOfMaps(resp, searchSet.ResultItemsSlicePtr); err1 != nil {
-						notFound = false
-						err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (Unmarshal ResultItems)")
-						return fmt.Errorf(err.ErrorMessage)
-					} else {
-						// unmarshal successful
-						searchSet.ResultItemsCount = len(resp)
-						totalCount += searchSet.ResultItemsCount
+			if result.Responses != nil {
+				for tbl, items := range result.Responses {
+					if len(items) > 0 {
+						combinedResponses[tbl] = append(combinedResponses[tbl], items...)
 					}
-				} else {
-					searchSet.ResultItemsCount = 0
 				}
 			}
 
-			// completed
-			notFound = totalCount <= 0
+			if len(result.UnprocessedKeys) == 0 || attempt+1 >= maxAttempts {
+				break
+			}
+
+			params = &dynamodb.BatchGetItemInput{
+				RequestItems: result.UnprocessedKeys,
+			}
+
+			time.Sleep(backoff)
+			backoff *= 2
+		}
+
+		if len(combinedResponses) == 0 {
+			notFound = true
 			err = nil
 			return nil
 		}
+
+		//
+		// loop thru each searchKey set's TableName to receive response items into its corresponding ResultItemsSlicePtr
+		//
+		totalCount := 0
+
+		for _, searchSet := range multiGetRequestResponse {
+			if resp := combinedResponses[searchSet.TableName]; resp != nil && len(resp) > 0 {
+				// unmarshal results
+				if err1 := dynamodbattribute.UnmarshalListOfMaps(resp, searchSet.ResultItemsSlicePtr); err1 != nil {
+					notFound = false
+					err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (Unmarshal ResultItems)")
+					return fmt.Errorf(err.ErrorMessage)
+				} else {
+					// unmarshal successful
+					searchSet.ResultItemsCount = len(resp)
+					totalCount += searchSet.ResultItemsCount
+				}
+			} else {
+				searchSet.ResultItemsCount = 0
+			}
+		}
+
+		// completed
+		notFound = totalCount <= 0
+		err = nil
+		return nil
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
 			"TableName":   d.TableName,
@@ -7396,53 +7414,72 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	d.LastExecuteParamsPayload = "BatchGetItems = " + params.String()
 	d.LastExecuteParamsPayloadMutex.Unlock()
 
-	// execute batch
-	var result *dynamodb.BatchGetItemOutput
-	var err1 error
+	combinedResponses := make(map[string][]map[string]*dynamodb.AttributeValue)
+	maxAttempts := 5
+	backoff := 50 * time.Millisecond
+
+	var ctx aws.Context
 
 	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
+		c, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
 		defer cancel()
-		result, err1 = d.do_BatchGetItem(params, ctx)
+		ctx = c
 	} else {
-		result, err1 = d.do_BatchGetItem(params)
+		ctx = context.Background()
 	}
 
-	// evaluate batch execute result
-	if err1 != nil {
-		return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
-	}
+	for attempt := 0; ; attempt++ {
+		result, err1 := d.do_BatchGetItem(params, ctx)
+		if err1 != nil {
+			return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
+		}
 
-	if result.Responses == nil {
-		// not found - nil
-		return true, nil
-	} else if len(result.Responses) <= 0 {
-		// not found - empty
-		return true, nil
-	} else {
-		//
-		// loop thru each searchKey set's TableName to receive response items into its corresponding ResultItemsSlicePtr
-		//
-		totalCount := 0
-
-		for _, searchSet := range multiGetRequestResponse {
-			if resp := result.Responses[searchSet.TableName]; resp != nil && len(resp) > 0 {
-				// unmarshal results
-				if err1 = dynamodbattribute.UnmarshalListOfMaps(resp, searchSet.ResultItemsSlicePtr); err1 != nil {
-					return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (Unmarshal ResultItems)")
-				} else {
-					// unmarshal successful
-					searchSet.ResultItemsCount = len(resp)
-					totalCount += searchSet.ResultItemsCount
+		if result.Responses != nil {
+			for tbl, items := range result.Responses {
+				if len(items) > 0 {
+					combinedResponses[tbl] = append(combinedResponses[tbl], items...)
 				}
-			} else {
-				searchSet.ResultItemsCount = 0
 			}
 		}
 
-		// completed
-		return totalCount <= 0, nil
+		if len(result.UnprocessedKeys) == 0 || attempt+1 >= maxAttempts {
+			break
+		}
+
+		params = &dynamodb.BatchGetItemInput{
+			RequestItems: result.UnprocessedKeys,
+		}
+
+		time.Sleep(backoff)
+		backoff *= 2
 	}
+
+	if len(combinedResponses) == 0 {
+		return true, nil
+	}
+
+	//
+	// loop thru each searchKey set's TableName to receive response items into its corresponding ResultItemsSlicePtr
+	//
+	totalCount := 0
+
+	for _, searchSet := range multiGetRequestResponse {
+		if resp := combinedResponses[searchSet.TableName]; resp != nil && len(resp) > 0 {
+			// unmarshal results
+			if err1 := dynamodbattribute.UnmarshalListOfMaps(resp, searchSet.ResultItemsSlicePtr); err1 != nil {
+				return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (Unmarshal ResultItems)")
+			}
+
+			// unmarshal successful
+			searchSet.ResultItemsCount = len(resp)
+			totalCount += searchSet.ResultItemsCount
+		} else {
+			searchSet.ResultItemsCount = 0
+		}
+	}
+
+	// completed
+	return totalCount <= 0, nil
 }
 
 // BatchGetItemsWithRetry handles dynamodb retries in case action temporarily fails

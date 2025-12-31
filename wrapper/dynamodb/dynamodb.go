@@ -7202,6 +7202,12 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		}
 
 		for attempt := 0; ; attempt++ {
+			if errCtx := ctx.Err(); errCtx != nil {
+				notFound = false
+				err = d.handleError(errCtx, "DynamoDB BatchGetItems Failed: (Context Canceled Before Request)")
+				return fmt.Errorf(err.ErrorMessage)
+			}
+
 			result, err1 := d.do_BatchGetItem(params, ctx)
 			if err1 != nil {
 				notFound = false
@@ -7225,8 +7231,22 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 				RequestItems: result.UnprocessedKeys,
 			}
 
-			time.Sleep(backoff)
-			backoff *= 2
+			// context-aware backoff to avoid hanging when caller cancels
+			select {
+			case <-ctx.Done():
+				notFound = false
+				err = d.handleError(ctx.Err(), "DynamoDB BatchGetItems Failed: (Context Canceled During Retry Backoff)")
+				return fmt.Errorf(err.ErrorMessage)
+			case <-time.After(backoff):
+			}
+
+			// cap backoff growth to avoid runaway sleep
+			if backoff < 2*time.Second {
+				backoff *= 2
+				if backoff > 2*time.Second {
+					backoff = 2 * time.Second
+				}
+			}
 		}
 
 		if len(combinedResponses) == 0 {
@@ -7433,6 +7453,10 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	}
 
 	for attempt := 0; ; attempt++ {
+		if errCtx := ctx.Err(); errCtx != nil {
+			return false, d.handleError(errCtx, "DynamoDB BatchGetItems Failed: (Context Canceled Before Request)")
+		}
+
 		result, err1 := d.do_BatchGetItem(params, ctx)
 		if err1 != nil {
 			return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
@@ -7454,8 +7478,19 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 			RequestItems: result.UnprocessedKeys,
 		}
 
-		time.Sleep(backoff)
-		backoff *= 2
+		// context-aware backoff to avoid hanging when caller cancels
+		select {
+		case <-ctx.Done():
+			return false, d.handleError(ctx.Err(), "DynamoDB BatchGetItems Failed: (Context Canceled During Retry Backoff)")
+		case <-time.After(backoff):
+		}
+
+		if backoff < 2*time.Second {
+			backoff *= 2
+			if backoff > 2*time.Second {
+				backoff = 2 * time.Second
+			}
+		}
 	}
 
 	if len(combinedResponses) == 0 {

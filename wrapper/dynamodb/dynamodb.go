@@ -1610,11 +1610,18 @@ func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...a
 		paginationData := make([]map[string]*dynamodb.AttributeValue, 0)
 
 		pageFn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
-			if pageOutput != nil && len(pageOutput.Items) > 0 {
-				if pageOutput.LastEvaluatedKey != nil && len(pageOutput.LastEvaluatedKey) > 0 {
-					paginationData = append(paginationData, cloneAttributeValueMap(pageOutput.LastEvaluatedKey))
-				}
+			if err := ctxToUse.Err(); err != nil {
+				return false // honor cancellation if context is done
 			}
+
+			if pageOutput == nil {
+				return !lastPage
+			}
+
+			if pageOutput.LastEvaluatedKey != nil && len(pageOutput.LastEvaluatedKey) > 0 {
+				paginationData = append(paginationData, cloneAttributeValueMap(pageOutput.LastEvaluatedKey))
+			}
+
 			return !lastPage
 		}
 
@@ -6274,13 +6281,18 @@ func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
 	}
 
 	for {
-		if prevEvalKey, e = d.ScanItemsWithRetry(maxRetries, pagedSlicePtr, timeOutDuration, nil, indexNamePtr,
+		// create fresh working slice each iteration to avoid pointer aliasing across pages
+		workingSlice := reflect.MakeSlice(resultVal.Type(), 0, 0)
+		workingPtr := reflect.New(workingSlice.Type())
+		workingPtr.Elem().Set(workingSlice)
+
+		if prevEvalKey, e = d.ScanItemsWithRetry(maxRetries, workingPtr.Interface(), timeOutDuration, nil, indexNamePtr,
 			aws.Int64(pageLimit), true, aws.Int64(pagedQueryPageCountLimit), prevEvalKey, filterConditionExpression); e != nil {
 			// error
 			return nil, fmt.Errorf("ScanPagedItemsWithRetry Failed: %s", e)
 		} else {
 			// success
-			resultVal.Set(reflect.AppendSlice(resultVal, reflect.ValueOf(pagedSlicePtr).Elem())) // CHANGE: append into initialized accumulator
+			resultVal.Set(reflect.AppendSlice(resultVal, workingPtr.Elem()))
 
 			if prevEvalKey == nil || len(prevEvalKey) == 0 {
 				break

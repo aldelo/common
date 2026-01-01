@@ -839,6 +839,14 @@ type DynamoDB struct {
 // Internal Utility Helpers
 // =====================================================================================================================
 
+func (d *DynamoDB) getStringPtrOrNil(s string) *string {
+	if util.LenTrim(s) > 0 {
+		return aws.String(s)
+	} else {
+		return nil
+	}
+}
+
 func (d *DynamoDB) connectionHandle() *connectionHandle {
 	if d == nil {
 		return &connectionHandle{unlock: func() {}}
@@ -7770,146 +7778,121 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 		for _, t := range tranItems {
 			if t.DeleteItems != nil && len(t.DeleteItems) > 0 {
 				for _, v := range t.DeleteItems {
-					if v != nil {
-						tableName := d.TableName
-						pkName := d.PKName
-						skName := d.SKName
-
-						if util.LenTrim(v.TableNameOverride) > 0 {
-							tableName = v.TableNameOverride
-						}
-
-						if util.LenTrim(v.PKNameOverride) > 0 {
-							pkName = v.PKNameOverride
-							skName = v.SKNameOverride
-						}
-
-						m := new(dynamodb.TransactWriteItem)
-
-						md := make(map[string]*dynamodb.AttributeValue)
-						md[pkName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
-
-						if util.LenTrim(v.SK) > 0 {
-							if !skOK {
-								if util.LenTrim(skName) <= 0 {
-									success = false
-									err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
-									return err
-								} else {
-									skOK = true
-								}
-							}
-
-							md[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
-						}
-
-						m.Delete = &dynamodb.Delete{
-							TableName: aws.String(tableName),
-							Key:       md,
-						}
-
-						items = append(items, m)
+					if v == nil {
+						continue
 					}
+
+					tableName := d.TableName
+					pkName := d.PKName
+					skName := d.SKName
+
+					if util.LenTrim(v.TableNameOverride) > 0 {
+						tableName = v.TableNameOverride
+					}
+
+					if util.LenTrim(v.PKNameOverride) > 0 {
+						pkName = v.PKNameOverride
+						skName = v.SKNameOverride
+					}
+
+					key := map[string]*dynamodb.AttributeValue{
+						pkName: {S: aws.String(v.PK)},
+					}
+
+					if util.LenTrim(v.SK) > 0 {
+						if !skOK {
+							if util.LenTrim(skName) <= 0 {
+								success = false
+								err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+								return err
+							}
+							skOK = true
+						}
+						key[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
+					}
+
+					items = append(items, &dynamodb.TransactWriteItem{
+						Delete: &dynamodb.Delete{
+							TableName: aws.String(tableName),
+							Key:       key,
+						},
+					})
 				}
 			}
 
 			if t.PutItemsSet != nil && len(t.PutItemsSet) > 0 {
 				for _, putSet := range t.PutItemsSet {
-					if putSet != nil && putSet.PutItems != nil {
-						if md, e := putSet.MarshalPutItems(); e != nil {
-							success = false
-							err = d.handleError(e, "DynamoDB TransactionWriteItems Failed: (Marshal PutItems)")
-							return err
-						} else {
-							tableName := d.TableName
+					if putSet == nil || putSet.PutItems == nil {
+						continue
+					}
+					md, e := putSet.MarshalPutItems()
+					if e != nil {
+						success = false
+						err = d.handleError(e, "DynamoDB TransactionWriteItems Failed: (Marshal PutItems)")
+						return err
+					}
 
-							if util.LenTrim(putSet.TableNameOverride) > 0 {
-								tableName = putSet.TableNameOverride
-							}
+					tableName := d.TableName
+					if util.LenTrim(putSet.TableNameOverride) > 0 {
+						tableName = putSet.TableNameOverride
+					}
 
-							for _, v := range md {
-								m := new(dynamodb.TransactWriteItem)
-
-								m.Put = &dynamodb.Put{
-									TableName: aws.String(tableName),
-									Item:      v,
-								}
-
-								if util.LenTrim(putSet.ConditionExpression) > 0 {
-									m.Put.ConditionExpression = aws.String(putSet.ConditionExpression)
-
-									// set condition expression attribute values if any
-									if putSet.ExpressionAttributeValues != nil && len(putSet.ExpressionAttributeValues) > 0 {
-										m.Put.ExpressionAttributeValues = putSet.ExpressionAttributeValues
-									}
-								}
-
-								items = append(items, m)
-							}
-						}
+					for _, v := range md {
+						items = append(items, &dynamodb.TransactWriteItem{
+							Put: &dynamodb.Put{
+								TableName:                 aws.String(tableName),
+								Item:                      v,
+								ConditionExpression:       d.getStringPtrOrNil(putSet.ConditionExpression),
+								ExpressionAttributeValues: cloneExpressionAttributeValues(putSet.ExpressionAttributeValues),
+							},
+						})
 					}
 				}
 			}
 
 			if t.UpdateItems != nil && len(t.UpdateItems) > 0 {
 				for _, v := range t.UpdateItems {
-					if v != nil {
-						tableName := d.TableName
-
-						if util.LenTrim(v.TableNameOverride) > 0 {
-							tableName = v.TableNameOverride
-						}
-
-						pkName := d.PKName
-						skName := d.SKName
-
-						if util.LenTrim(v.PKNameOverride) > 0 {
-							pkName = v.PKNameOverride
-							skName = v.SKNameOverride
-						}
-
-						m := new(dynamodb.TransactWriteItem)
-
-						mk := make(map[string]*dynamodb.AttributeValue)
-						mk[pkName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
-
-						if util.LenTrim(v.SK) > 0 {
-							if !skOK {
-								if util.LenTrim(skName) <= 0 {
-									success = false
-									err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
-									return err
-								} else {
-									skOK = true
-								}
-							}
-
-							mk[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
-						}
-
-						m.Update = &dynamodb.Update{
-							TableName: aws.String(tableName),
-							Key:       mk,
-						}
-
-						if util.LenTrim(v.ConditionExpression) > 0 {
-							m.Update.ConditionExpression = aws.String(v.ConditionExpression)
-						}
-
-						if util.LenTrim(v.UpdateExpression) > 0 {
-							m.Update.UpdateExpression = aws.String(v.UpdateExpression)
-						}
-
-						if v.ExpressionAttributeNames != nil && len(v.ExpressionAttributeNames) > 0 {
-							m.Update.ExpressionAttributeNames = v.ExpressionAttributeNames
-						}
-
-						if v.ExpressionAttributeValues != nil && len(v.ExpressionAttributeValues) > 0 {
-							m.Update.ExpressionAttributeValues = v.ExpressionAttributeValues
-						}
-
-						items = append(items, m)
+					if v == nil {
+						continue
 					}
+					tableName := d.TableName
+					if util.LenTrim(v.TableNameOverride) > 0 {
+						tableName = v.TableNameOverride
+					}
+
+					pkName := d.PKName
+					skName := d.SKName
+					if util.LenTrim(v.PKNameOverride) > 0 {
+						pkName = v.PKNameOverride
+						skName = v.SKNameOverride
+					}
+
+					key := map[string]*dynamodb.AttributeValue{
+						pkName: {S: aws.String(v.PK)},
+					}
+
+					if util.LenTrim(v.SK) > 0 {
+						if !skOK {
+							if util.LenTrim(skName) <= 0 {
+								success = false
+								err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+								return err
+							}
+							skOK = true
+						}
+						key[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
+					}
+
+					items = append(items, &dynamodb.TransactWriteItem{
+						Update: &dynamodb.Update{
+							TableName:                 aws.String(tableName),
+							Key:                       key,
+							ConditionExpression:       d.getStringPtrOrNil(v.ConditionExpression),
+							UpdateExpression:          aws.String(v.UpdateExpression),
+							ExpressionAttributeNames:  cloneExpressionAttributeNames(v.ExpressionAttributeNames),
+							ExpressionAttributeValues: cloneExpressionAttributeValues(v.ExpressionAttributeValues),
+						},
+					})
 				}
 			}
 		}
@@ -7955,11 +7938,11 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 			success = false
 			err = d.handleError(err1, "DynamoDB TransactionWriteItems Failed: (Transaction Canceled)")
 			return err
-		} else {
-			success = true
-			err = nil
-			return nil
 		}
+
+		success = true
+		err = nil
+		return nil
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
 			"TableName": d.TableName,
@@ -8007,146 +7990,113 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 	for _, t := range tranItems {
 		if t.DeleteItems != nil && len(t.DeleteItems) > 0 {
 			for _, v := range t.DeleteItems {
-				if v != nil {
-					tableName := d.TableName
-
-					if util.LenTrim(v.TableNameOverride) > 0 {
-						tableName = v.TableNameOverride
-					}
-
-					pkName := d.PKName
-					skName := d.SKName
-
-					if util.LenTrim(v.PKNameOverride) > 0 {
-						pkName = v.PKNameOverride
-						skName = v.SKNameOverride
-					}
-
-					m := new(dynamodb.TransactWriteItem)
-
-					md := make(map[string]*dynamodb.AttributeValue)
-					md[pkName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
-
-					if util.LenTrim(v.SK) > 0 {
-						if !skOK {
-							if util.LenTrim(skName) <= 0 {
-								success = false
-								err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
-								return success, err
-							} else {
-								skOK = true
-							}
-						}
-
-						md[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
-					}
-
-					m.Delete = &dynamodb.Delete{
-						TableName: aws.String(tableName),
-						Key:       md,
-					}
-
-					items = append(items, m)
+				if v == nil {
+					continue
 				}
+				tableName := d.TableName
+				pkName := d.PKName
+				skName := d.SKName
+
+				if util.LenTrim(v.TableNameOverride) > 0 {
+					tableName = v.TableNameOverride
+				}
+				if util.LenTrim(v.PKNameOverride) > 0 {
+					pkName = v.PKNameOverride
+					skName = v.SKNameOverride
+				}
+
+				key := map[string]*dynamodb.AttributeValue{
+					pkName: {S: aws.String(v.PK)},
+				}
+				if util.LenTrim(v.SK) > 0 {
+					if !skOK {
+						if util.LenTrim(skName) <= 0 {
+							return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+						}
+						skOK = true
+					}
+					key[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
+				}
+
+				items = append(items, &dynamodb.TransactWriteItem{
+					Delete: &dynamodb.Delete{
+						TableName: aws.String(tableName),
+						Key:       key,
+					},
+				})
 			}
 		}
 
 		if t.PutItemsSet != nil && len(t.PutItemsSet) > 0 {
 			for _, putSet := range t.PutItemsSet {
-				if putSet != nil && putSet.PutItems != nil {
-					if md, e := putSet.MarshalPutItems(); e != nil {
-						success = false
-						err = d.handleError(e, "DynamoDB TransactionWriteItems Failed: (Marshal PutItems)")
-						return success, err
-					} else {
-						tableName := d.TableName
+				if putSet == nil || putSet.PutItems == nil {
+					continue
+				}
+				md, e := putSet.MarshalPutItems()
+				if e != nil {
+					return false, d.handleError(e, "DynamoDB TransactionWriteItems Failed: (Marshal PutItems)")
+				}
 
-						if util.LenTrim(putSet.TableNameOverride) > 0 {
-							tableName = putSet.TableNameOverride
-						}
+				tableName := d.TableName
+				if util.LenTrim(putSet.TableNameOverride) > 0 {
+					tableName = putSet.TableNameOverride
+				}
 
-						for _, v := range md {
-							m := new(dynamodb.TransactWriteItem)
-
-							m.Put = &dynamodb.Put{
-								TableName: aws.String(tableName),
-								Item:      v,
-							}
-
-							if util.LenTrim(putSet.ConditionExpression) > 0 {
-								m.Put.ConditionExpression = aws.String(putSet.ConditionExpression)
-
-								if putSet.ExpressionAttributeValues != nil && len(putSet.ExpressionAttributeValues) > 0 {
-									m.Put.ExpressionAttributeValues = putSet.ExpressionAttributeValues
-								}
-							}
-
-							items = append(items, m)
-						}
-					}
+				for _, v := range md {
+					items = append(items, &dynamodb.TransactWriteItem{
+						Put: &dynamodb.Put{
+							TableName:                 aws.String(tableName),
+							Item:                      v,
+							ConditionExpression:       d.getStringPtrOrNil(putSet.ConditionExpression),
+							ExpressionAttributeValues: cloneExpressionAttributeValues(putSet.ExpressionAttributeValues),
+						},
+					})
 				}
 			}
 		}
 
 		if t.UpdateItems != nil && len(t.UpdateItems) > 0 {
 			for _, v := range t.UpdateItems {
-				if v != nil {
-					tableName := d.TableName
-
-					if util.LenTrim(v.TableNameOverride) > 0 {
-						tableName = v.TableNameOverride
-					}
-
-					pkName := d.PKName
-					skName := d.SKName
-
-					if util.LenTrim(v.PKNameOverride) > 0 {
-						pkName = v.PKNameOverride
-						skName = v.SKNameOverride
-					}
-
-					m := new(dynamodb.TransactWriteItem)
-
-					mk := make(map[string]*dynamodb.AttributeValue)
-					mk[pkName] = &dynamodb.AttributeValue{S: aws.String(v.PK)}
-
-					if util.LenTrim(v.SK) > 0 {
-						if !skOK {
-							if util.LenTrim(skName) <= 0 {
-								success = false
-								err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
-								return success, err
-							} else {
-								skOK = true
-							}
-						}
-
-						mk[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
-					}
-
-					m.Update = &dynamodb.Update{
-						TableName: aws.String(tableName),
-						Key:       mk,
-					}
-
-					if util.LenTrim(v.ConditionExpression) > 0 {
-						m.Update.ConditionExpression = aws.String(v.ConditionExpression)
-					}
-
-					if util.LenTrim(v.UpdateExpression) > 0 {
-						m.Update.UpdateExpression = aws.String(v.UpdateExpression)
-					}
-
-					if v.ExpressionAttributeNames != nil && len(v.ExpressionAttributeNames) > 0 {
-						m.Update.ExpressionAttributeNames = v.ExpressionAttributeNames
-					}
-
-					if v.ExpressionAttributeValues != nil && len(v.ExpressionAttributeValues) > 0 {
-						m.Update.ExpressionAttributeValues = v.ExpressionAttributeValues
-					}
-
-					items = append(items, m)
+				if v == nil {
+					continue
 				}
+				tableName := d.TableName
+				if util.LenTrim(v.TableNameOverride) > 0 {
+					tableName = v.TableNameOverride
+				}
+
+				pkName := d.PKName
+				skName := d.SKName
+
+				if util.LenTrim(v.PKNameOverride) > 0 {
+					pkName = v.PKNameOverride
+					skName = v.SKNameOverride
+				}
+
+				key := map[string]*dynamodb.AttributeValue{
+					pkName: {S: aws.String(v.PK)},
+				}
+
+				if util.LenTrim(v.SK) > 0 {
+					if !skOK {
+						if util.LenTrim(skName) <= 0 {
+							return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+						}
+						skOK = true
+					}
+					key[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
+				}
+
+				items = append(items, &dynamodb.TransactWriteItem{
+					Update: &dynamodb.Update{
+						TableName:                 aws.String(tableName),
+						Key:                       key,
+						ConditionExpression:       d.getStringPtrOrNil(v.ConditionExpression),
+						UpdateExpression:          aws.String(v.UpdateExpression),
+						ExpressionAttributeNames:  cloneExpressionAttributeNames(v.ExpressionAttributeNames),
+						ExpressionAttributeValues: cloneExpressionAttributeValues(v.ExpressionAttributeValues),
+					},
+				})
 			}
 		}
 	}

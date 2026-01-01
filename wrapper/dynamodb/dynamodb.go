@@ -1035,26 +1035,87 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 	}
 }
 
+// deepCopyAttributeValue performs a deep copy of dynamodb.AttributeValue, including nested
+// lists, maps, and binary/string slices, to avoid shared references across goroutines.
+// ensure no shared underlying memory when caller reuses attribute maps concurrently.
+func deepCopyAttributeValue(src *dynamodb.AttributeValue) *dynamodb.AttributeValue {
+	if src == nil {
+		return nil
+	}
+
+	dst := &dynamodb.AttributeValue{
+		BOOL: src.BOOL,
+		NULL: src.NULL,
+	}
+
+	if src.S != nil {
+		dst.S = aws.String(aws.StringValue(src.S))
+	}
+	if src.N != nil {
+		dst.N = aws.String(aws.StringValue(src.N))
+	}
+	if src.B != nil {
+		dst.B = append([]byte(nil), src.B...)
+	}
+	if len(src.SS) > 0 {
+		dst.SS = make([]*string, len(src.SS))
+		for i, v := range src.SS {
+			if v != nil {
+				val := *v
+				dst.SS[i] = &val
+			}
+		}
+	}
+	if len(src.NS) > 0 {
+		dst.NS = make([]*string, len(src.NS))
+		for i, v := range src.NS {
+			if v != nil {
+				val := *v
+				dst.NS[i] = &val
+			}
+		}
+	}
+	if len(src.BS) > 0 {
+		dst.BS = make([][]byte, len(src.BS))
+		for i, v := range src.BS {
+			if v != nil {
+				dst.BS[i] = append([]byte(nil), v...)
+			}
+		}
+	}
+	if len(src.L) > 0 {
+		dst.L = make([]*dynamodb.AttributeValue, len(src.L))
+		for i, v := range src.L {
+			dst.L[i] = deepCopyAttributeValue(v)
+		}
+	}
+	if len(src.M) > 0 {
+		dst.M = make(map[string]*dynamodb.AttributeValue, len(src.M))
+		for k, v := range src.M {
+			dst.M[k] = deepCopyAttributeValue(v)
+		}
+	}
+
+	return dst
+}
+
 func cloneExpressionAttributeValues(src map[string]*dynamodb.AttributeValue) map[string]*dynamodb.AttributeValue { // CHANGE
 	if len(src) == 0 {
 		return nil
 	}
+
 	dst := make(map[string]*dynamodb.AttributeValue, len(src))
 	for k, v := range src {
-		if v == nil {
-			dst[k] = nil
-			continue
-		}
-		copied := *v
-		dst[k] = &copied
+		dst[k] = deepCopyAttributeValue(v)
 	}
 	return dst
 }
 
-func cloneExpressionAttributeNames(src map[string]*string) map[string]*string { // CHANGE
+func cloneExpressionAttributeNames(src map[string]*string) map[string]*string {
 	if len(src) == 0 {
 		return nil
 	}
+
 	dst := make(map[string]*string, len(src))
 	for k, v := range src {
 		if v == nil {
@@ -1679,13 +1740,7 @@ func cloneAttributeValueMap(src map[string]*dynamodb.AttributeValue) map[string]
 
 	dst := make(map[string]*dynamodb.AttributeValue, len(src))
 	for k, v := range src {
-		if v == nil {
-			dst[k] = nil
-			continue
-		}
-
-		copied := *v
-		dst[k] = &copied
+		dst[k] = deepCopyAttributeValue(v)
 	}
 
 	return dst

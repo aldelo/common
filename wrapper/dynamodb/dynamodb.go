@@ -5468,40 +5468,37 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 		return nil, fmt.Errorf("DynamoDB QueryPagedItemsWithRetry Failed: DynamoDB Object Nil")
 	}
 
-	if pagedSlicePtr == nil {
-		return nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Query and is Required")
-	} else {
-		valPaged := reflect.ValueOf(pagedSlicePtr)
+	valPaged := reflect.ValueOf(pagedSlicePtr)
 
-		if valPaged.Kind() != reflect.Ptr {
-			return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Ptr)")
-		}
-
-		if valPaged.IsNil() {
-			valPaged.Set(reflect.New(valPaged.Type().Elem()))
-		}
-
-		if valPaged.Elem().Kind() != reflect.Slice {
-			return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Slice)")
-		}
+	if valPaged.Kind() != reflect.Ptr {
+		return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Ptr)")
 	}
 
-	if resultSlicePtr == nil {
-		return nil, fmt.Errorf("ResultSlicePtr Contains Query Result in Slice Pointer and is Required")
-	} else {
-		valResult := reflect.ValueOf(resultSlicePtr)
+	if valPaged.IsNil() {
+		// initialize via Elem() to avoid Set on unsettable value
+		valPagedElem := reflect.New(valPaged.Type().Elem()).Elem()
+		valPagedElem.Set(reflect.MakeSlice(valPagedElem.Type(), 0, 0))
+		valPaged.Elem().Set(valPagedElem)
+	}
 
-		if valResult.Kind() != reflect.Ptr {
-			return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Ptr)")
-		}
+	if valPaged.Elem().Kind() != reflect.Slice {
+		return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Slice)")
+	}
 
-		if valResult.IsNil() {
-			valResult.Set(reflect.New(valResult.Type().Elem()))
-		}
+	valResult := reflect.ValueOf(resultSlicePtr)
 
-		if valResult.Elem().Kind() != reflect.Slice {
-			return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Slice)")
-		}
+	if valResult.Kind() != reflect.Ptr {
+		return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Ptr)")
+	}
+
+	if valResult.IsNil() {
+		valResultElem := reflect.New(valResult.Type().Elem()).Elem()
+		valResultElem.Set(reflect.MakeSlice(valResultElem.Type(), 0, 0))
+		valResult.Elem().Set(valResultElem)
+	}
+
+	if valResult.Elem().Kind() != reflect.Slice {
+		return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Slice)")
 	}
 
 	var prevEvalKey map[string]*dynamodb.AttributeValue
@@ -5520,7 +5517,7 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 		indexNamePtr = nil
 	}
 
-	resultVal := reflect.ValueOf(resultSlicePtr).Elem()
+	resultVal := valResult.Elem()
 	if resultVal.IsNil() {
 		resultVal.Set(reflect.MakeSlice(resultVal.Type(), 0, 0))
 	}
@@ -5530,18 +5527,16 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 		// because it is a pointer. When using `reflect.AppendSlice`, only a pointer struct is copied into the slice.
 		// Each iteration of the `dynamodbattribute.UnmarshalListOfMaps` method modifies the content pointed to by this pointer,
 		// resulting in the slice containing data from only the last iteration.
-		originalSliceValue := reflect.ValueOf(pagedSlicePtr).Elem()
-		if originalSliceValue.IsNil() {
-			originalSliceValue.Set(reflect.MakeSlice(originalSliceValue.Type(), 0, 0))
-		}
-		newPagedSlice := reflect.MakeSlice(originalSliceValue.Type(), 0, 0)
-		newPagedSlicePtr := reflect.New(newPagedSlice.Type()).Interface()
+		originalSliceType := valPaged.Elem().Type()
+		newPagedSlice := reflect.MakeSlice(originalSliceType, 0, 0)
+		newPagedSlicePtr := reflect.New(originalSliceType)
+		newPagedSlicePtr.Elem().Set(newPagedSlice)
 
 		// each time queried, we process up to 25 pages with each page up to 100 items,
 		// if there are more data, the prevEvalKey will contain value,
 		// so the for loop will continue query again until prevEvalKey is nil,
 		// this method will retrieve all filtered data from data store, but may take longer time if there are more data
-		if prevEvalKey, e = d.QueryItemsWithRetry(maxRetries, newPagedSlicePtr, timeOutDuration, nil, indexNamePtr,
+		if prevEvalKey, e = d.QueryItemsWithRetry(maxRetries, newPagedSlicePtr.Interface(), timeOutDuration, nil, indexNamePtr,
 			aws.Int64(pageLimit), true, aws.Int64(pagedQueryPageCountLimit), prevEvalKey,
 			keyConditionExpression, nil, expressionAttributeValues,
 			filterConditionExpression); e != nil {
@@ -6231,40 +6226,36 @@ func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
 		return nil, fmt.Errorf("DynamoDB ScanPagedItemsWithRetry Failed: DynamoDB Object Nil")
 	}
 
-	if pagedSlicePtr == nil {
-		return nil, fmt.Errorf("PagedSlicePtr Identifies Working Slice Pointer During Scan and is Required")
-	} else {
-		valPaged := reflect.ValueOf(pagedSlicePtr)
+	valPaged := reflect.ValueOf(pagedSlicePtr)
 
-		if valPaged.Kind() != reflect.Ptr {
-			return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Ptr)")
-		}
-
-		if valPaged.IsNil() {
-			valPaged.Set(reflect.New(valPaged.Type().Elem()))
-		}
-
-		if valPaged.Elem().Kind() != reflect.Slice {
-			return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Slice)")
-		}
+	if valPaged.Kind() != reflect.Ptr {
+		return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Ptr)")
 	}
 
-	if resultSlicePtr == nil {
-		return nil, fmt.Errorf("ResultSlicePtr Contains Scan Result in Slice Pointer and is Required")
-	} else {
-		valResult := reflect.ValueOf(resultSlicePtr)
+	if valPaged.IsNil() {
+		valPagedElem := reflect.New(valPaged.Type().Elem()).Elem()
+		valPagedElem.Set(reflect.MakeSlice(valPagedElem.Type(), 0, 0))
+		valPaged.Elem().Set(valPagedElem)
+	}
 
-		if valResult.Kind() != reflect.Ptr {
-			return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Ptr)")
-		}
+	if valPaged.Elem().Kind() != reflect.Slice {
+		return nil, fmt.Errorf("PagedSlicePtr Expected To Be Slice Pointer (Not Slice)")
+	}
 
-		if valResult.IsNil() {
-			valResult.Set(reflect.New(valResult.Type().Elem()))
-		}
+	valResult := reflect.ValueOf(resultSlicePtr)
 
-		if valResult.Elem().Kind() != reflect.Slice {
-			return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Slice)")
-		}
+	if valResult.Kind() != reflect.Ptr {
+		return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Ptr)")
+	}
+
+	if valResult.IsNil() {
+		valResultElem := reflect.New(valResult.Type().Elem()).Elem()
+		valResultElem.Set(reflect.MakeSlice(valResultElem.Type(), 0, 0))
+		valResult.Elem().Set(valResultElem)
+	}
+
+	if valResult.Elem().Kind() != reflect.Slice {
+		return nil, fmt.Errorf("ResultSlicePtr Expected To Be Slice Pointer (Not Slice)")
 	}
 
 	var prevEvalKey map[string]*dynamodb.AttributeValue
@@ -6283,15 +6274,16 @@ func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
 		indexNamePtr = nil
 	}
 
-	resultVal := reflect.ValueOf(resultSlicePtr).Elem()
+	resultVal := valResult.Elem()
 	if resultVal.IsNil() {
 		resultVal.Set(reflect.MakeSlice(resultVal.Type(), 0, 0))
 	}
 
 	for {
 		// create fresh working slice each iteration to avoid pointer aliasing across pages
-		workingSlice := reflect.MakeSlice(resultVal.Type(), 0, 0)
-		workingPtr := reflect.New(workingSlice.Type())
+		workingSliceType := valPaged.Elem().Type()
+		workingSlice := reflect.MakeSlice(workingSliceType, 0, 0)
+		workingPtr := reflect.New(workingSliceType)
 		workingPtr.Elem().Set(workingSlice)
 
 		if prevEvalKey, e = d.ScanItemsWithRetry(maxRetries, workingPtr.Interface(), timeOutDuration, nil, indexNamePtr,

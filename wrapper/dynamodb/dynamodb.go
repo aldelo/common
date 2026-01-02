@@ -1176,6 +1176,32 @@ func cloneKeysAndAttributes(src *dynamodb.KeysAndAttributes) *dynamodb.KeysAndAt
 	return dst
 }
 
+// cloneRequestItems deep-copies the request items map to avoid SDK mutating caller state.              // FIX
+func cloneRequestItems(src map[string]*dynamodb.KeysAndAttributes) map[string]*dynamodb.KeysAndAttributes {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]*dynamodb.KeysAndAttributes, len(src))
+	for k, v := range src {
+		dst[k] = cloneKeysAndAttributes(v)
+	}
+	return dst
+}
+
+// countUnprocessed returns the total number of keys left unprocessed (for diagnostics).                // FIX
+func countUnprocessed(m map[string]*dynamodb.KeysAndAttributes) int {
+	if len(m) == 0 {
+		return 0
+	}
+	total := 0
+	for _, ka := range m {
+		if ka != nil {
+			total += len(ka.Keys)
+		}
+	}
+	return total
+}
+
 // =====================================================================================================================
 // Public Utility Helpers
 // =====================================================================================================================
@@ -7230,7 +7256,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		//
 		// prepare batch get items request
 		//
-		requestItems := make(map[string]*dynamodb.KeysAndAttributes)
+		requestItems := make(map[string]*dynamodb.KeysAndAttributes, len(multiGetRequestResponse))
 
 		for _, searchSet := range multiGetRequestResponse {
 			//
@@ -7269,7 +7295,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 
 		// define params
 		params := &dynamodb.BatchGetItemInput{
-			RequestItems: requestItems,
+			RequestItems: cloneRequestItems(requestItems),
 		}
 
 		// record params payload
@@ -7361,20 +7387,20 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		// surface partial data while still reporting unprocessed leftovers
 		var unprocessedErr *DynamoDBError
 		if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
-			notFound = false // ensure never set to true if unprocessed keys remain
-			unprocessedErr = d.handleError(errors.New("DynamoDB BatchGetItems Completed With Unprocessed Keys Remaining After Retries"))
+			remaining := countUnprocessed(unprocessedLeft)
+			err = d.handleError(
+				fmt.Errorf("BatchGetItems completed with %d unprocessed keys after retries", remaining),
+				"DynamoDB BatchGetItems Failed",
+			)
 		}
 
 		if len(combinedResponses) == 0 {
-			notFound = true
-
-			// prefer the unprocessed warning if we have nothing to return
-			if unprocessedErr != nil {
+			// if nothing was returned but we have an unprocessed error, propagate it
+			if err != nil {
 				notFound = false
-				err = unprocessedErr
 				return fmt.Errorf(err.ErrorMessage)
 			}
-
+			notFound = true
 			err = nil
 			return nil
 		}
@@ -7402,15 +7428,6 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		}
 
 		// completed
-		notFound = totalCount <= 0
-
-		// propagate warning about leftover unprocessed keys without discarding results
-		if unprocessedErr != nil && err == nil {
-			err = unprocessedErr
-		} else {
-			err = nil
-		}
-
 		notFound = totalCount <= 0
 		return nil
 	}, &xray.XTraceData{
@@ -7526,7 +7543,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	//
 	// prepare batch get items request
 	//
-	requestItems := make(map[string]*dynamodb.KeysAndAttributes)
+	requestItems := make(map[string]*dynamodb.KeysAndAttributes, len(multiGetRequestResponse))
 
 	for _, searchSet := range multiGetRequestResponse {
 		//
@@ -7561,7 +7578,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 
 	// define params
 	params := &dynamodb.BatchGetItemInput{
-		RequestItems: requestItems,
+		RequestItems: cloneRequestItems(requestItems),
 	}
 
 	// record params payload
@@ -7643,16 +7660,21 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 		}
 	}
 
-	// surface partial data while still reporting unprocessed leftovers
-	var unprocessedErr *DynamoDBError
+	// surface partial-data condition when unprocessed keys remain after retries
 	if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
-		notFound = false // ensure never set to true if unprocessed keys remain
-		unprocessedErr = d.handleError(errors.New("DynamoDB BatchGetItems Completed With Unprocessed Keys Remaining After Retries"))
+		remaining := countUnprocessed(unprocessedLeft)
+		if errWarn := d.handleError(
+			fmt.Errorf("BatchGetItems completed with %d unprocessed keys after retries", remaining),
+			"DynamoDB BatchGetItems Failed",
+		); errWarn != nil {
+			// keep going to return any successfully fetched items, but return the warning
+			err = errWarn
+		}
 	}
 
 	if len(combinedResponses) == 0 {
-		if unprocessedErr != nil {
-			return false, unprocessedErr
+		if err != nil {
+			return false, err // warn about leftover unprocessed keys instead of "not found"
 		}
 
 		return true, nil
@@ -7678,9 +7700,8 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 		}
 	}
 
-	// propagate warning about leftover unprocessed keys without discarding results
-	if unprocessedErr != nil {
-		return totalCount <= 0, unprocessedErr
+	if err != nil {
+		return totalCount <= 0, err // include partial-data warning if present
 	}
 
 	// completed

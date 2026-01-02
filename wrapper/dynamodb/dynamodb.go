@@ -1359,9 +1359,10 @@ func (d *DynamoDB) do_PutItem(input *dynamodb.PutItemInput, ctx ...aws.Context) 
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB PutItem Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -1387,12 +1388,12 @@ func (d *DynamoDB) do_PutItem(input *dynamodb.PutItemInput, ctx ...aws.Context) 
 			return nil, err
 		}
 
-		if handle.cnDax != nil && !handle.skipDax {
-			return handle.cnDax.PutItemWithContext(ctxToUse, input)
+		if cnDax != nil && !skipDax {
+			return cnDax.PutItemWithContext(ctxToUse, input)
 		}
 
-		if handle.cn != nil {
-			return handle.cn.PutItemWithContext(ctxToUse, input)
+		if cn != nil {
+			return cn.PutItemWithContext(ctxToUse, input)
 		}
 
 		return nil, errors.New("DynamoDB PutItem Failed: No DynamoDB or Dax Connection Available")
@@ -1431,9 +1432,10 @@ func (d *DynamoDB) do_UpdateItem(input *dynamodb.UpdateItemInput, ctx ...aws.Con
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB UpdateItem Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -1459,11 +1461,11 @@ func (d *DynamoDB) do_UpdateItem(input *dynamodb.UpdateItemInput, ctx ...aws.Con
 			return nil, err
 		}
 
-		if handle.cnDax != nil && !handle.skipDax {
-			return handle.cnDax.UpdateItemWithContext(ctxToUse, input)
+		if cnDax != nil && !skipDax {
+			return cnDax.UpdateItemWithContext(ctxToUse, input)
 		}
-		if handle.cn != nil {
-			return handle.cn.UpdateItemWithContext(ctxToUse, input)
+		if cn != nil {
+			return cn.UpdateItemWithContext(ctxToUse, input)
 		}
 		return nil, errors.New("DynamoDB UpdateItem Failed: No DynamoDB or Dax Connection Available")
 	}
@@ -1501,9 +1503,10 @@ func (d *DynamoDB) do_DeleteItem(input *dynamodb.DeleteItemInput, ctx ...aws.Con
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB DeleteItem Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -1529,11 +1532,11 @@ func (d *DynamoDB) do_DeleteItem(input *dynamodb.DeleteItemInput, ctx ...aws.Con
 			return nil, err
 		}
 
-		if handle.cnDax != nil && !handle.skipDax {
-			return handle.cnDax.DeleteItemWithContext(ctxToUse, input)
+		if cnDax != nil && !skipDax {
+			return cnDax.DeleteItemWithContext(ctxToUse, input)
 		}
-		if handle.cn != nil {
-			return handle.cn.DeleteItemWithContext(ctxToUse, input)
+		if cn != nil {
+			return cn.DeleteItemWithContext(ctxToUse, input)
 		}
 		return nil, errors.New("DynamoDB DeleteItem Failed: No DynamoDB or Dax Connection Available")
 	}
@@ -1571,9 +1574,10 @@ func (d *DynamoDB) do_GetItem(input *dynamodb.GetItemInput, ctx ...aws.Context) 
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB GetItem Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -1599,11 +1603,11 @@ func (d *DynamoDB) do_GetItem(input *dynamodb.GetItemInput, ctx ...aws.Context) 
 			return nil, err
 		}
 
-		if handle.cnDax != nil && !handle.skipDax {
-			return handle.cnDax.GetItemWithContext(ctxToUse, input)
+		if cnDax != nil && !skipDax {
+			return cnDax.GetItemWithContext(ctxToUse, input)
 		}
-		if handle.cn != nil {
-			return handle.cn.GetItemWithContext(ctxToUse, input)
+		if cn != nil {
+			return cn.GetItemWithContext(ctxToUse, input)
 		}
 		return nil, errors.New("DynamoDB GetItem Failed: No DynamoDB or Dax Connection Available")
 	}
@@ -1640,9 +1644,10 @@ func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...a
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB Query PaginationData Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -1687,10 +1692,10 @@ func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...a
 		}
 
 		var err error
-		if handle.cnDax != nil && !handle.skipDax {
-			err = handle.cnDax.QueryPagesWithContext(ctxToUse, input, pageFn)
-		} else if handle.cn != nil {
-			err = handle.cn.QueryPagesWithContext(ctxToUse, input, pageFn)
+		if cnDax != nil && !skipDax {
+			err = cnDax.QueryPagesWithContext(ctxToUse, input, pageFn)
+		} else if cn != nil {
+			err = cn.QueryPagesWithContext(ctxToUse, input, pageFn)
 		} else {
 			return nil, errors.New("DynamoDB Query PaginationData Failed: No DynamoDB or Dax Connection Available")
 		}
@@ -1810,9 +1815,10 @@ func (d *DynamoDB) do_Query(input *dynamodb.QueryInput, pagedQuery bool, pagedQu
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB Query Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -1914,21 +1920,21 @@ func (d *DynamoDB) do_Query(input *dynamodb.QueryInput, pagedQuery bool, pagedQu
 			execErr error
 		)
 
-		if handle.cnDax != nil && !handle.skipDax {
+		if cnDax != nil && !skipDax {
 			if pagedQuery {
 				result, execErr = execPaged(func(runCtx aws.Context, fn func(*dynamodb.QueryOutput, bool) bool) error {
-					return handle.cnDax.QueryPagesWithContext(runCtx, input, fn)
+					return cnDax.QueryPagesWithContext(runCtx, input, fn)
 				})
 			} else {
-				result, execErr = handle.cnDax.QueryWithContext(ctxToUse, input)
+				result, execErr = cnDax.QueryWithContext(ctxToUse, input)
 			}
-		} else if handle.cn != nil {
+		} else if cn != nil {
 			if pagedQuery {
 				result, execErr = execPaged(func(runCtx aws.Context, fn func(*dynamodb.QueryOutput, bool) bool) error {
-					return handle.cn.QueryPagesWithContext(runCtx, input, fn)
+					return cn.QueryPagesWithContext(runCtx, input, fn)
 				})
 			} else {
-				result, execErr = handle.cn.QueryWithContext(ctxToUse, input)
+				result, execErr = cn.QueryWithContext(ctxToUse, input)
 			}
 		} else {
 			return nil, errors.New("DynamoDB Query Failed: No DynamoDB or Dax Connection Available")
@@ -2093,9 +2099,10 @@ func (d *DynamoDB) do_Scan(input *dynamodb.ScanInput, pagedQuery bool, pagedQuer
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB Scan Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -2198,21 +2205,21 @@ func (d *DynamoDB) do_Scan(input *dynamodb.ScanInput, pagedQuery bool, pagedQuer
 			execErr error
 		)
 
-		if handle.cnDax != nil && !handle.skipDax {
+		if cnDax != nil && !skipDax {
 			if pagedQuery {
 				result, execErr = execPaged(func(runCtx aws.Context, fn func(*dynamodb.ScanOutput, bool) bool) error {
-					return handle.cnDax.ScanPagesWithContext(runCtx, input, fn)
+					return cnDax.ScanPagesWithContext(runCtx, input, fn)
 				})
 			} else {
-				result, execErr = handle.cnDax.ScanWithContext(ctxToUse, input)
+				result, execErr = cnDax.ScanWithContext(ctxToUse, input)
 			}
-		} else if handle.cn != nil {
+		} else if cn != nil {
 			if pagedQuery {
 				result, execErr = execPaged(func(runCtx aws.Context, fn func(*dynamodb.ScanOutput, bool) bool) error {
-					return handle.cn.ScanPagesWithContext(runCtx, input, fn)
+					return cn.ScanPagesWithContext(runCtx, input, fn)
 				})
 			} else {
-				result, execErr = handle.cn.ScanWithContext(ctxToUse, input)
+				result, execErr = cn.ScanWithContext(ctxToUse, input)
 			}
 		} else {
 			return nil, errors.New("DynamoDB Scan Failed: No DynamoDB or Dax Connection Available")
@@ -2375,9 +2382,10 @@ func (d *DynamoDB) do_BatchWriteItem(input *dynamodb.BatchWriteItemInput, ctx ..
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB BatchWriteItem Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -2403,12 +2411,12 @@ func (d *DynamoDB) do_BatchWriteItem(input *dynamodb.BatchWriteItemInput, ctx ..
 			return nil, err
 		}
 
-		if handle.cnDax != nil && !handle.skipDax {
-			return handle.cnDax.BatchWriteItemWithContext(ctxToUse, input)
+		if cnDax != nil && !skipDax {
+			return cnDax.BatchWriteItemWithContext(ctxToUse, input)
 		}
 
-		if handle.cn != nil {
-			return handle.cn.BatchWriteItemWithContext(ctxToUse, input)
+		if cn != nil {
+			return cn.BatchWriteItemWithContext(ctxToUse, input)
 		}
 
 		return nil, errors.New("DynamoDB BatchWriteItem Failed: No DynamoDB or Dax Connection Available")
@@ -2448,9 +2456,10 @@ func (d *DynamoDB) do_BatchGetItem(input *dynamodb.BatchGetItemInput, ctx ...aws
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB BatchGetItem Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -2476,12 +2485,12 @@ func (d *DynamoDB) do_BatchGetItem(input *dynamodb.BatchGetItemInput, ctx ...aws
 			return nil, err
 		}
 
-		if handle.cnDax != nil && !handle.skipDax {
-			return handle.cnDax.BatchGetItemWithContext(ctxToUse, input)
+		if cnDax != nil && !skipDax {
+			return cnDax.BatchGetItemWithContext(ctxToUse, input)
 		}
 
-		if handle.cn != nil {
-			return handle.cn.BatchGetItemWithContext(ctxToUse, input)
+		if cn != nil {
+			return cn.BatchGetItemWithContext(ctxToUse, input)
 		}
 
 		return nil, errors.New("DynamoDB BatchGetItem Failed: No DynamoDB or Dax Connection Available")
@@ -2521,9 +2530,10 @@ func (d *DynamoDB) do_TransactWriteItems(input *dynamodb.TransactWriteItemsInput
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB TransactWriteItems Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -2549,12 +2559,12 @@ func (d *DynamoDB) do_TransactWriteItems(input *dynamodb.TransactWriteItemsInput
 			return nil, err
 		}
 
-		if handle.cnDax != nil && !handle.skipDax {
-			return handle.cnDax.TransactWriteItemsWithContext(ctxToUse, input)
+		if cnDax != nil && !skipDax {
+			return cnDax.TransactWriteItemsWithContext(ctxToUse, input)
 		}
 
-		if handle.cn != nil {
-			return handle.cn.TransactWriteItemsWithContext(ctxToUse, input)
+		if cn != nil {
+			return cn.TransactWriteItemsWithContext(ctxToUse, input)
 		}
 
 		return nil, errors.New("DynamoDB TransactWriteItems Failed: No DynamoDB or Dax Connection Available")
@@ -2595,9 +2605,10 @@ func (d *DynamoDB) do_TransactGetItems(input *dynamodb.TransactGetItemsInput, ct
 	}
 
 	handle := d.connectionHandle()
-	defer handle.unlock()
+	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
+	handle.unlock()
 
-	if handle.cn == nil && (handle.cnDax == nil || handle.skipDax) {
+	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB TransactGetItems Failed: No DynamoDB or Dax Connection Available")
 	}
 
@@ -2623,11 +2634,11 @@ func (d *DynamoDB) do_TransactGetItems(input *dynamodb.TransactGetItemsInput, ct
 			return nil, err
 		}
 
-		if handle.cnDax != nil && !handle.skipDax {
+		if cnDax != nil && !skipDax {
 			return handle.cnDax.TransactGetItemsWithContext(ctxToUse, input)
 		}
-		if handle.cn != nil {
-			return handle.cn.TransactGetItemsWithContext(ctxToUse, input)
+		if cn != nil {
+			return cn.TransactGetItemsWithContext(ctxToUse, input)
 		}
 		return nil, errors.New("DynamoDB TransactGetItems Failed: No DynamoDB or Dax Connection Available")
 	}

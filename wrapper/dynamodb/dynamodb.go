@@ -8198,13 +8198,16 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 					tableName = putSet.TableNameOverride
 				}
 
+				// clone expression attribute values to avoid races if caller mutates the map concurrently
+				clonedCondVals := cloneExpressionAttributeValues(putSet.ExpressionAttributeValues)
+
 				for _, v := range md {
 					items = append(items, &dynamodb.TransactWriteItem{
 						Put: &dynamodb.Put{
 							TableName:                 aws.String(tableName),
 							Item:                      v,
 							ConditionExpression:       d.getStringPtrOrNil(putSet.ConditionExpression),
-							ExpressionAttributeValues: cloneExpressionAttributeValues(putSet.ExpressionAttributeValues),
+							ExpressionAttributeValues: clonedCondVals,
 						},
 					})
 				}

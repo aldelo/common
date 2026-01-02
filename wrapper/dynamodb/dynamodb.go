@@ -631,8 +631,11 @@ func (g *DynamoDBTransactionReads) MarshalSearchKeyValueMaps() (result []map[str
 		return nil, errors.New("MarshalSearchKeyValueMaps Failed: (Validate) " + "SearchKeys Empty")
 	}
 
-	if g.SearchKeys[0] == nil {
-		return nil, errors.New("MarshalSearchKeyValueMaps Failed: (Validate) " + "SearchKeys[0] Nil")
+	// fail fast on nil entries to avoid request/response count mismatches and panics
+	for i, kv := range g.SearchKeys {
+		if kv == nil {
+			return nil, fmt.Errorf("MarshalSearchKeyValueMaps Failed: (Validate) SearchKeys[%d] Nil", i)
+		}
 	}
 
 	if util.LenTrim(g.TableName) <= 0 {
@@ -1108,7 +1111,7 @@ func deepCopyAttributeValue(src *dynamodb.AttributeValue) *dynamodb.AttributeVal
 }
 
 func cloneExpressionAttributeValues(src map[string]*dynamodb.AttributeValue) map[string]*dynamodb.AttributeValue { // CHANGE
-	if len(src) == 0 {
+	if src == nil {
 		return nil
 	}
 
@@ -1120,7 +1123,7 @@ func cloneExpressionAttributeValues(src map[string]*dynamodb.AttributeValue) map
 }
 
 func cloneExpressionAttributeNames(src map[string]*string) map[string]*string {
-	if len(src) == 0 {
+	if src == nil {
 		return nil
 	}
 
@@ -1137,7 +1140,7 @@ func cloneExpressionAttributeNames(src map[string]*string) map[string]*string {
 }
 
 func cloneAttributeValueMap(src map[string]*dynamodb.AttributeValue) map[string]*dynamodb.AttributeValue {
-	if len(src) == 0 {
+	if src == nil {
 		return nil
 	}
 
@@ -1151,13 +1154,15 @@ func cloneAttributeValueMap(src map[string]*dynamodb.AttributeValue) map[string]
 
 // cloneAttributeValueMapSlice deep-copies a slice of attribute maps (helpers for retry safety)
 func cloneAttributeValueMapSlice(src []map[string]*dynamodb.AttributeValue) []map[string]*dynamodb.AttributeValue { // FIX: new helper
-	if len(src) == 0 {
+	if src == nil {
 		return nil
 	}
+
 	dst := make([]map[string]*dynamodb.AttributeValue, len(src))
 	for i, m := range src {
 		dst[i] = cloneAttributeValueMap(m)
 	}
+
 	return dst
 }
 
@@ -1181,7 +1186,7 @@ func cloneKeysAndAttributes(src *dynamodb.KeysAndAttributes) *dynamodb.KeysAndAt
 
 // cloneRequestItems deep-copies the request items map to avoid SDK mutating caller state.              // FIX
 func cloneRequestItems(src map[string]*dynamodb.KeysAndAttributes) map[string]*dynamodb.KeysAndAttributes {
-	if len(src) == 0 {
+	if src == nil {
 		return nil
 	}
 	dst := make(map[string]*dynamodb.KeysAndAttributes, len(src))
@@ -1193,7 +1198,7 @@ func cloneRequestItems(src map[string]*dynamodb.KeysAndAttributes) map[string]*d
 
 // countUnprocessed returns the total number of keys left unprocessed (for diagnostics).                // FIX
 func countUnprocessed(m map[string]*dynamodb.KeysAndAttributes) int {
-	if len(m) == 0 {
+	if m == nil {
 		return 0
 	}
 	total := 0

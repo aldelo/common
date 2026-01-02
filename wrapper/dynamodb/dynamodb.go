@@ -7361,6 +7361,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		// surface partial data while still reporting unprocessed leftovers
 		var unprocessedErr *DynamoDBError
 		if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
+			notFound = false // ensure never set to true if unprocessed keys remain
 			unprocessedErr = d.handleError(errors.New("DynamoDB BatchGetItems Completed With Unprocessed Keys Remaining After Retries"))
 		}
 
@@ -7369,6 +7370,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 
 			// prefer the unprocessed warning if we have nothing to return
 			if unprocessedErr != nil {
+				notFound = false
 				err = unprocessedErr
 				return fmt.Errorf(err.ErrorMessage)
 			}
@@ -7644,12 +7646,13 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	// surface partial data while still reporting unprocessed leftovers
 	var unprocessedErr *DynamoDBError
 	if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
+		notFound = false // ensure never set to true if unprocessed keys remain
 		unprocessedErr = d.handleError(errors.New("DynamoDB BatchGetItems Completed With Unprocessed Keys Remaining After Retries"))
 	}
 
 	if len(combinedResponses) == 0 {
 		if unprocessedErr != nil {
-			return true, unprocessedErr
+			return false, unprocessedErr
 		}
 
 		return true, nil

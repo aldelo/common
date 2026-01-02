@@ -839,19 +839,20 @@ func (d *DynamoDB) getStringPtrOrNil(s string) *string {
 	}
 }
 
-func (d *DynamoDB) connectionHandle() *connectionHandle {
-	if d == nil {
-		return &connectionHandle{unlock: func() {}}
-	}
-
-	d.connMutex.RLock()
-	return &connectionHandle{
-		cn:      d.cn,
-		cnDax:   d.cnDax,
-		skipDax: d.SkipDax,
-		unlock:  d.connMutex.RUnlock,
-	}
-}
+//func (d *DynamoDB) connectionHandle() *connectionHandle {
+//	if d == nil {
+//		return &connectionHandle{unlock: func() {}}
+//	}
+//
+//	d.connMutex.RLock()
+//
+//	return &connectionHandle{
+//		cn:      d.cn,
+//		cnDax:   d.cnDax,
+//		skipDax: d.SkipDax,
+//		unlock:  d.connMutex.RUnlock,
+//	}
+//}
 
 func (d *DynamoDB) connectionSnapshot() (cn *dynamodb.DynamoDB, cnDax *dax.Dax, skipDax bool) {
 	if d != nil {
@@ -870,6 +871,16 @@ func (d *DynamoDB) connectionSnapshot() (cn *dynamodb.DynamoDB, cnDax *dax.Dax, 
 //
 //	RetryNeedsBackOff = true indicates when doing retry, must wait an arbitrary time duration before retry; false indicates immediate is ok
 func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError {
+	if err == nil {
+		return &DynamoDBError{
+			ErrorMessage:                      "[General] <nil>",
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
+	}
+
 	if d == nil {
 		return &DynamoDBError{
 			ErrorMessage:                      "[DynamoDB Object Nil] " + err.Error(),
@@ -880,141 +891,128 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 		}
 	}
 
-	if err != nil {
-		prefix := ""
+	prefix := ""
 
-		if len(errorPrefix) > 0 {
-			prefix = errorPrefix[0] + " "
+	if len(errorPrefix) > 0 {
+		prefix = errorPrefix[0] + " "
+	}
+
+	prefixType := ""
+	origError := ""
+
+	var aerr awserr.Error
+
+	if errors.As(err, &aerr) {
+		// aws errors
+		prefixType = "[AWS] "
+
+		if aerr.OrigErr() != nil {
+			origError = "OrigErr = " + aerr.OrigErr().Error()
+		} else {
+			origError = "OrigErr = Nil"
 		}
 
-		prefixType := ""
-		origError := ""
-
-		var aerr awserr.Error
-
-		if errors.As(err, &aerr) {
-			// aws errors
-			prefixType = "[AWS] "
-
-			if aerr.OrigErr() != nil {
-				origError = "OrigErr = " + aerr.OrigErr().Error()
-			} else {
-				origError = "OrigErr = Nil"
+		switch aerr.Code() {
+		case dynamodb.ErrCodeConditionalCheckFailedException:
+			fallthrough
+		case dynamodb.ErrCodeResourceInUseException:
+			fallthrough
+		case dynamodb.ErrCodeResourceNotFoundException:
+			fallthrough
+		case dynamodb.ErrCodeIdempotentParameterMismatchException:
+			fallthrough
+		case dynamodb.ErrCodeBackupInUseException:
+			fallthrough
+		case dynamodb.ErrCodeBackupNotFoundException:
+			fallthrough
+		case dynamodb.ErrCodeContinuousBackupsUnavailableException:
+			fallthrough
+		case dynamodb.ErrCodeGlobalTableAlreadyExistsException:
+			fallthrough
+		case dynamodb.ErrCodeGlobalTableNotFoundException:
+			fallthrough
+		case dynamodb.ErrCodeIndexNotFoundException:
+			fallthrough
+		case dynamodb.ErrCodeInvalidRestoreTimeException:
+			fallthrough
+		case dynamodb.ErrCodePointInTimeRecoveryUnavailableException:
+			fallthrough
+		case dynamodb.ErrCodeReplicaAlreadyExistsException:
+			fallthrough
+		case dynamodb.ErrCodeReplicaNotFoundException:
+			fallthrough
+		case dynamodb.ErrCodeTableAlreadyExistsException:
+			fallthrough
+		case dynamodb.ErrCodeTableInUseException:
+			fallthrough
+		case dynamodb.ErrCodeTableNotFoundException:
+			fallthrough
+		case dynamodb.ErrCodeTransactionConflictException:
+			fallthrough
+		case dynamodb.ErrCodeTransactionInProgressException:
+			// show error + no retry
+			return &DynamoDBError{
+				ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
+				SuppressError:                     false,
+				AllowRetry:                        false,
+				RetryNeedsBackOff:                 false,
+				TransactionConditionalCheckFailed: false,
 			}
 
-			switch aerr.Code() {
-			case dynamodb.ErrCodeConditionalCheckFailedException:
-				fallthrough
-			case dynamodb.ErrCodeResourceInUseException:
-				fallthrough
-			case dynamodb.ErrCodeResourceNotFoundException:
-				fallthrough
-			case dynamodb.ErrCodeIdempotentParameterMismatchException:
-				fallthrough
-			case dynamodb.ErrCodeBackupInUseException:
-				fallthrough
-			case dynamodb.ErrCodeBackupNotFoundException:
-				fallthrough
-			case dynamodb.ErrCodeContinuousBackupsUnavailableException:
-				fallthrough
-			case dynamodb.ErrCodeGlobalTableAlreadyExistsException:
-				fallthrough
-			case dynamodb.ErrCodeGlobalTableNotFoundException:
-				fallthrough
-			case dynamodb.ErrCodeIndexNotFoundException:
-				fallthrough
-			case dynamodb.ErrCodeInvalidRestoreTimeException:
-				fallthrough
-			case dynamodb.ErrCodePointInTimeRecoveryUnavailableException:
-				fallthrough
-			case dynamodb.ErrCodeReplicaAlreadyExistsException:
-				fallthrough
-			case dynamodb.ErrCodeReplicaNotFoundException:
-				fallthrough
-			case dynamodb.ErrCodeTableAlreadyExistsException:
-				fallthrough
-			case dynamodb.ErrCodeTableInUseException:
-				fallthrough
-			case dynamodb.ErrCodeTableNotFoundException:
-				fallthrough
-			case dynamodb.ErrCodeTransactionConflictException:
-				fallthrough
-			case dynamodb.ErrCodeTransactionInProgressException:
-				// show error + no retry
-				return &DynamoDBError{
-					ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
-					SuppressError:                     false,
-					AllowRetry:                        false,
-					RetryNeedsBackOff:                 false,
-					TransactionConditionalCheckFailed: false,
-				}
+		case dynamodb.ErrCodeTransactionCanceledException:
+			// if ConditionalCheckFailed, then this may indicate duplicate, set TransactionConditionalCheckFailed status
+			aerrStr := aerr.Message()
+			transCondCheckFailed := false
 
-			case dynamodb.ErrCodeTransactionCanceledException:
-				// if ConditionalCheckFailed, then this may indicate duplicate, set TransactionConditionalCheckFailed status
-				aerrStr := aerr.Message()
-				transCondCheckFailed := false
-
-				if strings.Contains(aerrStr, "ConditionalCheckFailed") {
-					transCondCheckFailed = true
-				}
-
-				return &DynamoDBError{
-					ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerrStr + " - " + origError,
-					SuppressError:                     false,
-					AllowRetry:                        false,
-					RetryNeedsBackOff:                 false,
-					TransactionConditionalCheckFailed: transCondCheckFailed,
-				}
-
-			case dynamodb.ErrCodeItemCollectionSizeLimitExceededException:
-				fallthrough
-			case dynamodb.ErrCodeLimitExceededException:
-				// show error + allow retry with backoff
-				return &DynamoDBError{
-					ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
-					SuppressError:                     false,
-					AllowRetry:                        true,
-					RetryNeedsBackOff:                 true,
-					TransactionConditionalCheckFailed: false,
-				}
-
-			case dynamodb.ErrCodeProvisionedThroughputExceededException:
-				fallthrough
-			case dynamodb.ErrCodeRequestLimitExceeded:
-				// no error + allow retry with backoff
-				return &DynamoDBError{
-					ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
-					SuppressError:                     true,
-					AllowRetry:                        true,
-					RetryNeedsBackOff:                 true,
-					TransactionConditionalCheckFailed: false,
-				}
-
-			case dynamodb.ErrCodeInternalServerError:
-				// no error + allow auto retry without backoff
-				return &DynamoDBError{
-					ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
-					SuppressError:                     true,
-					AllowRetry:                        true,
-					RetryNeedsBackOff:                 false,
-					TransactionConditionalCheckFailed: false,
-				}
-
-			default:
-				return &DynamoDBError{
-					ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
-					SuppressError:                     false,
-					AllowRetry:                        false,
-					RetryNeedsBackOff:                 false,
-					TransactionConditionalCheckFailed: false,
-				}
+			if strings.Contains(aerrStr, "ConditionalCheckFailed") {
+				transCondCheckFailed = true
 			}
-		} else {
-			// other errors
-			prefixType = "[General] "
 
 			return &DynamoDBError{
-				ErrorMessage:                      prefix + prefixType + err.Error(),
+				ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerrStr + " - " + origError,
+				SuppressError:                     false,
+				AllowRetry:                        false,
+				RetryNeedsBackOff:                 false,
+				TransactionConditionalCheckFailed: transCondCheckFailed,
+			}
+
+		case dynamodb.ErrCodeItemCollectionSizeLimitExceededException:
+			fallthrough
+		case dynamodb.ErrCodeLimitExceededException:
+			// show error + allow retry with backoff
+			return &DynamoDBError{
+				ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
+				SuppressError:                     false,
+				AllowRetry:                        true,
+				RetryNeedsBackOff:                 true,
+				TransactionConditionalCheckFailed: false,
+			}
+
+		case dynamodb.ErrCodeProvisionedThroughputExceededException:
+			fallthrough
+		case dynamodb.ErrCodeRequestLimitExceeded:
+			// no error + allow retry with backoff
+			return &DynamoDBError{
+				ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
+				SuppressError:                     true,
+				AllowRetry:                        true,
+				RetryNeedsBackOff:                 true,
+				TransactionConditionalCheckFailed: false,
+			}
+
+		case dynamodb.ErrCodeInternalServerError:
+			// no error + allow auto retry without backoff
+			return &DynamoDBError{
+				ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
+				SuppressError:                     true,
+				AllowRetry:                        true,
+				RetryNeedsBackOff:                 false,
+				TransactionConditionalCheckFailed: false,
+			}
+
+		default:
+			return &DynamoDBError{
+				ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
 				SuppressError:                     false,
 				AllowRetry:                        false,
 				RetryNeedsBackOff:                 false,
@@ -1022,8 +1020,16 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			}
 		}
 	} else {
-		// no error
-		return nil
+		// other errors
+		prefixType = "[General] "
+
+		return &DynamoDBError{
+			ErrorMessage:                      prefix + prefixType + err.Error(),
+			SuppressError:                     false,
+			AllowRetry:                        false,
+			RetryNeedsBackOff:                 false,
+			TransactionConditionalCheckFailed: false,
+		}
 	}
 }
 
@@ -1390,9 +1396,7 @@ func (d *DynamoDB) do_PutItem(input *dynamodb.PutItemInput, ctx ...aws.Context) 
 		return nil, errors.New("DynamoDB PutItem Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB PutItem Failed: No DynamoDB or Dax Connection Available")
@@ -1463,9 +1467,7 @@ func (d *DynamoDB) do_UpdateItem(input *dynamodb.UpdateItemInput, ctx ...aws.Con
 		return nil, errors.New("DynamoDB UpdateItem Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB UpdateItem Failed: No DynamoDB or Dax Connection Available")
@@ -1534,9 +1536,7 @@ func (d *DynamoDB) do_DeleteItem(input *dynamodb.DeleteItemInput, ctx ...aws.Con
 		return nil, errors.New("DynamoDB DeleteItem Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB DeleteItem Failed: No DynamoDB or Dax Connection Available")
@@ -1605,9 +1605,7 @@ func (d *DynamoDB) do_GetItem(input *dynamodb.GetItemInput, ctx ...aws.Context) 
 		return nil, errors.New("DynamoDB GetItem Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB GetItem Failed: No DynamoDB or Dax Connection Available")
@@ -1675,9 +1673,7 @@ func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...a
 		return nil, errors.New("DynamoDB Query PaginationData Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB Query PaginationData Failed: No DynamoDB or Dax Connection Available")
@@ -1833,9 +1829,7 @@ func (d *DynamoDB) do_Query(input *dynamodb.QueryInput, pagedQuery bool, pagedQu
 		return nil, errors.New("DynamoDB Query Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB Query Failed: No DynamoDB or Dax Connection Available")
@@ -2117,9 +2111,7 @@ func (d *DynamoDB) do_Scan(input *dynamodb.ScanInput, pagedQuery bool, pagedQuer
 		return nil, errors.New("DynamoDB Scan Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB Scan Failed: No DynamoDB or Dax Connection Available")
@@ -2400,9 +2392,7 @@ func (d *DynamoDB) do_BatchWriteItem(input *dynamodb.BatchWriteItemInput, ctx ..
 		return nil, errors.New("DynamoDB BatchWriteItem Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB BatchWriteItem Failed: No DynamoDB or Dax Connection Available")
@@ -2474,9 +2464,7 @@ func (d *DynamoDB) do_BatchGetItem(input *dynamodb.BatchGetItemInput, ctx ...aws
 		return nil, errors.New("DynamoDB BatchGetItem Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB BatchGetItem Failed: No DynamoDB or Dax Connection Available")
@@ -2548,9 +2536,7 @@ func (d *DynamoDB) do_TransactWriteItems(input *dynamodb.TransactWriteItemsInput
 		return nil, errors.New("DynamoDB TransactWriteItems Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB TransactWriteItems Failed: No DynamoDB or Dax Connection Available")
@@ -2623,9 +2609,7 @@ func (d *DynamoDB) do_TransactGetItems(input *dynamodb.TransactGetItemsInput, ct
 		return nil, errors.New("DynamoDB TransactGetItems Failed: Input Nil")
 	}
 
-	handle := d.connectionHandle()
-	cn, cnDax, skipDax := handle.cn, handle.cnDax, handle.skipDax
-	handle.unlock()
+	cn, cnDax, skipDax := d.connectionSnapshot()
 
 	if cn == nil && (cnDax == nil || skipDax) {
 		return nil, errors.New("DynamoDB TransactGetItems Failed: No DynamoDB or Dax Connection Available")
@@ -5621,7 +5605,7 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 			return nil, fmt.Errorf("QueryPagedItemsWithRetry Failed: %s", e)
 		} else {
 			// append into accumulator
-			resultVal.Set(reflect.AppendSlice(resultVal, reflect.ValueOf(newPagedSlicePtr).Elem()))
+			resultVal.Set(reflect.AppendSlice(resultVal, newPagedSlicePtr.Elem()))
 
 			if prevEvalKey == nil || len(prevEvalKey) == 0 {
 				break

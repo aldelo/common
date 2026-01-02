@@ -98,16 +98,16 @@ func (e *DynamoDBError) Error() string {
 	return e.ErrorMessage
 }
 
-// =====================================================================================================================
-// DynamoDB connectionHandle Struct
-// =====================================================================================================================
-
-type connectionHandle struct {
-	cn      *dynamodb.DynamoDB
-	cnDax   *dax.Dax
-	skipDax bool
-	unlock  func()
-}
+//// =====================================================================================================================
+//// DynamoDB connectionHandle Struct
+//// =====================================================================================================================
+//
+//type connectionHandle struct {
+//	cn      *dynamodb.DynamoDB
+//	cnDax   *dax.Dax
+//	skipDax bool
+//	unlock  func()
+//}
 
 // =====================================================================================================================
 // DynamoDB TableKeys Struct
@@ -7916,8 +7916,6 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 		var items []*dynamodb.TransactWriteItem
 
 		// loop through all tranItems slice to pre-populate transaction write items slice
-		skOK := false
-
 		for _, t := range tranItems {
 			if t.DeleteItems != nil && len(t.DeleteItems) > 0 {
 				for _, v := range t.DeleteItems {
@@ -7943,13 +7941,10 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 					}
 
 					if util.LenTrim(v.SK) > 0 {
-						if !skOK {
-							if util.LenTrim(skName) <= 0 {
-								success = false
-								err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
-								return err
-							}
-							skOK = true
+						if util.LenTrim(skName) <= 0 {
+							success = false
+							err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+							return err
 						}
 						key[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 					}
@@ -8015,13 +8010,10 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 					}
 
 					if util.LenTrim(v.SK) > 0 {
-						if !skOK {
-							if util.LenTrim(skName) <= 0 {
-								success = false
-								err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
-								return err
-							}
-							skOK = true
+						if util.LenTrim(skName) <= 0 {
+							success = false
+							err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
+							return err
 						}
 						key[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 					}
@@ -8128,8 +8120,6 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 	var items []*dynamodb.TransactWriteItem
 
 	// loop through all tranItems slice to pre-populate transaction write items slice
-	skOK := false
-
 	for _, t := range tranItems {
 		if t.DeleteItems != nil && len(t.DeleteItems) > 0 {
 			for _, v := range t.DeleteItems {
@@ -8151,12 +8141,10 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 				key := map[string]*dynamodb.AttributeValue{
 					pkName: {S: aws.String(v.PK)},
 				}
+
 				if util.LenTrim(v.SK) > 0 {
-					if !skOK {
-						if util.LenTrim(skName) <= 0 {
-							return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
-						}
-						skOK = true
+					if util.LenTrim(skName) <= 0 {
+						return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
 					}
 					key[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 				}
@@ -8221,11 +8209,8 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 				}
 
 				if util.LenTrim(v.SK) > 0 {
-					if !skOK {
-						if util.LenTrim(skName) <= 0 {
-							return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
-						}
-						skOK = true
+					if util.LenTrim(skName) <= 0 {
+						return false, d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "SK Name is Required"))
 					}
 					key[skName] = &dynamodb.AttributeValue{S: aws.String(v.SK)}
 				}

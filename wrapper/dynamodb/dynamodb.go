@@ -706,16 +706,8 @@ func (g *DynamoDBTransactionReads) UnmarshalResultItems(itemResponses []*dynamod
 		return errors.New("UnmarshalResultItems Failed: (Validate) " + "ResultItemsSlicePtr Must Be a Pointer")
 	}
 
-	if itemResponses == nil {
-		return errors.New("UnmarshalResultItems Failed: (Validate) " + "Item Responses From DDB is Nil")
-	}
-
-	if len(itemResponses) == 0 {
-		// no items to unmarshal
-		return errors.New("UnmarshalResultItems Failed: (Validate) " + "Item Responses From DDB is Empty")
-	}
-
-	if len(itemResponses) == 0 {
+	// treat nil/empty responses as no results instead of erroring
+	if itemResponses == nil || len(itemResponses) == 0 {
 		g.ResultItemsCount = 0
 		return nil
 	}
@@ -7268,6 +7260,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 			ctx = trace.Ctx
 		}
 
+		var result *dynamodb.BatchGetItemOutput
 		for attempt := 0; ; attempt++ {
 			if errCtx := ctx.Err(); errCtx != nil {
 				notFound = false
@@ -7275,7 +7268,8 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 				return fmt.Errorf(err.ErrorMessage)
 			}
 
-			result, err1 := d.do_BatchGetItem(params, ctx)
+			var err1 error
+			result, err1 = d.do_BatchGetItem(params, ctx)
 			if err1 != nil {
 				notFound = false
 				err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
@@ -7314,6 +7308,13 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 					backoff = 2 * time.Second
 				}
 			}
+		}
+
+		// fail fast if unprocessed keys remain after retries to prevent silent data loss
+		if result != nil && len(result.UnprocessedKeys) > 0 {
+			notFound = false
+			err = d.handleError(errors.New("DynamoDB BatchGetItems Failed: Unprocessed Keys Remain After Retries Exhausted"))
+			return fmt.Errorf(err.ErrorMessage)
 		}
 
 		if len(combinedResponses) == 0 {
@@ -7519,12 +7520,14 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 		ctx = context.Background()
 	}
 
+	var result *dynamodb.BatchGetItemOutput
 	for attempt := 0; ; attempt++ {
 		if errCtx := ctx.Err(); errCtx != nil {
 			return false, d.handleError(errCtx, "DynamoDB BatchGetItems Failed: (Context Canceled Before Request)")
 		}
 
-		result, err1 := d.do_BatchGetItem(params, ctx)
+		var err1 error
+		result, err1 = d.do_BatchGetItem(params, ctx)
 		if err1 != nil {
 			return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
 		}
@@ -7558,6 +7561,10 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 				backoff = 2 * time.Second
 			}
 		}
+	}
+
+	if result != nil && len(result.UnprocessedKeys) > 0 {
+		return false, d.handleError(errors.New("DynamoDB BatchGetItems Failed: Unprocessed Keys Remain After Retries Exhausted"))
 	}
 
 	if len(combinedResponses) == 0 {

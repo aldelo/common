@@ -8468,6 +8468,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 	}
 
 	searchCount := 0
+	keyCounts := make([]int, 0, len(getItems))
 
 	for i := 0; i < len(getItems); i++ {
 		if getItems[i] == nil {
@@ -8500,6 +8501,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 			}
 
 			searchCount += len(getItems[i].SearchKeys)
+			keyCounts = append(keyCounts, len(getItems[i].SearchKeys))
 
 			if util.LenTrim(getItems[i].TableName) == 0 {
 				getItems[i].TableName = d.TableName
@@ -8616,24 +8618,35 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 			return err
 		}
 
-		// evaluate response
-		successCount = 0
+		// validate response length matches requests to avoid mis-assignment across groups
+		if result == nil || result.Responses == nil || len(result.Responses) != searchCount {
+			successCount = 0
+			err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Count Mismatch)"))
+			return err
+		}
 
-		if result.Responses != nil && len(result.Responses) > 0 {
-			//
-			// loop through each searchSet to assign Result Items from Responses
-			//
-			for _, searchSet := range getItems {
-				if searchSet != nil {
-					if respErr := searchSet.UnmarshalResultItems(result.Responses); respErr != nil {
-						successCount = 0
-						err = d.handleError(respErr, "DynamoDB TransactionGetItems Failed: (Unmarshal Result)")
-						return err
-					} else {
-						successCount += searchSet.ResultItemsCount
-					}
-				}
+		// slice responses per group to keep table/group boundaries intact
+		successCount = 0
+		respIdx := 0
+
+		for gi, searchSet := range getItems {
+			want := keyCounts[gi]
+			if want == 0 {
+				continue
 			}
+			if respIdx+want > len(result.Responses) {
+				err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Index Out of Range)"))
+				return err
+			}
+			groupResponses := result.Responses[respIdx : respIdx+want]
+			respIdx += want
+
+			if respErr := searchSet.UnmarshalResultItems(groupResponses); respErr != nil {
+				successCount = 0
+				err = d.handleError(respErr, "DynamoDB TransactionGetItems Failed: (Unmarshal Result)")
+				return err
+			}
+			successCount += searchSet.ResultItemsCount
 		}
 
 		err = nil
@@ -8681,6 +8694,7 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 	}
 
 	searchCount := 0
+	keyCounts := make([]int, 0, len(getItems))
 
 	for i := 0; i < len(getItems); i++ {
 		if getItems[i] == nil {
@@ -8707,6 +8721,7 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 			}
 
 			searchCount += len(getItems[i].SearchKeys)
+			keyCounts = append(keyCounts, len(getItems[i].SearchKeys))
 
 			if util.LenTrim(getItems[i].TableName) == 0 {
 				getItems[i].TableName = d.TableName
@@ -8811,22 +8826,30 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 		return 0, d.handleError(err1, "DynamoDB TransactionGetItems Failed: (Transaction Reads)")
 	}
 
+	// validate response length matches requests to avoid mis-assignment across groups
+	if result == nil || result.Responses == nil || len(result.Responses) != searchCount {
+		return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Count Mismatch)"))
+	}
+
 	// evaluate response
 	successCount = 0
+	respIdx := 0
 
-	if result.Responses != nil && len(result.Responses) > 0 {
-		//
-		// loop through each searchSet to assign Result Items from Responses
-		//
-		for _, searchSet := range getItems {
-			if searchSet != nil {
-				if respErr := searchSet.UnmarshalResultItems(result.Responses); respErr != nil {
-					return 0, d.handleError(respErr, "DynamoDB TransactionGetItems Failed: (Unmarshal Result)")
-				} else {
-					successCount += searchSet.ResultItemsCount
-				}
-			}
+	for gi, searchSet := range getItems {
+		want := keyCounts[gi]
+		if want == 0 {
+			continue
 		}
+		if respIdx+want > len(result.Responses) {
+			return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Index Out of Range)"))
+		}
+		groupResponses := result.Responses[respIdx : respIdx+want]
+		respIdx += want
+
+		if respErr := searchSet.UnmarshalResultItems(groupResponses); respErr != nil {
+			return 0, d.handleError(respErr, "DynamoDB TransactionGetItems Failed: (Unmarshal Result)")
+		}
+		successCount += searchSet.ResultItemsCount
 	}
 
 	// nothing found or something found, both returns nil for error

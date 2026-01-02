@@ -7438,10 +7438,13 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		// surface partial data while still reporting unprocessed leftovers
 		if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
 			remaining := countUnprocessed(unprocessedLeft)
-			err = d.handleError(
-				fmt.Errorf("BatchGetItems completed with %d unprocessed keys after retries", remaining),
-				"DynamoDB BatchGetItems Failed",
-			)
+			err = &DynamoDBError{
+				ErrorMessage:                      fmt.Sprintf("DynamoDB BatchGetItems Warning: %d unprocessed keys remain after retries", remaining),
+				SuppressError:                     false,
+				AllowRetry:                        true,
+				RetryNeedsBackOff:                 true,
+				TransactionConditionalCheckFailed: false,
+			}
 		}
 
 		if len(combinedResponses) == 0 {
@@ -7713,12 +7716,12 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	// surface partial-data condition when unprocessed keys remain after retries
 	if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
 		remaining := countUnprocessed(unprocessedLeft)
-		if errWarn := d.handleError(
-			fmt.Errorf("BatchGetItems completed with %d unprocessed keys after retries", remaining),
-			"DynamoDB BatchGetItems Failed",
-		); errWarn != nil {
-			// keep going to return any successfully fetched items, but return the warning
-			err = errWarn
+		err = &DynamoDBError{
+			ErrorMessage:                      fmt.Sprintf("DynamoDB BatchGetItems Warning: %d unprocessed keys remain after retries", remaining),
+			SuppressError:                     false,
+			AllowRetry:                        true,
+			RetryNeedsBackOff:                 true,
+			TransactionConditionalCheckFailed: false,
 		}
 	}
 

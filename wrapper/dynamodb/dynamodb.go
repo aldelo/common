@@ -8607,9 +8607,16 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 		}
 
 		// validate response length matches requests to avoid mis-assignment across groups
-		if result == nil || result.Responses == nil || len(result.Responses) != searchCount {
+		if result == nil || result.Responses == nil {
 			successCount = 0
-			err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Count Mismatch)"))
+			err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Nil)"))
+			return err
+		}
+
+		respLen := len(result.Responses)
+		if respLen < searchCount {
+			successCount = 0
+			err = d.handleError(fmt.Errorf("DynamoDB TransactionGetItems Failed: (Response Count Mismatch) Expected %d, Got %d", searchCount, respLen))
 			return err
 		}
 
@@ -8622,8 +8629,8 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 			if want == 0 {
 				continue
 			}
-			if respIdx+want > len(result.Responses) {
-				err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Index Out of Range)"))
+			if respIdx+want > respLen {
+				err = d.handleError(fmt.Errorf("DynamoDB TransactionGetItems Failed: (Response Index Out of Range) idx %d, want %d, len %d", respIdx, want, respLen))
 				return err
 			}
 			groupResponses := result.Responses[respIdx : respIdx+want]
@@ -8815,8 +8822,15 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 	}
 
 	// validate response length matches requests to avoid mis-assignment across groups
-	if result == nil || result.Responses == nil || len(result.Responses) != searchCount {
-		return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Count Mismatch)"))
+	if result == nil || result.Responses == nil {
+		return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Nil)"))
+	}
+
+	respLen := len(result.Responses)
+	if respLen < searchCount {
+		return 0, d.handleError(
+			fmt.Errorf("DynamoDB TransactionGetItems Failed: (Response Count Mismatch) got %d, want %d", respLen, searchCount),
+		)
 	}
 
 	// evaluate response
@@ -8828,8 +8842,8 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 		if want == 0 {
 			continue
 		}
-		if respIdx+want > len(result.Responses) {
-			return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Response Index Out of Range)"))
+		if respIdx+want > respLen {
+			return 0, d.handleError(fmt.Errorf("DynamoDB TransactionGetItems Failed: (Response Index Out of Range) idx %d, want %d, len %d", respIdx, want, respLen))
 		}
 		groupResponses := result.Responses[respIdx : respIdx+want]
 		respIdx += want

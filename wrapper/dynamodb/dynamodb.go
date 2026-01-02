@@ -1158,6 +1158,24 @@ func cloneAttributeValueMapSlice(src []map[string]*dynamodb.AttributeValue) []ma
 	return dst
 }
 
+// cloneKeysAndAttributes deep-copies KeysAndAttributes to avoid SDK mutations and
+// data races when retries are performed or when caller reuses the same map/slice.
+// new helper to ensure retry safety and concurrency safety.
+func cloneKeysAndAttributes(src *dynamodb.KeysAndAttributes) *dynamodb.KeysAndAttributes {
+	if src == nil {
+		return nil
+	}
+
+	dst := &dynamodb.KeysAndAttributes{
+		Keys:                     cloneAttributeValueMapSlice(src.Keys),
+		ProjectionExpression:     src.ProjectionExpression,
+		ConsistentRead:           src.ConsistentRead,
+		ExpressionAttributeNames: cloneExpressionAttributeNames(src.ExpressionAttributeNames),
+	}
+
+	return dst
+}
+
 // =====================================================================================================================
 // Public Utility Helpers
 // =====================================================================================================================
@@ -7224,7 +7242,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 				return fmt.Errorf(err.ErrorMessage)
 			} else {
 				// assign keys to request items
-				requestItems[searchSet.TableName] = &dynamodb.KeysAndAttributes{
+				k := &dynamodb.KeysAndAttributes{
 					Keys: keysAv,
 				}
 
@@ -7234,19 +7252,18 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 						notFound = false
 						err = d.handleError(projErr, "DynamoDB BatchGetItems Failed: (Projecting Attributes)")
 						return fmt.Errorf(err.ErrorMessage)
-					} else {
-						// assign projection expression
-						if projExpr != nil && (projAttr != nil && len(projAttr) > 0) {
-							requestItems[searchSet.TableName].ProjectionExpression = projExpr
-							requestItems[searchSet.TableName].ExpressionAttributeNames = projAttr
-						}
+					} else if projExpr != nil && (projAttr != nil && len(projAttr) > 0) {
+						k.ProjectionExpression = projExpr
+						k.ExpressionAttributeNames = projAttr
 					}
 				}
 
 				// set consistent read
 				if searchSet.ConsistentRead != nil {
-					requestItems[searchSet.TableName].ConsistentRead = searchSet.ConsistentRead
+					k.ConsistentRead = searchSet.ConsistentRead
 				}
+
+				requestItems[searchSet.TableName] = cloneKeysAndAttributes(k)
 			}
 		}
 
@@ -7317,12 +7334,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 			// rebuild params with a fresh map to avoid SDK mutation races across retries
 			nextReq := make(map[string]*dynamodb.KeysAndAttributes, len(result.UnprocessedKeys))
 			for k, v := range result.UnprocessedKeys {
-				nextReq[k] = &dynamodb.KeysAndAttributes{
-					Keys:                     cloneAttributeValueMapSlice(v.Keys), // deep copy
-					ProjectionExpression:     v.ProjectionExpression,
-					ConsistentRead:           v.ConsistentRead,
-					ExpressionAttributeNames: cloneExpressionAttributeNames(v.ExpressionAttributeNames),
-				}
+				nextReq[k] = cloneKeysAndAttributes(v)
 			}
 			params = &dynamodb.BatchGetItemInput{
 				RequestItems: nextReq,
@@ -7393,10 +7405,11 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		// propagate warning about leftover unprocessed keys without discarding results
 		if unprocessedErr != nil && err == nil {
 			err = unprocessedErr
-			return fmt.Errorf(err.ErrorMessage)
+		} else {
+			err = nil
 		}
 
-		err = nil
+		notFound = totalCount <= 0
 		return nil
 	}, &xray.XTraceData{
 		Meta: map[string]interface{}{
@@ -7521,7 +7534,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 			return false, d.handleError(keysErr, "DynamoDB BatchGetItems Failed: (SearchKey Marshal)")
 		} else {
 			// assign keys to request items
-			requestItems[searchSet.TableName] = &dynamodb.KeysAndAttributes{
+			k := &dynamodb.KeysAndAttributes{
 				Keys: keysAv,
 			}
 
@@ -7529,19 +7542,18 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 			if searchSet.ProjectedAttributes != nil {
 				if projExpr, projAttr, projErr := searchSet.ProjectedAttributes.BuildProjectionParameters(); projErr != nil {
 					return false, d.handleError(projErr, "DynamoDB BatchGetItems Failed: (Projecting Attributes)")
-				} else {
-					// assign projection expression
-					if projExpr != nil && (projAttr != nil && len(projAttr) > 0) {
-						requestItems[searchSet.TableName].ProjectionExpression = projExpr
-						requestItems[searchSet.TableName].ExpressionAttributeNames = projAttr
-					}
+				} else if projExpr != nil && (projAttr != nil && len(projAttr) > 0) {
+					k.ProjectionExpression = projExpr
+					k.ExpressionAttributeNames = projAttr
 				}
 			}
 
 			// set consistent read
 			if searchSet.ConsistentRead != nil {
-				requestItems[searchSet.TableName].ConsistentRead = searchSet.ConsistentRead
+				k.ConsistentRead = searchSet.ConsistentRead
 			}
+
+			requestItems[searchSet.TableName] = cloneKeysAndAttributes(k)
 		}
 	}
 
@@ -7608,12 +7620,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 		// rebuild params with deep-copied keys to avoid mutation races across retries
 		nextReq := make(map[string]*dynamodb.KeysAndAttributes, len(result.UnprocessedKeys))
 		for k, v := range result.UnprocessedKeys {
-			nextReq[k] = &dynamodb.KeysAndAttributes{
-				Keys:                     cloneAttributeValueMapSlice(v.Keys),
-				ProjectionExpression:     v.ProjectionExpression,
-				ConsistentRead:           v.ConsistentRead,
-				ExpressionAttributeNames: cloneExpressionAttributeNames(v.ExpressionAttributeNames),
-			}
+			nextReq[k] = cloneKeysAndAttributes(v)
 		}
 		params = &dynamodb.BatchGetItemInput{
 			RequestItems: nextReq,

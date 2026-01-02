@@ -7251,6 +7251,8 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		maxAttempts := 5
 		backoff := 50 * time.Millisecond
 
+		var unprocessedLeft map[string]*dynamodb.KeysAndAttributes
+
 		var ctx aws.Context
 		if timeOutDuration != nil {
 			c, cancel := context.WithTimeout(trace.Ctx, *timeOutDuration)
@@ -7276,7 +7278,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 				return fmt.Errorf(err.ErrorMessage)
 			}
 
-			if result.Responses != nil {
+			if result != nil && result.Responses != nil {
 				for tbl, items := range result.Responses {
 					if len(items) > 0 {
 						combinedResponses[tbl] = append(combinedResponses[tbl], items...)
@@ -7284,7 +7286,14 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 				}
 			}
 
-			if len(result.UnprocessedKeys) == 0 || attempt+1 >= maxAttempts {
+			// capture any remaining unprocessed keys for later error reporting
+			if result != nil && len(result.UnprocessedKeys) > 0 {
+				unprocessedLeft = result.UnprocessedKeys
+			} else {
+				unprocessedLeft = nil
+			}
+
+			if result == nil || len(result.UnprocessedKeys) == 0 || attempt+1 >= maxAttempts {
 				break
 			}
 
@@ -7310,15 +7319,21 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 			}
 		}
 
-		// fail fast if unprocessed keys remain after retries to prevent silent data loss
-		if result != nil && len(result.UnprocessedKeys) > 0 {
-			notFound = false
-			err = d.handleError(errors.New("DynamoDB BatchGetItems Failed: Unprocessed Keys Remain After Retries Exhausted"))
-			return fmt.Errorf(err.ErrorMessage)
+		// surface partial data while still reporting unprocessed leftovers
+		var unprocessedErr *DynamoDBError
+		if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
+			unprocessedErr = d.handleError(errors.New("DynamoDB BatchGetItems Completed With Unprocessed Keys Remaining After Retries"))
 		}
 
 		if len(combinedResponses) == 0 {
 			notFound = true
+
+			// prefer the unprocessed warning if we have nothing to return
+			if unprocessedErr != nil {
+				err = unprocessedErr
+				return fmt.Errorf(err.ErrorMessage)
+			}
+
 			err = nil
 			return nil
 		}
@@ -7347,6 +7362,13 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 
 		// completed
 		notFound = totalCount <= 0
+
+		// propagate warning about leftover unprocessed keys without discarding results
+		if unprocessedErr != nil && err == nil {
+			err = unprocessedErr
+			return fmt.Errorf(err.ErrorMessage)
+		}
+
 		err = nil
 		return nil
 	}, &xray.XTraceData{
@@ -7509,6 +7531,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	combinedResponses := make(map[string][]map[string]*dynamodb.AttributeValue)
 	maxAttempts := 5
 	backoff := 50 * time.Millisecond
+	var unprocessedLeft map[string]*dynamodb.KeysAndAttributes
 
 	var ctx aws.Context
 
@@ -7532,7 +7555,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 			return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
 		}
 
-		if result.Responses != nil {
+		if result != nil && result.Responses != nil {
 			for tbl, items := range result.Responses {
 				if len(items) > 0 {
 					combinedResponses[tbl] = append(combinedResponses[tbl], items...)
@@ -7540,7 +7563,14 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 			}
 		}
 
-		if len(result.UnprocessedKeys) == 0 || attempt+1 >= maxAttempts {
+		// capture any remaining unprocessed keys for later error reporting
+		if result != nil && len(result.UnprocessedKeys) > 0 {
+			unprocessedLeft = result.UnprocessedKeys
+		} else {
+			unprocessedLeft = nil
+		}
+
+		if result == nil || len(result.UnprocessedKeys) == 0 || attempt+1 >= maxAttempts {
 			break
 		}
 
@@ -7567,7 +7597,17 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 		return false, d.handleError(errors.New("DynamoDB BatchGetItems Failed: Unprocessed Keys Remain After Retries Exhausted"))
 	}
 
+	// surface partial data while still reporting unprocessed leftovers
+	var unprocessedErr *DynamoDBError
+	if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
+		unprocessedErr = d.handleError(errors.New("DynamoDB BatchGetItems Completed With Unprocessed Keys Remaining After Retries"))
+	}
+
 	if len(combinedResponses) == 0 {
+		if unprocessedErr != nil {
+			return true, unprocessedErr
+		}
+
 		return true, nil
 	}
 
@@ -7589,6 +7629,11 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 		} else {
 			searchSet.ResultItemsCount = 0
 		}
+	}
+
+	// propagate warning about leftover unprocessed keys without discarding results
+	if unprocessedErr != nil {
+		return totalCount <= 0, unprocessedErr
 	}
 
 	// completed

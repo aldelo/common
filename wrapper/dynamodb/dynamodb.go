@@ -1035,9 +1035,16 @@ func deepCopyAttributeValue(src *dynamodb.AttributeValue) *dynamodb.AttributeVal
 		return nil
 	}
 
-	dst := &dynamodb.AttributeValue{
-		BOOL: src.BOOL,
-		NULL: src.NULL,
+	dst := &dynamodb.AttributeValue{}
+
+	if src.BOOL != nil {
+		val := *src.BOOL
+		dst.BOOL = &val
+	}
+
+	if src.NULL != nil {
+		val := *src.NULL
+		dst.NULL = &val
 	}
 
 	if src.S != nil {

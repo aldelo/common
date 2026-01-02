@@ -1120,6 +1120,31 @@ func cloneExpressionAttributeNames(src map[string]*string) map[string]*string {
 	return dst
 }
 
+func cloneAttributeValueMap(src map[string]*dynamodb.AttributeValue) map[string]*dynamodb.AttributeValue {
+	if len(src) == 0 {
+		return nil
+	}
+
+	dst := make(map[string]*dynamodb.AttributeValue, len(src))
+	for k, v := range src {
+		dst[k] = deepCopyAttributeValue(v)
+	}
+
+	return dst
+}
+
+// cloneAttributeValueMapSlice deep-copies a slice of attribute maps (helpers for retry safety)
+func cloneAttributeValueMapSlice(src []map[string]*dynamodb.AttributeValue) []map[string]*dynamodb.AttributeValue { // FIX: new helper
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make([]map[string]*dynamodb.AttributeValue, len(src))
+	for i, m := range src {
+		dst[i] = cloneAttributeValueMap(m)
+	}
+	return dst
+}
+
 // =====================================================================================================================
 // Public Utility Helpers
 // =====================================================================================================================
@@ -1729,19 +1754,6 @@ func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...a
 // =====================================================================================================================
 // Internal do_Query Helper
 // =====================================================================================================================
-
-func cloneAttributeValueMap(src map[string]*dynamodb.AttributeValue) map[string]*dynamodb.AttributeValue {
-	if len(src) == 0 {
-		return nil
-	}
-
-	dst := make(map[string]*dynamodb.AttributeValue, len(src))
-	for k, v := range src {
-		dst[k] = deepCopyAttributeValue(v)
-	}
-
-	return dst
-}
 
 func mergeConsumedCapacity(dst *dynamodb.ConsumedCapacity, src *dynamodb.ConsumedCapacity) *dynamodb.ConsumedCapacity {
 	if src == nil {
@@ -7261,7 +7273,6 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		combinedResponses := make(map[string][]map[string]*dynamodb.AttributeValue)
 		maxAttempts := 5
 		backoff := 50 * time.Millisecond
-
 		var unprocessedLeft map[string]*dynamodb.KeysAndAttributes
 
 		var ctx aws.Context
@@ -7271,6 +7282,10 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 			ctx = c
 		} else {
 			ctx = trace.Ctx
+		}
+
+		if ctx == nil {
+			ctx = context.Background()
 		}
 
 		var result *dynamodb.BatchGetItemOutput
@@ -7308,8 +7323,18 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 				break
 			}
 
+			// rebuild params with a fresh map to avoid SDK mutation races across retries
+			nextReq := make(map[string]*dynamodb.KeysAndAttributes, len(result.UnprocessedKeys))
+			for k, v := range result.UnprocessedKeys {
+				nextReq[k] = &dynamodb.KeysAndAttributes{
+					Keys:                     cloneAttributeValueMapSlice(v.Keys), // deep copy
+					ProjectionExpression:     v.ProjectionExpression,
+					ConsistentRead:           v.ConsistentRead,
+					ExpressionAttributeNames: cloneExpressionAttributeNames(v.ExpressionAttributeNames),
+				}
+			}
 			params = &dynamodb.BatchGetItemInput{
-				RequestItems: result.UnprocessedKeys,
+				RequestItems: nextReq,
 			}
 
 			// context-aware backoff to avoid hanging when caller cancels
@@ -7554,6 +7579,10 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 		ctx = context.Background()
 	}
 
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	var result *dynamodb.BatchGetItemOutput
 	for attempt := 0; ; attempt++ {
 		if errCtx := ctx.Err(); errCtx != nil {
@@ -7585,8 +7614,18 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 			break
 		}
 
+		// rebuild params with deep-copied keys to avoid mutation races across retries
+		nextReq := make(map[string]*dynamodb.KeysAndAttributes, len(result.UnprocessedKeys))
+		for k, v := range result.UnprocessedKeys {
+			nextReq[k] = &dynamodb.KeysAndAttributes{
+				Keys:                     cloneAttributeValueMapSlice(v.Keys),
+				ProjectionExpression:     v.ProjectionExpression,
+				ConsistentRead:           v.ConsistentRead,
+				ExpressionAttributeNames: cloneExpressionAttributeNames(v.ExpressionAttributeNames),
+			}
+		}
 		params = &dynamodb.BatchGetItemInput{
-			RequestItems: result.UnprocessedKeys,
+			RequestItems: nextReq,
 		}
 
 		// context-aware backoff to avoid hanging when caller cancels

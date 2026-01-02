@@ -7993,13 +7993,15 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 						tableName = putSet.TableNameOverride
 					}
 
+					clonedCondVals := cloneExpressionAttributeValues(putSet.ExpressionAttributeValues)
+
 					for _, v := range md {
 						items = append(items, &dynamodb.TransactWriteItem{
 							Put: &dynamodb.Put{
 								TableName:                 aws.String(tableName),
 								Item:                      v,
 								ConditionExpression:       d.getStringPtrOrNil(putSet.ConditionExpression),
-								ExpressionAttributeValues: cloneExpressionAttributeValues(putSet.ExpressionAttributeValues),
+								ExpressionAttributeValues: clonedCondVals,
 							},
 						})
 					}

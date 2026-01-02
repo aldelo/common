@@ -6551,13 +6551,8 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 	}
 
 	// validate input parameters
-	if putItemsSet == nil && deleteKeys == nil {
-		err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Both Cannot Be Nil"))
-		return 0, nil, err
-	}
-
-	if len(putItemsSet) > 0 && len(deleteKeys) > 0 {
-		err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Cannot Be Used Together At the Same Time"))
+	if (putItemsSet == nil || len(putItemsSet) == 0) && (deleteKeys == nil || len(deleteKeys) == 0) { // CHANGED
+		err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: PutItems and DeleteKeys both cannot be nil/empty"))
 		return 0, nil, err
 	}
 
@@ -6656,7 +6651,8 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 			}
 		}
 
-		if (putCount+deleteCount) <= 0 || (putCount+deleteCount) > 25 {
+		totalCount := putCount + deleteCount
+		if totalCount <= 0 || totalCount > 25 {
 			successCount = 0
 			unprocessedItems = nil
 			err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Count Must Be 1 to 25 Only"))
@@ -6767,12 +6763,12 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 				}
 			}
 
-			successCount = deleteCount + putCount - unprocessedCount
+			successCount = totalCount - unprocessedCount
 			err = nil
 			return nil
 		}
 
-		successCount = deleteCount + putCount
+		successCount = totalCount
 		unprocessedItems = nil
 		err = nil
 		return nil
@@ -6811,13 +6807,8 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 	}
 
 	// validate input parameters
-	if putItemsSet == nil && deleteKeys == nil {
-		return 0, nil, d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Both Cannot Be Nil"))
-	}
-
-	if len(putItemsSet) > 0 && len(deleteKeys) > 0 {
-		err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Cannot Be Used Together At the Same Time"))
-		return 0, nil, err
+	if (putItemsSet == nil || len(putItemsSet) == 0) && (deleteKeys == nil || len(deleteKeys) == 0) { // CHANGED
+		return 0, nil, d.handleError(errors.New("DynamoDB BatchWriteItems Failed: PutItems and DeleteKeys both cannot be nil/empty"))
 	}
 
 	// marshal put and delete objects
@@ -6914,7 +6905,8 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 		}
 	}
 
-	if (putCount+deleteCount) <= 0 || (putCount+deleteCount) > 25 {
+	totalCount := putCount + deleteCount
+	if totalCount <= 0 || totalCount > 25 {
 		successCount = 0
 		unprocessedItems = nil
 		err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Count Must Be 1 to 25 Only"))
@@ -7022,12 +7014,12 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 			}
 		}
 
-		successCount = deleteCount + putCount - unprocessedCount
+		successCount = totalCount - unprocessedCount
 		err = nil
 		return successCount, unprocessedItems, err
 	}
 
-	successCount = deleteCount + putCount
+	successCount = totalCount
 	unprocessedItems = nil
 	err = nil
 

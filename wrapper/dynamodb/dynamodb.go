@@ -8581,7 +8581,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 
 					if projExpr != nil && util.LenTrim(*projExpr) > 0 && projAttr != nil && len(projAttr) > 0 {
 						getItem.ProjectionExpression = projExpr
-						getItem.ExpressionAttributeNames = projAttr
+						getItem.ExpressionAttributeNames = cloneExpressionAttributeNames(projAttr)
 					}
 
 					transGetItems = append(transGetItems, &dynamodb.TransactGetItem{
@@ -8781,7 +8781,7 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 
 				if projExpr != nil && util.LenTrim(*projExpr) > 0 && projAttr != nil && len(projAttr) > 0 {
 					getItem.ProjectionExpression = projExpr
-					getItem.ExpressionAttributeNames = projAttr
+					getItem.ExpressionAttributeNames = cloneExpressionAttributeNames(projAttr)
 				}
 
 				transGetItems = append(transGetItems, &dynamodb.TransactGetItem{

@@ -7634,10 +7634,6 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 		}
 	}
 
-	if result != nil && len(result.UnprocessedKeys) > 0 {
-		return false, d.handleError(errors.New("DynamoDB BatchGetItems Failed: Unprocessed Keys Remain After Retries Exhausted"))
-	}
-
 	// surface partial data while still reporting unprocessed leftovers
 	var unprocessedErr *DynamoDBError
 	if unprocessedLeft != nil && len(unprocessedLeft) > 0 {

@@ -252,8 +252,11 @@ func (r *DynamoDBMultiGetRequestResponse) MarshalSearchKeyValueMaps() (result []
 		return nil, errors.New("MarshalSearchKeyValueMaps Failed: (Validate) " + "SearchKeys Empty")
 	}
 
-	if r.SearchKeys[0] == nil {
-		return nil, errors.New("MarshalSearchKeyValueMaps Failed: (Validate) " + "SearchKeys[0] Nil")
+	// fail fast if any element is nil to avoid request/response count mismatch
+	for i, kv := range r.SearchKeys {
+		if kv == nil {
+			return nil, fmt.Errorf("MarshalSearchKeyValueMaps Failed: (Validate) SearchKeys[%d] Nil", i)
+		}
 	}
 
 	if util.LenTrim(r.TableName) <= 0 {

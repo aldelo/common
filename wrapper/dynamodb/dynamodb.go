@@ -2635,7 +2635,7 @@ func (d *DynamoDB) do_TransactGetItems(input *dynamodb.TransactGetItemsInput, ct
 		}
 
 		if cnDax != nil && !skipDax {
-			return handle.cnDax.TransactGetItemsWithContext(ctxToUse, input)
+			return cnDax.TransactGetItemsWithContext(ctxToUse, input)
 		}
 		if cn != nil {
 			return cn.TransactGetItemsWithContext(ctxToUse, input)

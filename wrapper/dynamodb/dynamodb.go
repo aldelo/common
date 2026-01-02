@@ -2570,6 +2570,19 @@ func (d *DynamoDB) do_BatchGetItem(input *dynamodb.BatchGetItemInput, ctx ...aws
 // Internal do_TransactionWriteItems Helper
 // =====================================================================================================================
 
+// helper to detect DAX unsupported-operation style errors and allow fallback to DynamoDB
+func isDaxUnsupported(err error) bool {
+	var aerr awserr.Error
+	if errors.As(err, &aerr) {
+		code := aerr.Code()
+		if strings.Contains(strings.ToLower(code), "unsupported") ||
+			strings.Contains(strings.ToLower(code), "unknownoperation") {
+			return true
+		}
+	}
+	return false
+}
+
 // do_TransactWriteItems is a helper that calls either dax or dynamodb based on dax availability
 func (d *DynamoDB) do_TransactWriteItems(input *dynamodb.TransactWriteItemsInput, ctx ...aws.Context) (output *dynamodb.TransactWriteItemsOutput, err error) {
 	if d == nil {
@@ -2599,7 +2612,7 @@ func (d *DynamoDB) do_TransactWriteItems(input *dynamodb.TransactWriteItemsInput
 		return nil, err
 	}
 
-	call := func(callCtx aws.Context) (*dynamodb.TransactWriteItemsOutput, error) {
+	callDax := func(callCtx aws.Context) (*dynamodb.TransactWriteItemsOutput, error) {
 		ctxToUse := ensureAwsContext(callCtx)
 		if ctxToUse == nil {
 			ctxToUse = context.Background()
@@ -2607,16 +2620,34 @@ func (d *DynamoDB) do_TransactWriteItems(input *dynamodb.TransactWriteItemsInput
 		if err := ctxToUse.Err(); err != nil {
 			return nil, err
 		}
+		return cnDax.TransactWriteItemsWithContext(ctxToUse, input)
+	}
 
+	callDdb := func(callCtx aws.Context) (*dynamodb.TransactWriteItemsOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+		return cn.TransactWriteItemsWithContext(ctxToUse, input)
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.TransactWriteItemsOutput, error) {
+		// Prefer DAX when present and not skipped
 		if cnDax != nil && !skipDax {
-			return cnDax.TransactWriteItemsWithContext(ctxToUse, input)
+			if out, derr := callDax(callCtx); derr == nil {
+				return out, nil
+			} else if !isDaxUnsupported(derr) {
+				return nil, derr
+			}
+			// Fallback to DynamoDB if DAX rejected/unsupported
 		}
-
 		if cn != nil {
-			return cn.TransactWriteItemsWithContext(ctxToUse, input)
+			return callDdb(callCtx)
 		}
-
-		return nil, errors.New("DynamoDB TransactWriteItems Failed: No DynamoDB or Dax Connection Available")
+		return nil, errors.New("DynamoDB TransactWriteItems Failed: No DynamoDB Connection Available")
 	}
 
 	connMgr := GetGlobalConnectionManager()
@@ -2672,7 +2703,7 @@ func (d *DynamoDB) do_TransactGetItems(input *dynamodb.TransactGetItemsInput, ct
 		return nil, err
 	}
 
-	call := func(callCtx aws.Context) (*dynamodb.TransactGetItemsOutput, error) {
+	callDax := func(callCtx aws.Context) (*dynamodb.TransactGetItemsOutput, error) {
 		ctxToUse := ensureAwsContext(callCtx)
 		if ctxToUse == nil {
 			ctxToUse = context.Background()
@@ -2680,14 +2711,34 @@ func (d *DynamoDB) do_TransactGetItems(input *dynamodb.TransactGetItemsInput, ct
 		if err := ctxToUse.Err(); err != nil {
 			return nil, err
 		}
+		return cnDax.TransactGetItemsWithContext(ctxToUse, input)
+	}
 
+	callDdb := func(callCtx aws.Context) (*dynamodb.TransactGetItemsOutput, error) {
+		ctxToUse := ensureAwsContext(callCtx)
+		if ctxToUse == nil {
+			ctxToUse = context.Background()
+		}
+		if err := ctxToUse.Err(); err != nil {
+			return nil, err
+		}
+		return cn.TransactGetItemsWithContext(ctxToUse, input)
+	}
+
+	call := func(callCtx aws.Context) (*dynamodb.TransactGetItemsOutput, error) {
+		// Prefer DAX when present and not skipped
 		if cnDax != nil && !skipDax {
-			return cnDax.TransactGetItemsWithContext(ctxToUse, input)
+			if out, derr := callDax(callCtx); derr == nil {
+				return out, nil
+			} else if !isDaxUnsupported(derr) {
+				return nil, derr
+			}
+			// Fallback to DynamoDB if DAX rejected/unsupported
 		}
 		if cn != nil {
-			return cn.TransactGetItemsWithContext(ctxToUse, input)
+			return callDdb(callCtx)
 		}
-		return nil, errors.New("DynamoDB TransactGetItems Failed: No DynamoDB or Dax Connection Available")
+		return nil, errors.New("DynamoDB TransactGetItems Failed: No DynamoDB Connection Available")
 	}
 
 	connMgr := GetGlobalConnectionManager()
@@ -7385,7 +7436,6 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		}
 
 		// surface partial data while still reporting unprocessed leftovers
-		var unprocessedErr *DynamoDBError
 		if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
 			remaining := countUnprocessed(unprocessedLeft)
 			err = d.handleError(

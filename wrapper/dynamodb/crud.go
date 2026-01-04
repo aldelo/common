@@ -1899,9 +1899,10 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	if util.LenTrim(removeExpression) > 0 {
 		if uniqueFieldsMap == nil || len(uniqueFieldsMap) == 0 {
 			// no unique fields involved; keep existing fast path
-			if e := _ddb.RemoveItemAttributeWithRetry(_actionRetries, pkValue, skValue, removeExpression, _ddb.TimeOutDuration(_timeout)); e != nil {
+			// honor conditionExpression and use UpdateItemWithRetry instead of RemoveItemAttributeWithRetry.
+			if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, removeExpression, conditionExpression, nil, nil, _ddb.TimeOutDuration(_timeout)); e != nil {
 				// remove item attribute error
-				return fmt.Errorf("Update To Data Store Failed: (RemoveItemAttribute) %s", e.Error())
+				return fmt.Errorf("Update To Data Store Failed: (UpdateItem remove) %s", e.Error())
 			}
 			// success
 			return nil

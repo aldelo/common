@@ -1985,7 +1985,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 					PK:                        pkValue,
 					SK:                        skValue,
 					UpdateExpression:          updateExpr,
-					ConditionExpression:       "",
+					ConditionExpression:       conditionExpression,
 					ExpressionAttributeValues: exprAttrVals,
 				},
 			},

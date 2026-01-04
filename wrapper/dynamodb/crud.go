@@ -1516,8 +1516,14 @@ func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpre
 		}
 	}
 
+	// avoid passing empty index name pointer (AWS rejects empty IndexName)
+	var indexNamePtr *string
+	if util.LenTrim(keyExpression.IndexName) > 0 {
+		indexNamePtr = aws.String(keyExpression.IndexName)
+	}
+
 	// query pagination data against dynamodb table
-	if pData, e := _ddb.QueryPaginationDataWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), util.StringPtr(keyExpression.IndexName), itemsPerPage, keyCondition, nil, keyValues); e != nil {
+	if pData, e := _ddb.QueryPaginationDataWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), indexNamePtr, itemsPerPage, keyCondition, nil, keyValues); e != nil {
 		// query error
 		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (QueryPaged) %s", e.Error())
 	} else {
@@ -2118,18 +2124,30 @@ func (c *Crud) CreateTable(tableName string,
 	}
 
 	if attributes == nil {
-		attributes = []*ddb.AttributeDefinition{}
+		attributes = make([]*ddb.AttributeDefinition, 0, 2)
 	}
 
-	attributes = append(attributes, &ddb.AttributeDefinition{
-		AttributeName: aws.String("PK"),
-		AttributeType: aws.String("S"),
-	}, &ddb.AttributeDefinition{
-		AttributeName: aws.String("SK"),
-		AttributeType: aws.String("S"),
-	})
+	attrSet := make(map[string]struct{}, len(attributes))
 
-	if attributes != nil && len(attributes) > 0 {
+	for _, a := range attributes {
+		if a != nil && a.AttributeName != nil {
+			attrSet[strings.ToUpper(aws.StringValue(a.AttributeName))] = struct{}{}
+		}
+	}
+	if _, ok := attrSet["PK"]; !ok {
+		attributes = append(attributes, &ddb.AttributeDefinition{
+			AttributeName: aws.String("PK"),
+			AttributeType: aws.String("S"),
+		})
+	}
+	if _, ok := attrSet["SK"]; !ok {
+		attributes = append(attributes, &ddb.AttributeDefinition{
+			AttributeName: aws.String("SK"),
+			AttributeType: aws.String("S"),
+		})
+	}
+
+	if len(attributes) > 0 {
 		input.AttributeDefinitions = attributes
 	}
 

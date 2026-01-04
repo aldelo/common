@@ -838,7 +838,11 @@ func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBCondi
 	}
 }
 
-func (c *Crud) prepareBatchSetParams(putItems interface{}, deleteKeys []PkSkValuePair, putConditionExpressionSet ...*DynamoDBConditionExpressionSet) ([]*DynamoDBTransactionWritePutItemsSet, []*DynamoDBTableKeys, map[string][]*PkSkValuePair, map[string][]*PkSkValuePair) {
+func (c *Crud) prepareBatchSetParams(
+	putItems interface{}, deleteKeys []PkSkValuePair,
+	putConditionExpressionSet ...*DynamoDBConditionExpressionSet,
+) ([]*DynamoDBTransactionWritePutItemsSet, []*DynamoDBTableKeys, map[string][]*PkSkValuePair, map[string][]*PkSkValuePair) {
+
 	if c == nil {
 		return nil, nil, nil, nil
 	}
@@ -946,7 +950,11 @@ func (c *Crud) BatchSet(putDataSlice interface{}, deleteKeys []PkSkValuePair) (s
 // deleteKeys = one or more delete keys to include in batch
 //
 // !!! NOTE = Both putItemsSet and deleteKeys Cannot Be Set At The Same Time, Each BatchSet Handles Either Put or Delete, Not Both !!!
-func (c *Crud) BatchSetEx(putItemsSet []*DynamoDBTransactionWritePutItemsSet, deleteKeys []*DynamoDBTableKeys) (successCount int, failedPuts map[string][]*PkSkValuePair, failedDeletes map[string][]*PkSkValuePair, err error) {
+func (c *Crud) BatchSetEx(
+	putItemsSet []*DynamoDBTransactionWritePutItemsSet,
+	deleteKeys []*DynamoDBTableKeys,
+) (successCount int, failedPuts map[string][]*PkSkValuePair, failedDeletes map[string][]*PkSkValuePair, err error) {
+
 	if c == nil {
 		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 1) Crud Object is Nil")
 	}
@@ -1308,7 +1316,12 @@ func (c *Crud) exclusiveStartKeyFromBase64(key string) (map[string]*ddb.Attribut
 //	data struct contains PK, SK, and attributes, with struct tags for json and dynamodbav, ie: &[]*exampleDataStruct
 //
 // responseDataPtrSlice, is the slice ptr result to caller, expects caller to assert to target slice ptr objects, ie: results.([]*xyz)
-func (c *Crud) QueryByPage(itemsPerPage int64, exclusiveStartKey string, keyExpression *QueryExpression, pagedDataPtrSlice interface{}) (responseDataPtrSlice interface{}, prevEvalKey string, err error) {
+func (c *Crud) QueryByPage(
+	itemsPerPage int64, exclusiveStartKey string,
+	keyExpression *QueryExpression,
+	pagedDataPtrSlice interface{},
+) (responseDataPtrSlice interface{}, prevEvalKey string, err error) {
+
 	if c == nil {
 		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 1) Crud Object is Nil")
 	}
@@ -1772,7 +1785,11 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 						putItemsCrudUniqueRecords := make([]*CrudUniqueRecord, 0)
 
 						for _, crudFieldAndIndex := range updatedUniqueFields {
-							if crudFieldAndIndex != nil && util.LenTrim(crudFieldAndIndex.OldUniqueFieldIndex) > 0 && util.LenTrim(crudFieldAndIndex.UniqueFieldIndex) > 0 && util.LenTrim(crudFieldAndIndex.UniqueFieldName) > 0 {
+							if crudFieldAndIndex != nil &&
+								util.LenTrim(crudFieldAndIndex.OldUniqueFieldIndex) > 0 &&
+								util.LenTrim(crudFieldAndIndex.UniqueFieldIndex) > 0 &&
+								util.LenTrim(crudFieldAndIndex.UniqueFieldName) > 0 {
+
 								//
 								// delete old unique key values that were updated
 								//

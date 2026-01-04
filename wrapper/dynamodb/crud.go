@@ -191,10 +191,26 @@ func (u *CrudUniqueModel) GetUpdatedUniqueFieldsFromExpressionAttributeValues(ol
 		}
 
 		if attrVal, ok := updateExpressionAttributeValues[":"+k]; ok && attrVal != nil {
+			// support string/number/bool/binary attribute values instead of assuming S-only
+			newVal := ""
+
+			switch {
+			case attrVal.S != nil:
+				newVal = aws.StringValue(attrVal.S)
+			case attrVal.N != nil:
+				newVal = aws.StringValue(attrVal.N)
+			case attrVal.BOOL != nil:
+				newVal = fmt.Sprintf("%t", aws.BoolValue(attrVal.BOOL))
+			case attrVal.B != nil:
+				newVal = base64.StdEncoding.EncodeToString(attrVal.B)
+			default:
+				return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 4) Unsupported attribute type for unique field %s", k)
+			}
+
 			newKey := fmt.Sprintf("%s#UniqueKey#%s#%s",
 				util.SplitString(v.UniqueFieldIndex, "#UniqueKey#", 0),
 				strings.ToUpper(v.UniqueFieldName),
-				strings.ToUpper(aws.StringValue(attrVal.S)),
+				strings.ToUpper(newVal),
 			)
 
 			if newKey != v.OldUniqueFieldIndex {
@@ -1851,73 +1867,88 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 	// prepare and execute remove expression action
 	if util.LenTrim(removeExpression) > 0 {
-		if e := _ddb.RemoveItemAttributeWithRetry(_actionRetries, pkValue, skValue, removeExpression, _ddb.TimeOutDuration(_timeout)); e != nil {
-			// remove item attribute error
-			return fmt.Errorf("Update To Data Store Failed: (RemoveItemAttribute) %s", e.Error())
+		if uniqueFieldsMap == nil || len(uniqueFieldsMap) == 0 {
+			// no unique fields involved; keep existing fast path
+			if e := _ddb.RemoveItemAttributeWithRetry(_actionRetries, pkValue, skValue, removeExpression, _ddb.TimeOutDuration(_timeout)); e != nil {
+				// remove item attribute error
+				return fmt.Errorf("Update To Data Store Failed: (RemoveItemAttribute) %s", e.Error())
+			}
+			// success
+			return nil
 		}
 
-		// check for unique key indexes to remove
-		if uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
-			// get slice of remove attributes
-			removeBody := strings.TrimSpace(strings.TrimPrefix(removeExpression, "remove"))
-			removeAttributes := strings.Split(removeBody, ",")
+		// when removing unique attributes, make the removal + index cleanup atomic via transaction.
+		// get slice of remove attributes
+		removeBody := strings.TrimSpace(strings.TrimPrefix(removeExpression, "remove"))
+		removeAttributes := strings.Split(removeBody, ",")
 
-			removedKeys := make(map[string]struct{})
+		removedKeys := make(map[string]struct{})
+		deleteKeys := make([]*DynamoDBTableKeys, 0)
 
-			// loop through each remove attribute to see if it is unique key index
-			// if so we will remove the unique key index from the table
-			for _, removeAttribute := range removeAttributes {
-				if util.LenTrim(removeAttribute) == 0 {
-					continue
-				}
-
-				removeAttribute = util.Trim(removeAttribute)
-
-				if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
-					removedKeys[removeAttribute] = struct{}{}
-					if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
-						if e := _ddb.DeleteItemWithRetry(_actionRetries, uniqueField.UniqueFieldIndex, "UniqueKey", _ddb.TimeOutDuration(_timeout)); e != nil {
-							// delete unique key index error
-							return fmt.Errorf("Update To Data Store Failed: (DeleteItem Unique Key Index) %s", e.Error())
-						}
-					}
-				}
+		// loop through each remove attribute to see if it is unique key index
+		// if so we will remove the unique key index from the table
+		for _, removeAttribute := range removeAttributes {
+			if util.LenTrim(removeAttribute) == 0 {
+				continue
 			}
 
-			// keep UniqueFields in sync after removing unique attributes
-			if len(removedKeys) > 0 {
-				newUniqueFieldsSlice := make([]string, 0, len(uniqueFieldsMap))
-				for attr, info := range uniqueFieldsMap {
-					if info == nil {
-						continue
-					}
-					if _, removed := removedKeys[attr]; removed {
-						continue
-					}
-					newUniqueFieldsSlice = append(newUniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", attr, info.UniqueFieldName, info.UniqueFieldIndex))
-				}
+			removeAttribute = util.Trim(removeAttribute)
 
-				if len(newUniqueFieldsSlice) == 0 {
-					if e := _ddb.RemoveItemAttributeWithRetry(_actionRetries, pkValue, skValue, "remove UniqueFields", _ddb.TimeOutDuration(_timeout)); e != nil {
-						return fmt.Errorf("Update To Data Store Failed: (RemoveItemAttribute UniqueFields) %s", e.Error())
-					}
-				} else {
-					if e := _ddb.UpdateItemWithRetry(
-						_actionRetries,
-						pkValue,
-						skValue,
-						"set UniqueFields=:UniqueFields",
-						"",
-						nil,
-						map[string]*ddb.AttributeValue{
-							":UniqueFields": {SS: aws.StringSlice(newUniqueFieldsSlice)},
-						},
-						_ddb.TimeOutDuration(_timeout),
-					); e != nil {
-						return fmt.Errorf("Update To Data Store Failed: (Refresh UniqueFields) %s", e.Error())
-					}
+			if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
+				removedKeys[removeAttribute] = struct{}{}
+				if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
+					deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
+						PK: uniqueField.UniqueFieldIndex,
+						SK: "UniqueKey",
+					})
 				}
 			}
+		}
+
+		// keep UniqueFields in sync after removing unique attributes
+		newUniqueFieldsSlice := make([]string, 0, len(uniqueFieldsMap))
+		for attr, info := range uniqueFieldsMap {
+			if info == nil {
+				continue
+			}
+			if _, removed := removedKeys[attr]; removed {
+				continue
+			}
+			newUniqueFieldsSlice = append(newUniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", attr, info.UniqueFieldName, info.UniqueFieldIndex))
+		}
+
+		updateExpr := removeExpression
+		exprAttrVals := map[string]*ddb.AttributeValue{}
+
+		if len(newUniqueFieldsSlice) == 0 {
+			// ensure UniqueFields is removed too (if not already explicitly removed)
+			if !strings.Contains(strings.ToLower(removeExpression), "uniquefields") {
+				updateExpr = strings.TrimSpace(strings.Replace(removeExpression, "remove", "remove", 1) + ", UniqueFields")
+			}
+		} else {
+			updateExpr = updateExpr + " set UniqueFields=:UniqueFields"
+			exprAttrVals[":UniqueFields"] = &ddb.AttributeValue{
+				SS: aws.StringSlice(newUniqueFieldsSlice),
+			}
+		}
+
+		writes := &DynamoDBTransactionWrites{
+			UpdateItems: []*DynamoDBUpdateItemInput{
+				{
+					PK:                        pkValue,
+					SK:                        skValue,
+					UpdateExpression:          updateExpr,
+					ConditionExpression:       "",
+					ExpressionAttributeValues: exprAttrVals,
+				},
+			},
+			DeleteItems: deleteKeys,
+		}
+
+		if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
+			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) %s", e.Error())
+		} else if !ok {
+			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) Transaction Write Not Successful")
 		}
 	}
 

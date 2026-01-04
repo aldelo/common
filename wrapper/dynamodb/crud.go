@@ -170,7 +170,11 @@ func (u *CrudUniqueModel) GetUniqueFieldsFromSource(ddb *DynamoDB, sourcePKValue
 // GetUpdatedUniqueFieldsFromExpressionAttributeValues inspects updateExpressionAttributeValues
 // to see if any unique fields are being modified, and returns both the updated map and the
 // new UniqueFields slice for persistence.
-func (u *CrudUniqueModel) GetUpdatedUniqueFieldsFromExpressionAttributeValues(oldUniqueFields map[string]*CrudUniqueFieldNameAndIndex, updateExpressionAttributeValues map[string]*ddb.AttributeValue) (updatedUniqueFields map[string]*CrudUniqueFieldNameAndIndex, newUniqueFields *CrudUniqueFields, err error) {
+func (u *CrudUniqueModel) GetUpdatedUniqueFieldsFromExpressionAttributeValues(
+	oldUniqueFields map[string]*CrudUniqueFieldNameAndIndex,
+	updateExpressionAttributeValues map[string]*ddb.AttributeValue,
+) (updatedUniqueFields map[string]*CrudUniqueFieldNameAndIndex, newUniqueFields *CrudUniqueFields, err error) {
+
 	if u == nil {
 		return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 1) Crud Unique Model is Required")
 	}

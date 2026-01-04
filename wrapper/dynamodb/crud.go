@@ -1917,20 +1917,29 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			newUniqueFieldsSlice = append(newUniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", attr, info.UniqueFieldName, info.UniqueFieldIndex))
 		}
 
-		updateExpr := removeExpression
+		// Build a valid SET ... REMOVE ... expression order for DynamoDB
+		normalizedRemoveExpr := removeExpression
+		if strings.HasPrefix(strings.ToLower(removeExpression), "remove ") {
+			normalizedRemoveExpr = "REMOVE " + strings.TrimSpace(removeExpression[7:])
+		}
+
+		updateExprParts := []string{}
 		exprAttrVals := map[string]*ddb.AttributeValue{}
 
 		if len(newUniqueFieldsSlice) == 0 {
 			// ensure UniqueFields is removed too (if not already explicitly removed)
 			if !strings.Contains(strings.ToLower(removeExpression), "uniquefields") {
-				updateExpr = strings.TrimSpace(strings.Replace(removeExpression, "remove", "remove", 1) + ", UniqueFields")
+				normalizedRemoveExpr = normalizedRemoveExpr + ", UniqueFields"
 			}
 		} else {
-			updateExpr = updateExpr + " set UniqueFields=:UniqueFields"
+			updateExprParts = append(updateExprParts, "SET UniqueFields=:UniqueFields")
 			exprAttrVals[":UniqueFields"] = &ddb.AttributeValue{
 				SS: aws.StringSlice(newUniqueFieldsSlice),
 			}
 		}
+
+		updateExprParts = append(updateExprParts, normalizedRemoveExpr)
+		updateExpr := strings.Join(updateExprParts, " ")
 
 		writes := &DynamoDBTransactionWrites{
 			UpdateItems: []*DynamoDBUpdateItemInput{

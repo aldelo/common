@@ -1862,6 +1862,8 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			removeBody := strings.TrimSpace(strings.TrimPrefix(removeExpression, "remove"))
 			removeAttributes := strings.Split(removeBody, ",")
 
+			removedKeys := make(map[string]struct{})
+
 			// loop through each remove attribute to see if it is unique key index
 			// if so we will remove the unique key index from the table
 			for _, removeAttribute := range removeAttributes {
@@ -1872,11 +1874,47 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 				removeAttribute = util.Trim(removeAttribute)
 
 				if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
+					removedKeys[removeAttribute] = struct{}{}
 					if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
 						if e := _ddb.DeleteItemWithRetry(_actionRetries, uniqueField.UniqueFieldIndex, "UniqueKey", _ddb.TimeOutDuration(_timeout)); e != nil {
 							// delete unique key index error
 							return fmt.Errorf("Update To Data Store Failed: (DeleteItem Unique Key Index) %s", e.Error())
 						}
+					}
+				}
+			}
+
+			// keep UniqueFields in sync after removing unique attributes
+			if len(removedKeys) > 0 {
+				newUniqueFieldsSlice := make([]string, 0, len(uniqueFieldsMap))
+				for attr, info := range uniqueFieldsMap {
+					if info == nil {
+						continue
+					}
+					if _, removed := removedKeys[attr]; removed {
+						continue
+					}
+					newUniqueFieldsSlice = append(newUniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", attr, info.UniqueFieldName, info.UniqueFieldIndex))
+				}
+
+				if len(newUniqueFieldsSlice) == 0 {
+					if e := _ddb.RemoveItemAttributeWithRetry(_actionRetries, pkValue, skValue, "remove UniqueFields", _ddb.TimeOutDuration(_timeout)); e != nil {
+						return fmt.Errorf("Update To Data Store Failed: (RemoveItemAttribute UniqueFields) %s", e.Error())
+					}
+				} else {
+					if e := _ddb.UpdateItemWithRetry(
+						_actionRetries,
+						pkValue,
+						skValue,
+						"set UniqueFields=:UniqueFields",
+						"",
+						nil,
+						map[string]*ddb.AttributeValue{
+							":UniqueFields": {SS: aws.StringSlice(newUniqueFieldsSlice)},
+						},
+						_ddb.TimeOutDuration(_timeout),
+					); e != nil {
+						return fmt.Errorf("Update To Data Store Failed: (Refresh UniqueFields) %s", e.Error())
 					}
 				}
 			}
@@ -2274,6 +2312,11 @@ func (c *Crud) DeleteTable(tableName string, region awsregion.AWSRegion) error {
 	// validate
 	if _ddb == nil {
 		return fmt.Errorf("DeleteTable Failed: (Validater 2) Connection Not Established")
+	}
+
+	// default unknown region to current connection, and reject invalid region early
+	if region == awsregion.UNKNOWN {
+		region = _ddb.AwsRegion
 	}
 
 	if !region.Valid() && region != awsregion.UNKNOWN {

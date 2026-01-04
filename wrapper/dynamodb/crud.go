@@ -1673,6 +1673,12 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 		for _, v := range attributeValues {
 			if v != nil {
+				// normalize placeholder names to always start with ":" to avoid missing or mismatched keys
+				attrName := v.Name
+				if len(attrName) > 0 && !strings.HasPrefix(attrName, ":") {
+					attrName = ":" + attrName
+				}
+
 				if v.IsN {
 					if len(v.ListValue) == 0 {
 						if !util.IsNumericFloat64(v.Value, false) {
@@ -1877,9 +1883,22 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			return nil
 		}
 
+		// guard remove parsing to avoid slice-out-of-range when expression is just "remove"
+		normalizedRemoveExpr := strings.TrimSpace(removeExpression)
+		if len(normalizedRemoveExpr) == 0 {
+			return fmt.Errorf("Update To Data Store Failed: (Validater 11) Remove Expression Missing Content")
+		}
+		if strings.HasPrefix(strings.ToLower(normalizedRemoveExpr), "remove") {
+			rest := strings.TrimSpace(normalizedRemoveExpr[len("remove"):])
+			if len(rest) == 0 {
+				return fmt.Errorf("Update To Data Store Failed: (Validater 12) Remove Expression Missing Attribute Names")
+			}
+			normalizedRemoveExpr = "REMOVE " + rest
+		}
+
 		// when removing unique attributes, make the removal + index cleanup atomic via transaction.
 		// get slice of remove attributes
-		removeBody := strings.TrimSpace(strings.TrimPrefix(removeExpression, "remove"))
+		removeBody := strings.TrimSpace(strings.TrimPrefix(normalizedRemoveExpr, "REMOVE"))
 		removeAttributes := strings.Split(removeBody, ",")
 
 		removedKeys := make(map[string]struct{})
@@ -1918,11 +1937,6 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		}
 
 		// Build a valid SET ... REMOVE ... expression order for DynamoDB
-		normalizedRemoveExpr := removeExpression
-		if strings.HasPrefix(strings.ToLower(removeExpression), "remove ") {
-			normalizedRemoveExpr = "REMOVE " + strings.TrimSpace(removeExpression[7:])
-		}
-
 		updateExprParts := []string{}
 		exprAttrVals := map[string]*ddb.AttributeValue{}
 

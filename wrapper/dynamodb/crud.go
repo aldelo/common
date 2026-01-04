@@ -186,30 +186,30 @@ func (u *CrudUniqueModel) GetUpdatedUniqueFieldsFromExpressionAttributeValues(ol
 	// loop through each of oldUniqueFields map key and match to updateExpressionAttributeValues map key,
 	// if found, this is unique field being updated
 	for k, v := range oldUniqueFields {
-		if util.LenTrim(k) > 0 && v != nil {
-			if attrVal, ok := updateExpressionAttributeValues[":"+k]; ok {
-				// found unique field being updated
-				if attrVal != nil {
-					newKey := fmt.Sprintf("%s#UniqueKey#%s#%s", util.SplitString(v.UniqueFieldIndex, "#UniqueKey#", 0), strings.ToUpper(v.UniqueFieldName), strings.ToUpper(aws.StringValue(attrVal.S)))
+		if util.LenTrim(k) == 0 || v == nil {
+			continue
+		}
 
-					if newKey != v.OldUniqueFieldIndex {
-						newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, newKey))
+		if attrVal, ok := updateExpressionAttributeValues[":"+k]; ok && attrVal != nil {
+			newKey := fmt.Sprintf("%s#UniqueKey#%s#%s",
+				util.SplitString(v.UniqueFieldIndex, "#UniqueKey#", 0),
+				strings.ToUpper(v.UniqueFieldName),
+				strings.ToUpper(aws.StringValue(attrVal.S)),
+			)
 
-						updatedUniqueFields[k] = &CrudUniqueFieldNameAndIndex{
-							UniqueFieldName:     v.UniqueFieldName,
-							UniqueFieldIndex:    newKey,
-							OldUniqueFieldIndex: v.OldUniqueFieldIndex,
-						}
-					} else {
-						// no update, same new and old index
-						newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, v.UniqueFieldIndex))
-					}
+			if newKey != v.OldUniqueFieldIndex {
+				// track both new and old so callers can delete old + insert new safely
+				newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, newKey))
+				updatedUniqueFields[k] = &CrudUniqueFieldNameAndIndex{
+					UniqueFieldName:     v.UniqueFieldName,
+					UniqueFieldIndex:    newKey,
+					OldUniqueFieldIndex: v.OldUniqueFieldIndex,
 				}
-			} else {
-				// no update, only append newUniqueFields
-				newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, v.UniqueFieldIndex))
+				continue
 			}
 		}
+
+		newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, v.UniqueFieldIndex))
 	}
 
 	// return results
@@ -1834,6 +1834,21 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		}
 	}
 
+	// ensure we load uniqueFieldsMap when only removeExpression is present,
+	// so unique key indexes are also cleaned up (prevents orphaned unique records).
+	if util.LenTrim(removeExpression) > 0 && (uniqueFieldsMap == nil || len(uniqueFieldsMap) == 0) {
+		crudUniqueModel := &CrudUniqueModel{
+			PKName:        "PK",
+			PKDelimiter:   "#",
+			UniqueTagName: "uniquepkparts",
+		}
+		if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(_ddb, pkValue, skValue); crudErr != nil {
+			return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromSource for remove) %s", crudErr.Error())
+		} else {
+			uniqueFieldsMap = oldUniqueFields
+		}
+	}
+
 	// prepare and execute remove expression action
 	if util.LenTrim(removeExpression) > 0 {
 		if e := _ddb.RemoveItemAttributeWithRetry(_actionRetries, pkValue, skValue, removeExpression, _ddb.TimeOutDuration(_timeout)); e != nil {
@@ -1844,20 +1859,23 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		// check for unique key indexes to remove
 		if uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
 			// get slice of remove attributes
-			removeAttributes := strings.Split(util.Right(removeExpression, len(removeExpression)-7), ",")
+			removeBody := strings.TrimSpace(strings.TrimPrefix(removeExpression, "remove"))
+			removeAttributes := strings.Split(removeBody, ",")
 
 			// loop through each remove attribute to see if it is unique key index
 			// if so we will remove the unique key index from the table
 			for _, removeAttribute := range removeAttributes {
-				if util.LenTrim(removeAttribute) > 0 {
-					removeAttribute = util.Trim(removeAttribute)
+				if util.LenTrim(removeAttribute) == 0 {
+					continue
+				}
 
-					if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
-						if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
-							if e := _ddb.DeleteItemWithRetry(_actionRetries, uniqueField.UniqueFieldIndex, "UniqueKey", _ddb.TimeOutDuration(_timeout)); e != nil {
-								// delete unique key index error
-								return fmt.Errorf("Update To Data Store Failed: (DeleteItem Unique Key Index) %s", e.Error())
-							}
+				removeAttribute = util.Trim(removeAttribute)
+
+				if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
+					if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
+						if e := _ddb.DeleteItemWithRetry(_actionRetries, uniqueField.UniqueFieldIndex, "UniqueKey", _ddb.TimeOutDuration(_timeout)); e != nil {
+							// delete unique key index error
+							return fmt.Errorf("Update To Data Store Failed: (DeleteItem Unique Key Index) %s", e.Error())
 						}
 					}
 				}

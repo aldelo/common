@@ -167,6 +167,9 @@ func (u *CrudUniqueModel) GetUniqueFieldsFromSource(ddb *DynamoDB, sourcePKValue
 	}
 }
 
+// GetUpdatedUniqueFieldsFromExpressionAttributeValues inspects updateExpressionAttributeValues
+// to see if any unique fields are being modified, and returns both the updated map and the
+// new UniqueFields slice for persistence.
 func (u *CrudUniqueModel) GetUpdatedUniqueFieldsFromExpressionAttributeValues(oldUniqueFields map[string]*CrudUniqueFieldNameAndIndex, updateExpressionAttributeValues map[string]*ddb.AttributeValue) (updatedUniqueFields map[string]*CrudUniqueFieldNameAndIndex, newUniqueFields *CrudUniqueFields, err error) {
 	if u == nil {
 		return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 1) Crud Unique Model is Required")
@@ -1685,24 +1688,24 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 							v.Value = "0"
 						}
 
-						expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+						expressionAttributeValues[attrName] = &ddb.AttributeValue{
 							N: aws.String(v.Value),
 						}
 					} else {
-						expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+						expressionAttributeValues[attrName] = &ddb.AttributeValue{
 							NS: aws.StringSlice(v.ListValue),
 						}
 					}
 				} else if v.IsBool {
 					b, _ := util.ParseBool(v.Value)
-					expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+					expressionAttributeValues[attrName] = &ddb.AttributeValue{
 						BOOL: aws.Bool(b),
 					}
 				} else {
 					if len(v.ListValue) == 0 {
 						if v.ComplexMap == nil && v.ComplexList == nil && v.ComplexObject == nil {
 							// string value
-							expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+							expressionAttributeValues[attrName] = &ddb.AttributeValue{
 								S: aws.String(v.Value),
 							}
 						} else if v.ComplexMap != nil {
@@ -1710,7 +1713,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 							if complexMap, err := dynamodbattribute.MarshalMap(v.ComplexMap); err != nil {
 								return fmt.Errorf("Update To Data Store Failed: (MarshalMap on ComplexMap) %s", err.Error())
 							} else {
-								expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+								expressionAttributeValues[attrName] = &ddb.AttributeValue{
 									M: complexMap,
 								}
 							}
@@ -1719,7 +1722,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 							if complexList, err := dynamodbattribute.MarshalList(v.ComplexList); err != nil {
 								return fmt.Errorf("Update To Data Store Failed: (MarshalList on ComplexList) %s", err.Error())
 							} else {
-								expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+								expressionAttributeValues[attrName] = &ddb.AttributeValue{
 									L: complexList,
 								}
 							}
@@ -1728,11 +1731,11 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 							if complexObject, err := dynamodbattribute.Marshal(v.ComplexObject); err != nil {
 								return fmt.Errorf("Update To Data Store Failed: (MarshalObject on ComplexObject) %s", err.Error())
 							} else {
-								expressionAttributeValues[v.Name] = complexObject
+								expressionAttributeValues[attrName] = complexObject
 							}
 						}
 					} else {
-						expressionAttributeValues[v.Name] = &ddb.AttributeValue{
+						expressionAttributeValues[attrName] = &ddb.AttributeValue{
 							SS: aws.StringSlice(v.ListValue),
 						}
 					}

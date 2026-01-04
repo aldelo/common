@@ -2123,32 +2123,34 @@ func (c *Crud) CreateTable(tableName string,
 		input.GlobalSecondaryIndexes = gsi
 	}
 
-	if attributes == nil {
-		attributes = make([]*ddb.AttributeDefinition, 0, 2)
-	}
-
+	// filter out nil or incomplete attribute definitions before adding PK/SK
+	cleanAttributes := make([]*ddb.AttributeDefinition, 0, len(attributes)+2)
 	attrSet := make(map[string]struct{}, len(attributes))
 
 	for _, a := range attributes {
-		if a != nil && a.AttributeName != nil {
-			attrSet[strings.ToUpper(aws.StringValue(a.AttributeName))] = struct{}{}
+		if a == nil || a.AttributeName == nil || a.AttributeType == nil || util.LenTrim(aws.StringValue(a.AttributeName)) == 0 || util.LenTrim(aws.StringValue(a.AttributeType)) == 0 {
+			continue
 		}
+		nameUpper := strings.ToUpper(aws.StringValue(a.AttributeName))
+		attrSet[nameUpper] = struct{}{}
+		cleanAttributes = append(cleanAttributes, a)
 	}
+
 	if _, ok := attrSet["PK"]; !ok {
-		attributes = append(attributes, &ddb.AttributeDefinition{
+		cleanAttributes = append(cleanAttributes, &ddb.AttributeDefinition{
 			AttributeName: aws.String("PK"),
 			AttributeType: aws.String("S"),
 		})
 	}
 	if _, ok := attrSet["SK"]; !ok {
-		attributes = append(attributes, &ddb.AttributeDefinition{
+		cleanAttributes = append(cleanAttributes, &ddb.AttributeDefinition{
 			AttributeName: aws.String("SK"),
 			AttributeType: aws.String("S"),
 		})
 	}
 
-	if len(attributes) > 0 {
-		input.AttributeDefinitions = attributes
+	if len(cleanAttributes) > 0 {
+		input.AttributeDefinitions = cleanAttributes
 	}
 
 	// execute

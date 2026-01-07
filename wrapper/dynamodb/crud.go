@@ -1426,6 +1426,12 @@ func (c *Crud) QueryByPage(
 		}
 	}
 
+	// avoid passing an empty index name (DynamoDB rejects empty IndexName).
+	var indexName string
+	if util.LenTrim(keyExpression.IndexName) > 0 {
+		indexName = keyExpression.IndexName
+	}
+
 	// query by page against dynamodb table
 	var esk map[string]*ddb.AttributeValue
 
@@ -1436,7 +1442,7 @@ func (c *Crud) QueryByPage(
 	}
 
 	if dataList, prevKey, e := _ddb.QueryPerPageItemsWithRetry(_actionRetries, itemsPerPage, esk, pagedDataPtrSlice,
-		_ddb.TimeOutDuration(_timeout), keyExpression.IndexName,
+		_ddb.TimeOutDuration(_timeout), indexName,
 		keyCondition, keyValues, nil); e != nil {
 		// query error
 		return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (QueryPaged) %s", e.Error())

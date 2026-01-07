@@ -1660,6 +1660,9 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		return fmt.Errorf("Update To Data Store Failed: (Validater 5) Update Expression is Missing")
 	}
 
+	// normalize whitespace early so parsing (set/remove/other) is reliable even when callers supply leading/trailing spaces.
+	updateExpression = util.Trim(updateExpression)
+
 	originalExpression := util.Trim(updateExpression)
 
 	// extract set and remove expressions from update expression
@@ -2910,6 +2913,18 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 				if err := c.CreateTable(tableName, true, 0, 0, sse, true, lsi, gsi, attributes, d); err != nil {
 					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 10) Create Regional Replica to %s to Table %s Error, %s", r.Key(), tableName, err.Error())
 				}
+
+				// wait for the new regional table to be ACTIVE (and streams ready) before adding to the global table.
+				waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Minute)
+				if err := d.WaitUntilTableExists(&dynamodb.DescribeTableInput{TableName: aws.String(tableName)}, waitCtx); err != nil {
+					waitCancel()
+					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.1) Wait Until Table Exists in %s Table %s Error, %s", r.Key(), tableName, err.Error())
+				}
+				if err := d.WaitUntilTableFullyIdle(tableName, waitCtx); err != nil {
+					waitCancel()
+					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.2) Wait Until Table Fully Idle in %s Table %s Error, %s", r.Key(), tableName, err.Error())
+				}
+				waitCancel()
 			}
 		}
 	}

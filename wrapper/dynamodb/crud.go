@@ -1919,6 +1919,9 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 								// transaction failed
 								return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
 							}
+
+							// force later REMOVE phase to re-fetch fresh unique keys after transactional SET updated unique indexes.
+							uniqueFieldsMap = nil
 						}
 					}
 				}

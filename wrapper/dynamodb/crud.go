@@ -1979,11 +1979,14 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		if len(normalizedRemoveExpr) == 0 {
 			return fmt.Errorf("Update To Data Store Failed: (Validater 11) Remove Expression Missing Content")
 		}
+
+		// track intention to remove UniqueFields across parsing, avoiding shadowed variables
+		removeUniqueFieldsRequested := false
+
 		if strings.HasPrefix(strings.ToLower(normalizedRemoveExpr), "remove") {
 			body := strings.TrimSpace(normalizedRemoveExpr[len("remove"):])
 			parts := strings.Split(body, ",")
 			validParts := make([]string, 0, len(parts))
-			removeUniqueFieldsRequested := false
 
 			for _, p := range parts {
 				p = strings.TrimSpace(p)
@@ -2002,15 +2005,12 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 				return fmt.Errorf("Update To Data Store Failed: (Validater 12) Remove Expression Missing Attribute Names")
 			}
 			normalizedRemoveExpr = "REMOVE " + strings.Join(validParts, ", ")
-
-			// expose the flag to the outer scope
-			// we need removeUniqueFieldsRequested afterwards, so lift it out.
-			// (We achieve this by re-parsing below if needed.)
-			_ = removeUniqueFieldsRequested
 		}
 
-		// re-detect if caller asked to remove UniqueFields (in case we reassign normalizedRemoveExpr above)
-		removeUniqueFieldsRequested := strings.Contains(strings.ToLower(normalizedRemoveExpr), "uniquefields")
+		// also detect if caller left UniqueFields in expression text (case-insensitive)
+		if strings.Contains(strings.ToLower(normalizedRemoveExpr), "uniquefields") {
+			removeUniqueFieldsRequested = true
+		}
 
 		// when removing unique attributes, make the removal + index cleanup atomic via transaction.
 		// get slice of remove attributes

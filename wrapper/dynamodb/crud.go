@@ -1963,17 +1963,6 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			baseExprAttrVals = expressionAttributeValues
 		}
 
-		if uniqueFieldsMap == nil || len(uniqueFieldsMap) == 0 {
-			// no unique fields involved; keep existing fast path
-			// honor conditionExpression and use UpdateItemWithRetry instead of RemoveItemAttributeWithRetry.
-			if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, removeExpression, conditionExpression, nil, baseExprAttrVals, _ddb.TimeOutDuration(_timeout)); e != nil {
-				// remove item attribute error
-				return fmt.Errorf("Update To Data Store Failed: (UpdateItem remove) %s", e.Error())
-			}
-			// success
-			return nil
-		}
-
 		// guard remove parsing to avoid slice-out-of-range when expression is just "remove"
 		normalizedRemoveExpr := strings.TrimSpace(removeExpression)
 		if len(normalizedRemoveExpr) == 0 {
@@ -2090,6 +2079,12 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			exprAttrVals = nil
 		}
 
+		// avoid constructing an empty transactional delete list if nothing to delete
+		var deletes []*DynamoDBTableKeys
+		if len(deleteKeys) > 0 {
+			deletes = deleteKeys
+		}
+
 		writes := &DynamoDBTransactionWrites{
 			UpdateItems: []*DynamoDBUpdateItemInput{
 				{
@@ -2100,7 +2095,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 					ExpressionAttributeValues: exprAttrVals,
 				},
 			},
-			DeleteItems: deleteKeys,
+			DeleteItems: deletes,
 		}
 
 		if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {

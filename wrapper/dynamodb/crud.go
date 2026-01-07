@@ -275,9 +275,14 @@ func (u *CrudUniqueModel) GetUniqueFieldsFromCrudObject(input interface{}) (uniq
 		// has unique fields found, ready to process
 
 		// get pk value in parts
-		if pkValue, pkErr := util.GetStructFieldValue(input, u.PKName); pkErr != nil {
+		if pkValueRaw, pkErr := util.GetStructFieldValue(input, u.PKName); pkErr != nil {
 			return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (Get PK Field Value) %s", pkErr.Error())
 		} else {
+			// safely stringify and validate PK to avoid panic and invalid unique key generation.
+			pkValue := fmt.Sprint(pkValueRaw)
+			if util.LenTrim(pkValue) == 0 {
+				return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (Get PK Field Value) PK value is required for unique key generation")
+			}
 			u.pkParts = strings.Split(pkValue, u.PKDelimiter)
 		}
 
@@ -2691,13 +2696,19 @@ func (c *Crud) supportGlobalTable(region awsregion.AWSRegion) bool {
 
 	cachedGlobalTableRegionsOnce.Do(func() {
 		cachedGlobalTableSupportedRegions = []string{
-			awsregion.AWS_us_east_1_nvirginia.Key(),
-			awsregion.AWS_us_west_2_oregon.Key(),
-			awsregion.AWS_ap_southeast_1_singapore.Key(),
-			awsregion.AWS_ap_northeast_1_tokyo.Key(),
-			awsregion.AWS_ap_southeast_2_sydney.Key(),
-			awsregion.AWS_eu_central_1_frankfurt.Key(),
-			awsregion.AWS_eu_west_2_london.Key(),
+			"us-east-1", "us-east-2", "us-west-1", "us-west-2",
+			"ca-central-1",
+			"sa-east-1",
+			"eu-west-1", "eu-west-2", "eu-west-3",
+			"eu-central-1", "eu-central-2",
+			"eu-north-1",
+			"me-south-1", "me-central-1",
+			"ap-south-1", "ap-south-2",
+			"ap-southeast-1", "ap-southeast-2", "ap-southeast-3",
+			"ap-northeast-1", "ap-northeast-2", "ap-northeast-3",
+			"ap-east-1",
+			"af-south-1",
+			"il-central-1",
 		}
 	})
 

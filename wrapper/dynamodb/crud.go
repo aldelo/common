@@ -1713,8 +1713,11 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			if v == nil {
 				continue
 			}
-			attrName := v.Name
-			if len(attrName) > 0 && !strings.HasPrefix(attrName, ":") {
+			attrName := strings.TrimSpace(v.Name)
+			if len(attrName) == 0 {
+				continue
+			}
+			if !strings.HasPrefix(attrName, ":") {
 				attrName = ":" + attrName
 			}
 
@@ -1949,11 +1952,20 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			return fmt.Errorf("Update To Data Store Failed: (Validater 11) Remove Expression Missing Content")
 		}
 		if strings.HasPrefix(strings.ToLower(normalizedRemoveExpr), "remove") {
-			rest := strings.TrimSpace(normalizedRemoveExpr[len("remove"):])
-			if len(rest) == 0 {
+			body := strings.TrimSpace(normalizedRemoveExpr[len("remove"):])
+			parts := strings.Split(body, ",")
+			validParts := make([]string, 0, len(parts))
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if len(p) == 0 {
+					continue
+				}
+				validParts = append(validParts, p)
+			}
+			if len(validParts) == 0 {
 				return fmt.Errorf("Update To Data Store Failed: (Validater 12) Remove Expression Missing Attribute Names")
 			}
-			normalizedRemoveExpr = "REMOVE " + rest
+			normalizedRemoveExpr = "REMOVE " + strings.Join(validParts, ", ")
 		}
 
 		// when removing unique attributes, make the removal + index cleanup atomic via transaction.

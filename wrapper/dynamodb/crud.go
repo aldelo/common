@@ -1908,10 +1908,17 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 	// prepare and execute remove expression action
 	if util.LenTrim(removeExpression) > 0 {
+		// carry caller-supplied ExpressionAttributeValues into remove flows (for conditional expressions)
+		// preserve user-provided values so conditional expressions with placeholders work in remove-only updates.
+		var baseExprAttrVals map[string]*ddb.AttributeValue
+		if len(expressionAttributeValues) > 0 {
+			baseExprAttrVals = expressionAttributeValues
+		}
+
 		if uniqueFieldsMap == nil || len(uniqueFieldsMap) == 0 {
 			// no unique fields involved; keep existing fast path
 			// honor conditionExpression and use UpdateItemWithRetry instead of RemoveItemAttributeWithRetry.
-			if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, removeExpression, conditionExpression, nil, nil, _ddb.TimeOutDuration(_timeout)); e != nil {
+			if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, removeExpression, conditionExpression, nil, baseExprAttrVals, _ddb.TimeOutDuration(_timeout)); e != nil {
 				// remove item attribute error
 				return fmt.Errorf("Update To Data Store Failed: (UpdateItem remove) %s", e.Error())
 			}
@@ -1997,6 +2004,13 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		// Build a valid SET ... REMOVE ... expression order for DynamoDB
 		updateExprParts := []string{}
 		exprAttrVals := map[string]*ddb.AttributeValue{}
+
+		// merge caller-supplied ExpressionAttributeValues so condition expressions remain valid
+		if len(baseExprAttrVals) > 0 {
+			for k, v := range baseExprAttrVals {
+				exprAttrVals[k] = v
+			}
+		}
 
 		// only re-SET UniqueFields if caller idd not request to remove it
 		if len(newUniqueFieldsSlice) > 0 && !removeUniqueFieldsRequested {

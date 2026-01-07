@@ -1197,6 +1197,11 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 6.1) SK Compare Symbol %q is invalid", skCompare)
 		}
 
+		// DynamoDB begins_with does not support numeric sort keys.
+		if keyExpression.SKIsNumber && strings.EqualFold(skCompare, "BEGINS_WITH") {
+			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 6.2) begins_with is not supported for numeric sort keys")
+		}
+
 		if strings.EqualFold(skCompare, "BETWEEN") {
 			if util.LenTrim(keyExpression.SKValue) == 0 {
 				return nil, fmt.Errorf("Query From Data Store Failed: (Validater 7) Key Expression Missing SK Value (BETWEEN start)")
@@ -1403,6 +1408,11 @@ func (c *Crud) QueryByPage(
 			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 6.1) SK Compare Symbol %q is invalid", skCompare)
 		}
 
+		// DynamoDB begins_with does not support numeric sort keys.
+		if keyExpression.SKIsNumber && strings.EqualFold(skCompare, "BEGINS_WITH") {
+			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 6.2) begins_with is not supported for numeric sort keys")
+		}
+
 		if strings.EqualFold(skCompare, "BETWEEN") {
 			if util.LenTrim(keyExpression.SKValue) == 0 {
 				return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 7) Key Expression Missing SK Value (BETWEEN start)")
@@ -1563,6 +1573,11 @@ func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpre
 		upperComp := strings.ToUpper(skCompare)
 		if _, ok := validComparators[upperComp]; !ok {
 			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 6.1) SK Compare Symbol %q is invalid", skCompare)
+		}
+
+		// DynamoDB begins_with does not support numeric sort keys.
+		if keyExpression.SKIsNumber && strings.EqualFold(skCompare, "BEGINS_WITH") {
+			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 6.2) begins_with is not supported for numeric sort keys")
 		}
 
 		if strings.EqualFold(skCompare, "BETWEEN") {

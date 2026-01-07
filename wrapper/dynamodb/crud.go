@@ -284,6 +284,9 @@ func (u *CrudUniqueModel) GetUniqueFieldsFromCrudObject(input interface{}) (uniq
 				return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (Get PK Field Value) PK value is required for unique key generation")
 			}
 			u.pkParts = strings.Split(pkValue, u.PKDelimiter)
+			if len(u.pkParts) == 0 {
+				return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (Get PK Field Value) PK value is invalid for unique key generation")
+			}
 		}
 
 		// loop thru each unique field to create unique key index value
@@ -1183,6 +1186,17 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 		if len(skCompare) == 0 {
 			skCompare = "="
 		}
+
+		// validate allowed SK comparators early to avoid runtime ValidationException
+		validComparators := map[string]struct{}{
+			"=": {}, "<=": {}, ">=": {}, "<": {}, ">": {}, "BETWEEN": {}, "BEGINS_WITH": {},
+		}
+
+		upperComp := strings.ToUpper(skCompare)
+		if _, ok := validComparators[upperComp]; !ok {
+			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 6.1) SK Compare Symbol %q is invalid", skCompare)
+		}
+
 		if strings.EqualFold(skCompare, "BETWEEN") {
 			if util.LenTrim(keyExpression.SKValue) == 0 {
 				return nil, fmt.Errorf("Query From Data Store Failed: (Validater 7) Key Expression Missing SK Value (BETWEEN start)")
@@ -1380,6 +1394,15 @@ func (c *Crud) QueryByPage(
 		if len(skCompare) == 0 {
 			skCompare = "="
 		}
+		// validate allowed SK comparators early to avoid runtime ValidationException
+		validComparators := map[string]struct{}{
+			"=": {}, "<=": {}, ">=": {}, "<": {}, ">": {}, "BETWEEN": {}, "BEGINS_WITH": {},
+		}
+		upperComp := strings.ToUpper(skCompare)
+		if _, ok := validComparators[upperComp]; !ok {
+			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 6.1) SK Compare Symbol %q is invalid", skCompare)
+		}
+
 		if strings.EqualFold(skCompare, "BETWEEN") {
 			if util.LenTrim(keyExpression.SKValue) == 0 {
 				return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 7) Key Expression Missing SK Value (BETWEEN start)")
@@ -1533,6 +1556,15 @@ func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpre
 		if len(skCompare) == 0 {
 			skCompare = "="
 		}
+		// validate allowed SK comparators early to avoid runtime ValidationException
+		validComparators := map[string]struct{}{
+			"=": {}, "<=": {}, ">=": {}, "<": {}, ">": {}, "BETWEEN": {}, "BEGINS_WITH": {},
+		}
+		upperComp := strings.ToUpper(skCompare)
+		if _, ok := validComparators[upperComp]; !ok {
+			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 6.1) SK Compare Symbol %q is invalid", skCompare)
+		}
+
 		if strings.EqualFold(skCompare, "BETWEEN") {
 			if util.LenTrim(keyExpression.SKValue) == 0 {
 				return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 7) Key Expression Missing SK Value (BETWEEN start)")

@@ -1238,9 +1238,15 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 		}
 	}
 
+	// only pass an index name when one is provided to avoid dynamodb ValidationException on empty IndexName
+	var indexName string
+	if util.LenTrim(keyExpression.IndexName) > 0 {
+		indexName = keyExpression.IndexName
+	}
+
 	// query against dynamodb table
 	if dataList, e := _ddb.QueryPagedItemsWithRetry(_actionRetries, pagedDataPtrSlice, resultDataPtrSlice,
-		_ddb.TimeOutDuration(_timeout), keyExpression.IndexName,
+		_ddb.TimeOutDuration(_timeout), indexName,
 		keyCondition, keyValues, nil); e != nil {
 		// query error
 		return nil, fmt.Errorf("Query From Data Store Failed: (QueryPaged) %s", e.Error())

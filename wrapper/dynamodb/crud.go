@@ -280,7 +280,7 @@ func (u *CrudUniqueModel) GetUniqueFieldsFromCrudObject(input interface{}) (uniq
 		} else {
 			// safely stringify and validate PK to avoid panic and invalid unique key generation.
 			pkValue := fmt.Sprint(pkValueRaw)
-			if util.LenTrim(pkValue) == 0 {
+			if util.LenTrim(pkValue) == 0 || strings.EqualFold(pkValue, "<nil>") || strings.EqualFold(pkValue, "nil") {
 				return nil, fmt.Errorf("Get Unique Fields From Crud Object Failed: (Get PK Field Value) PK value is required for unique key generation")
 			}
 			u.pkParts = strings.Split(pkValue, u.PKDelimiter)

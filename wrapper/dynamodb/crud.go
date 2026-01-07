@@ -2186,25 +2186,29 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 					SK: skValue,
 				})
 
-				//
-				// delete item via transaction
-				//
-				writes := &DynamoDBTransactionWrites{
-					DeleteItems: deleteKeys,
-				}
+				// DynamoDB transaction limit is 25 items; chunk deletes to avoid ValidationException.
+				const maxTxnItems = 25
+				for start := 0; start < len(deleteKeys); start += maxTxnItems {
+					end := start + maxTxnItems
+					if end > len(deleteKeys) {
+						end = len(deleteKeys)
+					}
 
-				if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
-					// transaction delete error
-					return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) %s", e.Error())
-				} else {
-					if !ok {
+					writes := &DynamoDBTransactionWrites{
+						DeleteItems: deleteKeys[start:end],
+					}
+
+					if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
+						// transaction delete error
+						return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) %s", e.Error())
+					} else if !ok {
 						// transaction delete failed
 						return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
-					} else {
-						// transaction delete success
-						return nil
 					}
 				}
+
+				// all chunks succeeded
+				return nil
 			}
 		}
 	}

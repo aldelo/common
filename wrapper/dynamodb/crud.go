@@ -1933,6 +1933,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 		removedKeys := make(map[string]struct{})
 		deleteKeys := make([]*DynamoDBTableKeys, 0)
+		removeUniqueFieldsRequested := false // track explicit removal of UniqueFields to avoid SET/REMOVE conflict
 
 		// loop through each remove attribute to see if it is unique key index
 		// if so we will remove the unique key index from the table
@@ -1942,6 +1943,12 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			}
 
 			removeAttribute = util.Trim(removeAttribute)
+
+			// detect explicit UniqueFields removal to prevent conflicting SET/REMOVE later
+			if strings.EqualFold(removeAttribute, "UniqueFields") {
+				removeUniqueFieldsRequested = true
+				continue
+			}
 
 			if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
 				removedKeys[removeAttribute] = struct{}{}
@@ -1970,20 +1977,26 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		updateExprParts := []string{}
 		exprAttrVals := map[string]*ddb.AttributeValue{}
 
-		if len(newUniqueFieldsSlice) == 0 {
-			// ensure UniqueFields is removed too (if not already explicitly removed)
-			if !strings.Contains(strings.ToLower(removeExpression), "uniquefields") {
-				normalizedRemoveExpr = normalizedRemoveExpr + ", UniqueFields"
-			}
-		} else {
+		// only re-SET UniqueFields if caller idd not request to remove it
+		if len(newUniqueFieldsSlice) > 0 && !removeUniqueFieldsRequested {
 			updateExprParts = append(updateExprParts, "SET UniqueFields=:UniqueFields")
 			exprAttrVals[":UniqueFields"] = &ddb.AttributeValue{
 				SS: aws.StringSlice(newUniqueFieldsSlice),
+			}
+		} else if len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested {
+			// ensure UniqueFields is removed too (if not already explicitly removed)
+			if !strings.Contains(strings.ToLower(normalizedRemoveExpr), "uniquefields") {
+				normalizedRemoveExpr = normalizedRemoveExpr + ", UniqueFields"
 			}
 		}
 
 		updateExprParts = append(updateExprParts, normalizedRemoveExpr)
 		updateExpr := strings.Join(updateExprParts, " ")
+
+		// avoid passing an empty ExpressionAttributeValues map (dynamodb rejects empty maps)
+		if len(exprAttrVals) == 0 {
+			exprAttrVals = nil
+		}
 
 		writes := &DynamoDBTransactionWrites{
 			UpdateItems: []*DynamoDBUpdateItemInput{

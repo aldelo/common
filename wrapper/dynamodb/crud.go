@@ -1972,18 +1972,34 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			body := strings.TrimSpace(normalizedRemoveExpr[len("remove"):])
 			parts := strings.Split(body, ",")
 			validParts := make([]string, 0, len(parts))
+			removeUniqueFieldsRequested := false
+
 			for _, p := range parts {
 				p = strings.TrimSpace(p)
 				if len(p) == 0 {
 					continue
 				}
+
+				// do not drop UniqueFields from the remove list; remember intent and keep it in the expression.
+				if strings.EqualFold(p, "UniqueFields") {
+					removeUniqueFieldsRequested = true
+				}
+
 				validParts = append(validParts, p)
 			}
 			if len(validParts) == 0 {
 				return fmt.Errorf("Update To Data Store Failed: (Validater 12) Remove Expression Missing Attribute Names")
 			}
 			normalizedRemoveExpr = "REMOVE " + strings.Join(validParts, ", ")
+
+			// expose the flag to the outer scope
+			// we need removeUniqueFieldsRequested afterwards, so lift it out.
+			// (We achieve this by re-parsing below if needed.)
+			_ = removeUniqueFieldsRequested
 		}
+
+		// re-detect if caller asked to remove UniqueFields (in case we reassign normalizedRemoveExpr above)
+		removeUniqueFieldsRequested := strings.Contains(strings.ToLower(normalizedRemoveExpr), "uniquefields")
 
 		// when removing unique attributes, make the removal + index cleanup atomic via transaction.
 		// get slice of remove attributes
@@ -1992,7 +2008,6 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 		removedKeys := make(map[string]struct{})
 		deleteKeys := make([]*DynamoDBTableKeys, 0)
-		removeUniqueFieldsRequested := false // track explicit removal of UniqueFields to avoid SET/REMOVE conflict
 
 		// loop through each remove attribute to see if it is unique key index
 		// if so we will remove the unique key index from the table
@@ -2002,12 +2017,6 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			}
 
 			removeAttribute = util.Trim(removeAttribute)
-
-			// detect explicit UniqueFields removal to prevent conflicting SET/REMOVE later
-			if strings.EqualFold(removeAttribute, "UniqueFields") {
-				removeUniqueFieldsRequested = true
-				continue
-			}
 
 			if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
 				removedKeys[removeAttribute] = struct{}{}

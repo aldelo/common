@@ -1869,6 +1869,12 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 							}
 						}
 
+						// prevent DynamoDB transaction limit overflow when many unique fields are updated at once.
+						// (putItemsCrudUniqueRecords + deleteKeys + 1 update item must be <= 25)
+						if txnCount := len(putItemsCrudUniqueRecords) + len(deleteKeys) + 1; txnCount > 25 {
+							return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Unique key maintenance exceeds DynamoDB 25 item transaction limit (%d items)", txnCount)
+						}
+
 						putItemsSets := make([]*DynamoDBTransactionWritePutItemsSet, 0)
 						putItemsSets = append(putItemsSets, &DynamoDBTransactionWritePutItemsSet{
 							PutItems:            putItemsCrudUniqueRecords,
@@ -2047,6 +2053,11 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 					})
 				}
 			}
+		}
+
+		// avoid exceeding DynamoDB's 25-item transaction limit (1 update + N deletes).
+		if txnCount := len(deleteKeys) + 1; txnCount > 25 {
+			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) Unique key cleanup exceeds DynamoDB 25 item transaction limit (%d items)", txnCount)
 		}
 
 		// keep UniqueFields in sync after removing unique attributes

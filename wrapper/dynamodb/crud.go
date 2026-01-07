@@ -1173,13 +1173,17 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 6) Key Expression Missing SK Name")
 		}
 
-		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
-			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 7) Key Expression Missing SK Comparer")
-		}
+		// Do not reject numeric SK queries when comparator is omitted; default to "=" like string paths.
+		// Previously, numeric SK with blank comparator returned an error, preventing common equality queries.
+		// (We still normalize to "=" below when empty.)
 
-		if util.LenTrim(keyExpression.SKValue) == 0 {
-			return nil, fmt.Errorf("Query From Data Store Failed: (Validater 8) Key Expression Missing SK Value")
-		}
+		//if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
+		//	return nil, fmt.Errorf("Query From Data Store Failed: (Validater 7) Key Expression Missing SK Comparer")
+		//}
+		//
+		//if util.LenTrim(keyExpression.SKValue) == 0 {
+		//	return nil, fmt.Errorf("Query From Data Store Failed: (Validater 8) Key Expression Missing SK Value")
+		//}
 	}
 
 	if pagedDataPtrSlice == nil {
@@ -1359,13 +1363,15 @@ func (c *Crud) QueryByPage(
 			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 6) Key Expression Missing SK Name")
 		}
 
-		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
-			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 7) Key Expression Missing SK Comparer")
-		}
+		// Allow numeric SK with implicit "=" comparator; align behavior with string SKs.
 
-		if util.LenTrim(keyExpression.SKValue) == 0 {
-			return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 8) Key Expression Missing SK Value")
-		}
+		//if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
+		//	return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 7) Key Expression Missing SK Comparer")
+		//}
+		//
+		//if util.LenTrim(keyExpression.SKValue) == 0 {
+		//	return nil, "", fmt.Errorf("QueryByPage From Data Store Failed: (Validater 8) Key Expression Missing SK Value")
+		//}
 	}
 
 	if pagedDataPtrSlice == nil {
@@ -1501,13 +1507,15 @@ func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpre
 			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 6) Key Expression Missing SK Name")
 		}
 
-		if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
-			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 7) Key Expression Missing SK Comparer")
-		}
+		// Permit numeric SK with omitted comparator; default to "=" just like string SKs.
 
-		if util.LenTrim(keyExpression.SKValue) == 0 {
-			return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 8) Key Expression Missing SK Value")
-		}
+		//if util.LenTrim(keyExpression.SKCompareSymbol) == 0 && keyExpression.SKIsNumber {
+		//	return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 7) Key Expression Missing SK Comparer")
+		//}
+		//
+		//if util.LenTrim(keyExpression.SKValue) == 0 {
+		//	return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (Validater 8) Key Expression Missing SK Value")
+		//}
 	}
 
 	if itemsPerPage <= 0 {

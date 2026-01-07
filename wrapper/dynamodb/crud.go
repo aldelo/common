@@ -1994,8 +1994,13 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 					continue
 				}
 
-				// do not drop UniqueFields from the remove list; remember intent and keep it in the expression.
-				if strings.EqualFold(p, "UniqueFields") {
+				// detect exact UniqueFields token (case-insensitive) instead of substring match
+				// to avoid accidentally dropping unique keys when removing similarly-named attributes.
+				fieldToken := p
+				if bracket := strings.Index(fieldToken, "["); bracket >= 0 {
+					fieldToken = fieldToken[:bracket]
+				}
+				if strings.EqualFold(strings.TrimSpace(fieldToken), "UniqueFields") {
 					removeUniqueFieldsRequested = true
 				}
 
@@ -2005,11 +2010,6 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 				return fmt.Errorf("Update To Data Store Failed: (Validater 12) Remove Expression Missing Attribute Names")
 			}
 			normalizedRemoveExpr = "REMOVE " + strings.Join(validParts, ", ")
-		}
-
-		// also detect if caller left UniqueFields in expression text (case-insensitive)
-		if strings.Contains(strings.ToLower(normalizedRemoveExpr), "uniquefields") {
-			removeUniqueFieldsRequested = true
 		}
 
 		// when removing unique attributes, make the removal + index cleanup atomic via transaction.

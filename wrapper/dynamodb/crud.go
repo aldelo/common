@@ -1648,19 +1648,24 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		return fmt.Errorf("Update To Data Store Failed: (Validater 5) Update Expression is Missing")
 	}
 
+	originalExpression := util.Trim(updateExpression)
+
 	// extract set and remove expressions from update expression
 	setExpression := ""
 	removeExpression := ""
 	upUTCExpression := ""
+	otherExpression := ""
 
 	if pos := strings.Index(strings.ToLower(updateExpression), ", uputc="); pos > 0 {
 		upUTCExpression = util.Trim(util.Right(updateExpression, util.LenTrim(updateExpression)-pos))
 		updateExpression = util.Trim(util.Left(updateExpression, pos))
 	}
 
-	if strings.ToLower(util.Left(updateExpression, 4)) == "set " {
-		if strings.Contains(strings.ToLower(updateExpression), " remove ") {
-			pos := strings.Index(strings.ToLower(updateExpression), " remove ")
+	lowerExpr := strings.ToLower(updateExpression)
+	switch {
+	case strings.HasPrefix(lowerExpr, "set "):
+		if strings.Contains(lowerExpr, " remove ") {
+			pos := strings.Index(lowerExpr, " remove ")
 
 			if pos > 0 {
 				setExpression = util.Trim(util.Left(updateExpression, pos)) + upUTCExpression
@@ -1671,95 +1676,95 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		} else {
 			setExpression = util.Trim(updateExpression) + upUTCExpression
 		}
-	} else if strings.ToLower(util.Left(updateExpression, 7)) == "remove " {
+	case strings.HasPrefix(lowerExpr, "remove "):
 		removeExpression = util.Trim(updateExpression)
+	default:
+		// allow other dynamodb actions (ADD / DELETE) instead of silently no-op
+		otherExpression = originalExpression
 	}
 
-	if util.LenTrim(setExpression) > 0 {
-		if attributeValues == nil {
-			return fmt.Errorf("Update To Data Store Failed: (Validater 5) Attribute Values Not Defined and is Required When Set Expression is Used")
-		}
+	// Build expressionAttributeValues whenever provided (needed for ADD/DELETE too)
+	expressionAttributeValues := map[string]*ddb.AttributeValue{}
+	if len(attributeValues) > 0 {
+		for _, v := range attributeValues {
+			if v == nil {
+				continue
+			}
+			attrName := v.Name
+			if len(attrName) > 0 && !strings.HasPrefix(attrName, ":") {
+				attrName = ":" + attrName
+			}
 
-		if len(attributeValues) == 0 {
-			return fmt.Errorf("Update To Data Store Failed: (Validater 6) Attribute Values is Required When Set Expression is Used")
+			if v.IsN {
+				if len(v.ListValue) == 0 {
+					if !util.IsNumericFloat64(v.Value, false) {
+						v.Value = "0"
+					}
+					expressionAttributeValues[attrName] = &ddb.AttributeValue{
+						N: aws.String(v.Value),
+					}
+				} else {
+					expressionAttributeValues[attrName] = &ddb.AttributeValue{
+						NS: aws.StringSlice(v.ListValue),
+					}
+				}
+			} else if v.IsBool {
+				b, _ := util.ParseBool(v.Value)
+				expressionAttributeValues[attrName] = &ddb.AttributeValue{
+					BOOL: aws.Bool(b),
+				}
+			} else {
+				if len(v.ListValue) == 0 {
+					if v.ComplexMap == nil && v.ComplexList == nil && v.ComplexObject == nil {
+						expressionAttributeValues[attrName] = &ddb.AttributeValue{
+							S: aws.String(v.Value),
+						}
+					} else if v.ComplexMap != nil {
+						if complexMap, err := dynamodbattribute.MarshalMap(v.ComplexMap); err != nil {
+							return fmt.Errorf("Update To Data Store Failed: (MarshalMap on ComplexMap) %s", err.Error())
+						} else {
+							expressionAttributeValues[attrName] = &ddb.AttributeValue{
+								M: complexMap,
+							}
+						}
+					} else if v.ComplexList != nil {
+						if complexList, err := dynamodbattribute.MarshalList(v.ComplexList); err != nil {
+							return fmt.Errorf("Update To Data Store Failed: (MarshalList on ComplexList) %s", err.Error())
+						} else {
+							expressionAttributeValues[attrName] = &ddb.AttributeValue{
+								L: complexList,
+							}
+						}
+					} else if v.ComplexObject != nil {
+						if complexObject, err := dynamodbattribute.Marshal(v.ComplexObject); err != nil {
+							return fmt.Errorf("Update To Data Store Failed: (MarshalObject on ComplexObject) %s", err.Error())
+						} else {
+							expressionAttributeValues[attrName] = complexObject
+						}
+					}
+				} else {
+					expressionAttributeValues[attrName] = &ddb.AttributeValue{
+						SS: aws.StringSlice(v.ListValue),
+					}
+				}
+			}
 		}
+	}
+
+	// guard when SET is used but no values provided
+	if util.LenTrim(setExpression) > 0 && len(expressionAttributeValues) == 0 {
+		return fmt.Errorf("Update To Data Store Failed: (Validater 6) Attribute Values Not Defined and is Required When Set Expression is Used")
+	}
+
+	// guard when otherExpression (e.g. ADD/DELETE) needs values but none provided
+	if util.LenTrim(otherExpression) > 0 && len(expressionAttributeValues) == 0 {
+		return fmt.Errorf("Update To Data Store Failed: (Validater 7) Attribute Values is Required When Update Expression Useds Value-Driven Actions")
 	}
 
 	uniqueFieldsMap := make(map[string]*CrudUniqueFieldNameAndIndex)
 
 	// prepare and execute set expression action
 	if util.LenTrim(setExpression) > 0 {
-		expressionAttributeValues := map[string]*ddb.AttributeValue{}
-
-		for _, v := range attributeValues {
-			if v != nil {
-				// normalize placeholder names to always start with ":" to avoid missing or mismatched keys
-				attrName := v.Name
-				if len(attrName) > 0 && !strings.HasPrefix(attrName, ":") {
-					attrName = ":" + attrName
-				}
-
-				if v.IsN {
-					if len(v.ListValue) == 0 {
-						if !util.IsNumericFloat64(v.Value, false) {
-							v.Value = "0"
-						}
-
-						expressionAttributeValues[attrName] = &ddb.AttributeValue{
-							N: aws.String(v.Value),
-						}
-					} else {
-						expressionAttributeValues[attrName] = &ddb.AttributeValue{
-							NS: aws.StringSlice(v.ListValue),
-						}
-					}
-				} else if v.IsBool {
-					b, _ := util.ParseBool(v.Value)
-					expressionAttributeValues[attrName] = &ddb.AttributeValue{
-						BOOL: aws.Bool(b),
-					}
-				} else {
-					if len(v.ListValue) == 0 {
-						if v.ComplexMap == nil && v.ComplexList == nil && v.ComplexObject == nil {
-							// string value
-							expressionAttributeValues[attrName] = &ddb.AttributeValue{
-								S: aws.String(v.Value),
-							}
-						} else if v.ComplexMap != nil {
-							// map[string]*ddb.AttributeValue
-							if complexMap, err := dynamodbattribute.MarshalMap(v.ComplexMap); err != nil {
-								return fmt.Errorf("Update To Data Store Failed: (MarshalMap on ComplexMap) %s", err.Error())
-							} else {
-								expressionAttributeValues[attrName] = &ddb.AttributeValue{
-									M: complexMap,
-								}
-							}
-						} else if v.ComplexList != nil {
-							// []*ddb.AttributeValue
-							if complexList, err := dynamodbattribute.MarshalList(v.ComplexList); err != nil {
-								return fmt.Errorf("Update To Data Store Failed: (MarshalList on ComplexList) %s", err.Error())
-							} else {
-								expressionAttributeValues[attrName] = &ddb.AttributeValue{
-									L: complexList,
-								}
-							}
-						} else if v.ComplexObject != nil {
-							// *ddb.AttributeValue
-							if complexObject, err := dynamodbattribute.Marshal(v.ComplexObject); err != nil {
-								return fmt.Errorf("Update To Data Store Failed: (MarshalObject on ComplexObject) %s", err.Error())
-							} else {
-								expressionAttributeValues[attrName] = complexObject
-							}
-						}
-					} else {
-						expressionAttributeValues[attrName] = &ddb.AttributeValue{
-							SS: aws.StringSlice(v.ListValue),
-						}
-					}
-				}
-			}
-		}
-
 		// check for unique key indexes
 		doUpdateItemNonTransactional := true
 
@@ -1997,6 +2002,13 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) %s", e.Error())
 		} else if !ok {
 			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) Transaction Write Not Successful")
+		}
+	}
+
+	// execute other DynamoDB actions (e.g., ADD/DELETE) when no set/remove ran
+	if util.LenTrim(otherExpression) > 0 {
+		if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, otherExpression, conditionExpression, nil, expressionAttributeValues, _ddb.TimeOutDuration(_timeout)); e != nil {
+			return fmt.Errorf("Update To Data Store Failed: (UpdateItem other) %s", e.Error())
 		}
 	}
 

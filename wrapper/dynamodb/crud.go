@@ -2104,12 +2104,19 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			exprAttrVals = nil
 		}
 
-		// avoid constructing an empty transactional delete list if nothing to delete
-		var deletes []*DynamoDBTableKeys
+		// allow many unique-key deletes without hard failure by chunking transactions
+		const maxTxnItems = 25
+		var firstChunkDeletes []*DynamoDBTableKeys
 		if len(deleteKeys) > 0 {
-			deletes = deleteKeys
+			attach := maxTxnItems - 1 // 1 slot for the update item
+			if attach > len(deleteKeys) {
+				attach = len(deleteKeys)
+			}
+			firstChunkDeletes = deleteKeys[:attach]
+			deleteKeys = deleteKeys[attach:]
 		}
 
+		// primary transaction: update + first batch of deletes
 		writes := &DynamoDBTransactionWrites{
 			UpdateItems: []*DynamoDBUpdateItemInput{
 				{
@@ -2120,13 +2127,30 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 					ExpressionAttributeValues: exprAttrVals,
 				},
 			},
-			DeleteItems: deletes,
+			DeleteItems: firstChunkDeletes,
 		}
 
 		if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
 			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) %s", e.Error())
 		} else if !ok {
 			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) Transaction Write Not Successful")
+		}
+
+		// follow-up delete-only chunks for any remaining unique-key records (keeps us under 25/txn)
+		for start := 0; start < len(deleteKeys); start += maxTxnItems {
+			end := start + maxTxnItems
+			if end > len(deleteKeys) {
+				end = len(deleteKeys)
+			}
+
+			delChunk := deleteKeys[start:end]
+			if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), &DynamoDBTransactionWrites{
+				DeleteItems: delChunk,
+			}); e != nil {
+				return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove chunk) %s", e.Error())
+			} else if !ok {
+				return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove chunk) Transaction Write Not Successful")
+			}
 		}
 	}
 

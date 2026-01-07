@@ -1967,6 +1967,21 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			}
 		}
 
+		// if caller removes UniqueFields explicitly, also delete all unique key records to avoid orphaned keys.
+		if removeUniqueFieldsRequested && len(uniqueFieldsMap) > 0 {
+			for _, info := range uniqueFieldsMap {
+				if info == nil {
+					continue
+				}
+				if util.LenTrim(info.UniqueFieldIndex) > 0 {
+					deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
+						PK: info.UniqueFieldIndex,
+						SK: "UniqueKey",
+					})
+				}
+			}
+		}
+
 		// keep UniqueFields in sync after removing unique attributes
 		newUniqueFieldsSlice := make([]string, 0, len(uniqueFieldsMap))
 		for attr, info := range uniqueFieldsMap {

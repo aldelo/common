@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,38 @@ var (
 )
 
 var auditProjectionAttributes = []string{"CrUTC", "CrBy", "CrIP", "UpUTC", "UpBy", "UpIP"}
+
+// updateActionRegex splits DynamoDB update expressions into action clauses (SET/ADD/DELETE/REMOVE).
+var updateActionRegex = regexp.MustCompile(`(?i)\b(set|add|delete|remove)\b`)
+
+// splitUpdateSections returns ordered action sections (e.g., SET, REMOVE, ADD, DELETE) from an update expression.
+// Each section body includes the action keyword itself to preserve DynamoDB syntax.
+func splitUpdateSections(expr string) []struct{ Action, Body string } {
+	expr = strings.TrimSpace(expr)
+	matches := updateActionRegex.FindAllStringSubmatchIndex(expr, -1)
+
+	if len(matches) == 0 {
+		return nil
+	}
+
+	sections := make([]struct{ Action, Body string }, 0, len(matches))
+	for i, m := range matches {
+		action := strings.ToUpper(expr[m[0]:m[1]])
+		end := len(expr)
+		if i+1 < len(matches) {
+			end = matches[i+1][0]
+		}
+		body := strings.TrimSpace(expr[m[1]:end])
+		if len(body) == 0 {
+			continue
+		}
+		sections = append(sections, struct{ Action, Body string }{
+			Action: action,
+			Body:   strings.TrimSpace(action + " " + body),
+		})
+	}
+	return sections
+}
 
 // helper used by every CRUD read that auto-appends projections
 func cloneAndEnsureProjectionAttributes(attrs []string) []string {
@@ -1748,39 +1781,23 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	// normalize whitespace early so parsing (set/remove/other) is reliable even when callers supply leading/trailing spaces.
 	updateExpression = util.Trim(updateExpression)
 
-	originalExpression := util.Trim(updateExpression)
-
-	// extract set and remove expressions from update expression
-	setExpression := ""
-	removeExpression := ""
-	upUTCExpression := ""
-	otherExpression := ""
-
-	if pos := strings.Index(strings.ToLower(updateExpression), ", uputc="); pos > 0 {
-		upUTCExpression = util.Trim(util.Right(updateExpression, util.LenTrim(updateExpression)-pos))
-		updateExpression = util.Trim(util.Left(updateExpression, pos))
-	}
-
-	lowerExpr := strings.ToLower(updateExpression)
-	switch {
-	case strings.HasPrefix(lowerExpr, "set "):
-		if strings.Contains(lowerExpr, " remove ") {
-			pos := strings.Index(lowerExpr, " remove ")
-
-			if pos > 0 {
-				setExpression = util.Trim(util.Left(updateExpression, pos)) + upUTCExpression
-				removeExpression = util.Trim(util.Right(updateExpression, util.LenTrim(updateExpression)-pos))
-			} else {
-				setExpression = util.Trim(updateExpression) + upUTCExpression
-			}
-		} else {
-			setExpression = util.Trim(updateExpression) + upUTCExpression
+	// parse multi-clause expressions and preserve order (SET / REMOVE / ADD / DELETE)
+	sections := splitUpdateSections(updateExpression)
+	var setExpression, removeExpression string
+	otherSections := make([]string, 0) // ADD/DELETE (and others) preserved
+	for _, s := range sections {
+		switch s.Action {
+		case "SET":
+			setExpression = s.Body
+		case "REMOVE":
+			removeExpression = s.Body
+		default: // ADD / DELETE (and any future action types)
+			otherSections = append(otherSections, s.Body)
 		}
-	case strings.HasPrefix(lowerExpr, "remove "):
-		removeExpression = util.Trim(updateExpression)
-	default:
-		// allow other dynamodb actions (ADD / DELETE) instead of silently no-op
-		otherExpression = originalExpression
+	}
+	// retain the original expression if nothing was recognized
+	if len(sections) == 0 && util.LenTrim(updateExpression) > 0 {
+		otherSections = append(otherSections, updateExpression)
 	}
 
 	// Build expressionAttributeValues whenever provided (needed for ADD/DELETE too)
@@ -1860,7 +1877,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	}
 
 	// guard when otherExpression (e.g. ADD/DELETE) needs values but none provided
-	if util.LenTrim(otherExpression) > 0 && len(expressionAttributeValues) == 0 {
+	if len(otherSections) > 0 && len(expressionAttributeValues) == 0 {
 		return fmt.Errorf("Update To Data Store Failed: (Validater 7) Attribute Values is Required When Update Expression Useds Value-Driven Actions")
 	}
 
@@ -1942,6 +1959,12 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 							SS: aws.StringSlice(newUniqueFields.UniqueFields),
 						}
 
+						// build full update expression (SET + trailing ADD/DELETE if present)
+						updateExpr := setExpression
+						if len(otherSections) > 0 {
+							updateExpr = strings.TrimSpace(updateExpr + " " + strings.Join(otherSections, " "))
+						}
+
 						//
 						// update item via transaction (with UniqueFields also updated)
 						//
@@ -1950,12 +1973,12 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 						updateItems = append(updateItems, &DynamoDBUpdateItemInput{
 							PK:                        pkValue,
 							SK:                        skValue,
-							UpdateExpression:          setExpression,
+							UpdateExpression:          updateExpr,
 							ConditionExpression:       conditionExpression,
 							ExpressionAttributeValues: expressionAttributeValues,
 						})
 
-						// *** FIX: chunk unique key puts/deletes to avoid 25-item transaction limit and prevent hard failures ***
+						// chunk unique key puts/deletes to avoid 25-item transaction limit and prevent hard failures
 						const maxTxnItems = 25
 						putIdx, delIdx := 0, 0
 						firstTxn := true
@@ -2015,10 +2038,15 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		}
 
 		if doUpdateItemNonTransactional {
+			updateExpr := setExpression
+			if len(otherSections) > 0 {
+				updateExpr = strings.TrimSpace(updateExpr + " " + strings.Join(otherSections, " "))
+			}
+
 			//
 			// update item
 			//
-			if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, setExpression, conditionExpression, nil, expressionAttributeValues, _ddb.TimeOutDuration(_timeout)); e != nil {
+			if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, updateExpr, conditionExpression, nil, expressionAttributeValues, _ddb.TimeOutDuration(_timeout)); e != nil {
 				// update item error
 				return fmt.Errorf("Update To Data Store Failed: (UpdateItem) %s", e.Error())
 			}
@@ -2166,6 +2194,11 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			}
 		}
 
+		// include ADD/DELETE sections only when no SET ran earlier
+		if util.LenTrim(setExpression) == 0 && len(otherSections) > 0 {
+			updateExprParts = append(updateExprParts, strings.Join(otherSections, " "))
+		}
+
 		updateExprParts = append(updateExprParts, normalizedRemoveExpr)
 		updateExpr := strings.Join(updateExprParts, " ")
 
@@ -2202,8 +2235,10 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	}
 
 	// execute other DynamoDB actions (e.g., ADD/DELETE) when no set/remove ran
-	if util.LenTrim(otherExpression) > 0 {
-		if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, otherExpression, conditionExpression, nil, expressionAttributeValues, _ddb.TimeOutDuration(_timeout)); e != nil {
+	// only run remaining sections if neither SET nor REMOVE executed
+	if util.LenTrim(setExpression) == 0 && util.LenTrim(removeExpression) == 0 && len(otherSections) > 0 {
+		otherExpr := strings.Join(otherSections, " ")
+		if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, otherExpr, conditionExpression, nil, expressionAttributeValues, _ddb.TimeOutDuration(_timeout)); e != nil {
 			return fmt.Errorf("Update To Data Store Failed: (UpdateItem other) %s", e.Error())
 		}
 	}

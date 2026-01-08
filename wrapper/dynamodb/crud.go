@@ -2174,16 +2174,10 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			exprAttrVals = nil
 		}
 
-		// allow many unique-key deletes without hard failure by chunking transactions
+		// keep delete+update atomic and within DynamoDB's 25 item transaction limit
 		const maxTxnItems = 25
-		var firstChunkDeletes []*DynamoDBTableKeys
-		if len(deleteKeys) > 0 {
-			attach := maxTxnItems - 1 // 1 slot for the update item
-			if attach > len(deleteKeys) {
-				attach = len(deleteKeys)
-			}
-			firstChunkDeletes = deleteKeys[:attach]
-			deleteKeys = deleteKeys[attach:]
+		if len(deleteKeys)+1 > maxTxnItems {
+			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Unique key removals exceed DynamoDB 25 item transaction limit (%d items)", len(deleteKeys)+1)
 		}
 
 		// primary transaction: update + first batch of deletes
@@ -2197,30 +2191,13 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 					ExpressionAttributeValues: exprAttrVals,
 				},
 			},
-			DeleteItems: firstChunkDeletes,
+			DeleteItems: deleteKeys,
 		}
 
 		if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
 			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) %s", e.Error())
 		} else if !ok {
 			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) Transaction Write Not Successful")
-		}
-
-		// follow-up delete-only chunks for any remaining unique-key records (keeps us under 25/txn)
-		for start := 0; start < len(deleteKeys); start += maxTxnItems {
-			end := start + maxTxnItems
-			if end > len(deleteKeys) {
-				end = len(deleteKeys)
-			}
-
-			delChunk := deleteKeys[start:end]
-			if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), &DynamoDBTransactionWrites{
-				DeleteItems: delChunk,
-			}); e != nil {
-				return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove chunk) %s", e.Error())
-			} else if !ok {
-				return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove chunk) Transaction Write Not Successful")
-			}
 		}
 	}
 
@@ -2291,28 +2268,25 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 					SK: skValue,
 				})
 
-				// DynamoDB transaction limit is 25 items; chunk deletes to avoid ValidationException.
+				// enforce atomicity within DynamoDB's 25 item transaction limit
 				const maxTxnItems = 25
-				for start := 0; start < len(deleteKeys); start += maxTxnItems {
-					end := start + maxTxnItems
-					if end > len(deleteKeys) {
-						end = len(deleteKeys)
-					}
-
-					writes := &DynamoDBTransactionWrites{
-						DeleteItems: deleteKeys[start:end],
-					}
-
-					if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
-						// transaction delete error
-						return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) %s", e.Error())
-					} else if !ok {
-						// transaction delete failed
-						return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
-					}
+				if len(deleteKeys) > maxTxnItems {
+					return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) Unique key deletions + item delete exceed DynamoDB 25 item transaction limit (%d items)", len(deleteKeys))
 				}
 
-				// all chunks succeeded
+				writes := &DynamoDBTransactionWrites{
+					DeleteItems: deleteKeys,
+				}
+
+				if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
+					// transaction delete error
+					return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) %s", e.Error())
+				} else if !ok {
+					// transaction delete failed
+					return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
+				}
+
+				// all deletes done atomically
 				return nil
 			}
 		}

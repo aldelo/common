@@ -2935,19 +2935,22 @@ func (c *Crud) CreateGlobalTable(tableName string,
 	   Large tables / GSIs: 20+ min
 	   20 minutes is a sensible upper bound for infra automation.
 	*/
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
-	defer cancel()
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer waitCancel()
 
-	if err := _ddb.WaitUntilTableExists(&dynamodb.DescribeTableInput{TableName: aws.String(tableName)}, ctx); err != nil {
+	if err := _ddb.WaitUntilTableExists(&dynamodb.DescribeTableInput{TableName: aws.String(tableName)}, waitCtx); err != nil {
 		return fmt.Errorf("CreateGlobalTable Failed: (Validater 10) Wait Until Table Exists Error, %s", err.Error())
 	}
 
-	if err := _ddb.WaitUntilTableFullyIdle(tableName, ctx); err != nil {
+	if err := _ddb.WaitUntilTableFullyIdle(tableName, waitCtx); err != nil {
 		return fmt.Errorf("CreateGlobalTable Failed: (Validater 11) Wait Until Table Fully Idle Error, %s", err.Error())
 	}
 
 	// execute
-	if output, err := _ddb.UpdateTable(input, ctx); err != nil {
+	updateCtx, updateCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer updateCancel()
+
+	if output, err := _ddb.UpdateTable(input, updateCtx); err != nil {
 		return fmt.Errorf("CreateGlobalTable Failed: (Exec 1) %s", err.Error())
 	} else {
 		if output == nil {
@@ -3146,7 +3149,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 	}
 
 	// execute
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	if output, err := _ddb.UpdateGlobalTable(input, ctx); err != nil {

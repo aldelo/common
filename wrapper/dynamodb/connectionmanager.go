@@ -154,6 +154,7 @@ func (scm *ServiceConnectionManager) shutdown() {
 
 		// Protect shutdownCh mutation with write lock to avoid races with isShutdown.
 		scm.mu.Lock()
+		scm.closing = true
 		if scm.shutdownCh != nil {
 			close(scm.shutdownCh)
 			// leave shutdownCh non-nil but closed; isShutdown handles this
@@ -233,7 +234,7 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 
 	for {
 		select {
-		case <-scm.shutdownCh:
+		case <-shutdownCh:
 			err := fmt.Errorf("connection manager shutdown")
 			log.Printf("ExecuteWithLimit: %v", err)
 			return err
@@ -255,6 +256,14 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 				log.Printf("ExecuteWithLimit: %v", err)
 				return err
 			}
+			scm.wg.Add(1)
+			scm.mu.RUnlock()
+
+			defer func() {
+				<-semaphore
+				log.Printf("ExecuteWithLimit: semaphore released")
+				scm.wg.Done()
+			}()
 
 			goto runOperation
 		}

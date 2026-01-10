@@ -217,28 +217,34 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 	}
 
 	// Decide based on shutdown and context under read lock.
+	scm.mu.RLock()
+	shutdownCh := scm.semaphore
+	scm.mu.RUnlock()
+	if shutdownCh == nil {
+		err := fmt.Errorf("connection manager shutdown")
+		log.Printf("ExecuteWithLimit: %v", err)
+		return err
+	}
+	semaphore := scm.semaphore
+
 	for {
-		scm.mu.RLock()
 		select {
 		case <-scm.shutdownCh:
-			scm.mu.RUnlock()
 			err := fmt.Errorf("connection manager shutdown")
 			log.Printf("ExecuteWithLimit: %v", err)
 			return err
 
 		case <-ctx.Done():
-			scm.mu.RUnlock()
 			err := fmt.Errorf("context timed out while waiting for semaphore: %w", ctx.Err())
 			log.Printf("ExecuteWithLimit: %v", err)
 			return err
 
-		case scm.semaphore <- struct{}{}:
+		case semaphore <- struct{}{}:
 			// success path
-			scm.mu.RUnlock()
 			log.Printf("ExecuteWithLimit: semaphore acquired")
 			scm.wg.Add(1)
 			defer func() {
-				<-scm.semaphore
+				<-semaphore
 				log.Printf("ExecuteWithLimit: semaphore released")
 				scm.wg.Done()
 			}()

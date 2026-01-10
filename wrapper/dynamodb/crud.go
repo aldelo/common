@@ -223,6 +223,20 @@ func (u *CrudUniqueModel) GetUpdatedUniqueFieldsFromExpressionAttributeValues(
 	updatedUniqueFields = make(map[string]*CrudUniqueFieldNameAndIndex)
 	newUniqueFields = new(CrudUniqueFields)
 
+	// make placeholder lookup case-insensitive and colon-agnostic so :email matches Email.
+	findAttr := func(name string) (*ddb.AttributeValue, bool) {
+		target := strings.ToUpper(strings.TrimPrefix(name, ":"))
+		for k, v := range updateExpressionAttributeValues {
+			if v == nil {
+				continue
+			}
+			if strings.ToUpper(strings.TrimPrefix(k, ":")) == target {
+				return v, true
+			}
+		}
+		return nil, false
+	}
+
 	// loop through each of oldUniqueFields map key and match to updateExpressionAttributeValues map key,
 	// if found, this is unique field being updated
 	for k, v := range oldUniqueFields {
@@ -230,39 +244,43 @@ func (u *CrudUniqueModel) GetUpdatedUniqueFieldsFromExpressionAttributeValues(
 			continue
 		}
 
-		if attrVal, ok := updateExpressionAttributeValues[":"+k]; ok && attrVal != nil {
-			// support string/number/bool/binary attribute values instead of assuming S-only
-			newVal := ""
+		attrVal, ok := findAttr(k)
+		if !ok || attrVal == nil {
+			newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, v.UniqueFieldIndex))
+			continue
+		}
 
-			switch {
-			case attrVal.S != nil:
-				newVal = aws.StringValue(attrVal.S)
-			case attrVal.N != nil:
-				newVal = aws.StringValue(attrVal.N)
-			case attrVal.BOOL != nil:
-				newVal = fmt.Sprintf("%t", aws.BoolValue(attrVal.BOOL))
-			case attrVal.B != nil:
-				newVal = base64.StdEncoding.EncodeToString(attrVal.B)
-			default:
-				return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 4) Unsupported attribute type for unique field %s", k)
+		// support string/number/bool/binary attribute values instead of assuming S-only
+		newVal := ""
+
+		switch {
+		case attrVal.S != nil:
+			newVal = aws.StringValue(attrVal.S)
+		case attrVal.N != nil:
+			newVal = aws.StringValue(attrVal.N)
+		case attrVal.BOOL != nil:
+			newVal = fmt.Sprintf("%t", aws.BoolValue(attrVal.BOOL))
+		case attrVal.B != nil:
+			newVal = base64.StdEncoding.EncodeToString(attrVal.B)
+		default:
+			return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 4) Unsupported attribute type for unique field %s", k)
+		}
+
+		newKey := fmt.Sprintf("%s#UniqueKey#%s#%s",
+			util.SplitString(v.UniqueFieldIndex, "#UniqueKey#", 0),
+			strings.ToUpper(v.UniqueFieldName),
+			strings.ToUpper(newVal),
+		)
+
+		if newKey != v.OldUniqueFieldIndex {
+			// track both new and old so callers can delete old + insert new safely
+			newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, newKey))
+			updatedUniqueFields[k] = &CrudUniqueFieldNameAndIndex{
+				UniqueFieldName:     v.UniqueFieldName,
+				UniqueFieldIndex:    newKey,
+				OldUniqueFieldIndex: v.OldUniqueFieldIndex,
 			}
-
-			newKey := fmt.Sprintf("%s#UniqueKey#%s#%s",
-				util.SplitString(v.UniqueFieldIndex, "#UniqueKey#", 0),
-				strings.ToUpper(v.UniqueFieldName),
-				strings.ToUpper(newVal),
-			)
-
-			if newKey != v.OldUniqueFieldIndex {
-				// track both new and old so callers can delete old + insert new safely
-				newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, newKey))
-				updatedUniqueFields[k] = &CrudUniqueFieldNameAndIndex{
-					UniqueFieldName:     v.UniqueFieldName,
-					UniqueFieldIndex:    newKey,
-					OldUniqueFieldIndex: v.OldUniqueFieldIndex,
-				}
-				continue
-			}
+			continue
 		}
 
 		newUniqueFields.UniqueFields = append(newUniqueFields.UniqueFields, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, v.UniqueFieldIndex))

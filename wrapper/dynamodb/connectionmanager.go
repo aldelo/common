@@ -17,6 +17,10 @@ type ServiceConnectionManager struct {
 	shutdownCh chan struct{} // non-nil while manager is active; closed on shutdown
 	once       sync.Once
 	closing    bool // prevents new wg.Add after shutdown begins to avoid WaitGroup misuse
+
+	logAcquire     bool          // allow opting out of per-operation acquire logging
+	logRelease     bool          // allow opting out of per-operation release logging
+	defaultTimeout time.Duration // allow callers to override the default timeout
 }
 
 var (
@@ -48,7 +52,7 @@ func ensureAwsContext(ctx aws.Context) aws.Context {
 }
 
 // InitGlobalConnectionManager initializes the global manager if it is nil or shut down.
-func InitGlobalConnectionManager(maxConcurrentConnections int) error {
+func InitGlobalConnectionManager(maxConcurrentConnections int, opts ...func(*ServiceConnectionManager)) error {
 	if maxConcurrentConnections <= 0 {
 		err := fmt.Errorf("maxConcurrentConnections must be greater than 0")
 		log.Printf("InitGlobalConnectionManager: %v", err)
@@ -70,16 +74,36 @@ func InitGlobalConnectionManager(maxConcurrentConnections int) error {
 	defer globalConnMgrMutex.Unlock()
 
 	if globalConnMgr == nil || globalConnMgr.isShutdown() {
-		globalConnMgr = &ServiceConnectionManager{
-			semaphore:  make(chan struct{}, maxConcurrentConnections),
-			shutdownCh: make(chan struct{}),
-			closing:    false,
+		m := &ServiceConnectionManager{
+			semaphore:      make(chan struct{}, maxConcurrentConnections),
+			shutdownCh:     make(chan struct{}),
+			closing:        false,
+			logAcquire:     true, // default stays verbose; can be disabled
+			logRelease:     true,
+			defaultTimeout: 30 * time.Second, // default remains 30s
 		}
+		for _, opt := range opts { // CHANGE: apply functional options
+			opt(m)
+		}
+		globalConnMgr = m
 		log.Printf("InitGlobalConnectionManager: initialized with capacity=%d", maxConcurrentConnections)
 	} else {
 		log.Printf("InitGlobalConnectionManager: already initialized and open (write-lock check)")
 	}
 	return nil
+}
+
+func WithLogging(acquire, release bool) func(*ServiceConnectionManager) {
+	return func(s *ServiceConnectionManager) {
+		s.logAcquire = acquire
+		s.logRelease = release
+	}
+}
+
+func WithDefaultTimeout(d time.Duration) func(*ServiceConnectionManager) {
+	return func(s *ServiceConnectionManager) {
+		s.defaultTimeout = d
+	}
 }
 
 func IsGlobalConnectionManagerInitialized() bool {
@@ -208,7 +232,13 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 	}
 
 	if _, ok := ctx.Deadline(); !ok {
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		timeout := scm.defaultTimeout
+		if timeout <= 0 { // allow disabling default timeout by setting non-positive
+			timeout = 0
+		}
+		if timeout > 0 {
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+		}
 	}
 	if cancel != nil {
 		defer cancel()
@@ -247,12 +277,17 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 
 		case semaphore <- struct{}{}:
 			// success path
-			log.Printf("ExecuteWithLimit: semaphore acquired")
+			if scm.logAcquire {
+				log.Printf("ExecuteWithLimit: semaphore acquired")
+			}
 
 			scm.mu.RLock()
 			if scm.closing {
 				scm.mu.RUnlock()
 				<-semaphore
+				if scm.logRelease {
+					log.Printf("ExecuteWithLimit: semaphore released")
+				}
 				err := fmt.Errorf("connection manager shutdown")
 				log.Printf("ExecuteWithLimit: %v", err)
 				return err
@@ -262,7 +297,9 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 
 			defer func() {
 				<-semaphore
-				log.Printf("ExecuteWithLimit: semaphore released")
+				if scm.logRelease {
+					log.Printf("ExecuteWithLimit: semaphore released")
+				}
 				scm.wg.Done()
 			}()
 

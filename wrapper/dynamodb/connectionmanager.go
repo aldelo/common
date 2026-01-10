@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 )
@@ -196,8 +197,17 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 		log.Printf("ExecuteWithLimit: scm is nil, running operation without limit")
 		return operation()
 	}
+
+	var cancel context.CancelFunc
 	if ctx == nil {
 		ctx = context.Background()
+	}
+
+	if _, ok := ctx.Deadline(); !ok {
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	}
+	if cancel != nil {
+		defer cancel()
 	}
 
 	// Defensive: ensure semaphore exists.
@@ -207,36 +217,40 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 	}
 
 	// Decide based on shutdown and context under read lock.
-	scm.mu.RLock()
-	select {
-	case <-scm.shutdownCh:
-		scm.mu.RUnlock()
-		err := fmt.Errorf("connection manager shutdown")
-		log.Printf("ExecuteWithLimit: %v", err)
-		return err
+	for {
+		scm.mu.RLock()
+		select {
+		case <-scm.shutdownCh:
+			scm.mu.RUnlock()
+			err := fmt.Errorf("connection manager shutdown")
+			log.Printf("ExecuteWithLimit: %v", err)
+			return err
 
-	case <-ctx.Done():
-		scm.mu.RUnlock()
-		err := fmt.Errorf("context timed out while waiting for semaphore: %w", ctx.Err())
-		log.Printf("ExecuteWithLimit: %v", err)
-		return err
+		case <-ctx.Done():
+			scm.mu.RUnlock()
+			err := fmt.Errorf("context timed out while waiting for semaphore: %w", ctx.Err())
+			log.Printf("ExecuteWithLimit: %v", err)
+			return err
 
-	case scm.semaphore <- struct{}{}:
-		// success path
-		scm.mu.RUnlock()
-		log.Printf("ExecuteWithLimit: semaphore acquired")
-		scm.wg.Add(1)
-		defer func() {
-			<-scm.semaphore
-			log.Printf("ExecuteWithLimit: semaphore released")
-			scm.wg.Done()
-		}()
+		case scm.semaphore <- struct{}{}:
+			// success path
+			scm.mu.RUnlock()
+			log.Printf("ExecuteWithLimit: semaphore acquired")
+			scm.wg.Add(1)
+			defer func() {
+				<-scm.semaphore
+				log.Printf("ExecuteWithLimit: semaphore released")
+				scm.wg.Done()
+			}()
+			goto runOperation
+		}
 	}
 
 	// At this point, the goroutine is registered in wg and holds a semaphore slot.
 	// Shutdown will wait for completion; we do not re-check shutdownCh here to
 	// avoid unsynchronized reads and to keep semantics simple.
 
+runOperation:
 	var opErr error
 	func() {
 		defer func() {

@@ -1961,6 +1961,19 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	var removeUniqueFieldsRequested bool
 	newUniqueFieldsSlice := make([]string, 0)
 
+	// helper: exact token match for UniqueFields (avoid substring collisions like "NotUniqueFields")
+	matchUniqueFieldsToken := func(token string) bool { // CHANGED
+		token = strings.TrimSpace(token)
+		if len(token) == 0 {
+			return false
+		}
+		// strip any list index suffix (e.g., UniqueFields[0])
+		if bracket := strings.Index(token, "["); bracket >= 0 {
+			token = token[:bracket]
+		}
+		return strings.EqualFold(token, "UniqueFields")
+	}
+
 	if len(normalizedRemoveExpr) > 0 {
 		if strings.HasPrefix(strings.ToLower(normalizedRemoveExpr), "remove") {
 			body := strings.TrimSpace(normalizedRemoveExpr[len("remove"):])
@@ -1973,12 +1986,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 					continue
 				}
 
-				// detect exact UniqueFields token (case-insensitive) instead of substring match
-				fieldToken := p
-				if bracket := strings.Index(fieldToken, "["); bracket >= 0 {
-					fieldToken = fieldToken[:bracket]
-				}
-				if strings.EqualFold(strings.TrimSpace(fieldToken), "UniqueFields") {
+				if matchUniqueFieldsToken(p) { // exact token detection
 					removeUniqueFieldsRequested = true
 				}
 
@@ -2076,7 +2084,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	} else if len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested && len(normalizedRemoveExpr) > 0 &&
 		uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
 		// ensure UniqueFields removed too if it still exists but was not explicitly requested
-		if !strings.Contains(strings.ToLower(normalizedRemoveExpr), "uniquefields") {
+		if !matchUniqueFieldsToken(normalizedRemoveExpr) {
 			if len(normalizedRemoveExpr) > 0 {
 				updateExprParts = append(updateExprParts, "REMOVE UniqueFields")
 			}

@@ -1881,211 +1881,69 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		return fmt.Errorf("Update To Data Store Failed: (Validater 7) Attribute Values is Required When Update Expression Useds Value-Driven Actions")
 	}
 
-	uniqueFieldsMap := make(map[string]*CrudUniqueFieldNameAndIndex)
+	// --- Unique key discovery (once) for both set/remove flows ---
+	crudUniqueModel := &CrudUniqueModel{
+		PKName:        "PK",
+		PKDelimiter:   "#",
+		UniqueTagName: "uniquepkparts",
+	}
 
-	// prepare and execute set expression action
-	if util.LenTrim(setExpression) > 0 {
-		// check for unique key indexes
-		doUpdateItemNonTransactional := true
+	uniqueFieldsMap, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(_ddb, pkValue, skValue)
+	if crudErr != nil {
+		return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromSource) %s", crudErr.Error())
+	}
 
-		crudUniqueModel := &CrudUniqueModel{
-			PKName:        "PK",
-			PKDelimiter:   "#",
-			UniqueTagName: "uniquepkparts",
-		}
+	// --- Handle SET with possible unique index updates ---
+	doUpdateItemNonTransactional := true
+	putItemsCrudUniqueRecords := make([]*CrudUniqueRecord, 0)
+	deleteKeys := make([]*DynamoDBTableKeys, 0)
 
-		if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(_ddb, pkValue, skValue); crudErr != nil {
-			return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromSource) %s", crudErr.Error())
-		} else {
-			if oldUniqueFields != nil && len(oldUniqueFields) > 0 {
-				if updatedUniqueFields, newUniqueFields, ukErr := crudUniqueModel.GetUpdatedUniqueFieldsFromExpressionAttributeValues(oldUniqueFields, expressionAttributeValues); ukErr != nil {
-					return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromExpressionAttributeValues) %s", ukErr.Error())
-				} else {
-					uniqueFieldsMap = oldUniqueFields
+	if util.LenTrim(setExpression) > 0 && uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
+		if updatedUniqueFields, newUniqueFields, ukErr := crudUniqueModel.GetUpdatedUniqueFieldsFromExpressionAttributeValues(uniqueFieldsMap, expressionAttributeValues); ukErr != nil {
+			return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromExpressionAttributeValues) %s", ukErr.Error())
+		} else if updatedUniqueFields != nil && len(updatedUniqueFields) > 0 && newUniqueFields != nil && len(newUniqueFields.UniqueFields) > 0 {
+			doUpdateItemNonTransactional = false
 
-					if updatedUniqueFields != nil && len(updatedUniqueFields) > 0 && newUniqueFields != nil && newUniqueFields.UniqueFields != nil && len(newUniqueFields.UniqueFields) > 0 {
-						doUpdateItemNonTransactional = false
+			for _, crudFieldAndIndex := range updatedUniqueFields {
+				if crudFieldAndIndex != nil &&
+					util.LenTrim(crudFieldAndIndex.OldUniqueFieldIndex) > 0 &&
+					util.LenTrim(crudFieldAndIndex.UniqueFieldIndex) > 0 &&
+					util.LenTrim(crudFieldAndIndex.UniqueFieldName) > 0 {
 
-						deleteKeys := make([]*DynamoDBTableKeys, 0)
-						putItemsCrudUniqueRecords := make([]*CrudUniqueRecord, 0)
+					// delete old unique key values that were updated
+					deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
+						PK: crudFieldAndIndex.OldUniqueFieldIndex,
+						SK: "UniqueKey",
+					})
 
-						for _, crudFieldAndIndex := range updatedUniqueFields {
-							if crudFieldAndIndex != nil &&
-								util.LenTrim(crudFieldAndIndex.OldUniqueFieldIndex) > 0 &&
-								util.LenTrim(crudFieldAndIndex.UniqueFieldIndex) > 0 &&
-								util.LenTrim(crudFieldAndIndex.UniqueFieldName) > 0 {
-
-								//
-								// delete old unique key values that were updated
-								//
-								deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
-									PK: crudFieldAndIndex.OldUniqueFieldIndex,
-									SK: "UniqueKey",
-								})
-
-								//
-								// add new unique key values that were updated
-								//
-								putItemsCrudUniqueRecords = append(putItemsCrudUniqueRecords, &CrudUniqueRecord{
-									PK: crudFieldAndIndex.UniqueFieldIndex,
-									SK: "UniqueKey",
-								})
-							}
-						}
-
-						// prevent DynamoDB transaction limit overflow when many unique fields are updated at once.
-						// (putItemsCrudUniqueRecords + deleteKeys + 1 update item must be <= 25)
-						if txnCount := len(putItemsCrudUniqueRecords) + len(deleteKeys) + 1; txnCount > 25 {
-							return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Unique key maintenance exceeds DynamoDB 25 item transaction limit (%d items)", txnCount)
-						}
-
-						putItemsSets := make([]*DynamoDBTransactionWritePutItemsSet, 0)
-						putItemsSets = append(putItemsSets, &DynamoDBTransactionWritePutItemsSet{
-							PutItems:            putItemsCrudUniqueRecords,
-							ConditionExpression: "attribute_not_exists(PK)",
-						})
-
-						//
-						// refresh unique key indexes and field names in update expression
-						//
-						if util.LenTrim(setExpression) > 0 {
-							setExpression += ", "
-						} else {
-							setExpression = "set "
-						}
-
-						setExpression += "UniqueFields=:UniqueFields"
-						expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
-							SS: aws.StringSlice(newUniqueFields.UniqueFields),
-						}
-
-						// build full update expression (SET + trailing ADD/DELETE if present)
-						updateExpr := setExpression
-						if len(otherSections) > 0 {
-							updateExpr = strings.TrimSpace(updateExpr + " " + strings.Join(otherSections, " "))
-						}
-
-						//
-						// update item via transaction (with UniqueFields also updated)
-						//
-						updateItems := make([]*DynamoDBUpdateItemInput, 0)
-
-						updateItems = append(updateItems, &DynamoDBUpdateItemInput{
-							PK:                        pkValue,
-							SK:                        skValue,
-							UpdateExpression:          updateExpr,
-							ConditionExpression:       conditionExpression,
-							ExpressionAttributeValues: expressionAttributeValues,
-						})
-
-						// chunk unique key puts/deletes to avoid 25-item transaction limit and prevent hard failures
-						const maxTxnItems = 25
-						putIdx, delIdx := 0, 0
-						firstTxn := true
-
-						for firstTxn || putIdx < len(putItemsCrudUniqueRecords) || delIdx < len(deleteKeys) {
-							itemsUsed := 0
-							writes := &DynamoDBTransactionWrites{}
-
-							if firstTxn {
-								writes.UpdateItems = updateItems
-								itemsUsed++
-								firstTxn = false
-							}
-
-							// attach puts
-							if remaining := maxTxnItems - itemsUsed; remaining > 0 && putIdx < len(putItemsCrudUniqueRecords) {
-								take := remaining
-								if take > len(putItemsCrudUniqueRecords)-putIdx {
-									take = len(putItemsCrudUniqueRecords) - putIdx
-								}
-								writes.PutItemsSet = []*DynamoDBTransactionWritePutItemsSet{
-									{
-										PutItems:            putItemsCrudUniqueRecords[putIdx : putIdx+take],
-										ConditionExpression: "attribute_not_exists(PK)",
-									},
-								}
-								putIdx += take
-								itemsUsed += take
-							}
-
-							// attach deletes
-							if remaining := maxTxnItems - itemsUsed; remaining > 0 && delIdx < len(deleteKeys) {
-								take := remaining
-								if take > len(deleteKeys)-delIdx {
-									take = len(deleteKeys) - delIdx
-								}
-								writes.DeleteItems = deleteKeys[delIdx : delIdx+take]
-								delIdx += take
-								itemsUsed += take
-							}
-
-							if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
-								if e.TransactionConditionalCheckFailed {
-									return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) [Possible Unique Attribute Duplicate Blocked] %s", e.Error())
-								}
-								return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) %s", e.Error())
-							} else if !ok {
-								return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
-							}
-						}
-
-						// force later REMOVE phase to re-fetch fresh unique keys after transactional SET updated unique indexes.
-						uniqueFieldsMap = nil
-					}
+					// add new unique key values that were updated
+					putItemsCrudUniqueRecords = append(putItemsCrudUniqueRecords, &CrudUniqueRecord{
+						PK: crudFieldAndIndex.UniqueFieldIndex,
+						SK: "UniqueKey",
+					})
 				}
 			}
-		}
 
-		if doUpdateItemNonTransactional {
-			updateExpr := setExpression
-			if len(otherSections) > 0 {
-				updateExpr = strings.TrimSpace(updateExpr + " " + strings.Join(otherSections, " "))
+			// refresh unique key indexes and field names in update expression
+			if util.LenTrim(setExpression) > 0 {
+				setExpression += ", "
+			} else {
+				setExpression = "set "
 			}
 
-			//
-			// update item
-			//
-			if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, updateExpr, conditionExpression, nil, expressionAttributeValues, _ddb.TimeOutDuration(_timeout)); e != nil {
-				// update item error
-				return fmt.Errorf("Update To Data Store Failed: (UpdateItem) %s", e.Error())
+			setExpression += "UniqueFields=:UniqueFields"
+			expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
+				SS: aws.StringSlice(newUniqueFields.UniqueFields),
 			}
 		}
 	}
 
-	// ensure we load uniqueFieldsMap when only removeExpression is present,
-	// so unique key indexes are also cleaned up (prevents orphaned unique records).
-	if util.LenTrim(removeExpression) > 0 && (uniqueFieldsMap == nil || len(uniqueFieldsMap) == 0) {
-		crudUniqueModel := &CrudUniqueModel{
-			PKName:        "PK",
-			PKDelimiter:   "#",
-			UniqueTagName: "uniquepkparts",
-		}
-		if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(_ddb, pkValue, skValue); crudErr != nil {
-			return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromSource for remove) %s", crudErr.Error())
-		} else {
-			uniqueFieldsMap = oldUniqueFields
-		}
-	}
+	// --- Handle REMOVE bookkeeping (unique key cleanup, UniqueFields attr maintenance) ---
+	normalizedRemoveExpr := strings.TrimSpace(removeExpression)
+	var removeUniqueFieldsRequested bool
+	newUniqueFieldsSlice := make([]string, 0)
 
-	// prepare and execute remove expression action
-	if util.LenTrim(removeExpression) > 0 {
-		// carry caller-supplied ExpressionAttributeValues into remove flows (for conditional expressions)
-		// preserve user-provided values so conditional expressions with placeholders work in remove-only updates.
-		var baseExprAttrVals map[string]*ddb.AttributeValue
-		if len(expressionAttributeValues) > 0 {
-			baseExprAttrVals = expressionAttributeValues
-		}
-
-		// guard remove parsing to avoid slice-out-of-range when expression is just "remove"
-		normalizedRemoveExpr := strings.TrimSpace(removeExpression)
-		if len(normalizedRemoveExpr) == 0 {
-			return fmt.Errorf("Update To Data Store Failed: (Validater 11) Remove Expression Missing Content")
-		}
-
-		// track intention to remove UniqueFields across parsing, avoiding shadowed variables
-		removeUniqueFieldsRequested := false
-
+	if len(normalizedRemoveExpr) > 0 {
 		if strings.HasPrefix(strings.ToLower(normalizedRemoveExpr), "remove") {
 			body := strings.TrimSpace(normalizedRemoveExpr[len("remove"):])
 			parts := strings.Split(body, ",")
@@ -2098,7 +1956,6 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 				}
 
 				// detect exact UniqueFields token (case-insensitive) instead of substring match
-				// to avoid accidentally dropping unique keys when removing similarly-named attributes.
 				fieldToken := p
 				if bracket := strings.Index(fieldToken, "["); bracket >= 0 {
 					fieldToken = fieldToken[:bracket]
@@ -2115,145 +1972,155 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			normalizedRemoveExpr = "REMOVE " + strings.Join(validParts, ", ")
 		}
 
-		// when removing unique attributes, make the removal + index cleanup atomic via transaction.
-		// get slice of remove attributes
-		removeBody := strings.TrimSpace(strings.TrimPrefix(normalizedRemoveExpr, "REMOVE"))
-		removeAttributes := strings.Split(removeBody, ",")
+		if uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
+			removeBody := strings.TrimSpace(strings.TrimPrefix(normalizedRemoveExpr, "REMOVE"))
+			removeAttributes := strings.Split(removeBody, ",")
 
-		removedKeys := make(map[string]struct{})
-		deleteKeys := make([]*DynamoDBTableKeys, 0)
+			removedKeys := make(map[string]struct{})
 
-		// loop through each remove attribute to see if it is unique key index
-		// if so we will remove the unique key index from the table
-		for _, removeAttribute := range removeAttributes {
-			if util.LenTrim(removeAttribute) == 0 {
-				continue
-			}
+			// loop through each remove attribute to see if it is unique key index
+			for _, removeAttribute := range removeAttributes {
+				if util.LenTrim(removeAttribute) == 0 {
+					continue
+				}
+				removeAttribute = util.Trim(removeAttribute)
 
-			removeAttribute = util.Trim(removeAttribute)
-
-			if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
-				removedKeys[removeAttribute] = struct{}{}
-				if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
-					deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
-						PK: uniqueField.UniqueFieldIndex,
-						SK: "UniqueKey",
-					})
+				if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
+					removedKeys[removeAttribute] = struct{}{}
+					if util.LenTrim(uniqueField.UniqueFieldIndex) > 0 {
+						deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
+							PK: uniqueField.UniqueFieldIndex,
+							SK: "UniqueKey",
+						})
+					}
 				}
 			}
-		}
 
-		// if caller removes UniqueFields explicitly, also delete all unique key records to avoid orphaned keys.
-		if removeUniqueFieldsRequested && len(uniqueFieldsMap) > 0 {
-			for _, info := range uniqueFieldsMap {
+			// if caller removes UniqueFields explicitly, also delete all unique key records to avoid orphaned keys.
+			if removeUniqueFieldsRequested && len(uniqueFieldsMap) > 0 {
+				for _, info := range uniqueFieldsMap {
+					if info == nil {
+						continue
+					}
+					if util.LenTrim(info.UniqueFieldIndex) > 0 {
+						deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
+							PK: info.UniqueFieldIndex,
+							SK: "UniqueKey",
+						})
+					}
+				}
+			}
+
+			// keep UniqueFields in sync after removing unique attributes
+			for attr, info := range uniqueFieldsMap {
 				if info == nil {
 					continue
 				}
-				if util.LenTrim(info.UniqueFieldIndex) > 0 {
-					deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
-						PK: info.UniqueFieldIndex,
-						SK: "UniqueKey",
-					})
+				if _, removed := removedKeys[attr]; removed {
+					continue
 				}
-			}
-		}
-
-		// keep UniqueFields in sync after removing unique attributes
-		newUniqueFieldsSlice := make([]string, 0, len(uniqueFieldsMap))
-		for attr, info := range uniqueFieldsMap {
-			if info == nil {
-				continue
-			}
-			if _, removed := removedKeys[attr]; removed {
-				continue
-			}
-			newUniqueFieldsSlice = append(newUniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", attr, info.UniqueFieldName, info.UniqueFieldIndex))
-		}
-
-		// Build a valid SET ... REMOVE ... expression order for DynamoDB
-		updateExprParts := []string{}
-		exprAttrVals := map[string]*ddb.AttributeValue{}
-
-		// merge caller-supplied ExpressionAttributeValues so condition expressions remain valid
-		if len(baseExprAttrVals) > 0 {
-			for k, v := range baseExprAttrVals {
-				exprAttrVals[k] = v
-			}
-		}
-
-		// only re-SET UniqueFields if caller idd not request to remove it
-		if len(newUniqueFieldsSlice) > 0 && !removeUniqueFieldsRequested {
-			updateExprParts = append(updateExprParts, "SET UniqueFields=:UniqueFields")
-			exprAttrVals[":UniqueFields"] = &ddb.AttributeValue{
-				SS: aws.StringSlice(newUniqueFieldsSlice),
-			}
-		} else if len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested {
-			// ensure UniqueFields is removed too (if not already explicitly removed)
-			if !strings.Contains(strings.ToLower(normalizedRemoveExpr), "uniquefields") {
-				normalizedRemoveExpr = normalizedRemoveExpr + ", UniqueFields"
-			}
-		}
-
-		// include ADD/DELETE sections only when no SET ran earlier
-		if util.LenTrim(setExpression) == 0 && len(otherSections) > 0 {
-			updateExprParts = append(updateExprParts, strings.Join(otherSections, " "))
-		}
-
-		updateExprParts = append(updateExprParts, normalizedRemoveExpr)
-		updateExpr := strings.Join(updateExprParts, " ")
-
-		// avoid passing an empty ExpressionAttributeValues map (dynamodb rejects empty maps)
-		if len(exprAttrVals) == 0 {
-			exprAttrVals = nil
-		}
-
-		// keep delete+update atomic and within DynamoDB's 25 item transaction limit
-		const maxTxnItems = 25
-
-		// CHUNKED DELETE RESTORED: execute deletes in chunks to respect 25-item limit
-		batchStart := 0
-		for batchStart < len(deleteKeys) || batchStart == 0 {
-			batchDeletes := deleteKeys[batchStart:]
-			remaining := maxTxnItems - 1 // reserve 1 for the update item
-			if len(batchDeletes) > remaining {
-				batchDeletes = batchDeletes[:remaining]
-			}
-
-			writes := &DynamoDBTransactionWrites{
-				UpdateItems: []*DynamoDBUpdateItemInput{
-					{
-						PK:                        pkValue,
-						SK:                        skValue,
-						UpdateExpression:          updateExpr,
-						ConditionExpression:       conditionExpression,
-						ExpressionAttributeValues: exprAttrVals,
-					},
-				},
-				DeleteItems: batchDeletes,
-			}
-
-			if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
-				return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) %s", e.Error())
-			} else if !ok {
-				return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) Transaction Write Not Successful")
-			}
-
-			if len(deleteKeys) == 0 {
-				break
-			}
-			batchStart += len(batchDeletes)
-			if batchStart >= len(deleteKeys) {
-				break
+				newUniqueFieldsSlice = append(newUniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", attr, info.UniqueFieldName, info.UniqueFieldIndex))
 			}
 		}
 	}
 
-	// execute other DynamoDB actions (e.g., ADD/DELETE) when no set/remove ran
-	// only run remaining sections if neither SET nor REMOVE executed
-	if util.LenTrim(setExpression) == 0 && util.LenTrim(removeExpression) == 0 && len(otherSections) > 0 {
-		otherExpr := strings.Join(otherSections, " ")
-		if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, otherExpr, conditionExpression, nil, expressionAttributeValues, _ddb.TimeOutDuration(_timeout)); e != nil {
-			return fmt.Errorf("Update To Data Store Failed: (UpdateItem other) %s", e.Error())
+	// --- Combine SET/ADD/DELETE/REMOVE into a single expression to keep update atomic ---
+	updateExprParts := []string{}
+
+	if util.LenTrim(setExpression) > 0 {
+		updateExprParts = append(updateExprParts, setExpression)
+	}
+
+	if len(otherSections) > 0 {
+		updateExprParts = append(updateExprParts, strings.Join(otherSections, " "))
+	}
+
+	if len(normalizedRemoveExpr) > 0 {
+		updateExprParts = append(updateExprParts, normalizedRemoveExpr)
+	}
+
+	// if we removed unique attrs, ensure UniqueFields stays in sync (unless explicitly removed)
+	if len(newUniqueFieldsSlice) > 0 && !removeUniqueFieldsRequested {
+		if util.LenTrim(setExpression) > 0 {
+			// append to existing SET
+			for i, part := range updateExprParts {
+				if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(part)), "SET") {
+					updateExprParts[i] = strings.TrimSpace(part) + ", UniqueFields=:UniqueFields"
+					break
+				}
+			}
+		} else {
+			updateExprParts = append([]string{"SET UniqueFields=:UniqueFields"}, updateExprParts...)
+		}
+		expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
+			SS: aws.StringSlice(newUniqueFieldsSlice),
+		}
+	} else if len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested && len(normalizedRemoveExpr) > 0 {
+		// ensure UniqueFields removed too if it still exists but was not explicitly requested
+		if !strings.Contains(strings.ToLower(normalizedRemoveExpr), "uniquefields") {
+			if len(normalizedRemoveExpr) > 0 {
+				updateExprParts = append(updateExprParts, "REMOVE UniqueFields")
+			}
+		}
+	}
+
+	finalUpdateExpr := strings.TrimSpace(strings.Join(updateExprParts, " "))
+	if util.LenTrim(finalUpdateExpr) == 0 {
+		return fmt.Errorf("Update To Data Store Failed: (Validater 13) Resolved Update Expression is Empty")
+	}
+
+	// avoid passing an empty ExpressionAttributeValues map (dynamodb rejects empty maps)
+	if len(expressionAttributeValues) == 0 {
+		expressionAttributeValues = nil
+	}
+
+	// --- Decide transactional vs non-transactional path ---
+	useTransaction := len(deleteKeys) > 0 || len(putItemsCrudUniqueRecords) > 0 || !doUpdateItemNonTransactional
+
+	// execute
+	if useTransaction {
+		// enforce DynamoDB 25 item transaction limit
+		totalTxnItems := 1 + len(deleteKeys) + len(putItemsCrudUniqueRecords)
+		if totalTxnItems > 25 {
+			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Total transaction items exceed DynamoDB 25 item limit (%d items)", totalTxnItems)
+		}
+
+		// Build writes
+		writes := &DynamoDBTransactionWrites{
+			UpdateItems: []*DynamoDBUpdateItemInput{
+				{
+					PK:                        pkValue,
+					SK:                        skValue,
+					UpdateExpression:          finalUpdateExpr,
+					ConditionExpression:       conditionExpression,
+					ExpressionAttributeValues: expressionAttributeValues,
+				},
+			},
+		}
+
+		if len(putItemsCrudUniqueRecords) > 0 {
+			writes.PutItemsSet = []*DynamoDBTransactionWritePutItemsSet{
+				{
+					PutItems:            putItemsCrudUniqueRecords,
+					ConditionExpression: "attribute_not_exists(PK)",
+				},
+			}
+		}
+		if len(deleteKeys) > 0 {
+			writes.DeleteItems = deleteKeys
+		}
+
+		if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
+			if e.TransactionConditionalCheckFailed {
+				return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) [Possible Unique Attribute Duplicate Blocked] %s", e.Error())
+			}
+			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) %s", e.Error())
+		} else if !ok {
+			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
+		}
+	} else {
+		if e := _ddb.UpdateItemWithRetry(_actionRetries, pkValue, skValue, finalUpdateExpr, conditionExpression, nil, expressionAttributeValues, _ddb.TimeOutDuration(_timeout)); e != nil {
+			return fmt.Errorf("Update To Data Store Failed: (UpdateItem) %s", e.Error())
 		}
 	}
 

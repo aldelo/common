@@ -21,12 +21,21 @@ type ServiceConnectionManager struct {
 	logAcquire     bool          // allow opting out of per-operation acquire logging
 	logRelease     bool          // allow opting out of per-operation release logging
 	defaultTimeout time.Duration // allow callers to override the default timeout
+
+	shutdownWaitTimeout time.Duration
 }
 
 var (
 	globalConnMgr      *ServiceConnectionManager
 	globalConnMgrMutex sync.RWMutex
 )
+
+// option to set shutdown wait timeout (0 or <0 => wait forever, current behavior)
+func WithShutdownWaitTimeout(d time.Duration) func(*ServiceConnectionManager) {
+	return func(s *ServiceConnectionManager) {
+		s.shutdownWaitTimeout = d
+	}
+}
 
 // convertAwsContextSafely tries to extract a stdlib context.Context from aws.Context.
 // If not possible, it returns context.Background().
@@ -75,12 +84,13 @@ func InitGlobalConnectionManager(maxConcurrentConnections int, opts ...func(*Ser
 
 	if globalConnMgr == nil || globalConnMgr.isShutdown() {
 		m := &ServiceConnectionManager{
-			semaphore:      make(chan struct{}, maxConcurrentConnections),
-			shutdownCh:     make(chan struct{}),
-			closing:        false,
-			logAcquire:     true, // default stays verbose; can be disabled
-			logRelease:     true,
-			defaultTimeout: 30 * time.Second, // default remains 30s
+			semaphore:           make(chan struct{}, maxConcurrentConnections),
+			shutdownCh:          make(chan struct{}),
+			closing:             false,
+			logAcquire:          false,
+			logRelease:          false,
+			defaultTimeout:      30 * time.Second, // default remains 30s
+			shutdownWaitTimeout: 60 * time.Second, // default shutdown wait timeout
 		}
 		for _, opt := range opts { // CHANGE: apply functional options
 			opt(m)
@@ -185,9 +195,26 @@ func (scm *ServiceConnectionManager) shutdown() {
 		}
 		scm.mu.Unlock()
 
-		log.Printf("ServiceConnectionManager.shutdown: waiting for active operations to complete")
-		scm.wg.Wait()
-		log.Printf("ServiceConnectionManager.shutdown: all operations completed")
+		// bounded wait with warning/early exit if desired
+		if scm.shutdownWaitTimeout > 0 {
+			done := make(chan struct{})
+			go func() {
+				scm.wg.Wait()
+				close(done)
+			}()
+
+			select {
+			case <-done:
+				log.Printf("ServiceConnectionManager.shutdown: all operations completed")
+			case <-time.After(scm.shutdownWaitTimeout):
+				log.Printf("ServiceConnectionManager.shutdown: timeout waiting for operations after %s; %d still active",
+					scm.shutdownWaitTimeout, scm.GetCurrentLoad())
+				return
+			}
+		} else {
+			scm.wg.Wait()
+			log.Printf("ServiceConnectionManager.shutdown: all operations completed")
+		}
 	})
 }
 

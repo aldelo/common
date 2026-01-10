@@ -16,6 +16,7 @@ type ServiceConnectionManager struct {
 	wg         sync.WaitGroup
 	shutdownCh chan struct{} // non-nil while manager is active; closed on shutdown
 	once       sync.Once
+	closing    bool // prevents new wg.Add after shutdown begins to avoid WaitGroup misuse
 }
 
 var (
@@ -72,6 +73,7 @@ func InitGlobalConnectionManager(maxConcurrentConnections int) error {
 		globalConnMgr = &ServiceConnectionManager{
 			semaphore:  make(chan struct{}, maxConcurrentConnections),
 			shutdownCh: make(chan struct{}),
+			closing:    false,
 		}
 		log.Printf("InitGlobalConnectionManager: initialized with capacity=%d", maxConcurrentConnections)
 	} else {
@@ -210,25 +212,20 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 		defer cancel()
 	}
 
-	// Defensive: ensure semaphore exists.
-	if scm.semaphore == nil {
-		log.Printf("ExecuteWithLimit: semaphore is nil, running operation without limit")
-		return operation()
-	}
-
 	// Decide based on shutdown and context under read lock.
 	scm.mu.RLock()
 	shutdownCh := scm.shutdownCh
 	semaphore := scm.semaphore
+	closing := scm.closing
 	scm.mu.RUnlock()
 
-	if shutdownCh == nil {
-		err := fmt.Errorf("connection manager shutdown")
+	if semaphore == nil {
+		err := fmt.Errorf("semaphore is nil")
 		log.Printf("ExecuteWithLimit: %v", err)
 		return err
 	}
 
-	if scm.isShutdown() {
+	if shutdownCh == nil || closing || scm.isShutdown() {
 		err := fmt.Errorf("connection manager shutdown")
 		log.Printf("ExecuteWithLimit: %v", err)
 		return err
@@ -249,12 +246,16 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 		case semaphore <- struct{}{}:
 			// success path
 			log.Printf("ExecuteWithLimit: semaphore acquired")
-			scm.wg.Add(1)
-			defer func() {
+
+			scm.mu.RLock()
+			if scm.closing {
+				scm.mu.RUnlock()
 				<-semaphore
-				log.Printf("ExecuteWithLimit: semaphore released")
-				scm.wg.Done()
-			}()
+				err := fmt.Errorf("connection manager shutdown")
+				log.Printf("ExecuteWithLimit: %v", err)
+				return err
+			}
+
 			goto runOperation
 		}
 	}

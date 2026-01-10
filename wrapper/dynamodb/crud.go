@@ -2198,15 +2198,51 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 			if len(deleteKeys) > 0 {
 				doDeleteItemNonTransactional = false
 
-				deleteKeys = append(deleteKeys, &DynamoDBTableKeys{
-					PK: pkValue,
-					SK: skValue,
-				})
+				primaryDelete := &DynamoDBTableKeys{PK: pkValue, SK: skValue}
+				deleteKeys = append(deleteKeys, primaryDelete)
 
 				// enforce atomicity within DynamoDB's 25 item transaction limit
 				const maxTxnItems = 25
 				if len(deleteKeys) > maxTxnItems {
-					return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) Unique key deletions + item delete exceed DynamoDB 25 item transaction limit (%d items)", len(deleteKeys))
+					// FIX: gracefully handle >25 deletes by chunking while ensuring the main item is deleted in the first batch
+					uniqueDeletes := deleteKeys[:len(deleteKeys)-1] // exclude primary item
+					batches := make([][]*DynamoDBTableKeys, 0)
+					cursor := 0
+
+					for cursor < len(uniqueDeletes) {
+						// reserve one slot for the primary delete in the first batch
+						limit := maxTxnItems
+						if cursor == 0 {
+							limit = maxTxnItems - 1
+						}
+
+						end := cursor + limit
+						if end > len(uniqueDeletes) {
+							end = len(uniqueDeletes)
+						}
+
+						batch := uniqueDeletes[cursor:end]
+						if cursor == 0 {
+							batch = append(batch, primaryDelete)
+						}
+
+						batches = append(batches, batch)
+						cursor = end
+					}
+
+					for _, batch := range batches {
+						writes := &DynamoDBTransactionWrites{
+							DeleteItems: batch,
+						}
+
+						if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
+							return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) %s", e.Error())
+						} else if !ok {
+							return fmt.Errorf("Delete From Data Store Failed: (TransactionWriteItems) Transaction Write Not Successful")
+						}
+					}
+
+					return nil
 				}
 
 				writes := &DynamoDBTransactionWrites{
@@ -3000,15 +3036,18 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 
 				// wait for the new regional table to be ACTIVE (and streams ready) before adding to the global table.
 				waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Minute)
-				if err := d.WaitUntilTableExists(&dynamodb.DescribeTableInput{TableName: aws.String(tableName)}, waitCtx); err != nil {
-					waitCancel()
-					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.1) Wait Until Table Exists in %s Table %s Error, %s", r.Key(), tableName, err.Error())
-				}
-				if err := d.WaitUntilTableFullyIdle(tableName, waitCtx); err != nil {
-					waitCancel()
-					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.2) Wait Until Table Fully Idle in %s Table %s Error, %s", r.Key(), tableName, err.Error())
-				}
-				waitCancel()
+				func() {
+					defer waitCancel()
+
+					if err := d.WaitUntilTableExists(&dynamodb.DescribeTableInput{TableName: aws.String(tableName)}, waitCtx); err != nil {
+						err = fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.1) Wait Until Table Exists in %s Table %s Error, %s", r.Key(), tableName, err.Error())
+						panic(err) // will be recovered below
+					}
+					if err := d.WaitUntilTableFullyIdle(tableName, waitCtx); err != nil {
+						err = fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.2) Wait Until Table Fully Idle in %s Table %s Error, %s", r.Key(), tableName, err.Error())
+						panic(err) // will be recovered below
+					}
+				}()
 			}
 		}
 	}

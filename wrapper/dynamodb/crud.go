@@ -2050,10 +2050,19 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		}
 	}
 
-	// Determine if UniqueFields must be removed (and merge into a single REMOVE clause to avoid double REMOVE)
-	// prevent generating two REMOVE clauses (invalid DynamoDB expression) when unique fields are removed.
-	shouldRemoveUniqueFields := len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested && uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0
-	if shouldRemoveUniqueFields {
+	// correctly detect whether the current REMOVE clause already targets UniqueFields to avoid emitting a second REMOVE.
+	removeClauseHasUniqueFields := removeUniqueFieldsRequested
+	if !removeClauseHasUniqueFields && len(normalizedRemoveExpr) > 0 {
+		body := strings.TrimSpace(strings.TrimPrefix(normalizedRemoveExpr, "REMOVE"))
+		for _, token := range strings.Split(body, ",") {
+			if matchUniqueFieldsToken(token) {
+				removeClauseHasUniqueFields = true
+				break
+			}
+		}
+	}
+
+	if len(newUniqueFieldsSlice) == 0 && !removeClauseHasUniqueFields && uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
 		if len(normalizedRemoveExpr) > 0 {
 			normalizedRemoveExpr = strings.TrimSpace(normalizedRemoveExpr) + ", UniqueFields"
 		} else {
@@ -3546,6 +3555,7 @@ func (c *Crud) UpdatePointInTimeBackup(tableName string, pointInTimeRecoveryEnab
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// note: _ddb.UpdatePointInTimeBackup is a wrapper function, internally, it calls _ddb.UpdateContinuousBackups()
 	if output, err := _ddb.UpdatePointInTimeBackup(input, ctx); err != nil {
 		return fmt.Errorf("UpdatePointInTimeBackup Failed: (Exec 1) %s", err.Error())
 	} else {

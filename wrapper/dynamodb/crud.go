@@ -1971,6 +1971,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		if bracket := strings.Index(token, "["); bracket >= 0 {
 			token = token[:bracket]
 		}
+		token = strings.TrimPrefix(token, "#") // treat #UniqueFields alias the same as UniqueFields
 		return strings.EqualFold(token, "UniqueFields")
 	}
 
@@ -2010,6 +2011,11 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 					continue
 				}
 				removeAttribute = util.Trim(removeAttribute)
+
+				// refuse alias-based REMOVE because we cannot resolve #aliases to real attributes for unique-index cleanup
+				if strings.HasPrefix(removeAttribute, "#") {
+					return fmt.Errorf("Update To Data Store Failed: (Validater 12.1) Remove Expression Uses ExpressionAttributeNames (#alias) which cannot be reconciled with unique index cleanup; use concrete attribute names instead")
+				}
 
 				if uniqueField, ok := uniqueFieldsMap[removeAttribute]; ok {
 					removedKeys[removeAttribute] = struct{}{}

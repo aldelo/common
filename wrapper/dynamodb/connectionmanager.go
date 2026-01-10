@@ -218,14 +218,21 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 
 	// Decide based on shutdown and context under read lock.
 	scm.mu.RLock()
-	shutdownCh := scm.semaphore
+	shutdownCh := scm.shutdownCh
+	semaphore := scm.semaphore
 	scm.mu.RUnlock()
+
 	if shutdownCh == nil {
 		err := fmt.Errorf("connection manager shutdown")
 		log.Printf("ExecuteWithLimit: %v", err)
 		return err
 	}
-	semaphore := scm.semaphore
+
+	if scm.isShutdown() {
+		err := fmt.Errorf("connection manager shutdown")
+		log.Printf("ExecuteWithLimit: %v", err)
+		return err
+	}
 
 	for {
 		select {

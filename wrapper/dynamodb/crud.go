@@ -3036,18 +3036,15 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 
 				// wait for the new regional table to be ACTIVE (and streams ready) before adding to the global table.
 				waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Minute)
-				func() {
-					defer waitCancel()
-
-					if err := d.WaitUntilTableExists(&dynamodb.DescribeTableInput{TableName: aws.String(tableName)}, waitCtx); err != nil {
-						err = fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.1) Wait Until Table Exists in %s Table %s Error, %s", r.Key(), tableName, err.Error())
-						panic(err) // will be recovered below
-					}
-					if err := d.WaitUntilTableFullyIdle(tableName, waitCtx); err != nil {
-						err = fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.2) Wait Until Table Fully Idle in %s Table %s Error, %s", r.Key(), tableName, err.Error())
-						panic(err) // will be recovered below
-					}
-				}()
+				if err := d.WaitUntilTableExists(&dynamodb.DescribeTableInput{TableName: aws.String(tableName)}, waitCtx); err != nil {
+					waitCancel()
+					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.1) Wait Until Table Exists in %s Table %s Error, %s", r.Key(), tableName, err.Error())
+				}
+				if err := d.WaitUntilTableFullyIdle(tableName, waitCtx); err != nil {
+					waitCancel()
+					return fmt.Errorf("UpdateGlobalTable Failed: (Validater 10.2) Wait Until Table Fully Idle in %s Table %s Error, %s", r.Key(), tableName, err.Error())
+				}
+				waitCancel()
 			}
 		}
 	}

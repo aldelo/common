@@ -2050,6 +2050,17 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		}
 	}
 
+	// Determine if UniqueFields must be removed (and merge into a single REMOVE clause to avoid double REMOVE)
+	// prevent generating two REMOVE clauses (invalid DynamoDB expression) when unique fields are removed.
+	shouldRemoveUniqueFields := len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested && uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0
+	if shouldRemoveUniqueFields {
+		if len(normalizedRemoveExpr) > 0 {
+			normalizedRemoveExpr = strings.TrimSpace(normalizedRemoveExpr) + ", UniqueFields"
+		} else {
+			normalizedRemoveExpr = "REMOVE UniqueFields"
+		}
+	}
+
 	// --- Combine SET/ADD/DELETE/REMOVE into a single expression to keep update atomic ---
 	updateExprParts := []string{}
 

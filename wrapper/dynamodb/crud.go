@@ -2209,28 +2209,42 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 		// keep delete+update atomic and within DynamoDB's 25 item transaction limit
 		const maxTxnItems = 25
-		if len(deleteKeys)+1 > maxTxnItems {
-			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Unique key removals exceed DynamoDB 25 item transaction limit (%d items)", len(deleteKeys)+1)
-		}
 
-		// primary transaction: update + first batch of deletes
-		writes := &DynamoDBTransactionWrites{
-			UpdateItems: []*DynamoDBUpdateItemInput{
-				{
-					PK:                        pkValue,
-					SK:                        skValue,
-					UpdateExpression:          updateExpr,
-					ConditionExpression:       conditionExpression,
-					ExpressionAttributeValues: exprAttrVals,
+		// CHUNKED DELETE RESTORED: execute deletes in chunks to respect 25-item limit
+		batchStart := 0
+		for batchStart < len(deleteKeys) || batchStart == 0 {
+			batchDeletes := deleteKeys[batchStart:]
+			remaining := maxTxnItems - 1 // reserve 1 for the update item
+			if len(batchDeletes) > remaining {
+				batchDeletes = batchDeletes[:remaining]
+			}
+
+			writes := &DynamoDBTransactionWrites{
+				UpdateItems: []*DynamoDBUpdateItemInput{
+					{
+						PK:                        pkValue,
+						SK:                        skValue,
+						UpdateExpression:          updateExpr,
+						ConditionExpression:       conditionExpression,
+						ExpressionAttributeValues: exprAttrVals,
+					},
 				},
-			},
-			DeleteItems: deleteKeys,
-		}
+				DeleteItems: batchDeletes,
+			}
 
-		if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
-			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) %s", e.Error())
-		} else if !ok {
-			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) Transaction Write Not Successful")
+			if ok, e := _ddb.TransactionWriteItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), writes); e != nil {
+				return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) %s", e.Error())
+			} else if !ok {
+				return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems for Remove) Transaction Write Not Successful")
+			}
+
+			if len(deleteKeys) == 0 {
+				break
+			}
+			batchStart += len(batchDeletes)
+			if batchStart >= len(deleteKeys) {
+				break
+			}
 		}
 	}
 

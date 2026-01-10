@@ -2055,7 +2055,8 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
 			SS: aws.StringSlice(newUniqueFieldsSlice),
 		}
-	} else if len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested && len(normalizedRemoveExpr) > 0 {
+	} else if len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested && len(normalizedRemoveExpr) > 0 &&
+		uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
 		// ensure UniqueFields removed too if it still exists but was not explicitly requested
 		if !strings.Contains(strings.ToLower(normalizedRemoveExpr), "uniquefields") {
 			if len(normalizedRemoveExpr) > 0 {

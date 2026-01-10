@@ -197,8 +197,9 @@ func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, opera
 		return err
 	}
 	if scm == nil {
-		log.Printf("ExecuteWithLimit: scm is nil, running operation without limit")
-		return operation()
+		err := fmt.Errorf("connection manager unavailable (nil)")
+		log.Printf("ExecuteWithLimit: %v", err)
+		return err
 	}
 
 	var cancel context.CancelFunc

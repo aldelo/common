@@ -1,6 +1,7 @@
 package waf2
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/wafv2"
 )
@@ -77,6 +79,18 @@ type WAF2 struct {
 // ----------------------------------------------------------------------------------------------------------------
 // utility functions
 // ----------------------------------------------------------------------------------------------------------------
+
+// bounded retries for optimistic locking
+const wafLockMaxRetry = 3
+
+// helper to detect optimistic lock errors
+func isOptimisticLock(err error) bool {
+	var e awserr.Error
+	if errors.As(err, &e) && e.Code() == wafv2.ErrCodeWAFOptimisticLockException {
+		return true
+	}
+	return false
+}
 
 // Connect will establish a connection to the WAF2 service
 func (w *WAF2) Connect() error {
@@ -172,56 +186,62 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		return fmt.Errorf("UpdateIPSet Failed: WAF2 Client Not Connected - Call Connect() First")
 	}
 
-	var lockToken *string
-	var addrList []string
+	for attempt := 1; attempt <= wafLockMaxRetry; attempt++ {
+		getOutput, err := w.waf2Obj.GetIPSet(&wafv2.GetIPSetInput{
+			Name:  aws.String(ipsetName),
+			Id:    aws.String(ipsetId),
+			Scope: aws.String(scope),
+		})
+		if err != nil {
+			return fmt.Errorf("Get IP Set Failed: %s", err.Error())
+		}
 
-	getOutput, err := w.waf2Obj.GetIPSet(&wafv2.GetIPSetInput{
-		Name:  aws.String(ipsetName),
-		Id:    aws.String(ipsetId),
-		Scope: aws.String(scope),
-	})
-	if err != nil {
-		// error
-		return fmt.Errorf("Get IP Set Failed: %s", err.Error())
-	}
+		if getOutput == nil || getOutput.IPSet == nil {
+			return fmt.Errorf("Get IP Set Failed: Empty IPSet payload returned")
+		}
+		if getOutput.LockToken == nil {
+			return fmt.Errorf("Get IP Set Failed: LockToken is nil")
+		}
 
-	// defensive nil checks on response payload
-	if getOutput == nil || getOutput.IPSet == nil {
-		return fmt.Errorf("Get IP Set Failed: Empty IPSet payload returned")
-	}
+		lockToken := getOutput.LockToken
+		addrList := aws.StringValueSlice(getOutput.IPSet.Addresses)
 
-	lockToken = getOutput.LockToken
-	addrList = aws.StringValueSlice(getOutput.IPSet.Addresses)
-
-	// dedupe while appending to avoid duplicate bloat and cap waste
-	existing := make(map[string]struct{}, len(addrList))
-	for _, a := range addrList {
-		existing[a] = struct{}{}
-	}
-	for _, a := range trimmed {
-		if _, ok := existing[a]; !ok {
-			addrList = append(addrList, a)
+		existing := make(map[string]struct{}, len(addrList))
+		for _, a := range addrList {
 			existing[a] = struct{}{}
 		}
-	}
+		for _, a := range trimmed {
+			if _, ok := existing[a]; !ok {
+				addrList = append(addrList, a)
+				existing[a] = struct{}{}
+			}
+		}
 
-	if len(addrList) > 10000 {
-		addrList = addrList[len(addrList)-10000:]
-	}
+		if len(addrList) > 10000 {
+			addrList = addrList[len(addrList)-10000:]
+		}
 
-	if _, err := w.waf2Obj.UpdateIPSet(&wafv2.UpdateIPSetInput{
-		Name:      aws.String(ipsetName),
-		Id:        aws.String(ipsetId),
-		Scope:     aws.String(scope),
-		Addresses: aws.StringSlice(addrList),
-		LockToken: lockToken,
-	}); err != nil {
-		// error encountered
+		_, err = w.waf2Obj.UpdateIPSet(&wafv2.UpdateIPSetInput{
+			Name:      aws.String(ipsetName),
+			Id:        aws.String(ipsetId),
+			Scope:     aws.String(scope),
+			Addresses: aws.StringSlice(addrList),
+			LockToken: lockToken,
+		})
+
+		if err == nil {
+			// error encountered
+			return nil
+		}
+
+		if isOptimisticLock(err) && attempt < wafLockMaxRetry {
+			continue
+		}
+
 		return fmt.Errorf("Update IP Set Failed: %s", err.Error())
 	}
 
-	// update completed
-	return nil
+	return fmt.Errorf("Update IP Set Failed: Exceeded retry limit due to optimistic locking")
 }
 
 // UpdateRegexPatternSet will update an existing RegexPatternSet with new regex patterns specified
@@ -270,80 +290,77 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		return fmt.Errorf("UpdateRegexPatternSet Failed: WAF2 Client Not Connected - Call Connect() First")
 	}
 
-	var lockToken *string
-	var patternsList []*wafv2.Regex
-
-	getOutput, err := w.waf2Obj.GetRegexPatternSet(&wafv2.GetRegexPatternSetInput{
-		Name:  aws.String(regexPatternSetName),
-		Id:    aws.String(regexPatternSetId),
-		Scope: aws.String(scope),
-	})
-	if err != nil {
-		// error
-		return fmt.Errorf("Get Regex Pattern Set Failed: %s", err.Error())
-	}
-
-	// defensive nil checks on response payload
-	if getOutput == nil || getOutput.RegexPatternSet == nil {
-		return fmt.Errorf("Get Regex Pattern Set Failed: Empty RegexPatternSet payload returned")
-	}
-
-	lockToken = getOutput.LockToken
-
-	var oldList []string
-
-	patternsList = getOutput.RegexPatternSet.RegularExpressionList
-	newAddedCount := 0
-
-	if len(patternsList) > 0 {
-		for _, v := range patternsList {
-			oldList = append(oldList, aws.StringValue(v.RegexString))
+	for attempt := 1; attempt <= wafLockMaxRetry; attempt++ {
+		getOutput, err := w.waf2Obj.GetRegexPatternSet(&wafv2.GetRegexPatternSetInput{
+			Name:  aws.String(regexPatternSetName),
+			Id:    aws.String(regexPatternSetId),
+			Scope: aws.String(scope),
+		})
+		if err != nil {
+			return fmt.Errorf("Get Regex Pattern Set Failed: %s", err.Error())
 		}
-	}
 
-	// dedupe new patterns before appending
-	existing := make(map[string]struct{}, len(oldList))
-	for _, v := range oldList {
-		existing[v] = struct{}{}
-	}
+		if getOutput == nil || getOutput.RegexPatternSet == nil {
+			return fmt.Errorf("Get Regex Pattern Set Failed: Empty RegexPatternSet payload returned")
+		}
+		if getOutput.LockToken == nil {
+			return fmt.Errorf("Get Regex Pattern Set Failed: LockToken is nil")
+		}
 
-	for _, v := range trimmed {
-		v = strings.TrimSpace(v)
-		if v == "" {
+		lockToken := getOutput.LockToken
+		patternsList := getOutput.RegexPatternSet.RegularExpressionList
+
+		var oldList []string
+		if len(patternsList) > 0 {
+			for _, v := range patternsList {
+				oldList = append(oldList, aws.StringValue(v.RegexString))
+			}
+		}
+
+		existing := make(map[string]struct{}, len(oldList))
+		for _, v := range oldList {
+			existing[v] = struct{}{}
+		}
+
+		newAddedCount := 0
+		for _, v := range trimmed {
+			v = strings.TrimSpace(v)
+			if v == "" {
+				continue
+			}
+			if _, ok := existing[v]; !ok {
+				patternsList = append(patternsList, &wafv2.Regex{
+					RegexString: aws.String(v),
+				})
+				oldList = append(oldList, v)
+				existing[v] = struct{}{}
+				newAddedCount++
+			}
+		}
+
+		if newAddedCount == 0 {
+			return nil
+		}
+
+		if len(patternsList) > 10 {
+			patternsList = patternsList[len(patternsList)-10:]
+		}
+
+		_, err = w.waf2Obj.UpdateRegexPatternSet(&wafv2.UpdateRegexPatternSetInput{
+			Name:                  aws.String(regexPatternSetName),
+			Id:                    aws.String(regexPatternSetId),
+			Scope:                 aws.String(scope),
+			RegularExpressionList: patternsList,
+			LockToken:             lockToken,
+		})
+		if err == nil {
+			return nil
+		}
+		if isOptimisticLock(err) && attempt < wafLockMaxRetry {
 			continue
 		}
-
-		if _, ok := existing[v]; !ok {
-			patternsList = append(patternsList, &wafv2.Regex{
-				RegexString: aws.String(v),
-			})
-
-			oldList = append(oldList, v)
-			existing[v] = struct{}{}
-			newAddedCount++
-		}
-	}
-
-	if newAddedCount == 0 {
-		return nil
-	}
-
-	// take the last 10
-	if len(patternsList) > 10 {
-		patternsList = patternsList[len(patternsList)-10:]
-	}
-
-	if _, err := w.waf2Obj.UpdateRegexPatternSet(&wafv2.UpdateRegexPatternSetInput{
-		Name:                  aws.String(regexPatternSetName),
-		Id:                    aws.String(regexPatternSetId),
-		Scope:                 aws.String(scope),
-		RegularExpressionList: patternsList,
-		LockToken:             lockToken,
-	}); err != nil {
-		// error encountered
 		return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
 	}
 
-	// update completed
-	return nil
+	return fmt.Errorf("Update Regex Patterns Set Failed: exceeded retry limit due to optimistic locking")
 }

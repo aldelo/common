@@ -350,11 +350,6 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		return fmt.Errorf("UpdateIPSet Failed: WAF2 Client Not Connected - Call Connect() First")
 	}
 
-	// guard against nil client (call Connect first)
-	if w.waf2Obj == nil {
-		return fmt.Errorf("UpdateIPSet Failed: WAF2 Client Not Connected - Call Connect() First")
-	}
-
 	var lastErr error // track last optimistic-lock error
 LockRetry:
 	for lockAttempt := 1; lockAttempt <= wafLockMaxRetry; lockAttempt++ {
@@ -531,11 +526,6 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 
 	// rely on snapshot client instead of w.waf2Obj to avoid race with concurrent Connect()
 	if client == nil {
-		return fmt.Errorf("UpdateRegexPatternSet Failed: WAF2 Client Not Connected - Call Connect() First")
-	}
-
-	// guard against nil client (call Connect first)
-	if w.waf2Obj == nil {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: WAF2 Client Not Connected - Call Connect() First")
 	}
 

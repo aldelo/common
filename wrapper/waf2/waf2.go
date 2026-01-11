@@ -423,7 +423,7 @@ LockRetry:
 			}
 
 			ctx, cancel = context.WithTimeout(context.Background(), awsCallTimeout)
-			_, err = w.waf2Obj.UpdateIPSetWithContext(ctx, &wafv2.UpdateIPSetInput{
+			_, err = client.UpdateIPSetWithContext(ctx, &wafv2.UpdateIPSetInput{
 				Name:      aws.String(ipsetName),
 				Id:        aws.String(ipsetId),
 				Scope:     aws.String(scope),
@@ -573,7 +573,7 @@ LockRetry:
 			}
 
 			ctx, cancel = context.WithTimeout(context.Background(), awsCallTimeout)
-			_, err = w.waf2Obj.UpdateRegexPatternSetWithContext(ctx, &wafv2.UpdateRegexPatternSetInput{
+			_, err = client.UpdateRegexPatternSetWithContext(ctx, &wafv2.UpdateRegexPatternSetInput{
 				Name:                  aws.String(regexPatternSetName),
 				Id:                    aws.String(regexPatternSetId),
 				Scope:                 aws.String(scope),

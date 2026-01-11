@@ -313,6 +313,7 @@ LockRetry:
 					retryAttempt++
 					continue // retry same lock attempt
 				}
+
 				return fmt.Errorf("Get IP Set Failed: %s", err.Error())
 			}
 
@@ -530,12 +531,12 @@ LockRetry:
 				continue // retry same lock attempt
 			}
 
-			if lastErr == nil {
-				lastErr = fmt.Errorf("Optimistic Lock Retries Exhausted with Unknown Error")
-			}
-
 			return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
 		}
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("Optimistic Lock Retries Exhausted with Unknown Error")
 	}
 
 	// clearer exhausted-retry error

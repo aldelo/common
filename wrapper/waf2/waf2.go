@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -73,6 +74,8 @@ type WAF2 struct {
 
 	// store waf2 object
 	waf2Obj *wafv2.WAFV2
+
+	mu sync.RWMutex
 }
 
 // ================================================================================================================
@@ -202,8 +205,25 @@ func isOptimisticLock(err error) bool {
 	return false
 }
 
+// helper to snapshot client and region under lock
+func (w *WAF2) getClientAndRegion() (*wafv2.WAFV2, awsregion.AWSRegion, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if !w.AwsRegion.Valid() || w.AwsRegion == awsregion.UNKNOWN {
+		return nil, awsregion.UNKNOWN, fmt.Errorf("AwsRegion is required; call Connect() with a valid region first")
+	}
+	if w.waf2Obj == nil {
+		return nil, awsregion.UNKNOWN, fmt.Errorf("WAF2 Client Not Connected - Call Connect() First")
+	}
+	return w.waf2Obj, w.AwsRegion, nil
+}
+
 // Connect will establish a connection to the WAF2 service
 func (w *WAF2) Connect() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	
 	// clean up prior session reference
 	w.sess = nil
 	w.waf2Obj = nil

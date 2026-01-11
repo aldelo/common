@@ -138,6 +138,11 @@ func isRetryableWAF(err error) bool {
 		return false
 	}
 
+	// treat context deadline/cancel as retryable to avoid hard-failing on short timeouts
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+
 	var e awserr.RequestFailure
 	if errors.As(err, &e) {
 		if e.StatusCode() == http.StatusTooManyRequests || e.StatusCode() >= 500 {
@@ -157,7 +162,7 @@ func isRetryableWAF(err error) bool {
 	}
 
 	var ne net.Error
-	if errors.As(err, &ne) && ne.Timeout() {
+	if errors.As(err, &ne) && (ne.Timeout() || ne.Temporary()) {
 		return true
 	}
 

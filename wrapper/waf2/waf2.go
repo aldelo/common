@@ -223,7 +223,7 @@ func (w *WAF2) getClientAndRegion() (*wafv2.WAFV2, awsregion.AWSRegion, error) {
 func (w *WAF2) Connect() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	
+
 	// clean up prior session reference
 	w.sess = nil
 	w.waf2Obj = nil
@@ -288,9 +288,10 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		return fmt.Errorf("UpdateIPSet Failed: ipsetId is Required")
 	}
 
-	// ensure region is set/valid before any scope logic or AWS calls.
-	if !w.AwsRegion.Valid() || w.AwsRegion == awsregion.UNKNOWN {
-		return fmt.Errorf("UpdateIPSet Failed: AwsRegion is required; call Connect() with a valid region first")
+	// snapshot client + region under read lock to avoid races with Connect()/region mutation
+	client, region, err := w.getClientAndRegion()
+	if err != nil {
+		return fmt.Errorf("UpdateIPSet Failed: %w", err)
 	}
 
 	if util.LenTrim(scope) == 0 {
@@ -306,7 +307,7 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	}
 
 	// enforce CloudFront region requirement early
-	if err := ensureScopeRegionCompat(scope, w.AwsRegion); err != nil {
+	if err := ensureScopeRegionCompat(scope, region); err != nil {
 		return fmt.Errorf("UpdateIPSet Failed: %w", err)
 	}
 
@@ -353,7 +354,7 @@ LockRetry:
 		retryAttempt := 1
 		for {
 			ctx, cancel := context.WithTimeout(context.Background(), awsCallTimeout)
-			getOutput, err := w.waf2Obj.GetIPSetWithContext(ctx, &wafv2.GetIPSetInput{
+			getOutput, err := client.GetIPSetWithContext(ctx, &wafv2.GetIPSetInput{
 				Name:  aws.String(ipsetName),
 				Id:    aws.String(ipsetId),
 				Scope: aws.String(scope),
@@ -479,9 +480,10 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		return fmt.Errorf("UpdateRegexPatternSet Failed: regexPatternSetId is Required")
 	}
 
-	// ensure region is set/valid before scope checks or AWS calls.
-	if !w.AwsRegion.Valid() || w.AwsRegion == awsregion.UNKNOWN {
-		return fmt.Errorf("UpdateRegexPatternSet Failed: AwsRegion is required; call Connect() with a valid region first")
+	// snapshot client + region under read lock to avoid races with Connect()/region mutation
+	client, region, err := w.getClientAndRegion()
+	if err != nil {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: %w", err)
 	}
 
 	if util.LenTrim(scope) == 0 {
@@ -497,7 +499,7 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 	}
 
 	// enforce CloudFront region requirement early
-	if err := ensureScopeRegionCompat(scope, w.AwsRegion); err != nil {
+	if err := ensureScopeRegionCompat(scope, region); err != nil {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: %w", err)
 	}
 
@@ -531,7 +533,7 @@ LockRetry:
 		retryAttempt := 1
 		for {
 			ctx, cancel := context.WithTimeout(context.Background(), awsCallTimeout)
-			getOutput, err := w.waf2Obj.GetRegexPatternSetWithContext(ctx, &wafv2.GetRegexPatternSetInput{
+			getOutput, err := client.GetRegexPatternSetWithContext(ctx, &wafv2.GetRegexPatternSetInput{
 				Name:  aws.String(regexPatternSetName),
 				Id:    aws.String(regexPatternSetId),
 				Scope: aws.String(scope),

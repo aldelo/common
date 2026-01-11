@@ -92,6 +92,14 @@ const (
 	awsCallTimeout          = 10 * time.Second
 )
 
+// helper to enforce AWS WAF scope/region compatibility
+func ensureScopeRegionCompat(scope string, region awsregion.AWSRegion) error {
+	if strings.EqualFold(scope, "CLOUDFRONT") && !strings.EqualFold(region.Key(), "us-east-1") {
+		return fmt.Errorf("CLOUDFRONT scope requires us-east-1 region (current region: %s)", region.Key())
+	}
+	return nil
+}
+
 // helper to validate IP/CIDR before hitting AWS
 func validateIPOrCIDR(addr string) (string, string, error) {
 	ip, ipNet, err := net.ParseCIDR(addr)
@@ -243,6 +251,11 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		return fmt.Errorf("UpdateIPSet Failed: scope must be REGIONAL or CLOUDFRONT; scope value '%s' is Invalid", scope)
 	}
 
+	// enforce CloudFront region requirement early
+	if err := ensureScopeRegionCompat(scope, w.AwsRegion); err != nil {
+		return fmt.Errorf("UpdateIPSet Failed: %w", err)
+	}
+
 	// trim & drop empty/whitespace inputs before proceeding
 	// require cdir, enforce aws mask bounds, and ensure a single ip family
 	trimmed := make([]string, 0, len(newAddr))
@@ -276,100 +289,105 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	}
 
 	var lastErr error // track last optimistic-lock error
-	for attempt := 1; attempt <= wafLockMaxRetry; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), awsCallTimeout)
-		getOutput, err := w.waf2Obj.GetIPSetWithContext(ctx, &wafv2.GetIPSetInput{
-			Name:  aws.String(ipsetName),
-			Id:    aws.String(ipsetId),
-			Scope: aws.String(scope),
-		})
-		cancel()
+LockRetry:
+	for lockAttempt := 1; lockAttempt <= wafLockMaxRetry; lockAttempt++ {
+		retryAttempt := 1
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), awsCallTimeout)
+			getOutput, err := w.waf2Obj.GetIPSetWithContext(ctx, &wafv2.GetIPSetInput{
+				Name:  aws.String(ipsetName),
+				Id:    aws.String(ipsetId),
+				Scope: aws.String(scope),
+			})
+			cancel()
 
-		if err != nil {
-			if isRetryableWAF(err) && attempt < wafRetryableMaxAttempts {
-				lastErr = err
-				time.Sleep(wafRetryableBackoff * time.Duration(attempt))
-				continue
+			if err != nil {
+				if isRetryableWAF(err) && retryAttempt < wafRetryableMaxAttempts {
+					lastErr = err
+					time.Sleep(wafRetryableBackoff * time.Duration(retryAttempt))
+					retryAttempt++
+					continue // retry same lock attempt
+				}
+				return fmt.Errorf("Get IP Set Failed: %s", err.Error())
 			}
-			return fmt.Errorf("Get IP Set Failed: %s", err.Error())
-		}
 
-		if getOutput == nil || getOutput.IPSet == nil {
-			return fmt.Errorf("Get IP Set Failed: Empty IPSet payload returned")
-		}
-		if getOutput.LockToken == nil {
-			return fmt.Errorf("Get IP Set Failed: LockToken is nil")
-		}
-
-		// ensure caller input family matches the IP set's configured family
-		if getOutput.IPSet.IPAddressVersion != nil && inputIPFamily != "" {
-			if !strings.EqualFold(*getOutput.IPSet.IPAddressVersion, inputIPFamily) {
-				return fmt.Errorf("UpdateIPSet Failed: IP family mismatch - IPSet expects %s but input addresses are %s",
-					*getOutput.IPSet.IPAddressVersion, inputIPFamily)
+			if getOutput == nil || getOutput.IPSet == nil {
+				return fmt.Errorf("Get IP Set Failed: Empty IPSet payload returned")
 			}
-		}
+			if getOutput.LockToken == nil {
+				return fmt.Errorf("Get IP Set Failed: LockToken is nil")
+			}
 
-		lockToken := getOutput.LockToken
-		addrList := aws.StringValueSlice(getOutput.IPSet.Addresses)
-		if addrList == nil {
-			addrList = make([]string, 0)
-		}
+			// ensure caller input family matches the IP set's configured family
+			if getOutput.IPSet.IPAddressVersion != nil && inputIPFamily != "" {
+				if !strings.EqualFold(*getOutput.IPSet.IPAddressVersion, inputIPFamily) {
+					return fmt.Errorf("UpdateIPSet Failed: IP family mismatch - IPSet expects %s but input addresses are %s",
+						*getOutput.IPSet.IPAddressVersion, inputIPFamily)
+				}
+			}
 
-		existing := make(map[string]struct{}, len(addrList))
-		for _, a := range addrList {
-			existing[a] = struct{}{}
-		}
+			lockToken := getOutput.LockToken
+			addrList := aws.StringValueSlice(getOutput.IPSet.Addresses)
+			if addrList == nil {
+				addrList = make([]string, 0)
+			}
 
-		newAddedCount := 0 // track whether anything changed
-		for _, a := range trimmed {
-			if _, ok := existing[a]; !ok {
-				addrList = append(addrList, a)
+			existing := make(map[string]struct{}, len(addrList))
+			for _, a := range addrList {
 				existing[a] = struct{}{}
-				newAddedCount++
 			}
-		}
 
-		// short-circuit when there is nothing new to add
-		if newAddedCount == 0 {
-			return nil
-		}
-
-		// fail fast instead of silently truncating and losing data
-		if len(addrList) > 10000 {
-			return fmt.Errorf("UpdateIPSet Failed: Resulting address count %d exceeds AWS WAF2 IP Set limit of 10000 addresses", len(addrList))
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), awsCallTimeout)
-		_, err = w.waf2Obj.UpdateIPSetWithContext(ctx, &wafv2.UpdateIPSetInput{
-			Name:      aws.String(ipsetName),
-			Id:        aws.String(ipsetId),
-			Scope:     aws.String(scope),
-			Addresses: aws.StringSlice(addrList),
-			LockToken: lockToken,
-		})
-		cancel()
-
-		if err == nil {
-			return nil // explicit success comment
-		}
-
-		if isOptimisticLock(err) {
-			lastErr = err
-			if attempt == wafLockMaxRetry {
-				break // exhaust retries and report below
+			newAddedCount := 0 // track whether anything changed
+			for _, a := range trimmed {
+				if _, ok := existing[a]; !ok {
+					addrList = append(addrList, a)
+					existing[a] = struct{}{}
+					newAddedCount++
+				}
 			}
-			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
-			continue
-		}
 
-		// retry throttling/5xx with bounded backoff
-		if isRetryableWAF(err) && attempt < wafRetryableMaxAttempts {
-			lastErr = err
-			time.Sleep(wafRetryableBackoff * time.Duration(attempt))
-			continue
-		}
+			// short-circuit when there is nothing new to add
+			if newAddedCount == 0 {
+				return nil
+			}
 
-		return fmt.Errorf("Update IP Set Failed: %s", err.Error())
+			// fail fast instead of silently truncating and losing data
+			if len(addrList) > 10000 {
+				return fmt.Errorf("UpdateIPSet Failed: Resulting address count %d exceeds AWS WAF2 IP Set limit of 10000 addresses", len(addrList))
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), awsCallTimeout)
+			_, err = w.waf2Obj.UpdateIPSetWithContext(ctx, &wafv2.UpdateIPSetInput{
+				Name:      aws.String(ipsetName),
+				Id:        aws.String(ipsetId),
+				Scope:     aws.String(scope),
+				Addresses: aws.StringSlice(addrList),
+				LockToken: lockToken,
+			})
+			cancel()
+
+			if err == nil {
+				return nil // explicit success comment
+			}
+
+			if isOptimisticLock(err) {
+				lastErr = err
+				if lockAttempt == wafLockMaxRetry {
+					break LockRetry
+				}
+				time.Sleep(wafLockRetryBackoff * time.Duration(lockAttempt))
+				continue LockRetry // try again with new lock token
+			}
+
+			if isRetryableWAF(err) && retryAttempt < wafRetryableMaxAttempts {
+				lastErr = err
+				time.Sleep(wafRetryableBackoff * time.Duration(retryAttempt))
+				retryAttempt++
+				continue // retry same lock attempt
+			}
+
+			return fmt.Errorf("Update IP Set Failed: %s", err.Error())
+		}
 	}
 
 	// provide clear retry-exhausted error
@@ -406,6 +424,11 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		return fmt.Errorf("UpdateRegexPatternSet Failed: scope must be REGIONAL or CLOUDFRONT; scope value '%s' is Invalid", scope)
 	}
 
+	// enforce CloudFront region requirement early
+	if err := ensureScopeRegionCompat(scope, w.AwsRegion); err != nil {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: %w", err)
+	}
+
 	// normalize & de-dup new patterns before hitting AWS
 	uniqueNew := make([]string, 0, len(newRegexPatterns))
 	seen := make(map[string]struct{}, len(newRegexPatterns))
@@ -431,70 +454,75 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 	}
 
 	var lastErr error // track last optimistic-lock error
-	for attempt := 1; attempt <= wafLockMaxRetry; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), awsCallTimeout)
-		getOutput, err := w.waf2Obj.GetRegexPatternSetWithContext(ctx, &wafv2.GetRegexPatternSetInput{
-			Name:  aws.String(regexPatternSetName),
-			Id:    aws.String(regexPatternSetId),
-			Scope: aws.String(scope),
-		})
-		cancel()
+LockRetry:
+	for lockAttempt := 1; lockAttempt <= wafLockMaxRetry; lockAttempt++ {
+		retryAttempt := 1
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), awsCallTimeout)
+			getOutput, err := w.waf2Obj.GetRegexPatternSetWithContext(ctx, &wafv2.GetRegexPatternSetInput{
+				Name:  aws.String(regexPatternSetName),
+				Id:    aws.String(regexPatternSetId),
+				Scope: aws.String(scope),
+			})
+			cancel()
 
-		if err != nil {
-			if isRetryableWAF(err) && attempt < wafRetryableMaxAttempts {
+			if err != nil {
+				if isRetryableWAF(err) && retryAttempt < wafRetryableMaxAttempts {
+					lastErr = err
+					time.Sleep(wafRetryableBackoff * time.Duration(retryAttempt))
+					retryAttempt++
+					continue // retry same lock attempt
+				}
+				return fmt.Errorf("Get Regex Pattern Set Failed: %s", err.Error())
+			}
+
+			if getOutput == nil || getOutput.RegexPatternSet == nil {
+				return fmt.Errorf("Get Regex Pattern Set Failed: Empty RegexPatternSet payload returned")
+			}
+			if getOutput.LockToken == nil {
+				return fmt.Errorf("Get Regex Pattern Set Failed: LockToken is nil")
+			}
+
+			lockToken := getOutput.LockToken
+
+			// Replace existing patterns with the caller-supplied set (per docstring)
+			newList := make([]*wafv2.Regex, 0, len(uniqueNew))
+			for _, v := range uniqueNew {
+				newList = append(newList, &wafv2.Regex{RegexString: aws.String(v)})
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), awsCallTimeout)
+			_, err = w.waf2Obj.UpdateRegexPatternSetWithContext(ctx, &wafv2.UpdateRegexPatternSetInput{
+				Name:                  aws.String(regexPatternSetName),
+				Id:                    aws.String(regexPatternSetId),
+				Scope:                 aws.String(scope),
+				RegularExpressionList: newList,
+				LockToken:             lockToken,
+			})
+			cancel()
+
+			if err == nil {
+				return nil
+			}
+
+			if isOptimisticLock(err) {
 				lastErr = err
-				time.Sleep(wafRetryableBackoff * time.Duration(attempt))
-				continue
+				if lockAttempt == wafLockMaxRetry {
+					break LockRetry
+				}
+				time.Sleep(wafLockRetryBackoff * time.Duration(lockAttempt))
+				continue LockRetry // get new lock token
 			}
-			return fmt.Errorf("Get Regex Pattern Set Failed: %s", err.Error())
-		}
 
-		if getOutput == nil || getOutput.RegexPatternSet == nil {
-			return fmt.Errorf("Get Regex Pattern Set Failed: Empty RegexPatternSet payload returned")
-		}
-		if getOutput.LockToken == nil {
-			return fmt.Errorf("Get Regex Pattern Set Failed: LockToken is nil")
-		}
-
-		lockToken := getOutput.LockToken
-
-		// Replace existing patterns with the caller-supplied set (per docstring)
-		newList := make([]*wafv2.Regex, 0, len(uniqueNew))
-		for _, v := range uniqueNew {
-			newList = append(newList, &wafv2.Regex{RegexString: aws.String(v)})
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), awsCallTimeout)
-		_, err = w.waf2Obj.UpdateRegexPatternSetWithContext(ctx, &wafv2.UpdateRegexPatternSetInput{
-			Name:                  aws.String(regexPatternSetName),
-			Id:                    aws.String(regexPatternSetId),
-			Scope:                 aws.String(scope),
-			RegularExpressionList: newList,
-			LockToken:             lockToken,
-		})
-		cancel()
-
-		if err == nil {
-			return nil
-		}
-
-		if isOptimisticLock(err) {
-			lastErr = err
-			if attempt == wafLockMaxRetry {
-				break // exhaust retries and report below
+			if isRetryableWAF(err) && retryAttempt < wafRetryableMaxAttempts {
+				lastErr = err
+				time.Sleep(wafRetryableBackoff * time.Duration(retryAttempt))
+				retryAttempt++
+				continue // retry same lock attempt
 			}
-			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
-			continue
-		}
 
-		// retry throttling/5xx with bounded backoff
-		if isRetryableWAF(err) && attempt < wafRetryableMaxAttempts {
-			lastErr = err
-			time.Sleep(wafRetryableBackoff * time.Duration(attempt))
-			continue
+			return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
 		}
-
-		return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
 	}
 
 	// clearer exhausted-retry error

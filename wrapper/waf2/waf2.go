@@ -269,7 +269,7 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 //
 // NOTE = AWS limits to 10 regex expressions per regex set, and max of 10 regex sets
 //
-//	this method will take the newest regex pattern to replace the older patterns
+// this method will take the newest regex pattern to replace the older patterns
 func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSetId string, scope string, newRegexPatterns []string) error {
 	if util.LenTrim(regexPatternSetName) == 0 {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: regexPatternSetName is Required")
@@ -291,15 +291,23 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		return fmt.Errorf("UpdateRegexPatternSet Failed: scope must be REGIONAL or CLOUDFRONT; scope value '%s' is Invalid", scope)
 	}
 
-	// trim & drop empty/whitespace regex entries before proceeding
-	trimmed := make([]string, 0, len(newRegexPatterns))
+	// normalize & de-dup new patterns before hitting AWS
+	uniqueNew := make([]string, 0, len(newRegexPatterns))
+	seen := make(map[string]struct{}, len(newRegexPatterns))
 	for _, v := range newRegexPatterns {
 		if t := strings.TrimSpace(v); t != "" {
-			trimmed = append(trimmed, t)
+			if _, ok := seen[t]; ok {
+				continue
+			}
+			seen[t] = struct{}{}
+			uniqueNew = append(uniqueNew, t)
 		}
 	}
-	if len(trimmed) == 0 {
+	if len(uniqueNew) == 0 {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: New Regex Pattern to Add is Required")
+	}
+	if len(uniqueNew) > 10 {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: Resulting regex pattern count %d exceeds AWS WAF2 Regex Pattern Set limit of 10 patterns", len(uniqueNew))
 	}
 
 	// guard against nil client (call Connect first)
@@ -326,60 +334,30 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		}
 
 		lockToken := getOutput.LockToken
-		patternsList := getOutput.RegexPatternSet.RegularExpressionList
 
-		var oldList []string
-		if len(patternsList) > 0 {
-			for _, v := range patternsList {
-				oldList = append(oldList, aws.StringValue(v.RegexString))
-			}
-		}
-
-		existing := make(map[string]struct{}, len(oldList))
-		for _, v := range oldList {
-			existing[v] = struct{}{}
-		}
-
-		newAddedCount := 0
-		for _, v := range trimmed {
-			v = strings.TrimSpace(v)
-			if v == "" {
-				continue
-			}
-			if _, ok := existing[v]; !ok {
-				patternsList = append(patternsList, &wafv2.Regex{
-					RegexString: aws.String(v),
-				})
-				oldList = append(oldList, v)
-				existing[v] = struct{}{}
-				newAddedCount++
-			}
-		}
-
-		if newAddedCount == 0 {
-			return nil
-		}
-
-		// fail fast instead of silently truncating and losing data
-		if len(patternsList) > 10 {
-			return fmt.Errorf("UpdateRegexPatternSet Failed: Resulting regex pattern count %d exceeds AWS WAF2 Regex Pattern Set limit of 10 patterns", len(patternsList))
+		// Replace existing patterns with the caller-supplied set (per docstring)
+		newList := make([]*wafv2.Regex, 0, len(uniqueNew))
+		for _, v := range uniqueNew {
+			newList = append(newList, &wafv2.Regex{RegexString: aws.String(v)})
 		}
 
 		_, err = w.waf2Obj.UpdateRegexPatternSet(&wafv2.UpdateRegexPatternSetInput{
 			Name:                  aws.String(regexPatternSetName),
 			Id:                    aws.String(regexPatternSetId),
 			Scope:                 aws.String(scope),
-			RegularExpressionList: patternsList,
+			RegularExpressionList: newList,
 			LockToken:             lockToken,
 		})
 		if err == nil {
 			return nil
 		}
+
 		if isOptimisticLock(err) && attempt < wafLockMaxRetry {
 			lastErr = err
 			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
 			continue
 		}
+
 		return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
 	}
 

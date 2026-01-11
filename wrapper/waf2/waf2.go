@@ -215,15 +215,24 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		for _, a := range addrList {
 			existing[a] = struct{}{}
 		}
+
+		newAddedCount := 0 // track whether anything changed
 		for _, a := range trimmed {
 			if _, ok := existing[a]; !ok {
 				addrList = append(addrList, a)
 				existing[a] = struct{}{}
+				newAddedCount++
 			}
 		}
 
+		// short-circuit when there is nothing new to add
+		if newAddedCount == 0 {
+			return nil
+		}
+
+		// fail fast instead of silently truncating and losing data
 		if len(addrList) > 10000 {
-			addrList = addrList[len(addrList)-10000:]
+			return fmt.Errorf("UpdateIPSet Failed: Resulting address count %d exceeds AWS WAF2 IP Set limit of 10000 addresses", len(addrList))
 		}
 
 		_, err = w.waf2Obj.UpdateIPSet(&wafv2.UpdateIPSetInput{
@@ -351,8 +360,9 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 			return nil
 		}
 
+		// fail fast instead of silently truncating and losing data
 		if len(patternsList) > 10 {
-			patternsList = patternsList[len(patternsList)-10:]
+			return fmt.Errorf("UpdateRegexPatternSet Failed: Resulting regex pattern count %d exceeds AWS WAF2 Regex Pattern Set limit of 10 patterns", len(patternsList))
 		}
 
 		_, err = w.waf2Obj.UpdateRegexPatternSet(&wafv2.UpdateRegexPatternSetInput{

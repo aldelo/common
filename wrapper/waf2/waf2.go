@@ -244,12 +244,14 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		})
 
 		if err == nil {
-			// error encountered
-			return nil
+			return nil // explicit success comment
 		}
 
 		if isOptimisticLock(err) && attempt < wafLockMaxRetry {
 			lastErr = err
+			if attempt == wafLockMaxRetry {
+				break // exhaust retriies and report below
+			}
 			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
 			continue
 		}
@@ -354,6 +356,9 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 
 		if isOptimisticLock(err) && attempt < wafLockMaxRetry {
 			lastErr = err
+			if attempt == wafLockMaxRetry {
+				break // exhaust retriies and report below
+			}
 			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
 			continue
 		}

@@ -343,6 +343,13 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		return fmt.Errorf("UpdateIPSet Failed: New address count %d exceeds AWS WAF2 IP Set limit of 10000 addresses", len(trimmed))
 	}
 
+	// rely on the snapshotted client instead of w.waf2Obj to avoid races with Connect()
+	// (Connect can swap w.waf2Obj to nil while this operation is in-flight)
+	// guard against nil client even after snapshot (defensive; getClientAndRegion already checks)
+	if client == nil {
+		return fmt.Errorf("UpdateIPSet Failed: WAF2 Client Not Connected - Call Connect() First")
+	}
+
 	// guard against nil client (call Connect first)
 	if w.waf2Obj == nil {
 		return fmt.Errorf("UpdateIPSet Failed: WAF2 Client Not Connected - Call Connect() First")
@@ -520,6 +527,11 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 	}
 	if len(uniqueNew) > 10 {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: Resulting regex pattern count %d exceeds AWS WAF2 Regex Pattern Set limit of 10 patterns", len(uniqueNew))
+	}
+
+	// rely on snapshot client instead of w.waf2Obj to avoid race with concurrent Connect()
+	if client == nil {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: WAF2 Client Not Connected - Call Connect() First")
 	}
 
 	// guard against nil client (call Connect first)

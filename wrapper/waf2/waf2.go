@@ -91,10 +91,10 @@ const (
 )
 
 // helper to validate IP/CIDR before hitting AWS
-func validateIPOrCIDR(addr string) (string, error) {
+func validateIPOrCIDR(addr string) (string, string, error) {
 	ip, ipNet, err := net.ParseCIDR(addr)
 	if err != nil {
-		return "", fmt.Errorf("address '%s' must be CIDR (e.g., 1.2.3.4/32 or 2001:db8::/128): %w", addr, err)
+		return "", "", fmt.Errorf("address '%s' must be CIDR (e.g., 1.2.3.4/32 or 2001:db8::/128): %w", addr, err)
 	}
 
 	isIPv4 := ip.To4() != nil
@@ -103,18 +103,23 @@ func validateIPOrCIDR(addr string) (string, error) {
 	if isIPv4 {
 		// AWS WAFv2 IPv4 CIDR bounds: /8 to /32
 		if ones < 8 || ones > 32 {
-			return "", fmt.Errorf("address '%s' IPv4 CIDR /%d is out of AWS WAFv2 allowed range /8-/32", addr, ones)
+			return "", "", fmt.Errorf("address '%s' IPv4 CIDR /%d is out of AWS WAFv2 allowed range /8-/32", addr, ones)
 		}
-
-		return "IPV4", nil
+	} else {
+		// AWS WAFv2 IPv6 CIDR bounds: /24 to /128
+		if ones < 24 || ones > 128 {
+			return "", "", fmt.Errorf("address '%s' IPv6 CIDR /%d is out of AWS WAFv2 allowed range /24-/128", addr, ones)
+		}
 	}
 
-	// AWS WAFv2 IPv6 CIDR bounds: /24 to /128
-	if ones < 24 || ones > 128 {
-		return "", fmt.Errorf("address '%s' IPv6 CIDR /%d is out of AWS WAFv2 allowed range /24-/128", addr, ones)
+	// Canonicalize to avoid duplicates from formatting differences
+	family := "IPV6"
+	if isIPv4 {
+		family = "IPV4"
 	}
+	normalized := ipNet.String()
 
-	return "IPV6", nil
+	return family, normalized, nil
 }
 
 // helper to detect retryable throttling/5xx
@@ -221,10 +226,11 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	// trim & drop empty/whitespace inputs before proceeding
 	// require cdir, enforce aws mask bounds, and ensure a single ip family
 	trimmed := make([]string, 0, len(newAddr))
+	seenInput := make(map[string]struct{}, len(newAddr))
 	var inputIPFamily string
 	for _, a := range newAddr {
 		if t := strings.TrimSpace(a); t != "" {
-			fam, err := validateIPOrCIDR(t) // returns "IPV4" or "IPV6"
+			fam, norm, err := validateIPOrCIDR(t) // returns "IPV4"/"IPV6" + canonical CIDR
 			if err != nil {
 				return fmt.Errorf("UpdateIPSet Failed: %w", err)
 			}
@@ -233,7 +239,11 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 			} else if inputIPFamily != fam {
 				return fmt.Errorf("UpdateIPSet Failed: mixed IPv4/IPv6 CIDRs are not allowed in a single WAFv2 IP set")
 			}
-			trimmed = append(trimmed, t)
+			if _, exists := seenInput[norm]; exists {
+				continue // drop duplicates in input
+			}
+			seenInput[norm] = struct{}{}
+			trimmed = append(trimmed, norm)
 		}
 	}
 	if len(trimmed) == 0 {

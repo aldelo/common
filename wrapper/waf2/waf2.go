@@ -107,6 +107,21 @@ func ensureScopeRegionCompat(scope string, region awsregion.AWSRegion) error {
 
 // helper to validate IP/CIDR before hitting AWS
 func validateIPOrCIDR(addr string) (string, string, error) {
+	// normalize upfront and guard empty input to give clearer errors
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return "", "", fmt.Errorf("address is required")
+	}
+
+	// allow bare IPs by coercing to host-size CIDR so callers don't have to append masks
+	if ip := net.ParseIP(addr); ip != nil {
+		if ip.To4() != nil {
+			addr = fmt.Sprintf("%s/32", ip.String())
+		} else {
+			addr = fmt.Sprintf("%s/128", ip.String())
+		}
+	}
+
 	ip, ipNet, err := net.ParseCIDR(addr)
 	if err != nil {
 		return "", "", fmt.Errorf("address '%s' must be CIDR (e.g., 1.2.3.4/32 or 2001:db8::/128): %w", addr, err)

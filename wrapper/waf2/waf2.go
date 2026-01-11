@@ -3,6 +3,7 @@ package waf2
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
@@ -104,24 +105,26 @@ func (w *WAF2) Connect() error {
 	}
 
 	// establish aws session connection and keep session object in struct
-	if sess, err := session.NewSession(
+	sess, err := session.NewSession(
 		&aws.Config{
 			Region:     aws.String(w.AwsRegion.Key()),
 			HTTPClient: httpCli,
-		}); err != nil {
+		})
+	if err != nil {
 		// aws session error
 		return fmt.Errorf("Connect To WAF2 Failed: (AWS Session Error) " + err.Error())
-	} else {
-		// aws session obtained
-		w.waf2Obj = wafv2.New(sess)
-
-		if w.waf2Obj == nil {
-			return fmt.Errorf("Connect To WAF2 Object Failed: (New WAF2 Connection) " + "Connection Object Nil")
-		}
-
-		// session stored to struct
-		return nil
 	}
+
+	// aws session obtained
+	w.sess = sess
+	w.waf2Obj = wafv2.New(sess)
+
+	if w.waf2Obj == nil {
+		return fmt.Errorf("Connect To WAF2 Object Failed: (New WAF2 Connection) " + "Connection Object Nil")
+	}
+
+	// session stored to struct
+	return nil
 }
 
 // UpdateIPSet will update an existing IPSet with new addresses specified
@@ -142,30 +145,50 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 
 	if util.LenTrim(scope) == 0 {
 		scope = "REGIONAL"
+	} else {
+		// normalize scope
+		scope = strings.ToUpper(strings.TrimSpace(scope))
 	}
 
 	if len(newAddr) == 0 {
 		return fmt.Errorf("UpdateIPSet Failed: New Address to Add is Required")
 	}
 
+	// guard against nil client (call Connect first)
+	if w.waf2Obj == nil {
+		return fmt.Errorf("UpdateIPSet Failed: WAF2 Client Not Connected - Call Connect() First")
+	}
+
 	var lockToken *string
 	var addrList []string
 
-	if getOutput, err := w.waf2Obj.GetIPSet(&wafv2.GetIPSetInput{
+	getOutput, err := w.waf2Obj.GetIPSet(&wafv2.GetIPSetInput{
 		Name:  aws.String(ipsetName),
 		Id:    aws.String(ipsetId),
 		Scope: aws.String(scope),
-	}); err != nil {
+	})
+	if err != nil {
 		// error
 		return fmt.Errorf("Get IP Set Failed: %s", err.Error())
-	} else {
-		lockToken = getOutput.LockToken
-		addrList = aws.StringValueSlice(getOutput.IPSet.Addresses)
-		addrList = append(addrList, newAddr...)
+	}
 
-		if len(addrList) > 10000 {
-			addrList = addrList[len(addrList)-10000:]
+	lockToken = getOutput.LockToken
+	addrList = aws.StringValueSlice(getOutput.IPSet.Addresses)
+
+	// dedupe while appending to avoid duplicate bloat and cap waste
+	existing := make(map[string]struct{}, len(addrList))
+	for _, a := range addrList {
+		existing[a] = struct{}{}
+	}
+	for _, a := range newAddr {
+		if _, ok := existing[a]; !ok {
+			addrList = append(addrList, a)
+			existing[a] = struct{}{}
 		}
+	}
+
+	if len(addrList) > 10000 {
+		addrList = addrList[len(addrList)-10000:]
 	}
 
 	if _, err := w.waf2Obj.UpdateIPSet(&wafv2.UpdateIPSetInput{
@@ -177,10 +200,10 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	}); err != nil {
 		// error encountered
 		return fmt.Errorf("Update IP Set Failed: %s", err.Error())
-	} else {
-		// update completed
-		return nil
 	}
+
+	// update completed
+	return nil
 }
 
 // UpdateRegexPatternSet will update an existing RegexPatternSet with new regex patterns specified
@@ -203,55 +226,71 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 
 	if util.LenTrim(scope) == 0 {
 		scope = "REGIONAL"
+	} else {
+		// normalize scope
+		scope = strings.ToUpper(strings.TrimSpace(scope))
 	}
 
 	if len(newRegexPatterns) == 0 {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: New Regex Pattern to Add is Required")
 	}
 
+	// guard against nil client (call Connect first)
+	if w.waf2Obj == nil {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: WAF2 Client Not Connected - Call Connect() First")
+	}
+
 	var lockToken *string
 	var patternsList []*wafv2.Regex
 
-	if getOutput, err := w.waf2Obj.GetRegexPatternSet(&wafv2.GetRegexPatternSetInput{
+	getOutput, err := w.waf2Obj.GetRegexPatternSet(&wafv2.GetRegexPatternSetInput{
 		Name:  aws.String(regexPatternSetName),
 		Id:    aws.String(regexPatternSetId),
 		Scope: aws.String(scope),
-	}); err != nil {
+	})
+	if err != nil {
 		// error
 		return fmt.Errorf("Get Regex Pattern Set Failed: %s", err.Error())
-	} else {
-		lockToken = getOutput.LockToken
+	}
 
-		var oldList []string
+	lockToken = getOutput.LockToken
 
-		patternsList = getOutput.RegexPatternSet.RegularExpressionList
-		newAddedCount := 0
+	var oldList []string
 
-		if len(patternsList) > 0 {
-			for _, v := range patternsList {
-				oldList = append(oldList, aws.StringValue(v.RegexString))
-			}
+	patternsList = getOutput.RegexPatternSet.RegularExpressionList
+	newAddedCount := 0
+
+	if len(patternsList) > 0 {
+		for _, v := range patternsList {
+			oldList = append(oldList, aws.StringValue(v.RegexString))
 		}
+	}
 
-		for _, v := range newRegexPatterns {
-			if !util.StringSliceContains(&oldList, v) {
-				patternsList = append(patternsList, &wafv2.Regex{
-					RegexString: aws.String(v),
-				})
+	// dedupe new patterns before appending
+	existing := make(map[string]struct{}, len(oldList))
+	for _, v := range oldList {
+		existing[v] = struct{}{}
+	}
 
-				oldList = append(oldList, v)
-				newAddedCount++
-			}
+	for _, v := range newRegexPatterns {
+		if _, ok := existing[v]; !ok {
+			patternsList = append(patternsList, &wafv2.Regex{
+				RegexString: aws.String(v),
+			})
+
+			oldList = append(oldList, v)
+			existing[v] = struct{}{}
+			newAddedCount++
 		}
+	}
 
-		if newAddedCount == 0 {
-			return nil
-		}
+	if newAddedCount == 0 {
+		return nil
+	}
 
-		// take the last 10
-		if len(patternsList) > 10 {
-			patternsList = patternsList[len(patternsList)-10:]
-		}
+	// take the last 10
+	if len(patternsList) > 10 {
+		patternsList = patternsList[len(patternsList)-10:]
 	}
 
 	if _, err := w.waf2Obj.UpdateRegexPatternSet(&wafv2.UpdateRegexPatternSetInput{
@@ -263,8 +302,8 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 	}); err != nil {
 		// error encountered
 		return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
-	} else {
-		// update completed
-		return nil
 	}
+
+	// update completed
+	return nil
 }

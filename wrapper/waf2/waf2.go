@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	util "github.com/aldelo/common"
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
@@ -81,7 +82,10 @@ type WAF2 struct {
 // ----------------------------------------------------------------------------------------------------------------
 
 // bounded retries for optimistic locking
-const wafLockMaxRetry = 3
+const (
+	wafLockMaxRetry     = 3
+	wafLockRetryBackoff = 150 * time.Millisecond
+)
 
 // helper to detect optimistic lock errors
 func isOptimisticLock(err error) bool {
@@ -186,6 +190,7 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		return fmt.Errorf("UpdateIPSet Failed: WAF2 Client Not Connected - Call Connect() First")
 	}
 
+	var lastErr error // track last optimistic-lock error
 	for attempt := 1; attempt <= wafLockMaxRetry; attempt++ {
 		getOutput, err := w.waf2Obj.GetIPSet(&wafv2.GetIPSetInput{
 			Name:  aws.String(ipsetName),
@@ -235,13 +240,16 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		}
 
 		if isOptimisticLock(err) && attempt < wafLockMaxRetry {
+			lastErr = err
+			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
 			continue
 		}
 
 		return fmt.Errorf("Update IP Set Failed: %s", err.Error())
 	}
 
-	return fmt.Errorf("Update IP Set Failed: Exceeded retry limit due to optimistic locking")
+	// provide clear retry-exhausted error
+	return fmt.Errorf("Update IP Set Failed after %d optimistic-lock retries: %v", wafLockMaxRetry, lastErr)
 }
 
 // UpdateRegexPatternSet will update an existing RegexPatternSet with new regex patterns specified
@@ -290,6 +298,7 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		return fmt.Errorf("UpdateRegexPatternSet Failed: WAF2 Client Not Connected - Call Connect() First")
 	}
 
+	var lastErr error // track last optimistic-lock error
 	for attempt := 1; attempt <= wafLockMaxRetry; attempt++ {
 		getOutput, err := w.waf2Obj.GetRegexPatternSet(&wafv2.GetRegexPatternSetInput{
 			Name:  aws.String(regexPatternSetName),
@@ -357,10 +366,13 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 			return nil
 		}
 		if isOptimisticLock(err) && attempt < wafLockMaxRetry {
+			lastErr = err
+			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
 			continue
 		}
 		return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
 	}
 
-	return fmt.Errorf("Update Regex Patterns Set Failed: exceeded retry limit due to optimistic locking")
+	// clearer exhausted-retry error
+	return fmt.Errorf("Update Regex Patterns Set Failed after %d optimistic-lock retries: %v", wafLockMaxRetry, lastErr)
 }

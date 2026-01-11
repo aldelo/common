@@ -91,14 +91,30 @@ const (
 )
 
 // helper to validate IP/CIDR before hitting AWS
-func validateIPOrCIDR(addr string) error {
-	if _, _, err := net.ParseCIDR(addr); err == nil {
-		return nil
+func validateIPOrCIDR(addr string) (string, error) {
+	ip, ipNet, err := net.ParseCIDR(addr)
+	if err != nil {
+		return "", fmt.Errorf("address '%s' must be CIDR (e.g., 1.2.3.4/32 or 2001:db8::/128): %w", addr, err)
 	}
-	if ip := net.ParseIP(addr); ip != nil {
-		return nil
+
+	isIPv4 := ip.To4() != nil
+	ones, _ := ipNet.Mask.Size()
+
+	if isIPv4 {
+		// AWS WAFv2 IPv4 CIDR bounds: /8 to /32
+		if ones < 8 || ones > 32 {
+			return "", fmt.Errorf("address '%s' IPv4 CIDR /%d is out of AWS WAFv2 allowed range /8-/32", addr, ones)
+		}
+
+		return "IPV4", nil
 	}
-	return fmt.Errorf("address '%s' is not a valid IP or CIDR", addr)
+
+	// AWS WAFv2 IPv6 CIDR bounds: /24 to /128
+	if ones < 24 || ones > 128 {
+		return "", fmt.Errorf("address '%s' IPv6 CIDR /%d is out of AWS WAFv2 allowed range /24-/128", addr, ones)
+	}
+
+	return "IPV6", nil
 }
 
 // helper to detect retryable throttling/5xx
@@ -203,12 +219,19 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	}
 
 	// trim & drop empty/whitespace inputs before proceeding
+	// require cdir, enforce aws mask bounds, and ensure a single ip family
 	trimmed := make([]string, 0, len(newAddr))
+	var inputIPFamily string
 	for _, a := range newAddr {
 		if t := strings.TrimSpace(a); t != "" {
-			// validate ip/cidr early to avoid aws call failures
-			if err := validateIPOrCIDR(t); err != nil {
+			fam, err := validateIPOrCIDR(t) // returns "IPV4" or "IPV6"
+			if err != nil {
 				return fmt.Errorf("UpdateIPSet Failed: %w", err)
+			}
+			if inputIPFamily == "" {
+				inputIPFamily = fam
+			} else if inputIPFamily != fam {
+				return fmt.Errorf("UpdateIPSet Failed: mixed IPv4/IPv6 CIDRs are not allowed in a single WAFv2 IP set")
 			}
 			trimmed = append(trimmed, t)
 		}
@@ -238,6 +261,14 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		}
 		if getOutput.LockToken == nil {
 			return fmt.Errorf("Get IP Set Failed: LockToken is nil")
+		}
+
+		// ensure caller input family matches the IP set's configured family
+		if getOutput.IPSet.IPAddressVersion != nil && inputIPFamily != "" {
+			if !strings.EqualFold(*getOutput.IPSet.IPAddressVersion, inputIPFamily) {
+				return fmt.Errorf("UpdateIPSet Failed: IP family mismatch - IPSet expects %s but input addresses are %s",
+					*getOutput.IPSet.IPAddressVersion, inputIPFamily)
+			}
 		}
 
 		lockToken := getOutput.LockToken
@@ -404,7 +435,7 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
 			continue
 		}
-		
+
 		// retry throttling/5xx with bounded backoff
 		if isRetryableWAF(err) && attempt < wafRetryableMaxAttempts {
 			lastErr = err

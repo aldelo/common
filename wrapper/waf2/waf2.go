@@ -559,9 +559,9 @@ LockRetry:
 				return fmt.Errorf("Get Regex Pattern Set Failed: LockToken is nil")
 			}
 
-			// defensive check—AWS should always return this, but avoid silent nil deref
+			// Allow empty regex sets (AWS may return a nil list for empty sets)
 			if getOutput.RegexPatternSet.RegularExpressionList == nil {
-				return fmt.Errorf("Get Regex Pattern Set Failed: RegularExpressionList is nil")
+				getOutput.RegexPatternSet.RegularExpressionList = []*wafv2.Regex{}
 			}
 
 			lockToken := getOutput.LockToken

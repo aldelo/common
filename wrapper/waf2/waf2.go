@@ -156,7 +156,14 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		return fmt.Errorf("UpdateIPSet Failed: scope must be REGIONAL or CLOUDFRONT; scope value '%s' is Invalid", scope)
 	}
 
-	if len(newAddr) == 0 {
+	// trim & drop empty/whitespace inputs before proceeding
+	trimmed := make([]string, 0, len(newAddr))
+	for _, a := range newAddr {
+		if t := strings.TrimSpace(a); t != "" {
+			trimmed = append(trimmed, t)
+		}
+	}
+	if len(trimmed) == 0 {
 		return fmt.Errorf("UpdateIPSet Failed: New Address to Add is Required")
 	}
 
@@ -191,7 +198,7 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	for _, a := range addrList {
 		existing[a] = struct{}{}
 	}
-	for _, a := range newAddr {
+	for _, a := range trimmed {
 		if _, ok := existing[a]; !ok {
 			addrList = append(addrList, a)
 			existing[a] = struct{}{}
@@ -247,7 +254,14 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		return fmt.Errorf("UpdateRegexPatternSet Failed: scope must be REGIONAL or CLOUDFRONT; scope value '%s' is Invalid", scope)
 	}
 
-	if len(newRegexPatterns) == 0 {
+	// trim & drop empty/whitespace regex entries before proceeding
+	trimmed := make([]string, 0, len(newRegexPatterns))
+	for _, v := range newRegexPatterns {
+		if t := strings.TrimSpace(v); t != "" {
+			trimmed = append(trimmed, t)
+		}
+	}
+	if len(trimmed) == 0 {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: New Regex Pattern to Add is Required")
 	}
 
@@ -293,7 +307,7 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		existing[v] = struct{}{}
 	}
 
-	for _, v := range newRegexPatterns {
+	for _, v := range trimmed {
 		v = strings.TrimSpace(v)
 		if v == "" {
 			continue

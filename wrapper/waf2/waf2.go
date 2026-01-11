@@ -140,8 +140,8 @@ func validateIPOrCIDR(addr string) (string, string, error) {
 		}
 	} else {
 		// AWS WAFv2 IPv6 CIDR bounds: /24 to /128
-		if ones < 1 || ones > 128 {
-			return "", "", fmt.Errorf("address '%s' IPv6 CIDR /%d is out of AWS WAFv2 allowed range /1-/128", addr, ones)
+		if ones < 24 || ones > 128 {
+			return "", "", fmt.Errorf("address '%s' IPv6 CIDR /%d is out of AWS WAFv2 allowed range /24-/128", addr, ones)
 		}
 	}
 

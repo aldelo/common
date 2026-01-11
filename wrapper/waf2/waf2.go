@@ -395,6 +395,10 @@ LockRetry:
 		}
 	}
 
+	if lastErr == nil {
+		lastErr = fmt.Errorf("Optimistic Lock Retries Exhausted with Unknown Error")
+	}
+
 	// provide clear retry-exhausted error
 	return fmt.Errorf("Update IP Set Failed after %d optimistic-lock retries: %v", wafLockMaxRetry, lastErr)
 }
@@ -524,6 +528,10 @@ LockRetry:
 				time.Sleep(wafRetryableBackoff * time.Duration(retryAttempt))
 				retryAttempt++
 				continue // retry same lock attempt
+			}
+
+			if lastErr == nil {
+				lastErr = fmt.Errorf("Optimistic Lock Retries Exhausted with Unknown Error")
 			}
 
 			return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())

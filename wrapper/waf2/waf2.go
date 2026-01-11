@@ -138,8 +138,12 @@ func isRetryableWAF(err error) bool {
 		return false
 	}
 
-	// treat context deadline/cancel as retryable to avoid hard-failing on short timeouts
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	// respect caller intent — do NOT retry when the caller explicitly canceled
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	// keep treating deadline exceeded as retryable
+	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
 
@@ -324,8 +328,11 @@ LockRetry:
 				return fmt.Errorf("Get IP Set Failed: LockToken is nil")
 			}
 
-			// ensure caller input family matches the IP set's configured family
-			if getOutput.IPSet.IPAddressVersion != nil && inputIPFamily != "" {
+			// fail fast when IPAddressVersion is unexpectedly missing to avoid family mismatch
+			if inputIPFamily != "" {
+				if getOutput.IPSet.IPAddressVersion == nil {
+					return fmt.Errorf("UpdateIPSet Failed: IP set missing IPAddressVersion; cannot verify IP family")
+				}
 				if !strings.EqualFold(*getOutput.IPSet.IPAddressVersion, inputIPFamily) {
 					return fmt.Errorf("UpdateIPSet Failed: IP family mismatch - IPSet expects %s but input addresses are %s",
 						*getOutput.IPSet.IPAddressVersion, inputIPFamily)
@@ -491,6 +498,11 @@ LockRetry:
 			}
 			if getOutput.LockToken == nil {
 				return fmt.Errorf("Get Regex Pattern Set Failed: LockToken is nil")
+			}
+
+			// defensive check—AWS should always return this, but avoid silent nil deref
+			if getOutput.RegexPatternSet.RegularExpressionList == nil {
+				return fmt.Errorf("Get Regex Pattern Set Failed: RegularExpressionList is nil")
 			}
 
 			lockToken := getOutput.LockToken

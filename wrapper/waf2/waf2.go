@@ -82,6 +82,7 @@ type WAF2 struct {
 func (w *WAF2) Connect() error {
 	// clean up prior session reference
 	w.sess = nil
+	w.waf2Obj = nil
 
 	if !w.AwsRegion.Valid() || w.AwsRegion == awsregion.UNKNOWN {
 		return fmt.Errorf("Connect To WAF2 Failed: (AWS Session Error) " + "Region is Required")
@@ -150,6 +151,11 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		scope = strings.ToUpper(strings.TrimSpace(scope))
 	}
 
+	// validate scope against allowed values to fail fast
+	if scope != "REGIONAL" && scope != "CLOUDFRONT" {
+		return fmt.Errorf("UpdateIPSet Failed: scope must be REGIONAL or CLOUDFRONT; scope value '%s' is Invalid", scope)
+	}
+
 	if len(newAddr) == 0 {
 		return fmt.Errorf("UpdateIPSet Failed: New Address to Add is Required")
 	}
@@ -170,6 +176,11 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	if err != nil {
 		// error
 		return fmt.Errorf("Get IP Set Failed: %s", err.Error())
+	}
+
+	// defensive nil checks on response payload
+	if getOutput == nil || getOutput.IPSet == nil {
+		return fmt.Errorf("Get IP Set Failed: Empty IPSet payload returned")
 	}
 
 	lockToken = getOutput.LockToken
@@ -231,6 +242,11 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		scope = strings.ToUpper(strings.TrimSpace(scope))
 	}
 
+	// validate scope against allowed values to fail fast
+	if scope != "REGIONAL" && scope != "CLOUDFRONT" {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: scope must be REGIONAL or CLOUDFRONT; scope value '%s' is Invalid", scope)
+	}
+
 	if len(newRegexPatterns) == 0 {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: New Regex Pattern to Add is Required")
 	}
@@ -253,6 +269,11 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 		return fmt.Errorf("Get Regex Pattern Set Failed: %s", err.Error())
 	}
 
+	// defensive nil checks on response payload
+	if getOutput == nil || getOutput.RegexPatternSet == nil {
+		return fmt.Errorf("Get Regex Pattern Set Failed: Empty RegexPatternSet payload returned")
+	}
+
 	lockToken = getOutput.LockToken
 
 	var oldList []string
@@ -273,6 +294,11 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 	}
 
 	for _, v := range newRegexPatterns {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+
 		if _, ok := existing[v]; !ok {
 			patternsList = append(patternsList, &wafv2.Regex{
 				RegexString: aws.String(v),

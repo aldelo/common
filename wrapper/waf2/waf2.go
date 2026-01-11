@@ -94,9 +94,14 @@ const (
 
 // helper to enforce AWS WAF scope/region compatibility
 func ensureScopeRegionCompat(scope string, region awsregion.AWSRegion) error {
+	if !region.Valid() || region == awsregion.UNKNOWN {
+		return fmt.Errorf("scope %s requires a valid AWS region; received empty/unknown", scope)
+	}
+
 	if strings.EqualFold(scope, "CLOUDFRONT") && !strings.EqualFold(region.Key(), "us-east-1") {
 		return fmt.Errorf("CLOUDFRONT scope requires us-east-1 region (current region: %s)", region.Key())
 	}
+
 	return nil
 }
 
@@ -248,6 +253,11 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 		return fmt.Errorf("UpdateIPSet Failed: ipsetId is Required")
 	}
 
+	// ensure region is set/valid before any scope logic or AWS calls.
+	if !w.AwsRegion.Valid() || w.AwsRegion == awsregion.UNKNOWN {
+		return fmt.Errorf("UpdateIPSet Failed: AwsRegion is required; call Connect() with a valid region first")
+	}
+
 	if util.LenTrim(scope) == 0 {
 		scope = "REGIONAL"
 	} else {
@@ -290,6 +300,11 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	}
 	if len(trimmed) == 0 {
 		return fmt.Errorf("UpdateIPSet Failed: New Address to Add is Required")
+	}
+
+	// fail fast when caller already exceeds AWS limit, before any AWS calls/locks.
+	if len(trimmed) > 10000 {
+		return fmt.Errorf("UpdateIPSet Failed: New address count %d exceeds AWS WAF2 IP Set limit of 10000 addresses", len(trimmed))
 	}
 
 	// guard against nil client (call Connect first)
@@ -427,6 +442,11 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 
 	if util.LenTrim(regexPatternSetId) == 0 {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: regexPatternSetId is Required")
+	}
+
+	// ensure region is set/valid before scope checks or AWS calls.
+	if !w.AwsRegion.Valid() || w.AwsRegion == awsregion.UNKNOWN {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: AwsRegion is required; call Connect() with a valid region first")
 	}
 
 	if util.LenTrim(scope) == 0 {

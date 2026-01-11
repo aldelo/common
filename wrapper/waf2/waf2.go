@@ -1,6 +1,7 @@
 package waf2
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -88,6 +89,7 @@ const (
 	wafLockRetryBackoff     = 150 * time.Millisecond
 	wafRetryableMaxAttempts = 3
 	wafRetryableBackoff     = 200 * time.Millisecond
+	awsCallTimeout          = 10 * time.Second
 )
 
 // helper to validate IP/CIDR before hitting AWS
@@ -124,15 +126,33 @@ func validateIPOrCIDR(addr string) (string, string, error) {
 
 // helper to detect retryable throttling/5xx
 func isRetryableWAF(err error) bool {
+	if err == nil {
+		return false
+	}
+
 	var e awserr.RequestFailure
 	if errors.As(err, &e) {
 		if e.StatusCode() == http.StatusTooManyRequests || e.StatusCode() >= 500 {
 			return true
 		}
-		if strings.EqualFold(e.Code(), "Throttling") || strings.EqualFold(e.Code(), "ThrottlingException") {
+	}
+
+	var ae awserr.Error
+	if errors.As(err, &ae) {
+		code := strings.ToLower(ae.Code())
+		if code == "throttling" ||
+			code == "throttlingexception" ||
+			code == "requesttimeout" ||
+			code == "requesttimeoutexception" {
 			return true
 		}
 	}
+
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+
 	return false
 }
 
@@ -257,12 +277,20 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 
 	var lastErr error // track last optimistic-lock error
 	for attempt := 1; attempt <= wafLockMaxRetry; attempt++ {
-		getOutput, err := w.waf2Obj.GetIPSet(&wafv2.GetIPSetInput{
+		ctx, cancel := context.WithTimeout(context.Background(), awsCallTimeout)
+		getOutput, err := w.waf2Obj.GetIPSetWithContext(ctx, &wafv2.GetIPSetInput{
 			Name:  aws.String(ipsetName),
 			Id:    aws.String(ipsetId),
 			Scope: aws.String(scope),
 		})
+		cancel()
+
 		if err != nil {
+			if isRetryableWAF(err) && attempt < wafRetryableMaxAttempts {
+				lastErr = err
+				time.Sleep(wafRetryableBackoff * time.Duration(attempt))
+				continue
+			}
 			return fmt.Errorf("Get IP Set Failed: %s", err.Error())
 		}
 
@@ -311,13 +339,15 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 			return fmt.Errorf("UpdateIPSet Failed: Resulting address count %d exceeds AWS WAF2 IP Set limit of 10000 addresses", len(addrList))
 		}
 
-		_, err = w.waf2Obj.UpdateIPSet(&wafv2.UpdateIPSetInput{
+		ctx, cancel = context.WithTimeout(context.Background(), awsCallTimeout)
+		_, err = w.waf2Obj.UpdateIPSetWithContext(ctx, &wafv2.UpdateIPSetInput{
 			Name:      aws.String(ipsetName),
 			Id:        aws.String(ipsetId),
 			Scope:     aws.String(scope),
 			Addresses: aws.StringSlice(addrList),
 			LockToken: lockToken,
 		})
+		cancel()
 
 		if err == nil {
 			return nil // explicit success comment
@@ -402,12 +432,20 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 
 	var lastErr error // track last optimistic-lock error
 	for attempt := 1; attempt <= wafLockMaxRetry; attempt++ {
-		getOutput, err := w.waf2Obj.GetRegexPatternSet(&wafv2.GetRegexPatternSetInput{
+		ctx, cancel := context.WithTimeout(context.Background(), awsCallTimeout)
+		getOutput, err := w.waf2Obj.GetRegexPatternSetWithContext(ctx, &wafv2.GetRegexPatternSetInput{
 			Name:  aws.String(regexPatternSetName),
 			Id:    aws.String(regexPatternSetId),
 			Scope: aws.String(scope),
 		})
+		cancel()
+
 		if err != nil {
+			if isRetryableWAF(err) && attempt < wafRetryableMaxAttempts {
+				lastErr = err
+				time.Sleep(wafRetryableBackoff * time.Duration(attempt))
+				continue
+			}
 			return fmt.Errorf("Get Regex Pattern Set Failed: %s", err.Error())
 		}
 
@@ -426,13 +464,16 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 			newList = append(newList, &wafv2.Regex{RegexString: aws.String(v)})
 		}
 
-		_, err = w.waf2Obj.UpdateRegexPatternSet(&wafv2.UpdateRegexPatternSetInput{
+		ctx, cancel = context.WithTimeout(context.Background(), awsCallTimeout)
+		_, err = w.waf2Obj.UpdateRegexPatternSetWithContext(ctx, &wafv2.UpdateRegexPatternSetInput{
 			Name:                  aws.String(regexPatternSetName),
 			Id:                    aws.String(regexPatternSetId),
 			Scope:                 aws.String(scope),
 			RegularExpressionList: newList,
 			LockToken:             lockToken,
 		})
+		cancel()
+
 		if err == nil {
 			return nil
 		}

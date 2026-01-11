@@ -3,6 +3,7 @@ package waf2
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -83,9 +84,36 @@ type WAF2 struct {
 
 // bounded retries for optimistic locking
 const (
-	wafLockMaxRetry     = 3
-	wafLockRetryBackoff = 150 * time.Millisecond
+	wafLockMaxRetry         = 3
+	wafLockRetryBackoff     = 150 * time.Millisecond
+	wafRetryableMaxAttempts = 3
+	wafRetryableBackoff     = 200 * time.Millisecond
 )
+
+// helper to validate IP/CIDR before hitting AWS
+func validateIPOrCIDR(addr string) error {
+	if _, _, err := net.ParseCIDR(addr); err == nil {
+		return nil
+	}
+	if ip := net.ParseIP(addr); ip != nil {
+		return nil
+	}
+	return fmt.Errorf("address '%s' is not a valid IP or CIDR", addr)
+}
+
+// helper to detect retryable throttling/5xx
+func isRetryableWAF(err error) bool {
+	var e awserr.RequestFailure
+	if errors.As(err, &e) {
+		if e.StatusCode() == http.StatusTooManyRequests || e.StatusCode() >= 500 {
+			return true
+		}
+		if strings.EqualFold(e.Code(), "Throttling") || strings.EqualFold(e.Code(), "ThrottlingException") {
+			return true
+		}
+	}
+	return false
+}
 
 // helper to detect optimistic lock errors
 func isOptimisticLock(err error) bool {
@@ -178,6 +206,10 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 	trimmed := make([]string, 0, len(newAddr))
 	for _, a := range newAddr {
 		if t := strings.TrimSpace(a); t != "" {
+			// validate ip/cidr early to avoid aws call failures
+			if err := validateIPOrCIDR(t); err != nil {
+				return fmt.Errorf("UpdateIPSet Failed: %w", err)
+			}
 			trimmed = append(trimmed, t)
 		}
 	}
@@ -210,6 +242,9 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 
 		lockToken := getOutput.LockToken
 		addrList := aws.StringValueSlice(getOutput.IPSet.Addresses)
+		if addrList == nil {
+			addrList = make([]string, 0)
+		}
 
 		existing := make(map[string]struct{}, len(addrList))
 		for _, a := range addrList {
@@ -253,6 +288,13 @@ func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAd
 				break // exhaust retries and report below
 			}
 			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
+			continue
+		}
+
+		// retry throttling/5xx with bounded backoff
+		if isRetryableWAF(err) && attempt < wafRetryableMaxAttempts {
+			lastErr = err
+			time.Sleep(wafRetryableBackoff * time.Duration(attempt))
 			continue
 		}
 
@@ -360,6 +402,13 @@ func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSet
 				break // exhaust retries and report below
 			}
 			time.Sleep(wafLockRetryBackoff * time.Duration(attempt))
+			continue
+		}
+		
+		// retry throttling/5xx with bounded backoff
+		if isRetryableWAF(err) && attempt < wafRetryableMaxAttempts {
+			lastErr = err
+			time.Sleep(wafRetryableBackoff * time.Duration(attempt))
 			continue
 		}
 

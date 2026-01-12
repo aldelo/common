@@ -327,6 +327,19 @@ func NewSubSegmentFromContext(ctx context.Context, serviceNameOrUrl string) *XSe
 //
 // NOTE = ALWAYS CALL CLOSE() to End Segment After Tracing of Segment is Complete
 func NewSegment(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *XSegment {
+	// respect global on/off flag so SetXRayServiceOff actually disables new traces
+	_mu.RLock()
+	on := _xrayServiceOn
+	_mu.RUnlock()
+
+	if !on {
+		return &XSegment{
+			Ctx:       context.Background(),
+			Seg:       nil,
+			_segReady: false,
+		}
+	}
+
 	if util.LenTrim(serviceNameOrUrl) == 0 {
 		serviceNameOrUrl = "no.service.name.defined"
 	}
@@ -516,6 +529,11 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 					for _, v := range m.Errors {
 						_ = xray.AddError(ctx, v)
 					}
+
+					// ensure the segment is marked as error when we add errors
+					if s := xray.GetSegment(ctx); s != nil {
+						s.Error = true
+					}
 				}
 			}
 		}
@@ -599,6 +617,11 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 				if m.Errors != nil && len(m.Errors) > 0 {
 					for _, v := range m.Errors {
 						_ = xray.AddError(ctx, v)
+					}
+
+					// flag the segment as error when attaching errors
+					if s := xray.GetSegment(ctx); s != nil {
+						s.Error = true
 					}
 				}
 			}

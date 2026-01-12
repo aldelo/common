@@ -356,13 +356,8 @@ func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegmen
 	}
 
 	hdr := GetXRayHeader(req, traceHeaderName...)
-
 	if hdr == nil {
-		return &XSegment{
-			Ctx:       context.Background(),
-			Seg:       nil,
-			_segReady: false,
-		}
+		hdr = &header.Header{}
 	}
 
 	ctx, seg := xray.NewSegmentFromHeader(req.Context(), name, req, hdr)
@@ -460,7 +455,7 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 			}
 		}()
 
-		execErr := executeFunc() // no shadowing, propagate real error
+		execErr = executeFunc() // no shadowing, propagate real error
 
 		// add additional trace data if any to xray
 		if len(traceData) > 0 {

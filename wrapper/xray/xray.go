@@ -290,9 +290,19 @@ func NewSubSegmentFromContext(ctx context.Context, serviceNameOrUrl string) *XSe
 		}
 	}
 
+	// ensure parent segment exists; BeginSubsegment panics without one
+	if xray.GetSegment(ctx) == nil {
+		return &XSegment{
+			Ctx:       ctx,
+			Seg:       nil,
+			_segReady: false,
+		}
+	}
+
 	if util.LenTrim(serviceNameOrUrl) == 0 {
 		serviceNameOrUrl = "no.service.name.defined"
 	}
+
 	subCtx, seg := xray.BeginSubsegment(ctx, serviceNameOrUrl)
 
 	return &XSegment{
@@ -323,7 +333,7 @@ func NewSegment(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *X
 	return &XSegment{
 		Ctx:       ctx,
 		Seg:       seg,
-		_segReady: true,
+		_segReady: seg != nil,
 	}
 }
 

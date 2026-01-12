@@ -379,6 +379,18 @@ func NewSegmentNullable(serviceNameOrUrl string, parentSegment ...*XRayParentSeg
 //
 // NOTE = ALWAYS CALL CLOSE() to End Segment After Tracing of Segment is Complete
 func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegment {
+	// respect global on/off switch so SetXRayServiceOff is honored for header-based segments
+	_mu.RLock()
+	on := _xrayServiceOn
+	_mu.RUnlock()
+	if !on {
+		return &XSegment{
+			Ctx:       context.Background(),
+			Seg:       nil,
+			_segReady: false,
+		}
+	}
+
 	if req == nil {
 		return &XSegment{
 			Ctx:       context.Background(),
@@ -579,8 +591,8 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 	if util.LenTrim(traceName) == 0 {
 		traceName = "no.asynchronous.trace.name.defined"
 	}
-
-	xray.CaptureAsync(x.Ctx, traceName, func(ctx context.Context) error {
+	
+	if err := xray.CaptureAsync(x.Ctx, traceName, func(ctx context.Context) error {
 		defer close(errCh) // ensure channel closes
 
 		var runErr error // single source of truth for execution/panic error
@@ -635,7 +647,11 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 		// always deliver the actual error (including panic) to caller and to X-Ray
 		errCh <- runErr
 		return runErr
-	})
+	}); err != nil {
+		// bubble immediate failure to caller and close channel
+		errCh <- err
+		close(errCh)
+	}
 
 	return errCh
 }

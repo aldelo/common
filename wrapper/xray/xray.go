@@ -370,7 +370,7 @@ func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegmen
 	return &XSegment{
 		Ctx:       ctx,
 		Seg:       seg,
-		_segReady: true,
+		_segReady: seg != nil, // only ready when segment actually exists
 	}
 }
 
@@ -445,7 +445,7 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 		traceName = "no.synchronous.trace.name.defined"
 	}
 
-	var execErr error
+	var execErr error // single source of truth for execution/panic error
 
 	err := xray.Capture(x.Ctx, traceName, func(ctx context.Context) error {
 		// guard against panics so we can flag the segment and return an error
@@ -460,7 +460,7 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 			}
 		}()
 
-		execErr := executeFunc()
+		execErr := executeFunc() // no shadowing, propagate real error
 
 		// add additional trace data if any to xray
 		if len(traceData) > 0 {
@@ -485,7 +485,7 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 			}
 		}
 
-		if s := xray.GetSegment(ctx); s != nil && execErr == nil {
+		if s := xray.GetSegment(ctx); s != nil && execErr != nil {
 			s.Error = true
 			_ = xray.AddError(ctx, execErr)
 		}

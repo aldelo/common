@@ -281,6 +281,15 @@ func (t *XTraceData) AddError(key string, err error) {
 // NewSubSegmentFromContext begins a new subsegment under the parent segment context,
 // context can not be empty, and must contains parent segment info
 func NewSubSegmentFromContext(ctx context.Context, serviceNameOrUrl string) *XSegment {
+	// guard against nil context to avoid panic inside xray.BeginSubsegment
+	if ctx == nil {
+		return &XSegment{
+			Ctx:       context.Background(),
+			Seg:       nil,
+			_segReady: false,
+		}
+	}
+
 	if util.LenTrim(serviceNameOrUrl) == 0 {
 		serviceNameOrUrl = "no.service.name.defined"
 	}
@@ -289,7 +298,7 @@ func NewSubSegmentFromContext(ctx context.Context, serviceNameOrUrl string) *XSe
 	return &XSegment{
 		Ctx:       subCtx,
 		Seg:       seg,
-		_segReady: true,
+		_segReady: seg != nil, // only mark ready when subsegment actually exists
 	}
 }
 
@@ -525,20 +534,21 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 	xray.CaptureAsync(x.Ctx, traceName, func(ctx context.Context) error {
 		defer close(errCh) // ensure channel closes
 
+		var runErr error // single source of truth for execution/panic error
+
 		// guard against panic
 		defer func() {
 			if r := recover(); r != nil {
-				panicErr := fmt.Errorf("panic in capture async: %v", r)
+				runErr = fmt.Errorf("panic in capture async: %v", r)
 				if s := xray.GetSegment(ctx); s != nil {
 					s.Fault = true
-					_ = xray.AddError(ctx, panicErr)
+					_ = xray.AddError(ctx, runErr)
 				}
-				errCh <- panicErr
 			}
 		}()
 
 		// execute logic
-		err := executeFunc()
+		runErr = executeFunc()
 
 		// add additional trace data if any to xray
 		if len(traceData) > 0 {
@@ -563,14 +573,14 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 			}
 		}
 
-		if s := xray.GetSegment(ctx); s != nil && err != nil {
+		if s := xray.GetSegment(ctx); s != nil && runErr != nil {
 			s.Error = true
-			_ = xray.AddError(ctx, err)
+			_ = xray.AddError(ctx, runErr)
 		}
 
-		// deliver error to caller
-		errCh <- err
-		return nil
+		// always deliver the actual error (including panic) to caller and to X-Ray
+		errCh <- runErr
+		return runErr
 	})
 
 	return errCh

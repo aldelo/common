@@ -119,10 +119,20 @@ func Init(daemonAddr string, serviceVersion string) error {
 		serviceVersion = "1.2.0"
 	}
 
-	return xray.Configure(xray.Config{
+	err := xray.Configure(xray.Config{
 		DaemonAddr:     daemonAddr,
 		ServiceVersion: serviceVersion,
 	})
+
+	_mu.Lock()
+	defer _mu.Unlock()
+	if err != nil {
+		_xrayServiceOn = false //ensure off on failure
+		return err
+	}
+
+	_xrayServiceOn = true // enable tracing after successful init
+	return nil
 }
 
 // SetXRayServiceOn turns on xray service for new objects,
@@ -438,6 +448,11 @@ func (x *XSegment) Close() {
 	if x._segReady && x.Seg != nil {
 		x.Seg.Close(nil)
 	}
+
+	// prevent reuse after close
+	x._segReady = false
+	x.Seg = nil
+	x.Ctx = nil
 }
 
 // Capture wraps xray.Capture, by beginning and closing a subsegment with traceName,

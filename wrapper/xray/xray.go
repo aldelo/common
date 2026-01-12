@@ -384,6 +384,12 @@ func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegmen
 		}
 	}
 
+	// ensure we never pass a nil context into xray.NewSegmentFromHeader
+	baseCtx := req.Context()
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+
 	hdr := GetXRayHeader(req, traceHeaderName...)
 	if hdr == nil {
 		hdr = &header.Header{}
@@ -429,7 +435,7 @@ func (x *XSegment) NewSubSegment(subSegmentName string) *XSegment {
 	return &XSegment{
 		Ctx:       ctx,
 		Seg:       seg,
-		_segReady: true,
+		_segReady: seg != nil,
 	}
 }
 
@@ -463,7 +469,7 @@ func (x *XSegment) Close() {
 // traceData = optional additional data to add to the trace (meta, annotation, error)
 func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData ...*XTraceData) error {
 	if !x._segReady || x.Ctx == nil || x.Seg == nil {
-		return fmt.Errorf("Segnment Not Ready")
+		return fmt.Errorf("Segment Not Ready")
 	}
 
 	if executeFunc == nil {
@@ -542,7 +548,7 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 	errCh := make(chan error, 1) // buffered so sender won't block
 
 	if !x._segReady || x.Ctx == nil || x.Seg == nil {
-		errCh <- fmt.Errorf("Segnment Not Ready")
+		errCh <- fmt.Errorf("Segment Not Ready")
 		close(errCh)
 		return errCh
 	}

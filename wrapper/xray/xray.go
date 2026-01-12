@@ -1,7 +1,7 @@
 package xray
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,13 +42,14 @@ package xray
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"os"
+	"sync"
+
 	util "github.com/aldelo/common"
 	"github.com/aws/aws-xray-sdk-go/awsplugins/ecs"
 	"github.com/aws/aws-xray-sdk-go/header"
 	"github.com/aws/aws-xray-sdk-go/xray"
-	"net/http"
-	"os"
-	"sync"
 )
 
 //
@@ -321,12 +322,14 @@ func NewSegment(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *X
 // otherwise, nil is returned for *XSegment.
 func NewSegmentNullable(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *XSegment {
 	_mu.RLock()
-	defer _mu.RUnlock()
-	if _xrayServiceOn {
-		return NewSegment(serviceNameOrUrl, parentSegment...)
-	} else {
+	on := _xrayServiceOn
+	_mu.RUnlock()
+
+	if !on {
 		return nil
 	}
+
+	return NewSegment(serviceNameOrUrl, parentSegment...)
 }
 
 // NewSegmentFromHeader begins a new segment for a named service or url based on http request,
@@ -429,22 +432,35 @@ func (x *XSegment) Close() {
 // traceName = descriptive name for the tracing session being tracked
 // executeFunc = custom logic to execute within capture tracing context (context is segment context)
 // traceData = optional additional data to add to the trace (meta, annotation, error)
-func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData ...*XTraceData) {
+func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData ...*XTraceData) error {
 	if !x._segReady || x.Ctx == nil || x.Seg == nil {
-		return
+		return fmt.Errorf("Segnment Not Ready")
 	}
 
 	if executeFunc == nil {
-		return
+		return nil
 	}
 
 	if util.LenTrim(traceName) == 0 {
 		traceName = "no.synchronous.trace.name.defined"
 	}
 
-	_ = xray.Capture(x.Ctx, traceName, func(ctx context.Context) error {
-		// execute logic
-		err := executeFunc()
+	var execErr error
+
+	err := xray.Capture(x.Ctx, traceName, func(ctx context.Context) error {
+		// guard against panics so we can flag the segment and return an error
+		defer func() {
+			if r := recover(); r != nil {
+				panicErr := fmt.Errorf("panic in capture: %v", r)
+				execErr = panicErr
+				if s := xray.GetSegment(ctx); s != nil {
+					s.Fault = true
+					_ = xray.AddError(ctx, panicErr)
+				}
+			}
+		}()
+
+		execErr := executeFunc()
 
 		// add additional trace data if any to xray
 		if len(traceData) > 0 {
@@ -469,16 +485,20 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 			}
 		}
 
-		if s := xray.GetSegment(ctx); s != nil {
-			if err != nil {
-				s.Error = true
-				_ = xray.AddError(ctx, err)
-			}
+		if s := xray.GetSegment(ctx); s != nil && execErr == nil {
+			s.Error = true
+			_ = xray.AddError(ctx, execErr)
 		}
 
-		// always return nil
-		return nil
+		// return actual error for caller to receive
+		return execErr
 	})
+
+	// propagate whichever error occurred
+	if execErr != nil {
+		return execErr
+	}
+	return err
 }
 
 // CaptureAsync wraps xray.CaptureAsync, by beginning and closing a subsegment with traceName,
@@ -489,13 +509,18 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 // traceName = descriptive name for the tracing session being tracked
 // executeFunc = custom logic to execute within capture tracing context (context is segment context)
 // traceData = optional additional data to add to the trace (meta, annotation, error)
-func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, traceData ...*XTraceData) {
+func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, traceData ...*XTraceData) <-chan error {
+	errCh := make(chan error, 1) // buffered so sender won't block
+
 	if !x._segReady || x.Ctx == nil || x.Seg == nil {
-		return
+		errCh <- fmt.Errorf("Segnment Not Ready")
+		close(errCh)
+		return errCh
 	}
 
 	if executeFunc == nil {
-		return
+		close(errCh)
+		return errCh
 	}
 
 	if util.LenTrim(traceName) == 0 {
@@ -503,6 +528,20 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 	}
 
 	xray.CaptureAsync(x.Ctx, traceName, func(ctx context.Context) error {
+		defer close(errCh) // ensure channel closes
+
+		// guard against panic
+		defer func() {
+			if r := recover(); r != nil {
+				panicErr := fmt.Errorf("panic in capture async: %v", r)
+				if s := xray.GetSegment(ctx); s != nil {
+					s.Fault = true
+					_ = xray.AddError(ctx, panicErr)
+				}
+				errCh <- panicErr
+			}
+		}()
+
 		// execute logic
 		err := executeFunc()
 
@@ -534,7 +573,10 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 			_ = xray.AddError(ctx, err)
 		}
 
-		// always return nil
+		// deliver error to caller
+		errCh <- err
 		return nil
 	})
+
+	return errCh
 }

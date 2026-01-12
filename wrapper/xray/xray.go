@@ -395,7 +395,7 @@ func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegmen
 		hdr = &header.Header{}
 	}
 
-	ctx, seg := xray.NewSegmentFromHeader(req.Context(), name, req, hdr)
+	ctx, seg := xray.NewSegmentFromHeader(baseCtx, name, req, hdr)
 
 	return &XSegment{
 		Ctx:       ctx,

@@ -349,7 +349,21 @@ func NewSubSegmentFromContext(ctx context.Context, serviceNameOrUrl string) *XSe
 		serviceNameOrUrl = "no.service.name.defined"
 	}
 
-	subCtx, seg := xray.BeginSubsegment(ctx, serviceNameOrUrl)
+	// wrap BeginSubsegment to avoid process-wide panic on recorder/context issues.
+	var (
+		subCtx context.Context
+		seg    *xray.Segment
+	)
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				subCtx = ctx
+				seg = nil
+			}
+		}()
+		subCtx, seg = xray.BeginSubsegment(ctx, serviceNameOrUrl)
+	}()
 
 	return &XSegment{
 		Ctx:       subCtx,
@@ -376,7 +390,20 @@ func NewSegment(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *X
 		serviceNameOrUrl = "no.service.name.defined"
 	}
 
-	ctx, seg := xray.BeginSegment(context.Background(), serviceNameOrUrl)
+	// wrap BeginSegment to prevent panic when context-missing strategy is set to panic.
+	var (
+		ctx context.Context
+		seg *xray.Segment
+	)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				ctx = context.Background()
+				seg = nil
+			}
+		}()
+		ctx, seg = xray.BeginSegment(context.Background(), serviceNameOrUrl)
+	}()
 
 	if seg != nil && len(parentSegment) > 0 {
 		if parentSegment[0] != nil {
@@ -445,7 +472,20 @@ func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegmen
 		hdr = &header.Header{}
 	}
 
-	ctx, seg := xray.NewSegmentFromHeader(baseCtx, name, req, hdr)
+	// guard xray.NewSegmentFromHeader against panics from context-missing strategy.
+	var (
+		ctx context.Context
+		seg *xray.Segment
+	)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				ctx = baseCtx
+				seg = nil
+			}
+		}()
+		ctx, seg = xray.NewSegmentFromHeader(baseCtx, name, req, hdr)
+	}()
 
 	return &XSegment{
 		Ctx:       ctx,
@@ -497,7 +537,20 @@ func (x *XSegment) NewSubSegment(subSegmentName string) *XSegment {
 		}
 	}
 
-	ctx, seg := xray.BeginSubsegment(parentCtx, subSegmentName)
+	// wrap BeginSubsegment to avoid panic if recorder/context missing mid-flight.
+	var (
+		ctx context.Context
+		seg *xray.Segment
+	)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				ctx = parentCtx
+				seg = nil
+			}
+		}()
+		ctx, seg = xray.BeginSubsegment(parentCtx, subSegmentName)
+	}()
 
 	return &XSegment{
 		Ctx:       ctx,

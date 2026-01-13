@@ -106,29 +106,19 @@ func Btoa(b bool) string {
 // Atob converts string to bool.
 // string values with first char lower cased "t", "y", "1" treated as true, otherwise false.
 func Atob(s string) bool {
-	if LenTrim(s) == 0 {
+	trimmed := strings.TrimSpace(s)
+	if LenTrim(trimmed) == 0 {
 		return false
 	}
 
-	var b bool
-	b = false
-
-	switch strings.ToLower(s[:1]) {
-	case "t":
-		b = true
-	case "y":
-		b = true
-	case "1":
-		b = true
-	case "f":
-		b = false
-	case "n":
-		b = false
-	case "0":
-		b = false
+	switch strings.ToLower(trimmed[:1]) {
+	case "t", "y", "1":
+		return true
+	case "f", "n", "0":
+		return false
 	}
 
-	return b
+	return false
 }
 
 // IntPtr int pointer from int value.
@@ -175,7 +165,7 @@ func UintVal(i *uint) uint {
 
 // StrToUint converts from string to uint, if string is not a valid uint, 0 is returned.
 func StrToUint(s string) uint {
-	if v, e := strconv.ParseUint(s, 10, 32); e != nil {
+	if v, e := strconv.ParseUint(s, 10, 0); e != nil {
 		return 0
 	} else {
 		return uint(v)

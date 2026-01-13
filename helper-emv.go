@@ -85,9 +85,6 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 		return nil, fmt.Errorf("EMV Tags To Search is Required")
 	}
 
-	// store emv tags already processed
-	var processedTags []string
-
 	// loop until all emv tlv tags payload are processed
 	for len(emvTlvTagsPayload) >= 6 {
 		// get left 2 char, mid 2 char, and left 4 char, from left to match against emv search tags
@@ -126,7 +123,7 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 		matchFound := false
 
 		for _, t := range searchTags {
-			if LenTrim(t) > 0 && !StringSliceContains(&processedTags, t) && (len(t) == 2 || len(t) == 4) {
+			if LenTrim(t) > 0 && (len(t) == 2 || len(t) == 4) {
 				tagLenRemove := 0
 				tagValLen := 0
 				tagValHex := ""
@@ -134,27 +131,38 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 
 				if len(t) == 2 {
 					// 2
-					if strings.ToUpper(left2) == strings.ToUpper(t) && left2HexValueCount > 0 {
+					if strings.ToUpper(left2) == strings.ToUpper(t) && left2HexValueCount >= 0 {
 						tagLenRemove = 4
 						tagValLen = left2HexValueCount
-					} else if strings.ToUpper(mid2) == strings.ToUpper(t) && mid2HexValueCount > 0 {
+					} else if strings.ToUpper(mid2) == strings.ToUpper(t) && mid2HexValueCount >= 0 {
 						tagLenRemove = 6
 						tagValLen = mid2HexValueCount
 					}
 				} else {
 					// 4
-					if strings.ToUpper(left4) == strings.ToUpper(t) && left4HexValueCount > 0 {
+					if strings.ToUpper(left4) == strings.ToUpper(t) && left4HexValueCount >= 0 {
 						tagLenRemove = 6
 						tagValLen = left4HexValueCount
-					} else if checkMid4 && len(mid4) > 0 && strings.ToUpper(mid4) == strings.ToUpper(t) && mid4HexvalueCount > 0 {
+					} else if checkMid4 && len(mid4) > 0 && strings.ToUpper(mid4) == strings.ToUpper(t) && mid4HexvalueCount >= 0 {
 						tagLenRemove = 8
 						tagValLen = mid4HexvalueCount
 					}
 				}
 
-				if tagLenRemove > 0 && tagValLen > 0 {
+				if tagLenRemove > 0 && tagValLen >= 0 {
+					// bounds check for header removal
+					if tagLenRemove > len(emvTlvTagsPayload) {
+						return nil, fmt.Errorf("EMV tag %s length header exceeds payload", t)
+					}
+
 					// remove left x (tag and size)
 					emvTlvTagsPayload = Right(emvTlvTagsPayload, len(emvTlvTagsPayload)-tagLenRemove)
+
+					// bounds check for value length
+					need := tagValLen * 2
+					if need > len(emvTlvTagsPayload) {
+						return nil, fmt.Errorf("EMV tag %s value length %d exceeds remaining payload", t, tagValLen)
+					}
 
 					// get tag value hex
 					tagValHex = Left(emvTlvTagsPayload, tagValLen*2)
@@ -175,8 +183,6 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 						TagHexValue:      tagValHex,
 						TagDecodedValue:  tagValDecoded,
 					})
-
-					processedTags = append(processedTags, t)
 				}
 			}
 		}
@@ -297,9 +303,17 @@ func getEncryptedTlvTagsAscii() []string {
 //	Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
 //	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvTag, err error) {
+	// normalize and validate payload
+	encryptedTlvTagsPayload, _ = ExtractAlphaNumeric(Replace(encryptedTlvTagsPayload, " ", ""))
+	encryptedTlvTagsPayload = strings.ToUpper(encryptedTlvTagsPayload)
+
 	// validate
 	if LenTrim(encryptedTlvTagsPayload) < 6 {
 		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Be 6 Digits or More")
+	}
+
+	if len(encryptedTlvTagsPayload)%2 != 0 {
+		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Be Formatted as Double HEX")
 	}
 
 	// helper to parse hex length bytes without ASCII conversion
@@ -322,9 +336,6 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 	}
 
 	asciiTags := getEncryptedTlvTagsAscii()
-
-	// store emv tags already processed
-	var processedTags []string
 
 	// loop until all tlv tags payload are processed
 	for len(encryptedTlvTagsPayload) >= 6 {
@@ -378,7 +389,7 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 		matchFound := false
 
 		for _, t := range searchTags {
-			if LenTrim(t) > 0 && !StringSliceContains(&processedTags, t) && (len(t) == 2 || len(t) == 4 || len(t) == 6) {
+			if LenTrim(t) > 0 && (len(t) == 2 || len(t) == 4 || len(t) == 6) {
 				tagLenRemove := 0
 				tagValLen := 0
 				tagValHex := ""
@@ -386,52 +397,68 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 
 				if len(t) == 2 {
 					// 2
-					if strings.ToUpper(left2) == strings.ToUpper(t) && left2HexValueCount > 0 {
+					if strings.ToUpper(left2) == strings.ToUpper(t) && left2HexValueCount >= 0 {
 						tagLenRemove = 4
 						tagValLen = left2HexValueCount
-					} else if strings.ToUpper(mid2) == strings.ToUpper(t) && mid2HexValueCount > 0 {
+					} else if strings.ToUpper(mid2) == strings.ToUpper(t) && mid2HexValueCount >= 0 {
 						tagLenRemove = 6
 						tagValLen = mid2HexValueCount
 					}
 				} else if len(t) == 4 {
 					// 4
-					if strings.ToUpper(left4) == strings.ToUpper(t) && left4HexValueCount > 0 {
+					if strings.ToUpper(left4) == strings.ToUpper(t) && left4HexValueCount >= 0 {
 						tagLenRemove = 6
 						tagValLen = left4HexValueCount
-					} else if checkMid4 && len(mid4) > 0 && strings.ToUpper(mid4) == strings.ToUpper(t) && mid4HexValueCount > 0 {
+					} else if checkMid4 && len(mid4) > 0 && strings.ToUpper(mid4) == strings.ToUpper(t) && mid4HexValueCount >= 0 {
 						tagLenRemove = 8
 						tagValLen = mid4HexValueCount
 					}
 				} else if checkLeft6 {
 					// 6
-					if strings.ToUpper(left6) == strings.ToUpper(t) && left6HexValueCount > 0 {
+					if strings.ToUpper(left6) == strings.ToUpper(t) && left6HexValueCount >= 0 {
 						tagLenRemove = 8
 						tagValLen = left6HexValueCount
 					}
 				}
 
-				if tagLenRemove > 0 && tagValLen > 0 {
+				if tagLenRemove > 0 && tagValLen >= 0 {
+					// bounds check for header removal
+					if tagLenRemove > len(encryptedTlvTagsPayload) {
+						return nil, fmt.Errorf("Encrypted tag %s length header exceeds payload", t)
+					}
+
 					// remove left x (tag and size)
 					encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-tagLenRemove)
 
 					// get tag value hex
 					if !StringSliceContains(&asciiTags, t) {
 						// hex
-						tagValHex = Left(encryptedTlvTagsPayload, tagValLen*2)
+						need := tagValLen * 2
+
+						// bounds check for value length
+						if need > len(encryptedTlvTagsPayload) {
+							return nil, fmt.Errorf("Encrypted tag %s value length %d exceeds remaining payload", t, tagValLen)
+						}
+						tagValHex = Left(encryptedTlvTagsPayload, need)
 
 						if tagValDecoded, err = HexToString(tagValHex); err != nil {
 							return nil, err
 						}
 
 						// remove tag value from payload
-						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-tagValLen*2)
+						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-need)
 					} else {
 						// ascii
-						tagValHex = Left(encryptedTlvTagsPayload, tagValLen)
+						need := tagValLen
+						// bounds check for ascii value length
+						if need > len(encryptedTlvTagsPayload) {
+							return nil, fmt.Errorf("Encrypted tag %s ASCII value length %d exceeds remaining payload", t, tagValLen)
+						}
+						tagValHex = Left(encryptedTlvTagsPayload, need)
 						tagValDecoded = tagValHex
 
 						// remove tag value from payload
-						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-tagValLen)
+						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-need)
 					}
 
 					// matched, finalize tag found
@@ -443,8 +470,6 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 						TagHexValue:      tagValHex,
 						TagDecodedValue:  tagValDecoded,
 					})
-
-					processedTags = append(processedTags, t)
 				}
 			}
 		}

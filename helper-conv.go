@@ -67,6 +67,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -118,14 +120,20 @@ func Atob(s string) bool {
 		return false
 	}
 
-	switch strings.ToLower(trimmed[:1]) {
-	case "t", "y", "1":
+	r, _ := utf8.DecodeRuneInString(trimmed)
+	switch unicode.ToLower(r) {
+	case 't', 'y', '1':
 		return true
-	case "f", "n", "0":
+	case 'f', 'n', '0':
 		return false
 	}
 
 	return false
+}
+
+// AtoiStrict converts string to integer and returns an error on failure (does not default to 0).
+func AtoiStrict(s string) (int, error) {
+	return strconv.Atoi(strings.TrimSpace(s))
 }
 
 // IntPtr int pointer from int value.
@@ -172,11 +180,49 @@ func UintVal(i *uint) uint {
 
 // StrToUint converts from string to uint, if string is not a valid uint, 0 is returned.
 func StrToUint(s string) uint {
-	if v, e := strconv.ParseUint(s, 10, 0); e != nil {
+	v, e := strconv.ParseUint(strings.TrimSpace(s), 10, 64)
+	if e != nil {
 		return 0
-	} else {
-		return uint(v)
 	}
+	maxUint := ^uint(0)
+	if v > uint64(maxUint) {
+		return 0
+	}
+	return uint(v)
+}
+
+// StrToUintStrict converts from string to uint and surfaces parse/overflow errors.
+func StrToUintStrict(s string) (uint, error) {
+	v, e := strconv.ParseUint(strings.TrimSpace(s), 10, 64)
+	if e != nil {
+		return 0, e
+	}
+	maxUint := ^uint(0)
+	if v > uint64(maxUint) {
+		return 0, fmt.Errorf("value %d overflows uint (%d bits)", v, strconv.IntSize)
+	}
+	return uint(v), nil
+}
+
+// StrToUint64Strict converts from string to uint64 and surfaces parse errors.
+func StrToUint64Strict(s string) (uint64, error) {
+	return strconv.ParseUint(strings.TrimSpace(s), 10, 64)
+}
+
+// StrToInt64Strict converts from string to int64 and surfaces parse errors.
+func StrToInt64Strict(s string) (int64, error) {
+	return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+}
+
+// Float64ToIntStrict converts from float64 into int with validation and an error on failure.
+func Float64ToIntStrict(f float64) (int, error) {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, fmt.Errorf("cannot convert NaN or Inf to int")
+	}
+	if f > maxSafeFloatToInt || f < minSafeFloatToInt {
+		return 0, fmt.Errorf("value %f overflows int", f)
+	}
+	return int(math.Round(f)), nil
 }
 
 // Int64Ptr gets int64 pointer from int64 value.
@@ -474,5 +520,5 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 
 // IntToHex returns HEX string representation of i, in 2 digit blocks.
 func IntToHex(i int) string {
-	return strings.ToUpper(strconv.FormatInt(int64(i), 16))
+	return strings.ToUpper(strconv.FormatUint(uint64(uint(i)), 16))
 }

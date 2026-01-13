@@ -48,7 +48,11 @@ type ZapLog struct {
 
 // helper to normalize log messages
 func sanitizeLogMessage(msg string) string { // centralized newline stripping
-	return strings.ReplaceAll(strings.ReplaceAll(msg, "\n", ""), "\r", "")
+	// strip newlines and tabs to avoid log injection / formatting abuse
+	msg = strings.ReplaceAll(msg, "\n", "")
+	msg = strings.ReplaceAll(msg, "\r", "")
+	msg = strings.ReplaceAll(msg, "\t", "")
+	return msg
 }
 
 // Init will initialize and prepare the zap log wrapper for use,
@@ -113,8 +117,11 @@ func (z *ZapLog) Sync() error {
 
 	if z.zapLogger != nil { // allow sync even when DisableLogger is true
 		if err := z.zapLogger.Sync(); err != nil { // surface sync errors
-			// ignore benign sync errors on stdout/stderr (common on Windows)
-			if strings.Contains(err.Error(), "invalid argument") {
+			// ignore benign sync errors on stdout/stderr (common on Windows / pipes / non-tty)
+			msg := err.Error()
+			if strings.Contains(msg, "invalid argument") ||
+				strings.Contains(msg, "file already closed") ||
+				strings.Contains(msg, "ENOTTY") {
 				return nil
 			}
 			return err

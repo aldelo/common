@@ -18,6 +18,7 @@ package helper
 
 import (
 	"database/sql"
+	"math"
 	"time"
 )
 
@@ -87,6 +88,11 @@ func FromNullInt(d sql.NullInt32) int {
 
 // ToNullInt sets int value into NullInt32 output
 func ToNullInt(d int, emptyAsNull bool) sql.NullInt32 {
+	// guard against int32 overflow to prevent truncated values
+	if d > math.MaxInt32 || d < math.MinInt32 {
+		return sql.NullInt32{Valid: false, Int32: 0}
+	}
+
 	if emptyAsNull == true {
 		if d == 0 {
 			return sql.NullInt32{Valid: false, Int32: 0}
@@ -110,6 +116,11 @@ func FromNullFloat64(d sql.NullFloat64) float64 {
 
 // ToNullFloat64 sets float64 into NullFloat64 output
 func ToNullFloat64(d float64, emptyAsNull bool) sql.NullFloat64 {
+	// treat NaN/Inf as null to avoid DB driver errors
+	if math.IsNaN(d) || math.IsInf(d, 0) {
+		return sql.NullFloat64{Valid: false, Float64: 0}
+	}
+
 	if emptyAsNull == true {
 		if d == 0.00 {
 			return sql.NullFloat64{Valid: false, Float64: 0.00}

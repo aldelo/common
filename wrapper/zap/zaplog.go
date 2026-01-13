@@ -299,14 +299,11 @@ func (z *ZapLog) Panicf(logTemplateData string, args ...interface{}) {
 	disabled := z.DisableLogger // honor DisableLogger for panic/fatal paths
 	z.mu.RUnlock()
 
-	if disabled {
-		return
-	}
-
-	if logger != nil {
+	if logger != nil && !disabled {
 		logger.Panicf(logTemplateData, args...)
 		return
 	}
+
 	panic(fmt.Sprintf(logTemplateData, args...))
 }
 
@@ -318,11 +315,7 @@ func (z *ZapLog) Panicw(logMessageData string, keyValuePairs ...interface{}) {
 	disabled := z.DisableLogger // honor DisableLogger for panic/fatal paths
 	z.mu.RUnlock()
 
-	if disabled {
-		return
-	}
-
-	if logger != nil {
+	if logger != nil && !disabled {
 		logger.Panicw(logMessageData, keyValuePairs...)
 		return
 	}
@@ -337,11 +330,7 @@ func (z *ZapLog) Panic(logMessageData string, fields ...zap.Field) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if disabled {
-		return
-	}
-
-	if logger != nil {
+	if logger != nil && !disabled {
 		logger.Panic(logMessageData, fields...)
 		return
 	}
@@ -356,11 +345,7 @@ func (z *ZapLog) Fatalf(logTemplateData string, args ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if disabled {
-		return
-	}
-
-	if logger != nil {
+	if logger != nil && !disabled {
 		logger.Fatalf(logTemplateData, args...)
 		return
 	}
@@ -376,14 +361,11 @@ func (z *ZapLog) Fatalw(logMessageData string, keyValuePairs ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if disabled {
-		return
-	}
-
-	if logger != nil {
+	if logger != nil && !disabled {
 		logger.Fatalw(logMessageData, keyValuePairs...)
 		return
 	}
+
 	fmt.Println(logMessageData)
 	os.Exit(1)
 }
@@ -396,11 +378,7 @@ func (z *ZapLog) Fatal(logMessageData string, fields ...zap.Field) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if disabled {
-		return
-	}
-
-	if logger != nil {
+	if logger != nil && !disabled {
 		logger.Fatal(logMessageData, fields...)
 		return
 	}

@@ -84,7 +84,7 @@ func (z *ZapLog) Init() error {
 		// log to file
 		prod := zap.NewProductionConfig()
 
-		prod.Development = true
+		prod.Development = false
 		prod.DisableCaller = true
 
 		prod.Encoding = "json"
@@ -113,15 +113,17 @@ func (z *ZapLog) Init() error {
 // Sync will flush log buffer to disk
 func (z *ZapLog) Sync() error {
 	z.mu.RLock()
-	defer z.mu.RUnlock()
+	logger := z.zapLogger
+	z.mu.RUnlock()
 
 	if z.zapLogger != nil { // allow sync even when DisableLogger is true
-		if err := z.zapLogger.Sync(); err != nil { // surface sync errors
+		if err := logger.Sync(); err != nil { // surface sync errors
 			// ignore benign sync errors on stdout/stderr (common on Windows / pipes / non-tty)
 			msg := err.Error()
 			if strings.Contains(msg, "invalid argument") ||
 				strings.Contains(msg, "file already closed") ||
-				strings.Contains(msg, "ENOTTY") {
+				strings.Contains(msg, "ENOTTY") ||
+				strings.Contains(msg, "bad file descriptor") {
 				return nil
 			}
 			return err

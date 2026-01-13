@@ -70,8 +70,8 @@ import (
 )
 
 const (
-	maxSafeFloatToInt      = float64(math.MaxInt)
-	minSafeFloatToInt      = float64(math.MinInt)
+	maxSafeFloatToInt      = float64(int(^uint(0) >> 1))    // max int
+	minSafeFloatToInt      = float64(-int(^uint(0)>>1) - 1) // min int (two's complement)
 	maxSafeFloatToIntCents = maxSafeFloatToInt / 100.0
 	minSafeFloatToIntCents = minSafeFloatToInt / 100.0
 )

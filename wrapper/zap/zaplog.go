@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	util "github.com/aldelo/common"
 	"go.uber.org/zap"
@@ -41,6 +42,8 @@ type ZapLog struct {
 	// store zap client object
 	zapLogger   *zap.Logger
 	sugarLogger *zap.SugaredLogger
+
+	mu sync.RWMutex
 }
 
 // helper to normalize log messages
@@ -58,17 +61,20 @@ func (z *ZapLog) Init() error {
 		return errors.New("Init Logger Failed: " + "App Name is Required")
 	}
 
-	// clean up
-	if z.sugarLogger != nil {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+
+	// gracefully close previous logger to avoid FD leaks on re-init
+	if z.zapLogger != nil {
+		_ = z.zapLogger.Sync()
+		z.zapLogger = nil
 		z.sugarLogger = nil
 	}
 
-	if z.zapLogger != nil {
-		z.zapLogger = nil
-	}
-
-	// init zap logger
-	var err error
+	var (
+		logger *zap.Logger
+		err    error
+	)
 
 	if !z.OutputToConsole {
 		// log to file
@@ -82,10 +88,10 @@ func (z *ZapLog) Init() error {
 		prod.OutputPaths = []string{z.AppName + ".log"}
 		prod.ErrorOutputPaths = []string{z.AppName + "-internal-err.log"}
 
-		z.zapLogger, err = prod.Build()
+		logger, err = prod.Build()
 	} else {
 		// log to console
-		z.zapLogger, err = zap.NewProduction()
+		logger, err = zap.NewProduction()
 	}
 
 	if err != nil {
@@ -93,7 +99,8 @@ func (z *ZapLog) Init() error {
 	}
 
 	// init zap sugared logger
-	z.sugarLogger = z.zapLogger.Sugar()
+	z.zapLogger = logger
+	z.sugarLogger = logger.Sugar()
 
 	// init success
 	return nil
@@ -101,8 +108,13 @@ func (z *ZapLog) Init() error {
 
 // Sync will flush log buffer to disk
 func (z *ZapLog) Sync() error {
+	z.mu.RLock()
+	defer z.mu.RUnlock()
+
 	if z.zapLogger != nil { // allow sync even when DisableLogger is true
-		_ = z.zapLogger.Sync()
+		if err := z.zapLogger.Sync(); err != nil { // surface sync errors
+			return err
+		}
 	}
 	return nil
 }
@@ -114,8 +126,14 @@ func (z *ZapLog) Printf(format string, items ...interface{}) {
 
 // Infof is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Infof(logTemplateData string, args ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		z.sugarLogger.Infof(logTemplateData, args...)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logTemplateData = sanitizeLogMessage(logTemplateData) // normalize to prevent newline/tab injection
+		logger.Infof(logTemplateData, args...)
 	}
 }
 
@@ -137,8 +155,14 @@ func (z *ZapLog) Info(logMessageData string, fields ...zap.Field) {
 
 // Debugf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Debugf(logTemplateData string, args ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		z.sugarLogger.Debugf(logTemplateData, args...)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logTemplateData = sanitizeLogMessage(logTemplateData)
+		logger.Debugf(logTemplateData, args...)
 	}
 }
 
@@ -160,8 +184,14 @@ func (z *ZapLog) Debug(logMessageData string, fields ...zap.Field) {
 
 // Warnf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Warnf(logTemplateData string, args ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		z.sugarLogger.Warnf(logTemplateData, args...)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logTemplateData = sanitizeLogMessage(logTemplateData)
+		logger.Warnf(logTemplateData, args...)
 	}
 }
 
@@ -183,8 +213,14 @@ func (z *ZapLog) Warn(logMessageData string, fields ...zap.Field) {
 
 // Errorf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Errorf(logTemplateData string, args ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		z.sugarLogger.Errorf(logTemplateData, args...)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logTemplateData = sanitizeLogMessage(logTemplateData)
+		logger.Errorf(logTemplateData, args...)
 	}
 }
 
@@ -207,11 +243,14 @@ func (z *ZapLog) Error(logMessageData string, fields ...zap.Field) {
 // Panicf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Panicf(logTemplateData string, args ...interface{}) {
 	logTemplateData = sanitizeLogMessage(logTemplateData) // normalize
-	if z.sugarLogger != nil {
-		z.sugarLogger.Panicf(logTemplateData, args...)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	z.mu.RUnlock()
+
+	if logger != nil {
+		logger.Panicf(logTemplateData, args...)
 		return
 	}
-	// preserve panic behavior even when logger is disabled or uninitialized
 	panic(fmt.Sprintf(logTemplateData, args...))
 }
 
@@ -240,11 +279,14 @@ func (z *ZapLog) Panic(logMessageData string, fields ...zap.Field) {
 // Fatalf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Fatalf(logTemplateData string, args ...interface{}) {
 	logTemplateData = sanitizeLogMessage(logTemplateData) // normalize
-	if z.sugarLogger != nil {
-		z.sugarLogger.Fatalf(logTemplateData, args...)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	z.mu.RUnlock()
+
+	if logger != nil {
+		logger.Fatalf(logTemplateData, args...)
 		return
 	}
-	// preserve fatal behavior even when logger is disabled or uninitialized
 	fmt.Printf(logTemplateData, args...)
 	os.Exit(1)
 }

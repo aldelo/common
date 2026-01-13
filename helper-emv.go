@@ -342,19 +342,19 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 		// get left 2 char, mid 2 char, and left 4 char, from left to match against emv search tags
 		// get left 6 char (for DF tags)
 		left2 := Left(encryptedTlvTagsPayload, 2)
-		left2HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 2, 2)) // FIX
+		left2HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 2, 2))
 		if e != nil {
 			return nil, e
 		}
 
 		mid2 := Mid(encryptedTlvTagsPayload, 2, 2)
-		mid2HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 4, 2)) // FIX
+		mid2HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 4, 2))
 		if e != nil {
 			return nil, e
 		}
 
 		left4 := Left(encryptedTlvTagsPayload, 4)
-		left4HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 4, 2)) // FIX
+		left4HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 4, 2))
 		if e != nil {
 			return nil, e
 		}
@@ -449,15 +449,15 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-need)
 					} else {
 						// ascii
-						need := tagValLen
+						need := tagValLen * 2
 						// bounds check for ascii value length
 						if need > len(encryptedTlvTagsPayload) {
 							return nil, fmt.Errorf("Encrypted tag %s ASCII value length %d exceeds remaining payload", t, tagValLen)
 						}
 						tagValHex = Left(encryptedTlvTagsPayload, need)
-						tagValDecoded = tagValHex
-
-						// remove tag value from payload
+						if tagValDecoded, err = HexToString(tagValHex); err != nil { // decode hex to ASCII
+							return nil, err
+						}
 						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-need)
 					}
 

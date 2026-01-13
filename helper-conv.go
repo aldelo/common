@@ -230,7 +230,7 @@ func Float32Ptr(f float32) *float32 {
 
 // Float32ToString converts float32 value to string.
 func Float32ToString(f float32) string {
-	return fmt.Sprintf("%f", f)
+	return strconv.FormatFloat(float64(f), 'g', -1, 32)
 }
 
 // Float32ToStringCents converts float32 value into string representing cent values, 2.12 returned as "212".
@@ -289,12 +289,12 @@ func CentsToFloat64(i int) float64 {
 
 // FloatToString converts float64 value into string value.
 func FloatToString(f float64) string {
-	return fmt.Sprintf("%f", f)
+	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
 // Float64ToString converts float64 value into string value.
 func Float64ToString(f float64) string {
-	return fmt.Sprintf("%f", f)
+	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
 // Float64PtrToFloat64 returns 0 if nil, otherwise actual float64 value.
@@ -449,5 +449,5 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 
 // IntToHex returns HEX string representation of i, in 2 digit blocks.
 func IntToHex(i int) string {
-	return fmt.Sprintf("%02X", i)
+	return fmt.Sprintf("%02X", uint8(i))
 }

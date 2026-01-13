@@ -67,7 +67,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -115,13 +114,21 @@ func Btoa(b bool) string {
 // Atob converts string to bool.
 // string values with first char lower cased "t", "y", "1" treated as true, otherwise false.
 func Atob(s string) bool {
-	trimmed := strings.TrimSpace(s)
+	trimmed := strings.ToLower(strings.TrimSpace(s))
 	if LenTrim(trimmed) == 0 {
 		return false
 	}
 
+	switch trimmed {
+	case "true", "t", "yes", "y", "1", "on":
+		return true
+	case "false", "f", "no", "n", "0", "off":
+		return false
+	}
+
+	// fallback to first-rune behavior for backwards compatibility with old partial tokens
 	r, _ := utf8.DecodeRuneInString(trimmed)
-	switch unicode.ToLower(r) {
+	switch r {
 	case 't', 'y', '1':
 		return true
 	case 'f', 'n', '0':
@@ -520,5 +527,9 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 
 // IntToHex returns HEX string representation of i, in 2 digit blocks.
 func IntToHex(i int) string {
+	if i < 0 {
+		return "-" + strings.ToUpper(strconv.FormatInt(int64(-i), 16))
+	}
+
 	return strings.ToUpper(strconv.FormatUint(uint64(uint(i)), 16))
 }

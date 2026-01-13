@@ -688,6 +688,18 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 			return
 		}
 
+		// CHANGE: wrap xray.Capture to shield from panics (e.g., if parent segment disappears mid-flight)
+		defer func() {
+			if r := recover(); r != nil {
+				runErr := fmt.Errorf("panic in capture async wrapper: %v", r)
+				if s := xray.GetSegment(ctx); s != nil {
+					s.Fault = true
+					_ = xray.AddError(ctx, runErr)
+				}
+				errCh <- runErr
+			}
+		}()
+
 		// Use xray.Capture to ensure proper segment flushing.
 		err := xray.Capture(ctx, traceName, func(ctx context.Context) error {
 			var runErr error

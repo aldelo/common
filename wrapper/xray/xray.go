@@ -591,67 +591,67 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 	if util.LenTrim(traceName) == 0 {
 		traceName = "no.asynchronous.trace.name.defined"
 	}
-	
-	if err := xray.CaptureAsync(x.Ctx, traceName, func(ctx context.Context) error {
-		defer close(errCh) // ensure channel closes
 
-		var runErr error // single source of truth for execution/panic error
+	// Run the capture in a goroutine; xray.Capture is sync, but this wrapper stays async.
+	go func() {
+		defer close(errCh)
 
-		// guard against panic
-		defer func() {
-			if r := recover(); r != nil {
-				runErr = fmt.Errorf("panic in capture async: %v", r)
-				if s := xray.GetSegment(ctx); s != nil {
-					s.Fault = true
-					_ = xray.AddError(ctx, runErr)
-				}
-			}
-		}()
+		// Use xray.Capture to ensure proper segment flushing.
+		err := xray.Capture(x.Ctx, traceName, func(ctx context.Context) error {
+			var runErr error
 
-		// execute logic
-		runErr = executeFunc()
-
-		// add additional trace data if any to xray
-		if len(traceData) > 0 {
-			if m := traceData[0]; m != nil {
-				if m.Meta != nil && len(m.Meta) > 0 {
-					for k, v := range m.Meta {
-						_ = xray.AddMetadata(ctx, k, v)
-					}
-				}
-
-				if m.Annotations != nil && len(m.Annotations) > 0 {
-					for k, v := range m.Annotations {
-						_ = xray.AddAnnotation(ctx, k, v)
-					}
-				}
-
-				if m.Errors != nil && len(m.Errors) > 0 {
-					for _, v := range m.Errors {
-						_ = xray.AddError(ctx, v)
-					}
-
-					// flag the segment as error when attaching errors
+			// guard against panic
+			defer func() {
+				if r := recover(); r != nil {
+					runErr = fmt.Errorf("panic in capture async: %v", r)
 					if s := xray.GetSegment(ctx); s != nil {
-						s.Error = true
+						s.Fault = true
+						_ = xray.AddError(ctx, runErr)
+					}
+				}
+			}()
+
+			// execute logic
+			runErr = executeFunc()
+
+			// add additional trace data if any to xray
+			if len(traceData) > 0 {
+				if m := traceData[0]; m != nil {
+					if m.Meta != nil && len(m.Meta) > 0 {
+						for k, v := range m.Meta {
+							_ = xray.AddMetadata(ctx, k, v)
+						}
+					}
+
+					if m.Annotations != nil && len(m.Annotations) > 0 {
+						for k, v := range m.Annotations {
+							_ = xray.AddAnnotation(ctx, k, v)
+						}
+					}
+
+					if m.Errors != nil && len(m.Errors) > 0 {
+						for _, v := range m.Errors {
+							_ = xray.AddError(ctx, v)
+						}
+						if s := xray.GetSegment(ctx); s != nil {
+							s.Error = true
+						}
 					}
 				}
 			}
-		}
 
-		if s := xray.GetSegment(ctx); s != nil && runErr != nil {
-			s.Error = true
-			_ = xray.AddError(ctx, runErr)
-		}
+			if s := xray.GetSegment(ctx); s != nil && runErr != nil {
+				s.Error = true
+				_ = xray.AddError(ctx, runErr)
+			}
 
-		// always deliver the actual error (including panic) to caller and to X-Ray
-		errCh <- runErr
-		return runErr
-	}); err != nil {
-		// bubble immediate failure to caller and close channel
-		errCh <- err
-		close(errCh)
-	}
+			return runErr
+		})
+
+		if err != nil {
+			errCh <- err
+		}
+	}()
 
 	return errCh
 }

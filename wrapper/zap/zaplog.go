@@ -139,17 +139,27 @@ func (z *ZapLog) Infof(logTemplateData string, args ...interface{}) {
 
 // Infow is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Infow(logMessageData string, keyValuePairs ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		logMessageData = sanitizeLogMessage(logMessageData) // reuse helper
-		z.sugarLogger.Infow(logMessageData, keyValuePairs...)
+	z.mu.RLock() // guard concurrent access
+	logger := z.sugarLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logMessageData = sanitizeLogMessage(logMessageData)
+		logger.Infow(logMessageData, keyValuePairs...)
 	}
 }
 
 // Info is faster Logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Info(logMessageData string, fields ...zap.Field) {
-	if z.zapLogger != nil && !z.DisableLogger {
-		logMessageData = sanitizeLogMessage(logMessageData) // reuse helper
-		z.zapLogger.Info(logMessageData, fields...)
+	z.mu.RLock() // guard concurrent access
+	logger := z.zapLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logMessageData = sanitizeLogMessage(logMessageData)
+		logger.Info(logMessageData, fields...)
 	}
 }
 
@@ -168,17 +178,27 @@ func (z *ZapLog) Debugf(logTemplateData string, args ...interface{}) {
 
 // Debugw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Debugw(logMessageData string, keyValuePairs ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		logMessageData = sanitizeLogMessage(logMessageData) // reuse helper
-		z.sugarLogger.Debugw(logMessageData, keyValuePairs...)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logMessageData = sanitizeLogMessage(logMessageData)
+		logger.Debugw(logMessageData, keyValuePairs...)
 	}
 }
 
 // Debug is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Debug(logMessageData string, fields ...zap.Field) {
-	if z.zapLogger != nil && !z.DisableLogger {
-		logMessageData = sanitizeLogMessage(logMessageData) // reuse helper
-		z.zapLogger.Debug(logMessageData, fields...)
+	z.mu.RLock()
+	logger := z.zapLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logMessageData = sanitizeLogMessage(logMessageData)
+		logger.Debug(logMessageData, fields...)
 	}
 }
 
@@ -197,17 +217,27 @@ func (z *ZapLog) Warnf(logTemplateData string, args ...interface{}) {
 
 // Warnw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Warnw(logMessageData string, keyValuePairs ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		logMessageData = sanitizeLogMessage(logMessageData) // reuse helper
-		z.sugarLogger.Warnw(logMessageData, keyValuePairs...)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logMessageData = sanitizeLogMessage(logMessageData)
+		logger.Warnw(logMessageData, keyValuePairs...)
 	}
 }
 
 // Warn is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Warn(logMessageData string, fields ...zap.Field) {
-	if z.zapLogger != nil && !z.DisableLogger {
-		logMessageData = sanitizeLogMessage(logMessageData) // reuse helper
-		z.zapLogger.Warn(logMessageData, fields...)
+	z.mu.RLock()
+	logger := z.zapLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logMessageData = sanitizeLogMessage(logMessageData)
+		logger.Warn(logMessageData, fields...)
 	}
 }
 
@@ -226,17 +256,27 @@ func (z *ZapLog) Errorf(logTemplateData string, args ...interface{}) {
 
 // Errorw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Errorw(logMessageData string, keyValuePairs ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		logMessageData = sanitizeLogMessage(logMessageData) // reuse helper
-		z.sugarLogger.Errorw(logMessageData, keyValuePairs...)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logMessageData = sanitizeLogMessage(logMessageData)
+		logger.Errorw(logMessageData, keyValuePairs...)
 	}
 }
 
 // Error is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Error(logMessageData string, fields ...zap.Field) {
-	if z.zapLogger != nil && !z.DisableLogger {
-		logMessageData = sanitizeLogMessage(logMessageData) // reuse helper
-		z.zapLogger.Error(logMessageData, fields...)
+	z.mu.RLock()
+	logger := z.zapLogger
+	disabled := z.DisableLogger
+	z.mu.RUnlock()
+
+	if logger != nil && !disabled {
+		logMessageData = sanitizeLogMessage(logMessageData)
+		logger.Error(logMessageData, fields...)
 	}
 }
 
@@ -256,23 +296,29 @@ func (z *ZapLog) Panicf(logTemplateData string, args ...interface{}) {
 
 // Panicw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Panicw(logMessageData string, keyValuePairs ...interface{}) {
-	logMessageData = sanitizeLogMessage(logMessageData) // use helper
-	if z.sugarLogger != nil {
-		z.sugarLogger.Panicw(logMessageData, keyValuePairs...)
+	logMessageData = sanitizeLogMessage(logMessageData)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	z.mu.RUnlock()
+
+	if logger != nil {
+		logger.Panicw(logMessageData, keyValuePairs...)
 		return
 	}
-	// preserve panic behavior
 	panic(logMessageData)
 }
 
 // Panic is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Panic(logMessageData string, fields ...zap.Field) {
-	logMessageData = sanitizeLogMessage(logMessageData) // use helper
-	if z.zapLogger != nil {
-		z.zapLogger.Panic(logMessageData, fields...)
+	logMessageData = sanitizeLogMessage(logMessageData)
+	z.mu.RLock()
+	logger := z.zapLogger
+	z.mu.RUnlock()
+
+	if logger != nil {
+		logger.Panic(logMessageData, fields...)
 		return
 	}
-	// preserve panic behavior
 	panic(logMessageData)
 }
 
@@ -293,24 +339,30 @@ func (z *ZapLog) Fatalf(logTemplateData string, args ...interface{}) {
 
 // Fatalw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Fatalw(logMessageData string, keyValuePairs ...interface{}) {
-	logMessageData = sanitizeLogMessage(logMessageData) // use helper
-	if z.sugarLogger != nil {
-		z.sugarLogger.Fatalw(logMessageData, keyValuePairs...)
+	logMessageData = sanitizeLogMessage(logMessageData)
+	z.mu.RLock()
+	logger := z.sugarLogger
+	z.mu.RUnlock()
+
+	if logger != nil {
+		logger.Fatalw(logMessageData, keyValuePairs...)
 		return
 	}
-	// preserve fatal behavior
 	fmt.Println(logMessageData)
 	os.Exit(1)
 }
 
 // Fatal is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Fatal(logMessageData string, fields ...zap.Field) {
-	logMessageData = sanitizeLogMessage(logMessageData) // use helper
-	if z.zapLogger != nil {
-		z.zapLogger.Fatal(logMessageData, fields...)
+	logMessageData = sanitizeLogMessage(logMessageData)
+	z.mu.RLock()
+	logger := z.zapLogger
+	z.mu.RUnlock()
+
+	if logger != nil {
+		logger.Fatal(logMessageData, fields...)
 		return
 	}
-	// preserve fatal behavior
 	fmt.Println(logMessageData)
 	os.Exit(1)
 }

@@ -113,6 +113,10 @@ func (z *ZapLog) Sync() error {
 
 	if z.zapLogger != nil { // allow sync even when DisableLogger is true
 		if err := z.zapLogger.Sync(); err != nil { // surface sync errors
+			// ignore benign sync errors on stdout/stderr (common on Windows)
+			if strings.Contains(err.Error(), "invalid argument") {
+				return nil
+			}
 			return err
 		}
 	}
@@ -285,7 +289,12 @@ func (z *ZapLog) Panicf(logTemplateData string, args ...interface{}) {
 	logTemplateData = sanitizeLogMessage(logTemplateData) // normalize
 	z.mu.RLock()
 	logger := z.sugarLogger
+	disabled := z.DisableLogger // honor DisableLogger for panic/fatal paths
 	z.mu.RUnlock()
+
+	if disabled {
+		return
+	}
 
 	if logger != nil {
 		logger.Panicf(logTemplateData, args...)
@@ -299,7 +308,12 @@ func (z *ZapLog) Panicw(logMessageData string, keyValuePairs ...interface{}) {
 	logMessageData = sanitizeLogMessage(logMessageData)
 	z.mu.RLock()
 	logger := z.sugarLogger
+	disabled := z.DisableLogger // honor DisableLogger for panic/fatal paths
 	z.mu.RUnlock()
+
+	if disabled {
+		return
+	}
 
 	if logger != nil {
 		logger.Panicw(logMessageData, keyValuePairs...)
@@ -313,7 +327,12 @@ func (z *ZapLog) Panic(logMessageData string, fields ...zap.Field) {
 	logMessageData = sanitizeLogMessage(logMessageData)
 	z.mu.RLock()
 	logger := z.zapLogger
+	disabled := z.DisableLogger
 	z.mu.RUnlock()
+
+	if disabled {
+		return
+	}
 
 	if logger != nil {
 		logger.Panic(logMessageData, fields...)
@@ -327,7 +346,12 @@ func (z *ZapLog) Fatalf(logTemplateData string, args ...interface{}) {
 	logTemplateData = sanitizeLogMessage(logTemplateData) // normalize
 	z.mu.RLock()
 	logger := z.sugarLogger
+	disabled := z.DisableLogger
 	z.mu.RUnlock()
+
+	if disabled {
+		return
+	}
 
 	if logger != nil {
 		logger.Fatalf(logTemplateData, args...)
@@ -342,7 +366,12 @@ func (z *ZapLog) Fatalw(logMessageData string, keyValuePairs ...interface{}) {
 	logMessageData = sanitizeLogMessage(logMessageData)
 	z.mu.RLock()
 	logger := z.sugarLogger
+	disabled := z.DisableLogger
 	z.mu.RUnlock()
+
+	if disabled {
+		return
+	}
 
 	if logger != nil {
 		logger.Fatalw(logMessageData, keyValuePairs...)
@@ -357,7 +386,12 @@ func (z *ZapLog) Fatal(logMessageData string, fields ...zap.Field) {
 	logMessageData = sanitizeLogMessage(logMessageData)
 	z.mu.RLock()
 	logger := z.zapLogger
+	disabled := z.DisableLogger
 	z.mu.RUnlock()
+
+	if disabled {
+		return
+	}
 
 	if logger != nil {
 		logger.Fatal(logMessageData, fields...)

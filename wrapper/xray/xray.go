@@ -561,63 +561,79 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 
 	var execErr error // single source of truth for execution/panic error
 
-	err := xray.Capture(ctx, traceName, func(ctx context.Context) error {
-		// guard against panics so we can flag the segment and return an error
+	// wrap the entire capture call to prevent process-wide panic if the parent segment disappears.
+	err := func() (capErr error) {
 		defer func() {
 			if r := recover(); r != nil {
-				panicErr := fmt.Errorf("panic in capture: %v", r)
-				execErr = panicErr
+				capErr = fmt.Errorf("panic in capture wrapper: %v", r)
 				if s := xray.GetSegment(ctx); s != nil {
 					s.Fault = true
-					_ = xray.AddError(ctx, panicErr)
+					_ = xray.AddError(ctx, capErr)
 				}
 			}
 		}()
 
-		execErr = executeFunc() // no shadowing, propagate real error
-
-		// add additional trace data if any to xray
-		if len(traceData) > 0 {
-			if m := traceData[0]; m != nil {
-				if m.Meta != nil && len(m.Meta) > 0 {
-					for k, v := range m.Meta {
-						_ = xray.AddMetadata(ctx, k, v)
-					}
-				}
-
-				if m.Annotations != nil && len(m.Annotations) > 0 {
-					for k, v := range m.Annotations {
-						_ = xray.AddAnnotation(ctx, k, v)
-					}
-				}
-
-				if m.Errors != nil && len(m.Errors) > 0 {
-					for _, v := range m.Errors {
-						_ = xray.AddError(ctx, v)
-					}
-
-					// ensure the segment is marked as error when we add errors
+		return xray.Capture(ctx, traceName, func(ctx context.Context) error {
+			// guard against panics so we can flag the segment and return an error
+			defer func() {
+				if r := recover(); r != nil {
+					panicErr := fmt.Errorf("panic in capture: %v", r)
+					execErr = panicErr
 					if s := xray.GetSegment(ctx); s != nil {
-						s.Error = true
+						s.Fault = true
+						_ = xray.AddError(ctx, panicErr)
+					}
+				}
+			}()
+
+			execErr = executeFunc() // no shadowing, propagate real error
+
+			// add additional trace data if any to xray
+			if len(traceData) > 0 {
+				if m := traceData[0]; m != nil {
+					if m.Meta != nil && len(m.Meta) > 0 {
+						for k, v := range m.Meta {
+							_ = xray.AddMetadata(ctx, k, v)
+						}
+					}
+
+					if m.Annotations != nil && len(m.Annotations) > 0 {
+						for k, v := range m.Annotations {
+							_ = xray.AddAnnotation(ctx, k, v)
+						}
+					}
+
+					if m.Errors != nil && len(m.Errors) > 0 {
+						for _, v := range m.Errors {
+							_ = xray.AddError(ctx, v)
+						}
+
+						// ensure the segment is marked as error when we add errors
+						if s := xray.GetSegment(ctx); s != nil {
+							s.Error = true
+						}
 					}
 				}
 			}
-		}
 
-		if s := xray.GetSegment(ctx); s != nil && execErr != nil {
-			s.Error = true
-			_ = xray.AddError(ctx, execErr)
-		}
+			if s := xray.GetSegment(ctx); s != nil && execErr != nil {
+				s.Error = true
+				_ = xray.AddError(ctx, execErr)
+			}
 
-		// return actual error for caller to receive
-		return execErr
-	})
+			// return actual error for caller to receive
+			return execErr
+		})
+	}()
 
-	// propagate whichever error occurred
+	// propagate whichever error occurred (panic -> capErr, execute error -> execErr, capture error -> err)
 	if execErr != nil {
 		return execErr
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // CaptureAsync wraps xray.CaptureAsync, by beginning and closing a subsegment with traceName,

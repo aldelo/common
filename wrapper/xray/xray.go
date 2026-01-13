@@ -44,6 +44,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	util "github.com/aldelo/common"
@@ -99,6 +100,18 @@ type XRayParentSegment struct {
 var _xrayServiceOn bool
 var _mu sync.RWMutex
 
+// central helper that honors env-based disable switch.
+func tracingEnabled() bool {
+	if strings.EqualFold(os.Getenv("AWS_XRAY_SDK_DISABLED"), "true") {
+		return false
+	}
+
+	_mu.RLock()
+	defer _mu.RUnlock()
+
+	return _xrayServiceOn
+}
+
 // Init will configure xray daemon address and service version
 func Init(daemonAddr string, serviceVersion string) error {
 
@@ -131,7 +144,13 @@ func Init(daemonAddr string, serviceVersion string) error {
 		return err
 	}
 
-	_xrayServiceOn = true // enable tracing after successful init
+	// honor AWS_XRAY_SDK_DISABLED to avoid enabling when globally disabled
+	if strings.EqualFold(os.Getenv("AWS_XRAY_SDK_DISABLED"), "true") {
+		_xrayServiceOn = false
+	} else {
+		_xrayServiceOn = true // enable tracing after successful init
+	}
+
 	return nil
 }
 
@@ -156,9 +175,7 @@ func SetXRayServiceOff() {
 
 // XRayServiceOn returns whether xray tracing service is on or off
 func XRayServiceOn() bool {
-	_mu.RLock()
-	defer _mu.RUnlock()
-	return _xrayServiceOn
+	return tracingEnabled()
 }
 
 // DisableTracing disables xray tracing
@@ -301,11 +318,8 @@ func (t *XTraceData) AddError(key string, err error) {
 // NewSubSegmentFromContext begins a new subsegment under the parent segment context,
 // context can not be empty, and must contains parent segment info
 func NewSubSegmentFromContext(ctx context.Context, serviceNameOrUrl string) *XSegment {
-	// CHANGED: respect global on/off switch
-	_mu.RLock()
-	on := _xrayServiceOn
-	_mu.RUnlock()
-	if !on {
+	// respect env + flag
+	if !tracingEnabled() {
 		return &XSegment{
 			Ctx:       context.Background(),
 			Seg:       nil,
@@ -349,12 +363,8 @@ func NewSubSegmentFromContext(ctx context.Context, serviceNameOrUrl string) *XSe
 //
 // NOTE = ALWAYS CALL CLOSE() to End Segment After Tracing of Segment is Complete
 func NewSegment(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *XSegment {
-	// respect global on/off flag so SetXRayServiceOff actually disables new traces
-	_mu.RLock()
-	on := _xrayServiceOn
-	_mu.RUnlock()
-
-	if !on {
+	// respect env-based disable switch
+	if !tracingEnabled() {
 		return &XSegment{
 			Ctx:       context.Background(),
 			Seg:       nil,
@@ -385,11 +395,7 @@ func NewSegment(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *X
 // NewSegmentNullable returns a new segment for the named service or url, if _xrayServiceOn = true,
 // otherwise, nil is returned for *XSegment.
 func NewSegmentNullable(serviceNameOrUrl string, parentSegment ...*XRayParentSegment) *XSegment {
-	_mu.RLock()
-	on := _xrayServiceOn
-	_mu.RUnlock()
-
-	if !on {
+	if !tracingEnabled() {
 		return nil
 	}
 
@@ -401,11 +407,8 @@ func NewSegmentNullable(serviceNameOrUrl string, parentSegment ...*XRayParentSeg
 //
 // NOTE = ALWAYS CALL CLOSE() to End Segment After Tracing of Segment is Complete
 func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegment {
-	// respect global on/off switch so SetXRayServiceOff is honored for header-based segments
-	_mu.RLock()
-	on := _xrayServiceOn
-	_mu.RUnlock()
-	if !on {
+	// respect env + flag
+	if !tracingEnabled() {
 		return &XSegment{
 			Ctx:       context.Background(),
 			Seg:       nil,

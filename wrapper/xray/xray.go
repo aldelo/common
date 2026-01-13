@@ -617,7 +617,7 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 		defer close(errCh)
 
 		// Use xray.Capture to ensure proper segment flushing.
-		err := xray.Capture(x.Ctx, traceName, func(ctx context.Context) error {
+		err := xray.Capture(ctx, traceName, func(ctx context.Context) error {
 			var runErr error
 
 			// guard against panic

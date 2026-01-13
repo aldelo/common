@@ -111,6 +111,11 @@ func FromNullFloat64(d sql.NullFloat64) float64 {
 		return 0.00
 	}
 
+	// sanitize NaN/Inf coming from the DB to avoid propagating invalid floats
+	if math.IsNaN(d.Float64) || math.IsInf(d.Float64, 0) {
+		return 0.00
+	}
+
 	return d.Float64
 }
 

@@ -69,6 +69,13 @@ import (
 	"time"
 )
 
+const (
+	maxSafeFloatToInt      = float64(math.MaxInt)
+	minSafeFloatToInt      = float64(math.MinInt)
+	maxSafeFloatToIntCents = maxSafeFloatToInt / 100.0
+	minSafeFloatToIntCents = minSafeFloatToInt / 100.0
+)
+
 // Itoa converts integer into string.
 func Itoa(i int) string {
 	return strconv.Itoa(i)
@@ -240,6 +247,9 @@ func Float32ToStringCents(f float32) string {
 	if math.IsNaN(float64(f)) || math.IsInf(float64(f), 0) {
 		return ""
 	}
+	if math.Abs(float64(f)) > maxSafeFloatToIntCents {
+		return ""
+	}
 
 	centsInt := int(math.Round(math.Abs(float64(f) * 100)))
 	if f >= 0.00 {
@@ -254,6 +264,9 @@ func Float32ToStringCents(f float32) string {
 func Float64ToIntCents(f float64) int {
 	// guard against NaN/Inf to avoid invalid int conversion
 	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	if f > maxSafeFloatToIntCents || f < minSafeFloatToIntCents {
 		return 0
 	}
 	return int(math.Round(f * 100))
@@ -285,6 +298,9 @@ func Float64Val(f *float64) float64 {
 // Float64ToInt converts from float64 into int, if conversion fails, 0 is returned.
 func Float64ToInt(f float64) int {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	if f > maxSafeFloatToInt || f < minSafeFloatToInt {
 		return 0
 	}
 	return int(math.Round(f))
@@ -458,5 +474,5 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 
 // IntToHex returns HEX string representation of i, in 2 digit blocks.
 func IntToHex(i int) string {
-	return fmt.Sprintf("%X", uint64(i))
+	return strings.ToUpper(strconv.FormatInt(int64(i), 16))
 }

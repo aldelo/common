@@ -1,7 +1,7 @@
 package helper
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -141,9 +141,19 @@ func FromNullBool(b sql.NullBool) bool {
 	return b.Bool
 }
 
+// ToNullBoolWithEmpty sets bool into NullBool output, optionally treating false as NULL
+// new helper to allow generating a NULL bool when desired
+func ToNullBoolWithEmpty(b bool, emptyAsNull bool) sql.NullBool {
+	if emptyAsNull && b == false {
+		return sql.NullBool{Valid: false, Bool: false}
+	}
+
+	return sql.NullBool{Valid: true, Bool: b}
+}
+
 // ToNullBool sets bool into NullBool output
 func ToNullBool(b bool) sql.NullBool {
-	return sql.NullBool{Valid: true, Bool: b}
+	return ToNullBoolWithEmpty(b, false)
 }
 
 // FromNullTime parses string into time.Time

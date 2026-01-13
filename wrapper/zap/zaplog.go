@@ -144,7 +144,11 @@ func (z *ZapLog) Infof(logTemplateData string, args ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logTemplateData = sanitizeLogMessage(logTemplateData) // normalize to prevent newline/tab injection
 		logger.Infof(logTemplateData, args...)
 	}
@@ -157,7 +161,11 @@ func (z *ZapLog) Infow(logMessageData string, keyValuePairs ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logMessageData = sanitizeLogMessage(logMessageData)
 		logger.Infow(logMessageData, keyValuePairs...)
 	}
@@ -170,7 +178,11 @@ func (z *ZapLog) Info(logMessageData string, fields ...zap.Field) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logMessageData = sanitizeLogMessage(logMessageData)
 		logger.Info(logMessageData, fields...)
 	}
@@ -183,7 +195,11 @@ func (z *ZapLog) Debugf(logTemplateData string, args ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logTemplateData = sanitizeLogMessage(logTemplateData)
 		logger.Debugf(logTemplateData, args...)
 	}
@@ -196,7 +212,11 @@ func (z *ZapLog) Debugw(logMessageData string, keyValuePairs ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logMessageData = sanitizeLogMessage(logMessageData)
 		logger.Debugw(logMessageData, keyValuePairs...)
 	}
@@ -209,7 +229,11 @@ func (z *ZapLog) Debug(logMessageData string, fields ...zap.Field) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logMessageData = sanitizeLogMessage(logMessageData)
 		logger.Debug(logMessageData, fields...)
 	}
@@ -222,7 +246,11 @@ func (z *ZapLog) Warnf(logTemplateData string, args ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logTemplateData = sanitizeLogMessage(logTemplateData)
 		logger.Warnf(logTemplateData, args...)
 	}
@@ -235,7 +263,11 @@ func (z *ZapLog) Warnw(logMessageData string, keyValuePairs ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logMessageData = sanitizeLogMessage(logMessageData)
 		logger.Warnw(logMessageData, keyValuePairs...)
 	}
@@ -248,7 +280,11 @@ func (z *ZapLog) Warn(logMessageData string, fields ...zap.Field) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logMessageData = sanitizeLogMessage(logMessageData)
 		logger.Warn(logMessageData, fields...)
 	}
@@ -261,7 +297,11 @@ func (z *ZapLog) Errorf(logTemplateData string, args ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logTemplateData = sanitizeLogMessage(logTemplateData)
 		logger.Errorf(logTemplateData, args...)
 	}
@@ -274,7 +314,11 @@ func (z *ZapLog) Errorw(logMessageData string, keyValuePairs ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logMessageData = sanitizeLogMessage(logMessageData)
 		logger.Errorw(logMessageData, keyValuePairs...)
 	}
@@ -287,7 +331,11 @@ func (z *ZapLog) Error(logMessageData string, fields ...zap.Field) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logMessageData = sanitizeLogMessage(logMessageData)
 		logger.Error(logMessageData, fields...)
 	}
@@ -301,7 +349,11 @@ func (z *ZapLog) Panicf(logTemplateData string, args ...interface{}) {
 	disabled := z.DisableLogger // honor DisableLogger for panic/fatal paths
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logger.Panicf(logTemplateData, args...)
 		return
 	}
@@ -317,7 +369,11 @@ func (z *ZapLog) Panicw(logMessageData string, keyValuePairs ...interface{}) {
 	disabled := z.DisableLogger // honor DisableLogger for panic/fatal paths
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logger.Panicw(logMessageData, keyValuePairs...)
 		return
 	}
@@ -333,7 +389,11 @@ func (z *ZapLog) Panic(logMessageData string, fields ...zap.Field) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logger.Panic(logMessageData, fields...)
 		return
 	}
@@ -348,7 +408,11 @@ func (z *ZapLog) Fatalf(logTemplateData string, args ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logger.Fatalf(logTemplateData, args...)
 		return
 	}
@@ -364,7 +428,11 @@ func (z *ZapLog) Fatalw(logMessageData string, keyValuePairs ...interface{}) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logger.Fatalw(logMessageData, keyValuePairs...)
 		return
 	}
@@ -381,7 +449,11 @@ func (z *ZapLog) Fatal(logMessageData string, fields ...zap.Field) {
 	disabled := z.DisableLogger
 	z.mu.RUnlock()
 
-	if logger != nil && !disabled {
+	if disabled {
+		return
+	}
+
+	if logger != nil {
 		logger.Fatal(logMessageData, fields...)
 		return
 	}

@@ -1,7 +1,7 @@
 package data
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,12 @@ package data
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"strings"
+
 	util "github.com/aldelo/common"
 	"go.uber.org/zap"
-	"strings"
 )
 
 // ZapLog is a wrapper for Zap logger package
@@ -38,6 +41,11 @@ type ZapLog struct {
 	// store zap client object
 	zapLogger   *zap.Logger
 	sugarLogger *zap.SugaredLogger
+}
+
+// helper to normalize log messages
+func sanitizeLogMessage(msg string) string { // centralized newline stripping
+	return strings.ReplaceAll(strings.ReplaceAll(msg, "\n", ""), "\r", "")
 }
 
 // Init will initialize and prepare the zap log wrapper for use,
@@ -93,14 +101,8 @@ func (z *ZapLog) Init() error {
 
 // Sync will flush log buffer to disk
 func (z *ZapLog) Sync() {
-	if !z.DisableLogger {
-		//if z.sugarLogger != nil {
-		//	_ = z.sugarLogger.Sync()
-		//}
-
-		if z.zapLogger != nil {
-			_ = z.zapLogger.Sync()
-		}
+	if z.zapLogger != nil { // allow sync even when DisableLogger is true
+		_ = z.zapLogger.Sync()
 	}
 }
 
@@ -211,50 +213,67 @@ func (z *ZapLog) Error(logMessageData string, fields ...zap.Field) {
 
 // Panicf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Panicf(logTemplateData string, args ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
+	if z.sugarLogger != nil {
 		z.sugarLogger.Panicf(logTemplateData, args...)
+		return
 	}
+	// preserve panic behavior even when logger is disabled or uninitialized
+	panic(fmt.Sprintf(logTemplateData, args...))
 }
 
 // Panicw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Panicw(logMessageData string, keyValuePairs ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
-		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
+	logMessageData = sanitizeLogMessage(logMessageData) // use helper
+	if z.sugarLogger != nil {
 		z.sugarLogger.Panicw(logMessageData, keyValuePairs...)
+		return
 	}
+	// preserve panic behavior
+	panic(logMessageData)
 }
 
 // Panic is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Panic(logMessageData string, fields ...zap.Field) {
-	if z.zapLogger != nil && !z.DisableLogger {
-		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
-		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
+	logMessageData = sanitizeLogMessage(logMessageData) // use helper
+	if z.zapLogger != nil {
 		z.zapLogger.Panic(logMessageData, fields...)
+		return
 	}
+	// preserve panic behavior
+	panic(logMessageData)
 }
 
 // Fatalf is a Sugared Logging, allows template variable such as %s
 func (z *ZapLog) Fatalf(logTemplateData string, args ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
+	if z.sugarLogger != nil {
 		z.sugarLogger.Fatalf(logTemplateData, args...)
+		return
 	}
+	// preserve fatal behavior even when logger is disabled or uninitialized
+	fmt.Printf(logTemplateData, args...)
+	os.Exit(1)
 }
 
 // Fatalw is a Sugared Logging, allows key value pairs variadic
 func (z *ZapLog) Fatalw(logMessageData string, keyValuePairs ...interface{}) {
-	if z.sugarLogger != nil && !z.DisableLogger {
-		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
-		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
+	logMessageData = sanitizeLogMessage(logMessageData) // use helper
+	if z.sugarLogger != nil {
 		z.sugarLogger.Fatalw(logMessageData, keyValuePairs...)
+		return
 	}
+	// preserve fatal behavior
+	fmt.Println(logMessageData)
+	os.Exit(1)
 }
 
 // Fatal is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters
 func (z *ZapLog) Fatal(logMessageData string, fields ...zap.Field) {
-	if z.zapLogger != nil && !z.DisableLogger {
-		logMessageData = strings.ReplaceAll(logMessageData, "\n", "")
-		logMessageData = strings.ReplaceAll(logMessageData, "\r", "")
+	logMessageData = sanitizeLogMessage(logMessageData) // use helper
+	if z.zapLogger != nil {
 		z.zapLogger.Fatal(logMessageData, fields...)
+		return
 	}
+	// preserve fatal behavior
+	fmt.Println(logMessageData)
+	os.Exit(1)
 }

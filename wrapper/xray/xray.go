@@ -453,6 +453,9 @@ func NewSegmentFromHeader(req *http.Request, traceHeaderName ...string) *XSegmen
 
 // SetParentSegment sets segment's ParentID and TraceID as indicated by input parameters
 func (x *XSegment) SetParentSegment(parentID string, traceID string) {
+	x.mu.Lock() // FIX: guard against concurrent Close / mutations
+	defer x.mu.Unlock()
+
 	if x._segReady && x.Seg != nil && x.Ctx != nil {
 		x.Seg.ParentID = parentID
 		x.Seg.TraceID = traceID
@@ -466,7 +469,7 @@ func (x *XSegment) SetParentSegment(parentID string, traceID string) {
 // NOTE = ALWAYS CALL CLOSE() to End Segment After Tracing of Segment is Complete
 func (x *XSegment) NewSubSegment(subSegmentName string) *XSegment {
 	x.mu.RLock()
-	ready := x._segReady
+	ready := x._segReady && x.Ctx != nil && x.Seg != nil
 	parentCtx := x.Ctx
 	x.mu.RUnlock()
 
@@ -480,6 +483,15 @@ func (x *XSegment) NewSubSegment(subSegmentName string) *XSegment {
 
 	if util.LenTrim(subSegmentName) == 0 {
 		subSegmentName = "no.subsegment.name.defined"
+	}
+
+	// ensure parent segment still exists in context to avoid nil subsegment
+	if xray.GetSegment(parentCtx) == nil {
+		return &XSegment{
+			Ctx:       parentCtx,
+			Seg:       nil,
+			_segReady: false,
+		}
 	}
 
 	ctx, seg := xray.BeginSubsegment(parentCtx, subSegmentName)
@@ -629,6 +641,10 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 
 	if util.LenTrim(traceName) == 0 {
 		traceName = "no.asynchronous.trace.name.defined"
+	}
+
+	if baseCtx == nil { // avoid nil context panic inside xray.Capture
+		baseCtx = context.Background()
 	}
 
 	// Run the capture in a goroutine; xray.Capture is sync, but this wrapper stays async.

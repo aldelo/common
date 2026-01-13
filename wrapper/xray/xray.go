@@ -543,6 +543,11 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 		return fmt.Errorf("Segment Not Ready")
 	}
 
+	// ensure parent segment still exists to avoid panic inside xray.Capture
+	if xray.GetSegment(ctx) == nil {
+		return fmt.Errorf("Segment Not Ready")
+	}
+
 	if executeFunc == nil {
 		return nil
 	}
@@ -634,6 +639,13 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 		return errCh
 	}
 
+	// ensure parent segment still exists before launching goroutine
+	if xray.GetSegment(baseCtx) == nil {
+		errCh <- fmt.Errorf("Segment Not Ready")
+		close(errCh)
+		return errCh
+	}
+
 	if executeFunc == nil {
 		close(errCh)
 		return errCh
@@ -650,6 +662,12 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 	// Run the capture in a goroutine; xray.Capture is sync, but this wrapper stays async.
 	go func(ctx context.Context) {
 		defer close(errCh)
+
+		// re-check inside goroutine to avoid races if the segment was closed after spawn
+		if xray.GetSegment(ctx) == nil {
+			errCh <- fmt.Errorf("Segment Not Ready")
+			return
+		}
 
 		// Use xray.Capture to ensure proper segment flushing.
 		err := xray.Capture(ctx, traceName, func(ctx context.Context) error {

@@ -296,6 +296,33 @@ func Float32ToString(f float32) string {
 	return strconv.FormatFloat(float64(f), 'g', -1, 32)
 }
 
+// Float32ToStringCentsStrict converts float32 to cent-string with error on invalid input.
+func Float32ToStringCentsStrict(f float32) (string, error) {
+	if math.IsNaN(float64(f)) || math.IsInf(float64(f), 0) {
+		return "", fmt.Errorf("cannot convert NaN/Inf to cents")
+	}
+	if math.Abs(float64(f)) > maxSafeFloatToIntCents {
+		return "", fmt.Errorf("value %f overflows int cents", f)
+	}
+
+	centsInt := int(math.Round(math.Abs(float64(f) * 100)))
+	if f >= 0.00 {
+		return strings.ReplaceAll(PadLeft(Itoa(centsInt), 3), " ", "0"), nil
+	}
+	return "-" + strings.ReplaceAll(PadLeft(Itoa(centsInt), 3), " ", "0"), nil
+}
+
+// Float64ToIntCentsStrict converts float64 to int cents with error on invalid input.
+func Float64ToIntCentsStrict(f float64) (int, error) {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, fmt.Errorf("cannot convert NaN/Inf to cents")
+	}
+	if f > maxSafeFloatToIntCents || f < minSafeFloatToIntCents {
+		return 0, fmt.Errorf("value %f overflows int cents", f)
+	}
+	return int(math.Round(f * 100)), nil
+}
+
 // Float32ToStringCents converts float32 value into string representing cent values, 2.12 returned as "212".
 // Since float32 can not be precisely calculated in some cases, use math.Round returns the nearest integer
 func Float32ToStringCents(f float32) string {
@@ -364,8 +391,7 @@ func Float64ToInt(f float64) int {
 
 // CentsToFloat64 converts int (cents) into float64 value with two decimal value.
 func CentsToFloat64(i int) float64 {
-	f, _ := ParseFloat64(fmt.Sprintf("%.2f", float64(i)*0.01))
-	return f
+	return float64(i) / 100.0
 }
 
 // FloatToString converts float64 value into string value.
@@ -515,24 +541,31 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 		return nil
 	}
 
-	if reflect.TypeOf(objectsSlice).Kind() == reflect.Slice {
-		s := reflect.ValueOf(objectsSlice)
-
-		for i := 0; i < s.Len(); i++ {
-			output = append(output, s.Index(i).Interface())
+	v := reflect.ValueOf(objectsSlice)
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil
 		}
+		v = v.Elem()
+	}
 
-		return output
-	} else {
+	if v.Kind() != reflect.Slice {
 		return nil
 	}
+
+	for i := 0; i < v.Len(); i++ {
+		output = append(output, v.Index(i).Interface())
+	}
+
+	return output
 }
 
 // IntToHex returns HEX string representation of i, in 2 digit blocks.
 func IntToHex(i int) string {
 	if i < 0 {
-		return "-" + strings.ToUpper(strconv.FormatInt(int64(-i), 16))
+		// two's complement magnitude as uint64
+		mag := ^uint64(i) + 1
+		return "-" + strings.ToUpper(strconv.FormatUint(mag, 16))
 	}
-
-	return strings.ToUpper(strconv.FormatUint(uint64(uint(i)), 16))
+	return strings.ToUpper(strconv.FormatUint(uint64(i), 16))
 }

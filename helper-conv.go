@@ -45,7 +45,7 @@
 package helper
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -147,12 +147,11 @@ func IntVal(i *int) int {
 }
 
 // Int32PtrToInt returns 0 if nil, otherwise actual int value.
-func Int32PtrToInt(n *int) int {
+func Int32PtrToInt(n *int32) int {
 	if n == nil {
 		return 0
-	} else {
-		return *n
 	}
+	return int(*n)
 }
 
 // UintToStr converts from uint to string.
@@ -442,6 +441,10 @@ func StringPtrToString(s *string) string {
 // the slice is enumerated to convert each object within the slice to interface{},
 // the final converted slice of interface is returned, if operation failed, nil is returned.
 func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{}) {
+	if objectsSlice == nil {
+		return nil
+	}
+
 	if reflect.TypeOf(objectsSlice).Kind() == reflect.Slice {
 		s := reflect.ValueOf(objectsSlice)
 

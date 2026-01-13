@@ -164,11 +164,19 @@ func XRayServiceOn() bool {
 // DisableTracing disables xray tracing
 func DisableTracing() {
 	_ = os.Setenv("AWS_XRAY_SDK_DISABLED", "TRUE")
+
+	_mu.Lock()
+	_xrayServiceOn = false
+	_mu.Unlock()
 }
 
 // EnableTracing re-enables xray tracing
 func EnableTracing() {
 	_ = os.Setenv("AWS_XRAY_SDK_DISABLED", "FALSE")
+
+	_mu.Lock()
+	_xrayServiceOn = true
+	_mu.Unlock()
 }
 
 // GetXRayHeader gets header from http.request,
@@ -220,6 +228,8 @@ type XSegment struct {
 
 	// indicates if this segment is ready for use
 	_segReady bool
+
+	mu sync.RWMutex
 }
 
 // XTraceData contains maps of data to add during trace activity
@@ -455,7 +465,12 @@ func (x *XSegment) SetParentSegment(parentID string, traceID string) {
 //
 // NOTE = ALWAYS CALL CLOSE() to End Segment After Tracing of Segment is Complete
 func (x *XSegment) NewSubSegment(subSegmentName string) *XSegment {
-	if !x._segReady {
+	x.mu.RLock()
+	ready := x._segReady
+	parentCtx := x.Ctx
+	x.mu.RUnlock()
+
+	if !ready {
 		return &XSegment{
 			Ctx:       context.Background(),
 			Seg:       nil,
@@ -467,7 +482,7 @@ func (x *XSegment) NewSubSegment(subSegmentName string) *XSegment {
 		subSegmentName = "no.subsegment.name.defined"
 	}
 
-	ctx, seg := xray.BeginSubsegment(x.Ctx, subSegmentName)
+	ctx, seg := xray.BeginSubsegment(parentCtx, subSegmentName)
 
 	return &XSegment{
 		Ctx:       ctx,
@@ -478,16 +493,18 @@ func (x *XSegment) NewSubSegment(subSegmentName string) *XSegment {
 
 // Ready checks if segment is ready for operations
 func (x *XSegment) Ready() bool {
-	if x.Ctx == nil || x.Seg == nil || !x._segReady {
-		return false
-	} else {
-		return true
-	}
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+
+	return x.Ctx != nil && x.Seg != nil && x._segReady
 }
 
 // Close will close a segment (or subsegment),
 // always close subsegments first before closing its parent segment
 func (x *XSegment) Close() {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+
 	if x._segReady && x.Seg != nil {
 		x.Seg.Close(nil)
 	}
@@ -505,7 +522,12 @@ func (x *XSegment) Close() {
 // executeFunc = custom logic to execute within capture tracing context (context is segment context)
 // traceData = optional additional data to add to the trace (meta, annotation, error)
 func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData ...*XTraceData) error {
-	if !x._segReady || x.Ctx == nil || x.Seg == nil {
+	x.mu.RLock()
+	ready := x._segReady && x.Ctx != nil && x.Seg != nil
+	ctx := x.Ctx
+	x.mu.RUnlock()
+
+	if !ready {
 		return fmt.Errorf("Segment Not Ready")
 	}
 
@@ -519,7 +541,7 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 
 	var execErr error // single source of truth for execution/panic error
 
-	err := xray.Capture(x.Ctx, traceName, func(ctx context.Context) error {
+	err := xray.Capture(ctx, traceName, func(ctx context.Context) error {
 		// guard against panics so we can flag the segment and return an error
 		defer func() {
 			if r := recover(); r != nil {
@@ -589,7 +611,12 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, traceData ...*XTraceData) <-chan error {
 	errCh := make(chan error, 1) // buffered so sender won't block
 
-	if !x._segReady || x.Ctx == nil || x.Seg == nil {
+	x.mu.RLock()
+	ready := x._segReady && x.Ctx != nil && x.Seg != nil
+	baseCtx := x.Ctx
+	x.mu.RUnlock()
+
+	if !ready {
 		errCh <- fmt.Errorf("Segment Not Ready")
 		close(errCh)
 		return errCh
@@ -602,14 +629,6 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 
 	if util.LenTrim(traceName) == 0 {
 		traceName = "no.asynchronous.trace.name.defined"
-	}
-
-	// copy context to avoid races with callers that may Close() and nil out x.Ctx
-	baseCtx := x.Ctx
-	if baseCtx == nil {
-		errCh <- fmt.Errorf("Segment Not Ready")
-		close(errCh)
-		return errCh
 	}
 
 	// Run the capture in a goroutine; xray.Capture is sync, but this wrapper stays async.

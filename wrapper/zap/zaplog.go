@@ -116,7 +116,7 @@ func (z *ZapLog) Sync() error {
 	logger := z.zapLogger
 	z.mu.RUnlock()
 
-	if z.zapLogger != nil { // allow sync even when DisableLogger is true
+	if logger != nil { // allow sync even when DisableLogger is true
 		if err := logger.Sync(); err != nil { // surface sync errors
 			// ignore benign sync errors on stdout/stderr (common on Windows / pipes / non-tty)
 			msg := err.Error()
@@ -321,7 +321,8 @@ func (z *ZapLog) Panicw(logMessageData string, keyValuePairs ...interface{}) {
 		logger.Panicw(logMessageData, keyValuePairs...)
 		return
 	}
-	panic(logMessageData)
+
+	panic(fmt.Sprintf("%s | %v", logMessageData, keyValuePairs))
 }
 
 // Panic is faster logging, but requires import of zap package, uses zap.String(), zap.Int(), etc in fields parameters

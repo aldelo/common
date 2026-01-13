@@ -67,7 +67,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 const (
@@ -93,7 +92,7 @@ func ItoaZeroBlank(i int) string {
 
 // Atoi converts string to integer.
 func Atoi(s string) int {
-	i, err := strconv.Atoi(s)
+	i, err := strconv.Atoi(strings.TrimSpace(s))
 
 	if err != nil {
 		return 0
@@ -124,18 +123,22 @@ func Atob(s string) bool {
 		return true
 	case "false", "f", "no", "n", "0", "off":
 		return false
-	}
-
-	// fallback to first-rune behavior for backwards compatibility with old partial tokens
-	r, _ := utf8.DecodeRuneInString(trimmed)
-	switch r {
-	case 't', 'y', '1':
-		return true
-	case 'f', 'n', '0':
+	default:
 		return false
 	}
+}
 
-	return false
+// AtobStrict converts string to bool and returns an error on invalid tokens.
+func AtobStrict(s string) (bool, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(s))
+	switch trimmed {
+	case "true", "t", "yes", "y", "1", "on":
+		return true, nil
+	case "false", "f", "no", "n", "0", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean token: %q", s)
+	}
 }
 
 // AtoiStrict converts string to integer and returns an error on failure (does not default to 0).
@@ -267,7 +270,7 @@ func UInt64ToString(n uint64) string {
 
 // StrToUint64 converts from string to uint64, if string is not a valid uint64, 0 is returned.
 func StrToUint64(s string) uint64 {
-	if v, e := strconv.ParseUint(s, 10, 64); e != nil {
+	if v, e := strconv.ParseUint(strings.TrimSpace(s), 10, 64); e != nil {
 		return 0
 	} else {
 		return v
@@ -276,7 +279,7 @@ func StrToUint64(s string) uint64 {
 
 // StrToInt64 converts from string to int64, if string is not a valid int64, 0 is returned.
 func StrToInt64(s string) int64 {
-	if v, e := strconv.ParseInt(s, 10, 64); e != nil {
+	if v, e := strconv.ParseInt(strings.TrimSpace(s), 10, 64); e != nil {
 		return 0
 	} else {
 		return v

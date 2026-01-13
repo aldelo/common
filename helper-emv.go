@@ -2,11 +2,12 @@ package helper
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,6 +66,18 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be Formatted as Double HEX")
 	}
 
+	// helper to parse hex length bytes without ASCII conversion
+	parseLen := func(hexLen string) (int, error) {
+		v, e := strconv.ParseInt(hexLen, 16, 32)
+		if e != nil {
+			return 0, e
+		}
+		if v < 0 {
+			return 0, nil
+		}
+		return int(v), nil
+	}
+
 	// get search tags
 	searchTags := getEmvTags()
 
@@ -79,33 +92,21 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 	for len(emvTlvTagsPayload) >= 6 {
 		// get left 2 char, mid 2 char, and left 4 char, from left to match against emv search tags
 		left2 := Left(emvTlvTagsPayload, 2)
-		buf, e := HexToString(Mid(emvTlvTagsPayload, 2, 2))
+		left2HexValueCount, e := parseLen(Mid(emvTlvTagsPayload, 2, 2))
 		if e != nil {
 			return nil, e
-		}
-		left2HexValueCount, _ := ParseInt32(buf)
-		if left2HexValueCount < 0 {
-			left2HexValueCount = 0
 		}
 
 		mid2 := Mid(emvTlvTagsPayload, 2, 2)
-		buf, e = HexToString(Mid(emvTlvTagsPayload, 4, 2))
+		mid2HexValueCount, e := parseLen(Mid(emvTlvTagsPayload, 4, 2))
 		if e != nil {
 			return nil, e
-		}
-		mid2HexValueCount, _ := ParseInt32(buf)
-		if mid2HexValueCount < 0 {
-			mid2HexValueCount = 0
 		}
 
 		left4 := Left(emvTlvTagsPayload, 4)
-		buf, e = HexToString(Mid(emvTlvTagsPayload, 4, 2))
+		left4HexValueCount, e := parseLen(Mid(emvTlvTagsPayload, 4, 2))
 		if e != nil {
 			return nil, e
-		}
-		left4HexValueCount, _ := ParseInt32(buf)
-		if left4HexValueCount < 0 {
-			left4HexValueCount = 0
 		}
 
 		checkMid4 := false
@@ -114,13 +115,9 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 
 		if len(emvTlvTagsPayload) >= 8 {
 			mid4 = Mid(emvTlvTagsPayload, 2, 4)
-			buf, e = HexToString(Mid(emvTlvTagsPayload, 6, 2))
+			mid4HexvalueCount, e = parseLen(Mid(emvTlvTagsPayload, 6, 2))
 			if e != nil {
 				return nil, e
-			}
-			mid4HexvalueCount, _ = ParseInt32(buf)
-			if mid4HexvalueCount < 0 {
-				mid4HexvalueCount = 0
 			}
 			checkMid4 = true
 		}
@@ -305,6 +302,18 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Be 6 Digits or More")
 	}
 
+	// helper to parse hex length bytes without ASCII conversion
+	parseLen := func(hexLen string) (int, error) {
+		v, e := strconv.ParseInt(hexLen, 16, 32)
+		if e != nil {
+			return 0, e
+		}
+		if v < 0 {
+			return 0, nil
+		}
+		return int(v), nil
+	}
+
 	// get search tags
 	searchTags := getEncryptedTlvTags()
 
@@ -322,33 +331,21 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 		// get left 2 char, mid 2 char, and left 4 char, from left to match against emv search tags
 		// get left 6 char (for DF tags)
 		left2 := Left(encryptedTlvTagsPayload, 2)
-		buf, e := HexToString(Mid(encryptedTlvTagsPayload, 2, 2))
+		left2HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 2, 2)) // FIX
 		if e != nil {
 			return nil, e
-		}
-		left2HexValueCount, _ := ParseInt32(buf)
-		if left2HexValueCount < 0 {
-			left2HexValueCount = 0
 		}
 
 		mid2 := Mid(encryptedTlvTagsPayload, 2, 2)
-		buf, e = HexToString(Mid(encryptedTlvTagsPayload, 4, 2))
+		mid2HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 4, 2)) // FIX
 		if e != nil {
 			return nil, e
-		}
-		mid2HexValueCount, _ := ParseInt32(buf)
-		if mid2HexValueCount < 0 {
-			mid2HexValueCount = 0
 		}
 
 		left4 := Left(encryptedTlvTagsPayload, 4)
-		buf, e = HexToString(Mid(encryptedTlvTagsPayload, 4, 2))
+		left4HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 4, 2)) // FIX
 		if e != nil {
 			return nil, e
-		}
-		left4HexValueCount, _ := ParseInt32(buf)
-		if left4HexValueCount < 0 {
-			left4HexValueCount = 0
 		}
 
 		checkMid4 := false
@@ -357,13 +354,9 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 
 		if len(encryptedTlvTagsPayload) >= 8 {
 			mid4 = Mid(encryptedTlvTagsPayload, 2, 4)
-			buf, e = HexToString(Mid(encryptedTlvTagsPayload, 6, 2))
+			mid4HexValueCount, e = parseLen(Mid(encryptedTlvTagsPayload, 6, 2))
 			if e != nil {
 				return nil, e
-			}
-			mid4HexValueCount, _ = ParseInt32(buf)
-			if mid4HexValueCount < 0 {
-				mid4HexValueCount = 0
 			}
 			checkMid4 = true
 		}
@@ -374,13 +367,9 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 
 		if len(encryptedTlvTagsPayload) >= 8 {
 			left6 = Left(encryptedTlvTagsPayload, 6)
-			buf, e = HexToString(Mid(encryptedTlvTagsPayload, 6, 2))
+			left6HexValueCount, e = parseLen(Mid(encryptedTlvTagsPayload, 6, 2))
 			if e != nil {
 				return nil, e
-			}
-			left6HexValueCount, _ = ParseInt32(buf)
-			if left6HexValueCount < 0 {
-				left6HexValueCount = 0
 			}
 			checkLeft6 = true
 		}

@@ -285,11 +285,10 @@ func Float64Val(f *float64) float64 {
 
 // Float64ToInt converts from float64 into int, if conversion fails, 0 is returned.
 func Float64ToInt(f float64) int {
-	if v, b := ParseInt32(FloatToString(f)); !b {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return 0
-	} else {
-		return v
 	}
+	return int(math.Round(f))
 }
 
 // CentsToFloat64 converts int (cents) into float64 value with two decimal value.
@@ -460,11 +459,5 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 
 // IntToHex returns HEX string representation of i, in 2 digit blocks.
 func IntToHex(i int) string {
-	buf := StringToHex(Itoa(i))
-
-	if len(buf)%2 != 0 {
-		buf = "0" + buf
-	}
-
-	return buf
+	return fmt.Sprintf("%02X", i)
 }

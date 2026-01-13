@@ -291,6 +291,18 @@ func (t *XTraceData) AddError(key string, err error) {
 // NewSubSegmentFromContext begins a new subsegment under the parent segment context,
 // context can not be empty, and must contains parent segment info
 func NewSubSegmentFromContext(ctx context.Context, serviceNameOrUrl string) *XSegment {
+	// CHANGED: respect global on/off switch
+	_mu.RLock()
+	on := _xrayServiceOn
+	_mu.RUnlock()
+	if !on {
+		return &XSegment{
+			Ctx:       context.Background(),
+			Seg:       nil,
+			_segReady: false,
+		}
+	}
+
 	// guard against nil context to avoid panic inside xray.BeginSubsegment
 	if ctx == nil {
 		return &XSegment{
@@ -592,8 +604,16 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 		traceName = "no.asynchronous.trace.name.defined"
 	}
 
+	// copy context to avoid races with callers that may Close() and nil out x.Ctx
+	baseCtx := x.Ctx
+	if baseCtx == nil {
+		errCh <- fmt.Errorf("Segment Not Ready")
+		close(errCh)
+		return errCh
+	}
+
 	// Run the capture in a goroutine; xray.Capture is sync, but this wrapper stays async.
-	go func() {
+	go func(ctx context.Context) {
 		defer close(errCh)
 
 		// Use xray.Capture to ensure proper segment flushing.
@@ -651,7 +671,7 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 		if err != nil {
 			errCh <- err
 		}
-	}()
+	}(baseCtx)
 
 	return errCh
 }

@@ -236,6 +236,11 @@ func Float32ToString(f float32) string {
 // Float32ToStringCents converts float32 value into string representing cent values, 2.12 returned as "212".
 // Since float32 can not be precisely calculated in some cases, use math.Round returns the nearest integer
 func Float32ToStringCents(f float32) string {
+	// guard against NaN/Inf to avoid invalid int conversion
+	if math.IsNaN(float64(f)) || math.IsInf(float64(f), 0) {
+		return ""
+	}
+
 	centsInt := int(math.Round(math.Abs(float64(f) * 100)))
 	if f >= 0.00 {
 		return strings.ReplaceAll(PadLeft(Itoa(centsInt), 3), " ", "0")
@@ -247,6 +252,10 @@ func Float32ToStringCents(f float32) string {
 // Float64ToIntCents converts float64 value into int, representing cent values, 2.12 returned as 212.
 // Since float64 can not be precisely calculated in some cases, use math.Round returns the nearest integer
 func Float64ToIntCents(f float64) int {
+	// guard against NaN/Inf to avoid invalid int conversion
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
 	return int(math.Round(f * 100))
 }
 
@@ -449,5 +458,5 @@ func SliceObjectsToSliceInterface(objectsSlice interface{}) (output []interface{
 
 // IntToHex returns HEX string representation of i, in 2 digit blocks.
 func IntToHex(i int) string {
-	return fmt.Sprintf("%02X", uint8(i))
+	return fmt.Sprintf("%X", uint64(i))
 }

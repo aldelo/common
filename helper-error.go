@@ -13,7 +13,7 @@ func ErrAddLineTimeFileInfo(err error) error {
 	if err == nil {
 		return nil
 	}
-	if strings.HasPrefix(err.Error(), "\nLogE:") { // CHANGED: avoid double annotation/wrapping
+	if alreadyLogPrefixed(err) { // detect existing prefix anywhere in unwrap chain
 		return err
 	}
 	return fmt.Errorf("%s%w", logPrefix(0), err) // CHANGED: prefix once, preserve cause
@@ -25,6 +25,16 @@ func ErrNewAddLineTimeFileInfo(msg string) error {
 
 func addLineTimeFileInfo(msg string) string {
 	return logPrefix(0) + msg
+}
+
+// idempotent check that walks the unwrap chain for existing LogE prefix
+func alreadyLogPrefixed(err error) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if strings.HasPrefix(e.Error(), "\nLogE:") {
+			return true
+		}
+	}
+	return false
 }
 
 // logPrefix builds the LogE prefix with caller/time info.

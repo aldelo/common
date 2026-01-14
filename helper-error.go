@@ -3,6 +3,7 @@ package helper
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -12,7 +13,8 @@ func ErrAddLineTimeFileInfo(err error) error {
 	if err == nil { // guard nil to avoid panic on err.Error()
 		return nil
 	}
-	return errors.New(addLineTimeFileInfo(err.Error()))
+	annotated := addLineTimeFileInfo(err.Error()) // keep annotated message
+	return fmt.Errorf("%s: %w", annotated, err)   // wrap to preserve original cause
 }
 
 func ErrNewAddLineTimeFileInfo(msg string) error {
@@ -20,7 +22,7 @@ func ErrNewAddLineTimeFileInfo(msg string) error {
 }
 
 func addLineTimeFileInfo(msg string) string {
-	if strings.HasPrefix(msg, "LogE") { // safe prefix check, no slicing panic
+	if strings.HasPrefix(msg, "\nLogE:") { // safe prefix check, no slicing panic
 		return msg
 	}
 
@@ -30,20 +32,19 @@ func addLineTimeFileInfo(msg string) string {
 		line = 0
 	}
 
-	indexFunc := func(file string) string {
-		backup := "/" + file
-		lastSlashIndex := strings.LastIndex(backup, "/")
-		if lastSlashIndex < 0 {
-			return backup
-		}
-		secondLastSlashIndex := strings.LastIndex(backup[:lastSlashIndex], "/")
-		if secondLastSlashIndex < 0 {
-			return backup[lastSlashIndex+1:]
-		}
-		return backup[secondLastSlashIndex+1:]
+	file = filepath.ToSlash(file) // normalize Windows-style paths
+	base := filepath.Base(file)   // get file name
+	dir := filepath.Base(filepath.Dir(file))
+	shortFile := base
+	if dir != "." && dir != "/" && dir != "" { // CHANGED: include parent dir when present
+		shortFile = dir + "/" + base
 	}
 
-	logmessage := fmt.Sprintf("\nLogE: %v %v:%v:%v ", time.Now().UTC().Format("2006-01-02 15:04:05.000"), indexFunc(file), line, msg)
+	logmessage := fmt.Sprintf("\nLogE: %v %v:%v:%v ",
+		time.Now().UTC().Format("2006-01-02 15:04:05.000"),
+		shortFile,
+		line,
+		msg)
 
 	return logmessage
 }

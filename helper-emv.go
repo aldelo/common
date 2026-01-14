@@ -52,17 +52,6 @@ func normalizeHexPayload(raw string, minBytes int, label string) (string, error)
 	return strings.ToUpper(trimmed), nil
 }
 
-// added strict hex validation to fail fast on malformed payloads
-func isHexString(s string) bool {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F')) {
-			return false
-		}
-	}
-	return true
-}
-
 // getEmvTags returns list of emv tags used by this helper,
 // future updates may add to this emv tag list
 func getEmvTags() []string {

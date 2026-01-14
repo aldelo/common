@@ -183,6 +183,9 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 						TagHexValue:      tagValHex,
 						TagDecodedValue:  tagValDecoded,
 					})
+
+					// stop scanning with stale cursor; re-evaluate cursors on next outer iteration
+					break
 				}
 			}
 		}
@@ -470,6 +473,9 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 						TagHexValue:      tagValHex,
 						TagDecodedValue:  tagValDecoded,
 					})
+
+					// stop scanning with stale cursor; re-evaluate cursors on next outer iteration
+					break
 				}
 			}
 		}

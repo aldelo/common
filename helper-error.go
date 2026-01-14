@@ -37,12 +37,19 @@ func alreadyLogPrefixed(err error) bool {
 	type singleUnwrapper interface{ Unwrap() error }
 	type multiUnwrapper interface{ Unwrap() []error }
 
-	seenComparable := make(map[error]struct{}) // track only comparable errors to avoid panic
+	const maxWalk = 256 // CHANGED: cap traversal to prevent cycles from hanging
+
+	seenComparable := make(map[error]struct{})
+	seenPtr := make(map[uintptr]struct{}) // CHANGED: track non-comparable errors by pointer
 
 	stack := []error{err}
+	steps := 0
 
 	for len(stack) > 0 {
-		// pop
+		if steps++; steps > maxWalk { // CHANGED: fail-safe against pathological cycles
+			return false
+		}
+
 		e := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
@@ -50,12 +57,21 @@ func alreadyLogPrefixed(err error) bool {
 			continue
 		}
 
-		// CHANGED: guard map usage to comparable types only
 		if t := reflect.TypeOf(e); t != nil && t.Comparable() {
 			if _, ok := seenComparable[e]; ok {
 				continue
 			}
 			seenComparable[e] = struct{}{}
+		} else { // CHANGED: dedupe non-comparable errors when pointer identity is available
+			v := reflect.ValueOf(e)
+			if v.Kind() == reflect.Pointer || v.Kind() == reflect.UnsafePointer {
+				if ptr := v.Pointer(); ptr != 0 {
+					if _, ok := seenPtr[ptr]; ok {
+						continue
+					}
+					seenPtr[ptr] = struct{}{}
+				}
+			}
 		}
 
 		if strings.HasPrefix(e.Error(), "\nLogE:") {
@@ -75,7 +91,7 @@ func alreadyLogPrefixed(err error) bool {
 
 // logPrefix builds the LogE prefix with caller/time info.
 func logPrefix(skip int) string { // new helper for shared caller/time logic
-	_, file, line, ok := runtime.Caller(skip + 2) // adjusted skip to account for new helper
+	_, file, line, ok := runtime.Caller(skip + 3) // adjusted skip to account for new helper
 	if !ok {
 		file = "unknown"
 		line = 0

@@ -395,148 +395,125 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 
 	// loop until all tlv tags payload are processed
 	for len(encryptedTlvTagsPayload) >= 6 {
-		// get left 2 char, mid 2 char, and left 4 char, from left to match against emv search tags
-		// get left 6 char (for DF tags)
-		left2 := Left(encryptedTlvTagsPayload, 2)
-		left2HexValueCount, left2LenHdr, e := parseLen(encryptedTlvTagsPayload, 2)
-		if e != nil {
-			return nil, e
+		left2 := Left(encryptedTlvTagsPayload, 2) // defer len decode until tag match
+		left4 := ""
+		if len(encryptedTlvTagsPayload) >= 4 {
+			left4 = Left(encryptedTlvTagsPayload, 4)
 		}
 
-		mid2 := Mid(encryptedTlvTagsPayload, 2, 2)
-		mid2HexValueCount, mid2LenHdr, e := parseLen(encryptedTlvTagsPayload, 4)
-		if e != nil {
-			return nil, e
+		left6 := ""
+		canCheckLeft6 := false
+		if len(encryptedTlvTagsPayload) >= 6 {
+			left6 = Left(encryptedTlvTagsPayload, 6)
+			canCheckLeft6 = len(encryptedTlvTagsPayload) >= 8 // need at least 1 len byte
 		}
 
-		left4 := Left(encryptedTlvTagsPayload, 4)
-		left4HexValueCount, left4LenHdr, e := parseLen(encryptedTlvTagsPayload, 4)
-		if e != nil {
-			return nil, e
+		mid2 := ""
+		if len(encryptedTlvTagsPayload) >= 4 {
+			mid2 = Mid(encryptedTlvTagsPayload, 2, 2)
 		}
 
-		checkMid4 := false
 		mid4 := ""
-		mid4HexValueCount := 0
-		mid4LenHdr := 0
-
+		canCheckMid4 := false
 		if len(encryptedTlvTagsPayload) >= 8 {
 			mid4 = Mid(encryptedTlvTagsPayload, 2, 4)
-			mid4HexValueCount, mid4LenHdr, e = parseLen(encryptedTlvTagsPayload, 6)
-			if e != nil {
-				return nil, e
-			}
-			checkMid4 = true
+			canCheckMid4 = true
 		}
 
-		checkLeft6 := false
-		left6 := ""
-		left6HexValueCount := 0
-		left6LenHdr := 0
-
-		if len(encryptedTlvTagsPayload) >= 8 {
-			left6 = Left(encryptedTlvTagsPayload, 6)
-			left6HexValueCount, left6LenHdr, e = parseLen(encryptedTlvTagsPayload, 6)
-			if e != nil {
-				return nil, e
-			}
-			checkLeft6 = true
-		}
-
-		// loop through tags to search
 		matchFound := false
 
 		for _, t := range searchTags {
-			if LenTrim(t) > 0 && (len(t) == 2 || len(t) == 4 || len(t) == 6) {
-				tagLenRemove := 0
-				tagValLen := 0
-				tagValHex := ""
+			if LenTrim(t) == 0 || (len(t) != 2 && len(t) != 4 && len(t) != 6) {
+				continue
+			}
+
+			tagLenRemove := 0
+			tagValLen := 0
+
+			switch len(t) {
+			case 2:
+				if strings.EqualFold(left2, t) {
+					var hdr int
+					tagValLen, hdr, err = parseLen(encryptedTlvTagsPayload, 2)
+					if err != nil {
+						return nil, err
+					}
+					tagLenRemove = 2 + hdr
+				} else if strings.EqualFold(mid2, t) {
+					var hdr int
+					tagValLen, hdr, err = parseLen(encryptedTlvTagsPayload, 4)
+					if err != nil {
+						return nil, err
+					}
+					tagLenRemove = 2 + 2 + hdr
+				}
+			case 4:
+				if strings.EqualFold(left4, t) {
+					var hdr int
+					tagValLen, hdr, err = parseLen(encryptedTlvTagsPayload, 4)
+					if err != nil {
+						return nil, err
+					}
+					tagLenRemove = 4 + hdr
+				} else if canCheckMid4 && strings.EqualFold(mid4, t) {
+					var hdr int
+					tagValLen, hdr, err = parseLen(encryptedTlvTagsPayload, 6)
+					if err != nil {
+						return nil, err
+					}
+					tagLenRemove = 2 + 4 + hdr
+				}
+			case 6:
+				if canCheckLeft6 && strings.EqualFold(left6, t) {
+					var hdr int
+					tagValLen, hdr, err = parseLen(encryptedTlvTagsPayload, 6)
+					if err != nil {
+						return nil, err
+					}
+					tagLenRemove = 6 + hdr
+				}
+			}
+
+			if tagLenRemove > 0 && tagValLen >= 0 {
+				if tagLenRemove > len(encryptedTlvTagsPayload) {
+					return nil, fmt.Errorf("Encrypted tag %s length header exceeds payload", t)
+				}
+
+				encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-tagLenRemove)
+
+				need := tagValLen * 2
+				if need > len(encryptedTlvTagsPayload) {
+					return nil, fmt.Errorf("Encrypted tag %s value length %d exceeds remaining payload", t, tagValLen)
+				}
+
+				tagValHex := Left(encryptedTlvTagsPayload, need)
 				tagValDecoded := ""
 
-				if len(t) == 2 {
-					// 2
-					if strings.ToUpper(left2) == strings.ToUpper(t) && left2HexValueCount >= 0 {
-						tagLenRemove = 2 + left2LenHdr
-						tagValLen = left2HexValueCount
-					} else if strings.ToUpper(mid2) == strings.ToUpper(t) && mid2HexValueCount >= 0 {
-						tagLenRemove = 2 + 2 + mid2LenHdr
-						tagValLen = mid2HexValueCount
+				if !StringSliceContains(&asciiTags, t) {
+					if tagValDecoded, err = HexToString(tagValHex); err != nil {
+						return nil, err
 					}
-				} else if len(t) == 4 {
-					// 4
-					if strings.ToUpper(left4) == strings.ToUpper(t) && left4HexValueCount >= 0 {
-						tagLenRemove = 4 + left4LenHdr
-						tagValLen = left4HexValueCount
-					} else if checkMid4 && len(mid4) > 0 && strings.ToUpper(mid4) == strings.ToUpper(t) && mid4HexValueCount >= 0 {
-						tagLenRemove = 2 + 4 + mid4LenHdr
-						tagValLen = mid4HexValueCount
-					}
-				} else if checkLeft6 {
-					// 6
-					if strings.ToUpper(left6) == strings.ToUpper(t) && left6HexValueCount >= 0 {
-						tagLenRemove = 6 + left6LenHdr
-						tagValLen = left6HexValueCount
+				} else {
+					if tagValDecoded, err = HexToString(tagValHex); err != nil { // decode hex to ASCII
+						return nil, err
 					}
 				}
 
-				if tagLenRemove > 0 && tagValLen >= 0 {
-					// bounds check for header removal
-					if tagLenRemove > len(encryptedTlvTagsPayload) {
-						return nil, fmt.Errorf("Encrypted tag %s length header exceeds payload", t)
-					}
+				encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-need)
 
-					// remove left x (tag and size)
-					encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-tagLenRemove)
+				matchFound = true
 
-					// get tag value hex
-					if !StringSliceContains(&asciiTags, t) {
-						// hex
-						need := tagValLen * 2
+				foundList = append(foundList, &EmvTlvTag{
+					TagName:          t,
+					TagHexValueCount: tagValLen,
+					TagHexValue:      tagValHex,
+					TagDecodedValue:  tagValDecoded,
+				})
 
-						// bounds check for value length
-						if need > len(encryptedTlvTagsPayload) {
-							return nil, fmt.Errorf("Encrypted tag %s value length %d exceeds remaining payload", t, tagValLen)
-						}
-						tagValHex = Left(encryptedTlvTagsPayload, need)
-
-						if tagValDecoded, err = HexToString(tagValHex); err != nil {
-							return nil, err
-						}
-
-						// remove tag value from payload
-						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-need)
-					} else {
-						// ascii
-						need := tagValLen * 2
-						// bounds check for ascii value length
-						if need > len(encryptedTlvTagsPayload) {
-							return nil, fmt.Errorf("Encrypted tag %s ASCII value length %d exceeds remaining payload", t, tagValLen)
-						}
-						tagValHex = Left(encryptedTlvTagsPayload, need)
-						if tagValDecoded, err = HexToString(tagValHex); err != nil { // decode hex to ASCII
-							return nil, err
-						}
-						encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-need)
-					}
-
-					// matched, finalize tag found
-					matchFound = true
-
-					foundList = append(foundList, &EmvTlvTag{
-						TagName:          t,
-						TagHexValueCount: tagValLen,
-						TagHexValue:      tagValHex,
-						TagDecodedValue:  tagValDecoded,
-					})
-
-					// stop scanning with stale cursor; re-evaluate cursors on next outer iteration
-					break
-				}
+				break
 			}
 		}
 
-		// after searching left most 2 char, 4 char, 6 char, if still cannot find a match for a corresponding hex,
-		// then the first 2 char need to be skipped (need to remove first 2 char of payload)
 		if !matchFound {
 			encryptedTlvTagsPayload = Right(encryptedTlvTagsPayload, len(encryptedTlvTagsPayload)-2)
 		}

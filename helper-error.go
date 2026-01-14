@@ -29,10 +29,17 @@ func addLineTimeFileInfo(msg string) string {
 }
 
 // idempotent check that walks the unwrap chain for existing LogE prefix
-func alreadyLogPrefixed(err error) bool {
+func alreadyLogPrefixed(err error) (prefixed bool) {
 	if err == nil {
 		return false
 	}
+
+	// prevent panics from Error/Unwrap implementations from crashing the caller
+	defer func() {
+		if r := recover(); r != nil {
+			prefixed = true // assume prefixed on panic to avoid double-prefixing
+		}
+	}()
 
 	type singleUnwrapper interface{ Unwrap() error }
 	type multiUnwrapper interface{ Unwrap() []error }
@@ -47,7 +54,7 @@ func alreadyLogPrefixed(err error) bool {
 
 	for len(stack) > 0 {
 		if steps++; steps > maxWalk { // CHANGED: fail-safe against pathological cycles
-			return false
+			return true
 		}
 
 		e := stack[len(stack)-1]

@@ -68,8 +68,11 @@ func getEmvTags() []string {
 //	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err error) {
 	// validate
-	emvTlvTagsPayload, _ = ExtractAlphaNumeric(Replace(emvTlvTagsPayload, " ", ""))
-	emvTlvTagsPayload = strings.ToUpper(emvTlvTagsPayload)
+	cleaned, cleanErr := ExtractAlphaNumeric(Replace(emvTlvTagsPayload, " ", "")) // CHANGED: capture normalization error
+	if cleanErr != nil {                                                          // CHANGED
+		return nil, fmt.Errorf("normalize EMV TLV payload: %w", cleanErr) // CHANGED
+	}
+	emvTlvTagsPayload = strings.ToUpper(cleaned) // CHANGED
 
 	if LenTrim(emvTlvTagsPayload) < 6 {
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be 6 Digits or More")
@@ -265,8 +268,11 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 //	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEmvTlvTagNamesOnly(emvTlvTagNamesPayload string) (foundList []string, err error) {
 	// validate
-	emvTlvTagNamesPayload, _ = ExtractAlphaNumeric(Replace(emvTlvTagNamesPayload, " ", ""))
-	emvTlvTagNamesPayload = strings.ToUpper(emvTlvTagNamesPayload)
+	cleaned, cleanErr := ExtractAlphaNumeric(Replace(emvTlvTagNamesPayload, " ", "")) // CHANGED: capture normalization error
+	if cleanErr != nil {                                                              // CHANGED
+		return nil, fmt.Errorf("normalize EMV TLV tag names payload: %w", cleanErr) // CHANGED
+	}
+	emvTlvTagNamesPayload = strings.ToUpper(cleaned) // CHANGED
 
 	if LenTrim(emvTlvTagNamesPayload) < 2 {
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be 2 Digits or More")
@@ -365,8 +371,11 @@ func getEncryptedTlvTagsAscii() []string {
 //	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvTag, err error) {
 	// normalize and validate payload
-	encryptedTlvTagsPayload, _ = ExtractAlphaNumeric(Replace(encryptedTlvTagsPayload, " ", ""))
-	encryptedTlvTagsPayload = strings.ToUpper(encryptedTlvTagsPayload)
+	cleaned, cleanErr := ExtractAlphaNumeric(Replace(encryptedTlvTagsPayload, " ", "")) // CHANGED: capture normalization error
+	if cleanErr != nil {                                                                // CHANGED
+		return nil, fmt.Errorf("normalize encrypted TLV payload: %w", cleanErr) // CHANGED
+	}
+	encryptedTlvTagsPayload = strings.ToUpper(cleaned) // CHANGED
 
 	// validate
 	if LenTrim(encryptedTlvTagsPayload) < 6 {

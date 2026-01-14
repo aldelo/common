@@ -31,6 +31,27 @@ type EmvTlvTag struct {
 
 const maxTLVBytes = 4096 // cap to prevent oversized allocations
 
+// strict normalizer that fails on any non-hex instead of silently stripping
+func normalizeHexPayload(raw string, minBytes int, label string) (string, error) {
+	trimmed := strings.ReplaceAll(raw, " ", "")
+	if len(trimmed) < minBytes*2 {
+		return "", fmt.Errorf("%s Must Be %d Digits or More", label, minBytes*2)
+	}
+	if len(trimmed)%2 != 0 {
+		return "", fmt.Errorf("%s Must Be Formatted as Double HEX", label)
+	}
+	if len(trimmed)/2 > maxTLVBytes {
+		return "", fmt.Errorf("%s exceeds max %d bytes", label, maxTLVBytes)
+	}
+	for i := 0; i < len(trimmed); i++ {
+		c := trimmed[i]
+		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')) {
+			return "", fmt.Errorf("%s Must Contain Only HEX Characters", label)
+		}
+	}
+	return strings.ToUpper(trimmed), nil
+}
+
 // added strict hex validation to fail fast on malformed payloads
 func isHexString(s string) bool {
 	for i := 0; i < len(s); i++ {
@@ -67,28 +88,10 @@ func getEmvTags() []string {
 //	Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
 //	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err error) {
-	// validate
-	cleaned, cleanErr := ExtractAlphaNumeric(Replace(emvTlvTagsPayload, " ", "")) // CHANGED: capture normalization error
-	if cleanErr != nil {                                                          // CHANGED
-		return nil, fmt.Errorf("normalize EMV TLV payload: %w", cleanErr) // CHANGED
-	}
-	emvTlvTagsPayload = strings.ToUpper(cleaned) // CHANGED
-
-	if LenTrim(emvTlvTagsPayload) < 6 {
-		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be 6 Digits or More")
-	}
-
-	if len(emvTlvTagsPayload)%2 != 0 {
-		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be Formatted as Double HEX")
-	}
-
-	if len(emvTlvTagsPayload)/2 > maxTLVBytes { // guard against oversized payloads early
-		return nil, fmt.Errorf("EMV TLV Tags Payload exceeds max %d bytes", maxTLVBytes)
-	}
-
-	// enforce hex-only payload after normalization to avoid silent misparses
-	if !isHexString(emvTlvTagsPayload) {
-		return nil, fmt.Errorf("EMV TLV Tags Payload Must Contain Only HEX Characters")
+	// FIX: strict normalization (no silent stripping of invalid chars)
+	emvTlvTagsPayload, err = normalizeHexPayload(emvTlvTagsPayload, 3, "EMV TLV Tags Payload")
+	if err != nil {
+		return nil, err
 	}
 
 	// BER-TLV length decoder with bounds checks and long-form support (up to 3 bytes)
@@ -267,27 +270,10 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 //	Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
 //	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEmvTlvTagNamesOnly(emvTlvTagNamesPayload string) (foundList []string, err error) {
-	// validate
-	cleaned, cleanErr := ExtractAlphaNumeric(Replace(emvTlvTagNamesPayload, " ", "")) // CHANGED: capture normalization error
-	if cleanErr != nil {                                                              // CHANGED
-		return nil, fmt.Errorf("normalize EMV TLV tag names payload: %w", cleanErr) // CHANGED
-	}
-	emvTlvTagNamesPayload = strings.ToUpper(cleaned) // CHANGED
-
-	if LenTrim(emvTlvTagNamesPayload) < 2 {
-		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be 2 Digits or More")
-	}
-
-	if len(emvTlvTagNamesPayload)%2 != 0 {
-		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be Formatted as Double HEX")
-	}
-
-	if len(emvTlvTagNamesPayload)/2 > maxTLVBytes { // avoid unbounded scans
-		return nil, fmt.Errorf("EMV TLV Tags Payload exceeds max %d bytes", maxTLVBytes)
-	}
-
-	if !isHexString(emvTlvTagNamesPayload) { // enforce hex-only tag names
-		return nil, fmt.Errorf("EMV TLV Tags Payload Must Contain Only HEX Characters")
+	// FIX: strict normalization (no silent stripping of invalid chars)
+	emvTlvTagNamesPayload, err = normalizeHexPayload(emvTlvTagNamesPayload, 1, "EMV TLV Tags Payload")
+	if err != nil {
+		return nil, err
 	}
 
 	// get search tags
@@ -370,29 +356,10 @@ func getEncryptedTlvTagsAscii() []string {
 //	Stack Overflow Article = https://stackoverflow.com/questions/36740699/decode-emv-tlv-data
 //	Stack Overflow Article = https://stackoverflow.com/questions/15059580/reading-emv-card-using-ppse-and-not-pse/19593841#19593841
 func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvTag, err error) {
-	// normalize and validate payload
-	cleaned, cleanErr := ExtractAlphaNumeric(Replace(encryptedTlvTagsPayload, " ", "")) // CHANGED: capture normalization error
-	if cleanErr != nil {                                                                // CHANGED
-		return nil, fmt.Errorf("normalize encrypted TLV payload: %w", cleanErr) // CHANGED
-	}
-	encryptedTlvTagsPayload = strings.ToUpper(cleaned) // CHANGED
-
-	// validate
-	if LenTrim(encryptedTlvTagsPayload) < 6 {
-		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Be 6 Digits or More")
-	}
-
-	if len(encryptedTlvTagsPayload)%2 != 0 {
-		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Be Formatted as Double HEX")
-	}
-
-	if len(encryptedTlvTagsPayload)/2 > maxTLVBytes { // guard oversized payloads early
-		return nil, fmt.Errorf("Encrypted TLV Tags Payload exceeds max %d bytes", maxTLVBytes)
-	}
-
-	// enforce hex-only payload after normalization to avoid silent misparses
-	if !isHexString(encryptedTlvTagsPayload) {
-		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Contain Only HEX Characters")
+	// FIX: strict normalization (no silent stripping of invalid chars)
+	encryptedTlvTagsPayload, err = normalizeHexPayload(encryptedTlvTagsPayload, 3, "Encrypted TLV Tags Payload")
+	if err != nil {
+		return nil, err
 	}
 
 	// BER-TLV length decoder with bounds checks and long-form support (up to 3 bytes)

@@ -79,6 +79,10 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be Formatted as Double HEX")
 	}
 
+	if len(emvTlvTagsPayload)/2 > maxTLVBytes { // guard against oversized payloads early
+		return nil, fmt.Errorf("EMV TLV Tags Payload exceeds max %d bytes", maxTLVBytes)
+	}
+
 	// enforce hex-only payload after normalization to avoid silent misparses
 	if !isHexString(emvTlvTagsPayload) {
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Contain Only HEX Characters")
@@ -272,6 +276,14 @@ func ParseEmvTlvTagNamesOnly(emvTlvTagNamesPayload string) (foundList []string, 
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be Formatted as Double HEX")
 	}
 
+	if len(emvTlvTagNamesPayload)/2 > maxTLVBytes { // avoid unbounded scans
+		return nil, fmt.Errorf("EMV TLV Tags Payload exceeds max %d bytes", maxTLVBytes)
+	}
+
+	if !isHexString(emvTlvTagNamesPayload) { // enforce hex-only tag names
+		return nil, fmt.Errorf("EMV TLV Tags Payload Must Contain Only HEX Characters")
+	}
+
 	// get search tags
 	searchTags := getEmvTags()
 
@@ -363,6 +375,10 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 
 	if len(encryptedTlvTagsPayload)%2 != 0 {
 		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Be Formatted as Double HEX")
+	}
+
+	if len(encryptedTlvTagsPayload)/2 > maxTLVBytes { // guard oversized payloads early
+		return nil, fmt.Errorf("Encrypted TLV Tags Payload exceeds max %d bytes", maxTLVBytes)
 	}
 
 	// enforce hex-only payload after normalization to avoid silent misparses

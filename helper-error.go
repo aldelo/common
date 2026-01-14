@@ -16,15 +16,15 @@ func ErrAddLineTimeFileInfo(err error) error {
 	if strings.HasPrefix(err.Error(), "\nLogE:") { // CHANGED: avoid double annotation/wrapping
 		return err
 	}
-	return fmt.Errorf("%s%w", logPrefix(1), err) // CHANGED: prefix once, preserve cause
+	return fmt.Errorf("%s%w", logPrefix(0), err) // CHANGED: prefix once, preserve cause
 }
 
 func ErrNewAddLineTimeFileInfo(msg string) error {
-	return errors.New(logPrefix(1) + msg)
+	return errors.New(logPrefix(0) + msg)
 }
 
 func addLineTimeFileInfo(msg string) string {
-	return logPrefix(1) + msg
+	return logPrefix(0) + msg
 }
 
 // logPrefix builds the LogE prefix with caller/time info.

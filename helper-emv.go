@@ -489,7 +489,7 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 				tagValHex := Left(encryptedTlvTagsPayload, need)
 				tagValDecoded := ""
 
-				if !StringSliceContains(&asciiTags, t) {
+				if StringSliceContains(&asciiTags, t) {
 					if tagValDecoded, err = HexToString(tagValHex); err != nil {
 						return nil, err
 					}

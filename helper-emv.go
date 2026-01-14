@@ -29,6 +29,8 @@ type EmvTlvTag struct {
 	TagDecodedValue  string
 }
 
+const maxTLVBytes = 4096 // cap to prevent oversized allocations
+
 // added strict hex validation to fail fast on malformed payloads
 func isHexString(s string) bool {
 	for i := 0; i < len(s); i++ {
@@ -95,32 +97,36 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 		}
 
 		if firstByte < 0x80 {
-			return int(firstByte), 2, nil // short form: 1 length byte => 2 hex chars
+			val = int(firstByte)
+			lenHeaderHex = 2
+		} else {
+			if firstByte == 0x80 {
+				return 0, 0, fmt.Errorf("EMV indefinite length not supported at offset %d", offset)
+			}
+			numLenBytes := int(firstByte & 0x7F)
+			if numLenBytes == 0 || numLenBytes > 3 {
+				return 0, 0, fmt.Errorf("EMV length uses %d bytes at offset %d; max 3 supported", numLenBytes, offset)
+			}
+			if offset+2+numLenBytes*2 > len(payload) {
+				return 0, 0, fmt.Errorf("EMV length header at offset %d exceeds payload", offset)
+			}
+			lengthHex := payload[offset+2 : offset+2+numLenBytes*2]
+			val64, e := strconv.ParseInt(lengthHex, 16, 32)
+			if e != nil {
+				return 0, 0, e
+			}
+			if val64 < 0 {
+				return 0, 0, fmt.Errorf("EMV length must be non-negative at offset %d", offset)
+			}
+			val = int(val64)
+			lenHeaderHex = (1 + numLenBytes) * 2
 		}
 
-		if firstByte == 0x80 {
-			return 0, 0, fmt.Errorf("EMV indefinite length not supported at offset %d", offset)
+		if val > maxTLVBytes { // reject oversized lengths
+			return 0, 0, fmt.Errorf("EMV tag length %d exceeds max %d bytes", val, maxTLVBytes)
 		}
 
-		numLenBytes := int(firstByte & 0x7F)
-		if numLenBytes == 0 || numLenBytes > 3 {
-			return 0, 0, fmt.Errorf("EMV length uses %d bytes at offset %d; max 3 supported", numLenBytes, offset)
-		}
-
-		if offset+2+numLenBytes*2 > len(payload) {
-			return 0, 0, fmt.Errorf("EMV length header at offset %d exceeds payload", offset)
-		}
-
-		lengthHex := payload[offset+2 : offset+2+numLenBytes*2]
-		val64, e := strconv.ParseInt(lengthHex, 16, 32)
-		if e != nil {
-			return 0, 0, e
-		}
-		if val64 < 0 {
-			return 0, 0, fmt.Errorf("EMV length must be non-negative at offset %d", offset)
-		}
-
-		return int(val64), (1 + numLenBytes) * 2, nil // header hex chars consumed
+		return val, lenHeaderHex, nil
 	}
 
 	// get search tags
@@ -377,32 +383,39 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 		}
 
 		if firstByte < 0x80 {
-			return int(firstByte), 2, nil // short form
+			val = int(firstByte)
+			lenHeaderHex = 2
+		} else {
+			if firstByte == 0x80 {
+				return 0, 0, fmt.Errorf("Encrypted TLV indefinite length not supported at offset %d", offset)
+			}
+
+			numLenBytes := int(firstByte & 0x7F)
+			if numLenBytes == 0 || numLenBytes > 3 {
+				return 0, 0, fmt.Errorf("Encrypted TLV length uses %d bytes at offset %d; max 3 supported", numLenBytes, offset)
+			}
+
+			if offset+2+numLenBytes*2 > len(payload) {
+				return 0, 0, fmt.Errorf("Encrypted length header at offset %d exceeds payload", offset)
+			}
+
+			lengthHex := payload[offset+2 : offset+2+numLenBytes*2]
+			val64, e := strconv.ParseInt(lengthHex, 16, 32)
+			if e != nil {
+				return 0, 0, e
+			}
+			if val64 < 0 {
+				return 0, 0, fmt.Errorf("Encrypted TLV length must be non-negative at offset %d", offset)
+			}
+			val = int(val64)
+			lenHeaderHex = (1 + numLenBytes) * 2
 		}
 
-		if firstByte == 0x80 {
-			return 0, 0, fmt.Errorf("Encrypted TLV indefinite length not supported at offset %d", offset)
+		if val > maxTLVBytes { // reject oversized lengths
+			return 0, 0, fmt.Errorf("Encrypted tag length %d exceeds max %d bytes", val, maxTLVBytes)
 		}
 
-		numLenBytes := int(firstByte & 0x7F)
-		if numLenBytes == 0 || numLenBytes > 3 {
-			return 0, 0, fmt.Errorf("Encrypted TLV length uses %d bytes at offset %d; max 3 supported", numLenBytes, offset)
-		}
-
-		if offset+2+numLenBytes*2 > len(payload) {
-			return 0, 0, fmt.Errorf("Encrypted length header at offset %d exceeds payload", offset)
-		}
-
-		lengthHex := payload[offset+2 : offset+2+numLenBytes*2]
-		val64, e := strconv.ParseInt(lengthHex, 16, 32)
-		if e != nil {
-			return 0, 0, e
-		}
-		if val64 < 0 {
-			return 0, 0, fmt.Errorf("Encrypted TLV length must be non-negative at offset %d", offset)
-		}
-
-		return int(val64), (1 + numLenBytes) * 2, nil
+		return val, lenHeaderHex, nil
 	}
 
 	// get search tags

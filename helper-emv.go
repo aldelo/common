@@ -29,6 +29,17 @@ type EmvTlvTag struct {
 	TagDecodedValue  string
 }
 
+// added strict hex validation to fail fast on malformed payloads
+func isHexString(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
 // getEmvTags returns list of emv tags used by this helper,
 // future updates may add to this emv tag list
 func getEmvTags() []string {
@@ -64,6 +75,11 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 
 	if len(emvTlvTagsPayload)%2 != 0 {
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be Formatted as Double HEX")
+	}
+
+	// enforce hex-only payload after normalization to avoid silent misparses
+	if !isHexString(emvTlvTagsPayload) {
+		return nil, fmt.Errorf("EMV TLV Tags Payload Must Contain Only HEX Characters")
 	}
 
 	// BER-TLV length decoder with bounds checks and long-form support (up to 3 bytes)
@@ -341,6 +357,11 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 
 	if len(encryptedTlvTagsPayload)%2 != 0 {
 		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Be Formatted as Double HEX")
+	}
+
+	// enforce hex-only payload after normalization to avoid silent misparses
+	if !isHexString(encryptedTlvTagsPayload) {
+		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Contain Only HEX Characters")
 	}
 
 	// BER-TLV length decoder with bounds checks and long-form support (up to 3 bytes)

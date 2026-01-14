@@ -29,7 +29,7 @@ func addLineTimeFileInfo(msg string) string {
 
 // logPrefix builds the LogE prefix with caller/time info.
 func logPrefix(skip int) string { // new helper for shared caller/time logic
-	_, file, line, ok := runtime.Caller(skip + 1)
+	_, file, line, ok := runtime.Caller(skip + 2) // adjusted skip to account for new helper
 	if !ok {
 		file = "unknown"
 		line = 0

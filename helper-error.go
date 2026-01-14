@@ -24,7 +24,12 @@ func addLineTimeFileInfo(msg string) string {
 		return msg
 	}
 
-	_, file, line, _ := runtime.Caller(1)
+	_, file, line, ok := runtime.Caller(2)
+	if !ok { // fallback when caller info is unavailable
+		file = "unknown"
+		line = 0
+	}
+
 	indexFunc := func(file string) string {
 		backup := "/" + file
 		lastSlashIndex := strings.LastIndex(backup, "/")

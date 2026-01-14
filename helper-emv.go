@@ -66,16 +66,45 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 		return nil, fmt.Errorf("EMV TLV Tags Payload Must Be Formatted as Double HEX")
 	}
 
-	// helper to parse hex length bytes without ASCII conversion
-	parseLen := func(hexLen string) (int, error) {
-		v, e := strconv.ParseInt(hexLen, 16, 32)
+	// BER-TLV length decoder with bounds checks and long-form support (up to 3 bytes)
+	parseLen := func(payload string, offset int) (val int, lenHeaderHex int, err error) {
+		if offset+2 > len(payload) {
+			return 0, 0, fmt.Errorf("EMV length header at offset %d exceeds payload", offset)
+		}
+
+		firstByteStr := payload[offset : offset+2]
+		firstByte, e := strconv.ParseInt(firstByteStr, 16, 32)
 		if e != nil {
-			return 0, e
+			return 0, 0, e
 		}
-		if v < 0 {
-			return 0, nil
+
+		if firstByte < 0x80 {
+			return int(firstByte), 2, nil // short form: 1 length byte => 2 hex chars
 		}
-		return int(v), nil
+
+		if firstByte == 0x80 {
+			return 0, 0, fmt.Errorf("EMV indefinite length not supported at offset %d", offset)
+		}
+
+		numLenBytes := int(firstByte & 0x7F)
+		if numLenBytes == 0 || numLenBytes > 3 {
+			return 0, 0, fmt.Errorf("EMV length uses %d bytes at offset %d; max 3 supported", numLenBytes, offset)
+		}
+
+		if offset+2+numLenBytes*2 > len(payload) {
+			return 0, 0, fmt.Errorf("EMV length header at offset %d exceeds payload", offset)
+		}
+
+		lengthHex := payload[offset+2 : offset+2+numLenBytes*2]
+		val64, e := strconv.ParseInt(lengthHex, 16, 32)
+		if e != nil {
+			return 0, 0, e
+		}
+		if val64 < 0 {
+			return 0, 0, fmt.Errorf("EMV length must be non-negative at offset %d", offset)
+		}
+
+		return int(val64), (1 + numLenBytes) * 2, nil // header hex chars consumed
 	}
 
 	// get search tags
@@ -89,19 +118,19 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 	for len(emvTlvTagsPayload) >= 6 {
 		// get left 2 char, mid 2 char, and left 4 char, from left to match against emv search tags
 		left2 := Left(emvTlvTagsPayload, 2)
-		left2HexValueCount, e := parseLen(Mid(emvTlvTagsPayload, 2, 2))
+		left2HexValueCount, left2LenHdr, e := parseLen(emvTlvTagsPayload, 2)
 		if e != nil {
 			return nil, e
 		}
 
 		mid2 := Mid(emvTlvTagsPayload, 2, 2)
-		mid2HexValueCount, e := parseLen(Mid(emvTlvTagsPayload, 4, 2))
+		mid2HexValueCount, mid2LenHdr, e := parseLen(emvTlvTagsPayload, 4)
 		if e != nil {
 			return nil, e
 		}
 
 		left4 := Left(emvTlvTagsPayload, 4)
-		left4HexValueCount, e := parseLen(Mid(emvTlvTagsPayload, 4, 2))
+		left4HexValueCount, left4LenHdr, e := parseLen(emvTlvTagsPayload, 4)
 		if e != nil {
 			return nil, e
 		}
@@ -109,10 +138,11 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 		checkMid4 := false
 		mid4 := ""
 		mid4HexvalueCount := 0
+		mid4LenHdr := 0
 
 		if len(emvTlvTagsPayload) >= 8 {
 			mid4 = Mid(emvTlvTagsPayload, 2, 4)
-			mid4HexvalueCount, e = parseLen(Mid(emvTlvTagsPayload, 6, 2))
+			mid4HexvalueCount, mid4LenHdr, e = parseLen(emvTlvTagsPayload, 6)
 			if e != nil {
 				return nil, e
 			}
@@ -132,19 +162,19 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 				if len(t) == 2 {
 					// 2
 					if strings.ToUpper(left2) == strings.ToUpper(t) && left2HexValueCount >= 0 {
-						tagLenRemove = 4
+						tagLenRemove = 2 + left2LenHdr
 						tagValLen = left2HexValueCount
 					} else if strings.ToUpper(mid2) == strings.ToUpper(t) && mid2HexValueCount >= 0 {
-						tagLenRemove = 6
+						tagLenRemove = 2 + 2 + mid2LenHdr
 						tagValLen = mid2HexValueCount
 					}
 				} else {
 					// 4
 					if strings.ToUpper(left4) == strings.ToUpper(t) && left4HexValueCount >= 0 {
-						tagLenRemove = 6
+						tagLenRemove = 4 + left4LenHdr
 						tagValLen = left4HexValueCount
 					} else if checkMid4 && len(mid4) > 0 && strings.ToUpper(mid4) == strings.ToUpper(t) && mid4HexvalueCount >= 0 {
-						tagLenRemove = 8
+						tagLenRemove = 2 + 4 + mid4LenHdr
 						tagValLen = mid4HexvalueCount
 					}
 				}
@@ -319,16 +349,45 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 		return nil, fmt.Errorf("Encrypted TLV Tags Payload Must Be Formatted as Double HEX")
 	}
 
-	// helper to parse hex length bytes without ASCII conversion
-	parseLen := func(hexLen string) (int, error) {
-		v, e := strconv.ParseInt(hexLen, 16, 32)
+	// BER-TLV length decoder with bounds checks and long-form support (up to 3 bytes)
+	parseLen := func(payload string, offset int) (val int, lenHeaderHex int, err error) {
+		if offset+2 > len(payload) {
+			return 0, 0, fmt.Errorf("Encrypted length header at offset %d exceeds payload", offset)
+		}
+
+		firstByteStr := payload[offset : offset+2]
+		firstByte, e := strconv.ParseInt(firstByteStr, 16, 32)
 		if e != nil {
-			return 0, e
+			return 0, 0, e
 		}
-		if v < 0 {
-			return 0, nil
+
+		if firstByte < 0x80 {
+			return int(firstByte), 2, nil // short form
 		}
-		return int(v), nil
+
+		if firstByte == 0x80 {
+			return 0, 0, fmt.Errorf("Encrypted TLV indefinite length not supported at offset %d", offset)
+		}
+
+		numLenBytes := int(firstByte & 0x7F)
+		if numLenBytes == 0 || numLenBytes > 3 {
+			return 0, 0, fmt.Errorf("Encrypted TLV length uses %d bytes at offset %d; max 3 supported", numLenBytes, offset)
+		}
+
+		if offset+2+numLenBytes*2 > len(payload) {
+			return 0, 0, fmt.Errorf("Encrypted length header at offset %d exceeds payload", offset)
+		}
+
+		lengthHex := payload[offset+2 : offset+2+numLenBytes*2]
+		val64, e := strconv.ParseInt(lengthHex, 16, 32)
+		if e != nil {
+			return 0, 0, e
+		}
+		if val64 < 0 {
+			return 0, 0, fmt.Errorf("Encrypted TLV length must be non-negative at offset %d", offset)
+		}
+
+		return int(val64), (1 + numLenBytes) * 2, nil
 	}
 
 	// get search tags
@@ -345,19 +404,19 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 		// get left 2 char, mid 2 char, and left 4 char, from left to match against emv search tags
 		// get left 6 char (for DF tags)
 		left2 := Left(encryptedTlvTagsPayload, 2)
-		left2HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 2, 2))
+		left2HexValueCount, left2LenHdr, e := parseLen(encryptedTlvTagsPayload, 2)
 		if e != nil {
 			return nil, e
 		}
 
 		mid2 := Mid(encryptedTlvTagsPayload, 2, 2)
-		mid2HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 4, 2))
+		mid2HexValueCount, mid2LenHdr, e := parseLen(encryptedTlvTagsPayload, 4)
 		if e != nil {
 			return nil, e
 		}
 
 		left4 := Left(encryptedTlvTagsPayload, 4)
-		left4HexValueCount, e := parseLen(Mid(encryptedTlvTagsPayload, 4, 2))
+		left4HexValueCount, left4LenHdr, e := parseLen(encryptedTlvTagsPayload, 4)
 		if e != nil {
 			return nil, e
 		}
@@ -365,10 +424,11 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 		checkMid4 := false
 		mid4 := ""
 		mid4HexValueCount := 0
+		mid4LenHdr := 0
 
 		if len(encryptedTlvTagsPayload) >= 8 {
 			mid4 = Mid(encryptedTlvTagsPayload, 2, 4)
-			mid4HexValueCount, e = parseLen(Mid(encryptedTlvTagsPayload, 6, 2))
+			mid4HexValueCount, mid4LenHdr, e = parseLen(encryptedTlvTagsPayload, 6)
 			if e != nil {
 				return nil, e
 			}
@@ -378,10 +438,11 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 		checkLeft6 := false
 		left6 := ""
 		left6HexValueCount := 0
+		left6LenHdr := 0
 
 		if len(encryptedTlvTagsPayload) >= 8 {
 			left6 = Left(encryptedTlvTagsPayload, 6)
-			left6HexValueCount, e = parseLen(Mid(encryptedTlvTagsPayload, 6, 2))
+			left6HexValueCount, left6LenHdr, e = parseLen(encryptedTlvTagsPayload, 6)
 			if e != nil {
 				return nil, e
 			}
@@ -401,25 +462,25 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 				if len(t) == 2 {
 					// 2
 					if strings.ToUpper(left2) == strings.ToUpper(t) && left2HexValueCount >= 0 {
-						tagLenRemove = 4
+						tagLenRemove = 2 + left2LenHdr
 						tagValLen = left2HexValueCount
 					} else if strings.ToUpper(mid2) == strings.ToUpper(t) && mid2HexValueCount >= 0 {
-						tagLenRemove = 6
+						tagLenRemove = 2 + 2 + mid2LenHdr
 						tagValLen = mid2HexValueCount
 					}
 				} else if len(t) == 4 {
 					// 4
 					if strings.ToUpper(left4) == strings.ToUpper(t) && left4HexValueCount >= 0 {
-						tagLenRemove = 6
+						tagLenRemove = 4 + left4LenHdr
 						tagValLen = left4HexValueCount
 					} else if checkMid4 && len(mid4) > 0 && strings.ToUpper(mid4) == strings.ToUpper(t) && mid4HexValueCount >= 0 {
-						tagLenRemove = 8
+						tagLenRemove = 2 + 4 + mid4LenHdr
 						tagValLen = mid4HexValueCount
 					}
 				} else if checkLeft6 {
 					// 6
 					if strings.ToUpper(left6) == strings.ToUpper(t) && left6HexValueCount >= 0 {
-						tagLenRemove = 8
+						tagLenRemove = 6 + left6LenHdr
 						tagValLen = left6HexValueCount
 					}
 				}

@@ -9,7 +9,9 @@ import (
 )
 
 func ErrAddLineTimeFileInfo(err error) error {
-
+	if err == nil { // guard nil to avoid panic on err.Error()
+		return nil
+	}
 	return errors.New(addLineTimeFileInfo(err.Error()))
 }
 
@@ -18,8 +20,7 @@ func ErrNewAddLineTimeFileInfo(msg string) error {
 }
 
 func addLineTimeFileInfo(msg string) string {
-
-	if strings.Contains(msg[:4], "LogE") {
+	if strings.HasPrefix(msg, "LogE") { // safe prefix check, no slicing panic
 		return msg
 	}
 

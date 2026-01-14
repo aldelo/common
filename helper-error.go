@@ -29,9 +29,39 @@ func addLineTimeFileInfo(msg string) string {
 
 // idempotent check that walks the unwrap chain for existing LogE prefix
 func alreadyLogPrefixed(err error) bool {
-	for e := err; e != nil; e = errors.Unwrap(e) {
+	if err == nil {
+		return false
+	}
+
+	type singleUnwrapper interface{ Unwrap() error }
+	type multiUnwrapper interface{ Unwrap() []error }
+
+	seen := make(map[error]struct{})
+	stack := []error{err}
+
+	for len(stack) > 0 {
+		// pop
+		e := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		if e == nil {
+			continue
+		}
+		if _, ok := seen[e]; ok {
+			continue
+		}
+		seen[e] = struct{}{}
+
 		if strings.HasPrefix(e.Error(), "\nLogE:") {
 			return true
+		}
+
+		if mw, ok := e.(multiUnwrapper); ok {
+			stack = append(stack, mw.Unwrap()...)
+			continue
+		}
+		if sw, ok := e.(singleUnwrapper); ok {
+			stack = append(stack, sw.Unwrap())
 		}
 	}
 	return false

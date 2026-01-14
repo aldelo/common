@@ -141,7 +141,7 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 	}
 
 	// loop until all emv tlv tags payload are processed
-	for len(emvTlvTagsPayload) >= 6 {
+	for len(emvTlvTagsPayload) >= 4 {
 		// get left 2 char, mid 2 char, and left 4 char, from left to match against emv search tags
 		left2 := Left(emvTlvTagsPayload, 2)
 		left4 := ""
@@ -444,7 +444,7 @@ func ParseEncryptedTlvTags(encryptedTlvTagsPayload string) (foundList []*EmvTlvT
 	asciiTags := getEncryptedTlvTagsAscii()
 
 	// loop until all tlv tags payload are processed
-	for len(encryptedTlvTagsPayload) >= 6 {
+	for len(encryptedTlvTagsPayload) >= 4 {
 		left2 := Left(encryptedTlvTagsPayload, 2) // defer len decode until tag match
 		left4 := ""
 		if len(encryptedTlvTagsPayload) >= 4 {

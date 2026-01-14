@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"time"
@@ -36,7 +37,8 @@ func alreadyLogPrefixed(err error) bool {
 	type singleUnwrapper interface{ Unwrap() error }
 	type multiUnwrapper interface{ Unwrap() []error }
 
-	seen := make(map[error]struct{})
+	seenComparable := make(map[error]struct{}) // track only comparable errors to avoid panic
+
 	stack := []error{err}
 
 	for len(stack) > 0 {
@@ -47,10 +49,14 @@ func alreadyLogPrefixed(err error) bool {
 		if e == nil {
 			continue
 		}
-		if _, ok := seen[e]; ok {
-			continue
+
+		// CHANGED: guard map usage to comparable types only
+		if t := reflect.TypeOf(e); t != nil && t.Comparable() {
+			if _, ok := seenComparable[e]; ok {
+				continue
+			}
+			seenComparable[e] = struct{}{}
 		}
-		seen[e] = struct{}{}
 
 		if strings.HasPrefix(e.Error(), "\nLogE:") {
 			return true

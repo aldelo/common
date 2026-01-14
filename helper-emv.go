@@ -118,105 +118,99 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 	for len(emvTlvTagsPayload) >= 6 {
 		// get left 2 char, mid 2 char, and left 4 char, from left to match against emv search tags
 		left2 := Left(emvTlvTagsPayload, 2)
-		left2HexValueCount, left2LenHdr, e := parseLen(emvTlvTagsPayload, 2)
-		if e != nil {
-			return nil, e
+		left4 := ""
+		if len(emvTlvTagsPayload) >= 4 {
+			left4 = Left(emvTlvTagsPayload, 4)
 		}
 
-		mid2 := Mid(emvTlvTagsPayload, 2, 2)
-		mid2HexValueCount, mid2LenHdr, e := parseLen(emvTlvTagsPayload, 4)
-		if e != nil {
-			return nil, e
+		mid2 := ""
+		if len(emvTlvTagsPayload) >= 4 {
+			mid2 = Mid(emvTlvTagsPayload, 2, 2)
 		}
 
-		left4 := Left(emvTlvTagsPayload, 4)
-		left4HexValueCount, left4LenHdr, e := parseLen(emvTlvTagsPayload, 4)
-		if e != nil {
-			return nil, e
-		}
-
-		checkMid4 := false
 		mid4 := ""
-		mid4HexvalueCount := 0
-		mid4LenHdr := 0
-
+		canCheckMid4 := false
 		if len(emvTlvTagsPayload) >= 8 {
 			mid4 = Mid(emvTlvTagsPayload, 2, 4)
-			mid4HexvalueCount, mid4LenHdr, e = parseLen(emvTlvTagsPayload, 6)
-			if e != nil {
-				return nil, e
-			}
-			checkMid4 = true
+			canCheckMid4 = true
 		}
 
-		// loop through tags to search
 		matchFound := false
 
 		for _, t := range searchTags {
-			if LenTrim(t) > 0 && (len(t) == 2 || len(t) == 4) {
-				tagLenRemove := 0
-				tagValLen := 0
-				tagValHex := ""
-				tagValDecoded := ""
+			if LenTrim(t) == 0 || (len(t) != 2 && len(t) != 4) {
+				continue
+			}
 
-				if len(t) == 2 {
-					// 2
-					if strings.ToUpper(left2) == strings.ToUpper(t) && left2HexValueCount >= 0 {
-						tagLenRemove = 2 + left2LenHdr
-						tagValLen = left2HexValueCount
-					} else if strings.ToUpper(mid2) == strings.ToUpper(t) && mid2HexValueCount >= 0 {
-						tagLenRemove = 2 + 2 + mid2LenHdr
-						tagValLen = mid2HexValueCount
-					}
-				} else {
-					// 4
-					if strings.ToUpper(left4) == strings.ToUpper(t) && left4HexValueCount >= 0 {
-						tagLenRemove = 4 + left4LenHdr
-						tagValLen = left4HexValueCount
-					} else if checkMid4 && len(mid4) > 0 && strings.ToUpper(mid4) == strings.ToUpper(t) && mid4HexvalueCount >= 0 {
-						tagLenRemove = 2 + 4 + mid4LenHdr
-						tagValLen = mid4HexvalueCount
-					}
-				}
+			tagLenRemove := 0
+			tagValLen := 0
 
-				if tagLenRemove > 0 && tagValLen >= 0 {
-					// bounds check for header removal
-					if tagLenRemove > len(emvTlvTagsPayload) {
-						return nil, fmt.Errorf("EMV tag %s length header exceeds payload", t)
-					}
-
-					// remove left x (tag and size)
-					emvTlvTagsPayload = Right(emvTlvTagsPayload, len(emvTlvTagsPayload)-tagLenRemove)
-
-					// bounds check for value length
-					need := tagValLen * 2
-					if need > len(emvTlvTagsPayload) {
-						return nil, fmt.Errorf("EMV tag %s value length %d exceeds remaining payload", t, tagValLen)
-					}
-
-					// get tag value hex
-					tagValHex = Left(emvTlvTagsPayload, tagValLen*2)
-
-					if tagValDecoded, err = HexToString(tagValHex); err != nil {
+			switch len(t) {
+			case 2:
+				if strings.EqualFold(left2, t) {
+					var hdr int
+					tagValLen, hdr, err = parseLen(emvTlvTagsPayload, 2)
+					if err != nil {
 						return nil, err
 					}
-
-					// remove tag value from payload
-					emvTlvTagsPayload = Right(emvTlvTagsPayload, len(emvTlvTagsPayload)-tagValLen*2)
-
-					// matched, finalize tag found
-					matchFound = true
-
-					foundList = append(foundList, &EmvTlvTag{
-						TagName:          t,
-						TagHexValueCount: tagValLen,
-						TagHexValue:      tagValHex,
-						TagDecodedValue:  tagValDecoded,
-					})
-
-					// stop scanning with stale cursor; re-evaluate cursors on next outer iteration
-					break
+					tagLenRemove = 2 + hdr
+				} else if strings.EqualFold(mid2, t) {
+					var hdr int
+					tagValLen, hdr, err = parseLen(emvTlvTagsPayload, 4)
+					if err != nil {
+						return nil, err
+					}
+					tagLenRemove = 2 + 2 + hdr
 				}
+			case 4:
+				if strings.EqualFold(left4, t) {
+					var hdr int
+					tagValLen, hdr, err = parseLen(emvTlvTagsPayload, 4)
+					if err != nil {
+						return nil, err
+					}
+					tagLenRemove = 4 + hdr
+				} else if canCheckMid4 && strings.EqualFold(mid4, t) {
+					var hdr int
+					tagValLen, hdr, err = parseLen(emvTlvTagsPayload, 6)
+					if err != nil {
+						return nil, err
+					}
+					tagLenRemove = 2 + 4 + hdr
+				}
+			}
+
+			if tagLenRemove > 0 && tagValLen >= 0 {
+				if tagLenRemove > len(emvTlvTagsPayload) {
+					return nil, fmt.Errorf("EMV tag %s length header exceeds payload", t)
+				}
+
+				emvTlvTagsPayload = Right(emvTlvTagsPayload, len(emvTlvTagsPayload)-tagLenRemove)
+
+				need := tagValLen * 2
+				if need > len(emvTlvTagsPayload) {
+					return nil, fmt.Errorf("EMV tag %s value length %d exceeds remaining payload", t, tagValLen)
+				}
+
+				tagValHex := Left(emvTlvTagsPayload, need)
+
+				tagValDecoded := ""
+				if tagValDecoded, err = HexToString(tagValHex); err != nil {
+					return nil, err
+				}
+
+				emvTlvTagsPayload = Right(emvTlvTagsPayload, len(emvTlvTagsPayload)-need)
+
+				matchFound = true
+
+				foundList = append(foundList, &EmvTlvTag{
+					TagName:          t,
+					TagHexValueCount: tagValLen,
+					TagHexValue:      tagValHex,
+					TagDecodedValue:  tagValDecoded,
+				})
+
+				break
 			}
 		}
 

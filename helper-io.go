@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -205,6 +206,13 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	}
 
 	tmp := dst + ".tmp" // copy to temp file first
+	cleanupTmp := true
+	defer func() {
+		if cleanupTmp {
+			_ = os.Remove(tmp)
+		}
+	}()
+
 	if srcfd, err = os.Open(src); err != nil {
 		return err
 	}
@@ -245,14 +253,14 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 
 	if err = os.Rename(tmp, dst); err != nil { // atomic replace
 		if remErr := os.Remove(dst); remErr != nil && !os.IsNotExist(remErr) {
-			_ = os.Remove(tmp)
 			return fmt.Errorf("failed to replace destination %s: %v; cleanup error: %v", dst, err, remErr)
 		}
 		if err = os.Rename(tmp, dst); err != nil {
-			_ = os.Remove(tmp)
 			return err
 		}
 	}
+
+	cleanupTmp = false
 
 	// fsync parent directory to make rename durable
 	if dir, dirErr := os.Open(filepath.Dir(dst)); dirErr == nil {
@@ -274,11 +282,20 @@ func CopyDir(src string, dst string) error {
 	if err != nil {
 		return err
 	}
+	if real, err := filepath.EvalSymlinks(srcAbs); err == nil { // normalize source
+		srcAbs = real
+	}
+
 	dstAbs, err := filepath.Abs(dst)
 	if err != nil {
 		return err
 	}
-	if srcAbs == dstAbs || strings.HasPrefix(dstAbs, srcAbs+string(os.PathSeparator)) {
+	if real, err := filepath.EvalSymlinks(dstAbs); err == nil { // normalize destination if it exists
+		dstAbs = real
+	}
+
+	// case-aware, symlink-aware self/into-self guard
+	if pathsEqual(srcAbs, dstAbs) || pathWithin(dstAbs, srcAbs) {
 		return fmt.Errorf("destination is the same as or within the source: %s -> %s", src, dst)
 	}
 
@@ -361,4 +378,23 @@ func CopyDir(src string, dst string) error {
 		}
 	}
 	return nil
+}
+
+// helper functions for safe, case-aware path comparison
+func normPath(p string) string {
+	p = filepath.Clean(p)
+	if runtime.GOOS == "windows" {
+		p = strings.ToLower(p)
+	}
+	return p
+}
+
+func pathsEqual(a, b string) bool {
+	return normPath(a) == normPath(b)
+}
+
+func pathWithin(path, parent string) bool {
+	p := normPath(path)
+	pa := normPath(parent)
+	return strings.HasPrefix(p, pa+string(os.PathSeparator))
 }

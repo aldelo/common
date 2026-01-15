@@ -119,6 +119,7 @@ func FileWrite(path string, data string) error {
 	if err := os.Rename(tmp, path); err != nil {
 		// surface failure to remove old destination before retry
 		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
+			_ = os.Chmod(path, 0o666) // best-effort; ignore error
 			if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
 				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
 			}
@@ -131,14 +132,17 @@ func FileWrite(path string, data string) error {
 	}
 
 	// fsync parent directory to make rename durable
-	if dir, err := os.Open(filepath.Dir(path)); err == nil {
-		if syncErr := dir.Sync(); syncErr != nil {
+	// skip directory fsync on Windows (not supported)
+	if runtime.GOOS != "windows" {
+		if dir, err := os.Open(filepath.Dir(path)); err == nil {
+			if syncErr := dir.Sync(); syncErr != nil {
+				_ = dir.Close()
+				return syncErr
+			}
 			_ = dir.Close()
-			return syncErr
+		} else {
+			return err
 		}
-		_ = dir.Close()
-	} else {
-		return err
 	}
 
 	cleanup = false
@@ -203,6 +207,7 @@ func FileWriteBytes(path string, data []byte) error {
 	if err := os.Rename(tmp, path); err != nil { // handle overwrite on Windows
 		// surface failure to remove old destination before retry
 		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
+			_ = os.Chmod(path, 0o666) // best-effort; ignore error
 			if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
 				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
 			}
@@ -215,14 +220,17 @@ func FileWriteBytes(path string, data []byte) error {
 	}
 
 	// fsync parent directory to make rename durable
-	if dirFd, err := os.Open(dir); err == nil {
-		if syncErr := dirFd.Sync(); syncErr != nil {
+	// skip directory fsync on Windows (not supported)
+	if runtime.GOOS != "windows" {
+		if dirFd, err := os.Open(dir); err == nil {
+			if syncErr := dirFd.Sync(); syncErr != nil {
+				_ = dirFd.Close()
+				return syncErr
+			}
 			_ = dirFd.Close()
-			return syncErr
+		} else {
+			return err
 		}
-		_ = dirFd.Close()
-	} else {
-		return err
 	}
 
 	cleanup = false
@@ -324,6 +332,7 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 			if dstinfo, derr := os.Lstat(dst); derr == nil && !dstinfo.Mode().IsRegular() {
 				return fmt.Errorf("destination is not a regular file: %s", dst)
 			}
+			_ = os.Chmod(dst, 0o666) // best-effort; ignore error
 			if remErr := os.Remove(dst); remErr != nil && !os.IsNotExist(remErr) {
 				return fmt.Errorf("failed to replace destination %s: %v; cleanup error: %v", dst, err, remErr)
 			}
@@ -338,14 +347,17 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	cleanupTmp = false
 
 	// fsync parent directory to make rename durable
-	if dir, dirErr := os.Open(filepath.Dir(dst)); dirErr == nil {
-		if syncErr := dir.Sync(); syncErr != nil {
+	// skip directory fsync on Windows (not supported)
+	if runtime.GOOS != "windows" {
+		if dir, dirErr := os.Open(filepath.Dir(dst)); dirErr == nil {
+			if syncErr := dir.Sync(); syncErr != nil {
+				_ = dir.Close()
+				return syncErr
+			}
 			_ = dir.Close()
-			return syncErr
+		} else {
+			return dirErr
 		}
-		_ = dir.Close()
-	} else {
-		return dirErr
 	}
 
 	return nil

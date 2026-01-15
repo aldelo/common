@@ -31,6 +31,13 @@ import (
 // return as string if successful,
 // if failed, error will contain the error reason
 func FileRead(path string) (string, error) {
+	if strings.TrimSpace(path) == "" { // CHANGED: guard empty/whitespace paths
+		return "", fmt.Errorf("path is empty")
+	}
+	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil { // CHANGED: block parent-dir symlink traversal
+		return "", err
+	}
+
 	f, _, err := openRegularRead(path)
 	if err != nil {
 		return "", err
@@ -47,6 +54,13 @@ func FileRead(path string) (string, error) {
 
 // FileReadBytes will read all file content and return slice of byte
 func FileReadBytes(path string) ([]byte, error) {
+	if strings.TrimSpace(path) == "" { // CHANGED
+		return nil, fmt.Errorf("path is empty")
+	}
+	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil { // CHANGED
+		return nil, err
+	}
+
 	f, _, err := openRegularRead(path)
 	if err != nil {
 		return nil, err
@@ -64,6 +78,13 @@ func FileReadBytes(path string) ([]byte, error) {
 // FileWrite will write data into file at the given path,
 // if successful, no error is returned (nil)
 func FileWrite(path string, data string) error {
+	if strings.TrimSpace(path) == "" { // CHANGED
+		return fmt.Errorf("path is empty")
+	}
+	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil { // CHANGED
+		return err
+	}
+
 	// default to 0644 but preserve existing file mode when present
 	mode := os.FileMode(0o644)
 
@@ -152,6 +173,13 @@ func FileWrite(path string, data string) error {
 // FileWriteBytes will write byte data into file at the given path,
 // if successful, no error is returned (nil)
 func FileWriteBytes(path string, data []byte) error {
+	if strings.TrimSpace(path) == "" { // CHANGED
+		return fmt.Errorf("path is empty")
+	}
+	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil { // CHANGED
+		return err
+	}
+
 	// default to 0644 but preserve existing file mode when present
 	mode := os.FileMode(0o644)
 
@@ -247,14 +275,25 @@ func FileExists(path string) bool {
 }
 
 // CopyFile - File copies a single file from src to dst
-func CopyFile(src string, dst string) (err error) { // named return for close error propagation
+func CopyFile(src string, dst string) (err error) {                   // named return for close error propagation
+	if strings.TrimSpace(src) == "" || strings.TrimSpace(dst) == "" { // CHANGED
+		return fmt.Errorf("source or destination path is empty")
+	}
+
 	srcAbs, err := filepath.Abs(src)
 	if err != nil {
 		return err
 	}
-
 	dstAbs, err := filepath.Abs(dst)
 	if err != nil {
+		return err
+	}
+
+	// ensure no symlink in ancestor directories for either side
+	if err := ensureNoSymlinkDirs(filepath.Dir(srcAbs)); err != nil { // CHANGED
+		return err
+	}
+	if err := ensureNoSymlinkDirs(filepath.Dir(dstAbs)); err != nil { // CHANGED
 		return err
 	}
 
@@ -415,6 +454,10 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 
 // CopyDir - Dir copies a whole directory recursively
 func CopyDir(src string, dst string) error {
+	if strings.TrimSpace(src) == "" || strings.TrimSpace(dst) == "" { // CHANGED
+		return fmt.Errorf("source or destination path is empty")
+	}
+
 	srcAbs, err := filepath.Abs(src)
 	if err != nil {
 		return err
@@ -429,6 +472,14 @@ func CopyDir(src string, dst string) error {
 	}
 	if real, err := filepath.EvalSymlinks(dstAbs); err == nil { // normalize destination if it exists
 		dstAbs = real
+	}
+
+	// ensure no symlink in ancestor directories
+	if err := ensureNoSymlinkDirs(filepath.Dir(srcAbs)); err != nil { // CHANGED
+		return err
+	}
+	if err := ensureNoSymlinkDirs(filepath.Dir(dstAbs)); err != nil { // CHANGED
+		return err
 	}
 
 	// case-aware, symlink-aware self/into-self guard
@@ -593,4 +644,28 @@ func openRegularRead(path string) (*os.File, os.FileInfo, error) {
 	}
 
 	return f, finfo, nil
+}
+
+// ensureNoSymlinkDirs walks ancestor directories (existing ones) to reject symlinked parents.
+// This prevents path redirection via swapped-in parent symlinks.
+func ensureNoSymlinkDirs(dir string) error { // ADDED
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	for {
+		info, err := os.Lstat(absDir)
+		if err == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("ancestor directory is a symlink: %s", absDir)
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		parent := filepath.Dir(absDir)
+		if parent == absDir {
+			return nil
+		}
+		absDir = parent
+	}
 }

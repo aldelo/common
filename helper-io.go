@@ -121,7 +121,11 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	if srcfd, err = os.Open(src); err != nil {
 		return err
 	}
-	defer srcfd.Close()
+	defer func() { // CHANGED: propagate src close error too
+		if cerr := srcfd.Close(); err == nil && cerr != nil {
+			err = cerr
+		}
+	}()
 
 	if dstfd, err = os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcinfo.Mode()); err != nil {
 		return err
@@ -162,6 +166,9 @@ func CopyDir(src string, dst string) error {
 	}
 
 	if err = os.MkdirAll(dst, srcinfo.Mode()); err != nil {
+		return err
+	}
+	if err = os.Chmod(dst, srcinfo.Mode()); err != nil { // CHANGED: ensure mode matches source
 		return err
 	}
 

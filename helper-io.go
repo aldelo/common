@@ -17,7 +17,6 @@ package helper
  */
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -77,7 +76,7 @@ func FileExists(path string) bool {
 	if _, err := os.Stat(path); err == nil {
 		return true
 	} else {
-		return !errors.Is(err, os.ErrNotExist) // distinguish not-exist
+		return false
 	}
 }
 
@@ -150,6 +149,7 @@ func CopyDir(src string, dst string) error {
 			if err != nil {
 				return err
 			}
+			_ = os.Remove(dstfp) // remove existing file/symlink if any
 			if err := os.Symlink(target, dstfp); err != nil {
 				return err
 			}

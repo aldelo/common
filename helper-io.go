@@ -248,118 +248,109 @@ func FileExists(path string) bool {
 
 // CopyFile - File copies a single file from src to dst
 func CopyFile(src string, dst string) (err error) { // named return for close error propagation
-	var srcfd *os.File
-	var dstfd *os.File
-	var srcinfo os.FileInfo
-
-	// validate source and hold an fd to prevent TOCTOU swap to symlink/special file
-	if srcfd, srcinfo, err = openRegularRead(src); err != nil {
-		return err
-	}
-	defer func() { // propagate src close error too
-		if cerr := srcfd.Close(); err == nil && cerr != nil {
-			err = cerr
-		}
-	}()
-
-	// prevent copying onto the same file (path or hardlink), which would truncate the source
-	if dstinfo, statErr := os.Lstat(dst); statErr == nil {
-		if dstinfo.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("destination is a symlink: %s", dst)
-		}
-		if dstinfo.IsDir() {
-			return fmt.Errorf("destination is a directory: %s", dst)
-		}
-		if !dstinfo.Mode().IsRegular() { // block special files (FIFOs, sockets, devices) as destinations
-			return fmt.Errorf("destination is not a regular file: %s", dst)
-		}
-		if os.SameFile(srcinfo, dstinfo) {
-			return fmt.Errorf("source and destination are the same file: %s", src)
-		}
-	} else if !os.IsNotExist(statErr) { // propagate unexpected stat errors
-		return statErr
-	}
-
-	// ensure destination directory exists
-	if err = os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-
-	// use unique temp file in destination dir to avoid races/symlink attacks
-	dir := filepath.Dir(dst)
-	base := filepath.Base(dst)
-	tmpFile, err := os.CreateTemp(dir, "."+base+".tmp-*")
+	srcAbs, err := filepath.Abs(src)
 	if err != nil {
 		return err
 	}
-	tmp := tmpFile.Name()
-	cleanupTmp := true
-	defer func() {
-		if cleanupTmp {
-			_ = os.Remove(tmp)
-		}
-	}()
 
-	dstfd = tmpFile // reuse opened temp file
-	defer func() {        // propagate close error
-		if dstfd != nil { // avoid double-close after explicit close
-			if cerr := dstfd.Close(); err == nil && cerr != nil {
-				err = cerr
-			}
-		}
-	}()
-
-	if _, err = io.Copy(dstfd, srcfd); err != nil {
-		return err
-	}
-	if err = dstfd.Sync(); err != nil { // ensure data on disk
+	dstAbs, err := filepath.Abs(dst)
+	if err != nil {
 		return err
 	}
 
-	// close before rename to avoid Windows issues
-	if cerr := dstfd.Close(); err == nil && cerr != nil { // explicit close before rename
-		err = cerr
+	// CHANGED: resolve real paths only for guard checks, not for copying behavior
+	srcReal := srcAbs
+	if real, err := filepath.EvalSymlinks(srcAbs); err == nil {
+		srcReal = real
+	}
+	dstReal := dstAbs
+	if real, err := filepath.EvalSymlinks(dstAbs); err == nil {
+		dstReal = real
+	}
+
+	// CHANGED: guard using both raw and resolved paths to avoid copying into self via symlinks
+	if pathsEqual(srcAbs, dstAbs) || pathWithin(dstAbs, srcAbs) || pathWithin(dstReal, srcReal) {
+		return fmt.Errorf("destination is the same as or within the source: %s -> %s", src, dst)
+	}
+
+	// Use Lstat on the original path so top-level symlinks are preserved
+	srcinfo, err := os.Lstat(srcAbs)
+	if err != nil {
 		return err
 	}
-	dstfd = nil // prevent deferred double-close
 
-	if err = os.Chmod(tmp, srcinfo.Mode()); err != nil { // preserve source mode after copy (in case umask altered it)
-		return err
-	}
-
-	if err = os.Rename(tmp, dst); err != nil { // atomic replace
-		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
-			if dstinfo, derr := os.Lstat(dst); derr == nil && !dstinfo.Mode().IsRegular() {
-				return fmt.Errorf("destination is not a regular file: %s", dst)
-			}
-			_ = os.Chmod(dst, 0o666) // best-effort; ignore error
-			if remErr := os.Remove(dst); remErr != nil && !os.IsNotExist(remErr) {
-				return fmt.Errorf("failed to replace destination %s: %v; cleanup error: %v", dst, err, remErr)
-			}
-			if err = os.Rename(tmp, dst); err != nil {
-				return err
-			}
-		} else {
+	// CHANGED: preserve top-level symlink instead of dereferencing it
+	if srcinfo.Mode()&os.ModeSymlink != 0 {
+		if err := os.MkdirAll(filepath.Dir(dstAbs), 0o755); err != nil {
 			return err
 		}
+		target, err := os.Readlink(srcAbs)
+		if err != nil {
+			return err
+		}
+		if err := os.RemoveAll(dstAbs); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return os.Symlink(target, dstAbs)
 	}
 
-	cleanupTmp = false
+	if !srcinfo.IsDir() {
+		return fmt.Errorf("source is not a directory: %s", src)
+	}
 
-	// fsync parent directory to make rename durable
-	// skip directory fsync on Windows (not supported)
-	if runtime.GOOS != "windows" {
-		if dir, dirErr := os.Open(filepath.Dir(dst)); dirErr == nil {
-			if syncErr := dir.Sync(); syncErr != nil {
-				_ = dir.Close()
-				return syncErr
+	if err = os.MkdirAll(dstAbs, srcinfo.Mode()); err != nil {
+		return err
+	}
+	if err = os.Chmod(dstAbs, srcinfo.Mode()); err != nil { // ensure mode matches source
+		return err
+	}
+
+	entries, err := os.ReadDir(srcAbs)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcfp := filepath.Join(srcAbs, entry.Name())
+		dstfp := filepath.Join(dstAbs, entry.Name())
+
+		// use Lstat so symlink type is detected without following it
+		info, err := os.Lstat(srcfp)
+		if err != nil {
+			return err
+		}
+
+		// handle symlinks explicitly
+		if info.Mode()&os.ModeSymlink != 0 {
+			if err := os.MkdirAll(filepath.Dir(dstfp), 0o755); err != nil { // ensure parent exists
+				return err
 			}
-			_ = dir.Close()
-		} else {
-			return dirErr
+			target, err := os.Readlink(srcfp)
+			if err != nil {
+				return err
+			}
+			// remove any existing path (file/dir/symlink) before recreating the symlink
+			if err := os.RemoveAll(dstfp); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			if err := os.Symlink(target, dstfp); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if info.IsDir() {
+			if err = CopyDir(srcfp, dstfp); err != nil {
+				return err
+			}
+		} else if info.Mode().IsRegular() { // guard non-regular files
+			if err = CopyFile(srcfp, dstfp); err != nil {
+				return err
+			}
+		} else { // explicit unsupported type handling
+			return fmt.Errorf("unsupported file type at %s", srcfp)
 		}
 	}
-
 	return nil
 }
 

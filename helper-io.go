@@ -27,8 +27,15 @@ import (
 // return as string if successful,
 // if failed, error will contain the error reason
 func FileRead(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("path is a directory: %s", path)
+	}
 
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
@@ -38,10 +45,17 @@ func FileRead(path string) (string, error) {
 
 // FileReadBytes will read all file content and return slice of byte
 func FileReadBytes(path string) ([]byte, error) {
-	data, err := os.ReadFile(path)
-
+	info, err := os.Stat(path)
 	if err != nil {
-		return []byte{}, err
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("path is a directory: %s", path)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
 
 	return data, nil
@@ -50,9 +64,12 @@ func FileReadBytes(path string) ([]byte, error) {
 // FileWrite will write data into file at the given path,
 // if successful, no error is returned (nil)
 func FileWrite(path string, data string) error {
-	err := os.WriteFile(path, []byte(data), 0644)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 
-	if err != nil {
+	// use consistent octal literal and bubble error directly
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		return err
 	}
 
@@ -62,9 +79,12 @@ func FileWrite(path string, data string) error {
 // FileWriteBytes will write byte data into file at the given path,
 // if successful, no error is returned (nil)
 func FileWriteBytes(path string, data []byte) error {
-	err := os.WriteFile(path, data, 0644)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 
-	if err != nil {
+	// use consistent octal literal and bubble error directly
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return err
 	}
 
@@ -73,11 +93,10 @@ func FileWriteBytes(path string, data []byte) error {
 
 // FileExists checks if input file in path exists
 func FileExists(path string) bool {
-	if _, err := os.Stat(path); err == nil {
-		return true
-	} else {
-		return false
+	if _, err := os.Stat(path); err != nil {
+		return !os.IsNotExist(err)
 	}
+	return true
 }
 
 // CopyFile - File copies a single file from src to dst
@@ -123,11 +142,23 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 
 // CopyDir - Dir copies a whole directory recursively
 func CopyDir(src string, dst string) error {
-	var err error
-	var srcinfo os.FileInfo
-
-	if srcinfo, err = os.Stat(src); err != nil {
+	srcinfo, err := os.Lstat(src)
+	if err != nil {
 		return err
+	}
+
+	// NEW: if src is a symlink, recreate the symlink instead of copying target
+	if srcinfo.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		_ = os.Remove(dst)
+		return os.Symlink(target, dst)
+	}
+
+	if !srcinfo.IsDir() { // NEW
+		return fmt.Errorf("source is not a directory: %s", src)
 	}
 
 	if err = os.MkdirAll(dst, srcinfo.Mode()); err != nil {
@@ -143,8 +174,13 @@ func CopyDir(src string, dst string) error {
 		srcfp := filepath.Join(src, entry.Name())
 		dstfp := filepath.Join(dst, entry.Name())
 
+		info, err := entry.Info() // NEW: get full info for reliable type checks
+		if err != nil {
+			return err
+		}
+
 		// handle symlinks explicitly
-		if entry.Type()&os.ModeSymlink != 0 {
+		if info.Mode()&os.ModeSymlink != 0 {
 			target, err := os.Readlink(srcfp)
 			if err != nil {
 				return err
@@ -156,14 +192,16 @@ func CopyDir(src string, dst string) error {
 			continue
 		}
 
-		if entry.IsDir() {
+		if info.IsDir() {
 			if err = CopyDir(srcfp, dstfp); err != nil {
 				return err
 			}
-		} else {
+		} else if info.Mode().IsRegular() { // NEW: guard non-regular files
 			if err = CopyFile(srcfp, dstfp); err != nil {
 				return err
 			}
+		} else { // NEW: explicit unsupported type handling
+			return fmt.Errorf("unsupported file type at %s", srcfp)
 		}
 	}
 	return nil

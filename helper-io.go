@@ -89,8 +89,11 @@ func FileWrite(path string, data string) error {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
+		_ = os.Remove(path)
+		if err2 := os.Rename(tmp, path); err2 != nil {
+			_ = os.Remove(tmp)
+			return err2
+		}
 	}
 	return nil
 }
@@ -121,9 +124,12 @@ func FileWriteBytes(path string, data []byte) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
+	if err := os.Rename(tmp, path); err != nil { // handle overwrite on Windows
+		_ = os.Remove(path)
+		if err2 := os.Rename(tmp, path); err2 != nil {
+			_ = os.Remove(tmp)
+			return err2
+		}
 	}
 	return nil
 }
@@ -164,7 +170,7 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		return err
 	}
 
-	tmp := dst + ".tmp" // CHANGED: copy to temp file first
+	tmp := dst + ".tmp" // copy to temp file first
 	if srcfd, err = os.Open(src); err != nil {
 		return err
 	}
@@ -177,9 +183,11 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	if dstfd, err = os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcinfo.Mode()); err != nil {
 		return err
 	}
-	defer func() { // propagate close error
-		if cerr := dstfd.Close(); err == nil && cerr != nil {
-			err = cerr
+	defer func() {        // propagate close error
+		if dstfd != nil { // avoid double-close after explicit close
+			if cerr := dstfd.Close(); err == nil && cerr != nil {
+				err = cerr
+			}
 		}
 	}()
 
@@ -195,14 +203,21 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		err = cerr
 		return err
 	}
+	dstfd = nil // prevent deferred double-close
 
 	if err = os.Chmod(tmp, srcinfo.Mode()); err != nil { // preserve source mode after copy (in case umask altered it)
 		return err
 	}
 
 	if err = os.Rename(tmp, dst); err != nil { // atomic replace
-		_ = os.Remove(tmp)
-		return err
+		if remErr := os.Remove(dst); remErr != nil && !os.IsNotExist(remErr) {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("failed to replace destination %s: %v; cleanup error: %v", dst, err, remErr)
+		}
+		if err = os.Rename(tmp, dst); err != nil {
+			_ = os.Remove(tmp)
+			return err
+		}
 	}
 
 	return nil

@@ -66,12 +66,20 @@ func FileReadBytes(path string) ([]byte, error) {
 // FileWrite will write data into file at the given path,
 // if successful, no error is returned (nil)
 func FileWrite(path string, data string) error {
+	// default to 0644 but preserve existing file mode when present
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 
 	tmp := path + ".tmp" // write atomically to temp file
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
@@ -119,12 +127,20 @@ func FileWrite(path string, data string) error {
 // FileWriteBytes will write byte data into file at the given path,
 // if successful, no error is returned (nil)
 func FileWriteBytes(path string, data []byte) error {
+	// default to 0644 but preserve existing file mode when present
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 
 	tmp := path + ".tmp" // write atomically to temp file
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
@@ -153,6 +169,11 @@ func FileWriteBytes(path string, data []byte) error {
 			_ = os.Remove(tmp)
 			return err2
 		}
+	}
+
+	// ensure final mode matches original (handles umask differences)
+	if err := os.Chmod(path, mode); err != nil {
+		return err
 	}
 
 	// fsync parent directory to make rename durable

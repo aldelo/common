@@ -276,6 +276,9 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		if dstinfo.IsDir() {
 			return fmt.Errorf("destination is a directory: %s", dst)
 		}
+		if !dstinfo.Mode().IsRegular() { // block special files (FIFOs, sockets, devices) as destinations
+			return fmt.Errorf("destination is not a regular file: %s", dst)
+		}
 		if os.SameFile(srcinfo, dstinfo) {
 			return fmt.Errorf("source and destination are the same file: %s", src)
 		}
@@ -341,6 +344,9 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 
 	if err = os.Rename(tmp, dst); err != nil { // atomic replace
 		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
+			if dstinfo, derr := os.Lstat(dst); derr == nil && !dstinfo.Mode().IsRegular() {
+				return fmt.Errorf("destination is not a regular file: %s", dst)
+			}
 			if remErr := os.Remove(dst); remErr != nil && !os.IsNotExist(remErr) {
 				return fmt.Errorf("failed to replace destination %s: %v; cleanup error: %v", dst, err, remErr)
 			}

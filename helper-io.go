@@ -17,8 +17,10 @@ package helper
  */
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -114,11 +116,15 @@ func FileWrite(path string, data string) error {
 
 	if err := os.Rename(tmp, path); err != nil {
 		// surface failure to remove old destination before retry
-		if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
-			return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
-		}
-		if err2 := os.Rename(tmp, path); err2 != nil {
-			return err2
+		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
+			if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
+				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
+			}
+			if err2 := os.Rename(tmp, path); err2 != nil {
+				return err2
+			}
+		} else {
+			return err
 		}
 	}
 
@@ -188,11 +194,15 @@ func FileWriteBytes(path string, data []byte) error {
 
 	if err := os.Rename(tmp, path); err != nil { // handle overwrite on Windows
 		// surface failure to remove old destination before retry
-		if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
-			return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
-		}
-		if err2 := os.Rename(tmp, path); err2 != nil {
-			return err2
+		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
+			if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
+				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
+			}
+			if err2 := os.Rename(tmp, path); err2 != nil {
+				return err2
+			}
+		} else {
+			return err
 		}
 	}
 
@@ -305,10 +315,14 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	}
 
 	if err = os.Rename(tmp, dst); err != nil { // atomic replace
-		if remErr := os.Remove(dst); remErr != nil && !os.IsNotExist(remErr) {
-			return fmt.Errorf("failed to replace destination %s: %v; cleanup error: %v", dst, err, remErr)
-		}
-		if err = os.Rename(tmp, dst); err != nil {
+		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
+			if remErr := os.Remove(dst); remErr != nil && !os.IsNotExist(remErr) {
+				return fmt.Errorf("failed to replace destination %s: %v; cleanup error: %v", dst, err, remErr)
+			}
+			if err = os.Rename(tmp, dst); err != nil {
+				return err
+			}
+		} else {
 			return err
 		}
 	}

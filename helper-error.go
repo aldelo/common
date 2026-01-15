@@ -111,7 +111,7 @@ func alreadyLogPrefixed(err error) (prefixed bool) {
 
 // logPrefix builds the LogE prefix with caller/time info.
 func logPrefix(skip int) string { // new helper for shared caller/time logic
-	_, file, line, ok := runtime.Caller(skip + 3) // adjusted skip to account for new helper
+	_, file, line, ok := runtime.Caller(skip + 2) // skip to capture the immediate caller
 	if !ok {
 		file = "unknown"
 		line = 0

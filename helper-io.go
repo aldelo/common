@@ -174,7 +174,8 @@ func CopyDir(src string, dst string) error {
 		srcfp := filepath.Join(src, entry.Name())
 		dstfp := filepath.Join(dst, entry.Name())
 
-		info, err := entry.Info() // NEW: get full info for reliable type checks
+		// CHANGED: use Lstat so symlink type is detected without following it
+		info, err := os.Lstat(srcfp)
 		if err != nil {
 			return err
 		}

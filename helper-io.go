@@ -41,6 +41,9 @@ func FileRead(path string) (string, error) {
 	if info.IsDir() {
 		return "", fmt.Errorf("path is a directory: %s", path)
 	}
+	if !info.Mode().IsRegular() { // block special files (pipes, devices, sockets)
+		return "", fmt.Errorf("path is not a regular file: %s", path)
+	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -61,6 +64,9 @@ func FileReadBytes(path string) ([]byte, error) {
 	}
 	if info.IsDir() {
 		return nil, fmt.Errorf("path is a directory: %s", path)
+	}
+	if !info.Mode().IsRegular() { // block special files (pipes, devices, sockets)
+		return nil, fmt.Errorf("path is not a regular file: %s", path)
 	}
 
 	data, err := os.ReadFile(path)
@@ -83,6 +89,9 @@ func FileWrite(path string, data string) error {
 		}
 		if info.IsDir() {
 			return fmt.Errorf("path is a directory: %s", path)
+		}
+		if !info.Mode().IsRegular() { // forbid writing over special files
+			return fmt.Errorf("path is not a regular file: %s", path)
 		}
 		mode = info.Mode()
 	} else if !os.IsNotExist(err) {
@@ -164,6 +173,9 @@ func FileWriteBytes(path string, data []byte) error {
 		}
 		if info.IsDir() {
 			return fmt.Errorf("path is a directory: %s", path)
+		}
+		if !info.Mode().IsRegular() { // forbid writing over special files
+			return fmt.Errorf("path is not a regular file: %s", path)
 		}
 		mode = info.Mode()
 	} else if !os.IsNotExist(err) {

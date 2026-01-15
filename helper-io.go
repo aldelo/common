@@ -171,7 +171,8 @@ func FileWriteBytes(path string, data []byte) error {
 
 // FileExists checks if input file in path exists
 func FileExists(path string) bool {
-	if _, err := os.Stat(path); err != nil {
+	// use Lstat so broken symlinks are reported as existing paths
+	if _, err := os.Lstat(path); err != nil {
 		return !os.IsNotExist(err)
 	}
 	return true
@@ -394,7 +395,12 @@ func pathsEqual(a, b string) bool {
 }
 
 func pathWithin(path, parent string) bool {
-	p := normPath(path)
-	pa := normPath(parent)
-	return strings.HasPrefix(p, pa+string(os.PathSeparator))
+	// use filepath.Rel to robustly detect descendant paths, including root and drive roots
+	rel, err := filepath.Rel(parent, path)
+	if err != nil {
+		return false
+	}
+	rel = normPath(rel)
+	// inside if rel is "." or does not start with ".."
+	return rel == "." || (!strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != "..")
 }

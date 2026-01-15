@@ -88,13 +88,30 @@ func FileWrite(path string, data string) error {
 		_ = os.Remove(tmp)
 		return err
 	}
+
 	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(path)
+		// surface failure to remove old destination before retry
+		if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
+		}
 		if err2 := os.Rename(tmp, path); err2 != nil {
 			_ = os.Remove(tmp)
 			return err2
 		}
 	}
+
+	// fsync parent directory to make rename durable
+	if dir, err := os.Open(filepath.Dir(path)); err == nil {
+		if syncErr := dir.Sync(); syncErr != nil {
+			_ = dir.Close()
+			return syncErr
+		}
+		_ = dir.Close()
+	} else {
+		return err
+	}
+
 	return nil
 }
 
@@ -124,13 +141,30 @@ func FileWriteBytes(path string, data []byte) error {
 		_ = os.Remove(tmp)
 		return err
 	}
+
 	if err := os.Rename(tmp, path); err != nil { // handle overwrite on Windows
-		_ = os.Remove(path)
+		// surface failure to remove old destination before retry
+		if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
+		}
 		if err2 := os.Rename(tmp, path); err2 != nil {
 			_ = os.Remove(tmp)
 			return err2
 		}
 	}
+
+	// fsync parent directory to make rename durable
+	if dir, err := os.Open(filepath.Dir(path)); err == nil {
+		if syncErr := dir.Sync(); syncErr != nil {
+			_ = dir.Close()
+			return syncErr
+		}
+		_ = dir.Close()
+	} else {
+		return err
+	}
+
 	return nil
 }
 
@@ -218,6 +252,17 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 			_ = os.Remove(tmp)
 			return err
 		}
+	}
+
+	// fsync parent directory to make rename durable
+	if dir, dirErr := os.Open(filepath.Dir(dst)); dirErr == nil {
+		if syncErr := dir.Sync(); syncErr != nil {
+			_ = dir.Close()
+			return syncErr
+		}
+		_ = dir.Close()
+	} else {
+		return dirErr
 	}
 
 	return nil

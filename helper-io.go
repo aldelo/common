@@ -182,7 +182,10 @@ func CopyDir(src string, dst string) error {
 		if err != nil {
 			return err
 		}
-		_ = os.Remove(dst)
+		// remove any existing path (file/dir/symlink) before recreating the symlink
+		if err := os.RemoveAll(dst); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 		return os.Symlink(target, dst)
 	}
 
@@ -221,7 +224,10 @@ func CopyDir(src string, dst string) error {
 			if err != nil {
 				return err
 			}
-			_ = os.Remove(dstfp) // remove existing file/symlink if any
+			// remove any existing path (file/dir/symlink) before recreating the symlink
+			if err := os.RemoveAll(dstfp); err != nil && !os.IsNotExist(err) {
+				return err
+			}
 			if err := os.Symlink(target, dstfp); err != nil {
 				return err
 			}

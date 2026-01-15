@@ -82,8 +82,7 @@ func FileExists(path string) bool {
 }
 
 // CopyFile - File copies a single file from src to dst
-func CopyFile(src string, dst string) error {
-	var err error
+func CopyFile(src string, dst string) (err error) { // named return for close error propagation
 	var srcfd *os.File
 	var dstfd *os.File
 	var srcinfo os.FileInfo
@@ -96,21 +95,30 @@ func CopyFile(src string, dst string) error {
 		return fmt.Errorf("source is not a regular file: %s", src)
 	}
 
+	// ensure destination directory exists
+	if err = os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+
 	if srcfd, err = os.Open(src); err != nil {
 		return err
 	}
 	defer srcfd.Close()
 
-	if dstfd, err = os.Create(dst); err != nil {
+	if dstfd, err = os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcinfo.Mode()); err != nil {
 		return err
 	}
-	defer dstfd.Close()
+	defer func() { // propagate close error
+		if cerr := dstfd.Close(); err == nil && cerr != nil {
+			err = cerr
+		}
+	}()
 
 	if _, err = io.Copy(dstfd, srcfd); err != nil {
 		return err
 	}
 
-	// preserve source mode after copy
+	// preserve source mode after copy (in case umask altered it)
 	return os.Chmod(dst, srcinfo.Mode())
 }
 
@@ -127,22 +135,33 @@ func CopyDir(src string, dst string) error {
 		return err
 	}
 
-	// use os.ReadDir and propagate errors
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return err
 	}
 
 	for _, entry := range entries {
-		srcfp := filepath.Join(src, entry.Name()) // filepath.Join
-		dstfp := filepath.Join(dst, entry.Name()) // filepath.Join
+		srcfp := filepath.Join(src, entry.Name())
+		dstfp := filepath.Join(dst, entry.Name())
+
+		// handle symlinks explicitly
+		if entry.Type()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(srcfp)
+			if err != nil {
+				return err
+			}
+			if err := os.Symlink(target, dstfp); err != nil {
+				return err
+			}
+			continue
+		}
 
 		if entry.IsDir() {
-			if err = CopyDir(srcfp, dstfp); err != nil { // propagate error
+			if err = CopyDir(srcfp, dstfp); err != nil {
 				return err
 			}
 		} else {
-			if err = CopyFile(srcfp, dstfp); err != nil { // propagate error
+			if err = CopyFile(srcfp, dstfp); err != nil {
 				return err
 			}
 		}

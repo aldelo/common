@@ -78,34 +78,42 @@ func FileWrite(path string, data string) error {
 		return err
 	}
 
-	tmp := path + ".tmp" // write atomically to temp file
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	// use unique temp file in target directory to avoid races/symlink attacks
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	tmpFile, err := os.CreateTemp(dir, "."+base+".tmp-*")
 	if err != nil {
 		return err
 	}
-	if _, err := io.WriteString(f, data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
+	tmp := tmpFile.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmp)
+		}
+	}()
+
+	if _, err := io.WriteString(tmpFile, data); err != nil {
+		_ = tmpFile.Close()
 		return err
 	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
 		return err
 	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, mode); err != nil { // ensure final mode
 		return err
 	}
 
 	if err := os.Rename(tmp, path); err != nil {
 		// surface failure to remove old destination before retry
 		if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
-			_ = os.Remove(tmp)
 			return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
 		}
 		if err2 := os.Rename(tmp, path); err2 != nil {
-			_ = os.Remove(tmp)
 			return err2
 		}
 	}
@@ -139,54 +147,58 @@ func FileWriteBytes(path string, data []byte) error {
 		return err
 	}
 
-	tmp := path + ".tmp" // write atomically to temp file
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	// use unique temp file in target directory to avoid races/symlink attacks
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	tmpFile, err := os.CreateTemp(dir, "."+base+".tmp-*")
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
+	tmp := tmpFile.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmp)
+		}
+	}()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
 		return err
 	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
 		return err
 	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, mode); err != nil { // ensure final mode
 		return err
 	}
 
 	if err := os.Rename(tmp, path); err != nil { // handle overwrite on Windows
 		// surface failure to remove old destination before retry
 		if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
-			_ = os.Remove(tmp)
 			return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
 		}
 		if err2 := os.Rename(tmp, path); err2 != nil {
-			_ = os.Remove(tmp)
 			return err2
 		}
 	}
 
-	// ensure final mode matches original (handles umask differences)
-	if err := os.Chmod(path, mode); err != nil {
-		return err
-	}
-
 	// fsync parent directory to make rename durable
-	if dir, err := os.Open(filepath.Dir(path)); err == nil {
-		if syncErr := dir.Sync(); syncErr != nil {
-			_ = dir.Close()
+	if dirFd, err := os.Open(dir); err == nil {
+		if syncErr := dirFd.Sync(); syncErr != nil {
+			_ = dirFd.Close()
 			return syncErr
 		}
-		_ = dir.Close()
+		_ = dirFd.Close()
 	} else {
 		return err
 	}
 
+	cleanup = false
 	return nil
 }
 
@@ -227,7 +239,14 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		return err
 	}
 
-	tmp := dst + ".tmp" // copy to temp file first
+	// use unique temp file in destination dir to avoid races/symlink attacks
+	dir := filepath.Dir(dst)
+	base := filepath.Base(dst)
+	tmpFile, err := os.CreateTemp(dir, "."+base+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := tmpFile.Name()
 	cleanupTmp := true
 	defer func() {
 		if cleanupTmp {

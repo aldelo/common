@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
-	"strings"
 	"time"
 )
+
+var logEPrefixRE = regexp.MustCompile(`(?m)^[\s\n]*LogE:\s\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\.\d{3}\s`)
 
 func ErrAddLineTimeFileInfo(err error) error {
 	if err == nil {
@@ -49,18 +51,6 @@ func alreadyLogPrefixed(err error) (prefixed bool) {
 	seenComparable := make(map[error]struct{})
 	seenPtr := make(map[uintptr]struct{}) // track non-comparable errors by pointer
 
-	// avoid reflect.Type.Comparable (Go 1.20+) and safely detect comparables via map insert with recover
-	addComparable := func(e error) (added bool, dup bool) {
-		defer func() {
-			if r := recover(); r != nil { // non-comparable dynamic type will panic when used as a map key
-				added, dup = false, false
-			}
-		}()
-		_, exists := seenComparable[e]
-		seenComparable[e] = struct{}{}
-		return true, exists
-	}
-
 	stack := []error{err}
 	steps := 0
 
@@ -76,10 +66,12 @@ func alreadyLogPrefixed(err error) (prefixed bool) {
 			continue
 		}
 
-		if added, dup := addComparable(e); added {
-			if dup {
+		// use reflect.Type.Comparable to avoid panic-based probing
+		if rt := reflect.TypeOf(e); rt != nil && rt.Comparable() {
+			if _, exists := seenComparable[e]; exists {
 				continue
 			}
+			seenComparable[e] = struct{}{}
 		} else { // dedupe non-comparable errors when pointer identity is available
 			v := reflect.ValueOf(e)
 			if v.Kind() == reflect.Pointer || v.Kind() == reflect.UnsafePointer {
@@ -93,8 +85,8 @@ func alreadyLogPrefixed(err error) (prefixed bool) {
 		}
 
 		msg := e.Error()
-		// detect prefix even if the leading newline was stripped (e.g., by formatting)
-		if strings.Contains(msg, "\nLogE:") || strings.Contains(msg, "LogE:") {
+		// anchored pattern to avoid false positives on incidental "LogE:" text
+		if logEPrefixRE.MatchString(msg) {
 			return true
 		}
 

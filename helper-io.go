@@ -69,11 +69,29 @@ func FileWrite(path string, data string) error {
 		return err
 	}
 
-	// use consistent octal literal and bubble error directly
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+	tmp := path + ".tmp" // write atomically to temp file
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
 		return err
 	}
-
+	if _, err := io.WriteString(f, data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
 	return nil
 }
 
@@ -84,11 +102,29 @@ func FileWriteBytes(path string, data []byte) error {
 		return err
 	}
 
-	// use consistent octal literal and bubble error directly
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	tmp := path + ".tmp" // write atomically to temp file
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
 		return err
 	}
-
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
 	return nil
 }
 
@@ -128,6 +164,7 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		return err
 	}
 
+	tmp := dst + ".tmp" // CHANGED: copy to temp file first
 	if srcfd, err = os.Open(src); err != nil {
 		return err
 	}
@@ -137,7 +174,7 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		}
 	}()
 
-	if dstfd, err = os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcinfo.Mode()); err != nil {
+	if dstfd, err = os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcinfo.Mode()); err != nil {
 		return err
 	}
 	defer func() { // propagate close error
@@ -149,9 +186,26 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	if _, err = io.Copy(dstfd, srcfd); err != nil {
 		return err
 	}
+	if err = dstfd.Sync(); err != nil { // ensure data on disk
+		return err
+	}
 
-	// preserve source mode after copy (in case umask altered it)
-	return os.Chmod(dst, srcinfo.Mode())
+	// close before rename to avoid Windows issues
+	if cerr := dstfd.Close(); err == nil && cerr != nil { // explicit close before rename
+		err = cerr
+		return err
+	}
+
+	if err = os.Chmod(tmp, srcinfo.Mode()); err != nil { // preserve source mode after copy (in case umask altered it)
+		return err
+	}
+
+	if err = os.Rename(tmp, dst); err != nil { // atomic replace
+		_ = os.Remove(tmp)
+		return err
+	}
+
+	return nil
 }
 
 // CopyDir - Dir copies a whole directory recursively

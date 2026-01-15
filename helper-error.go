@@ -37,24 +37,24 @@ func alreadyLogPrefixed(err error) (prefixed bool) {
 	// prevent panics from Error/Unwrap implementations from crashing the caller
 	defer func() {
 		if r := recover(); r != nil {
-			prefixed = true // assume prefixed on panic to avoid double-prefixing
+			prefixed = false // on panic, allow caller to add prefix instead of skipping it
 		}
 	}()
 
 	type singleUnwrapper interface{ Unwrap() error }
 	type multiUnwrapper interface{ Unwrap() []error }
 
-	const maxWalk = 256 // CHANGED: cap traversal to prevent cycles from hanging
+	const maxWalk = 256 // cap traversal to prevent cycles from hanging
 
 	seenComparable := make(map[error]struct{})
-	seenPtr := make(map[uintptr]struct{}) // CHANGED: track non-comparable errors by pointer
+	seenPtr := make(map[uintptr]struct{}) // track non-comparable errors by pointer
 
 	stack := []error{err}
 	steps := 0
 
 	for len(stack) > 0 {
-		if steps++; steps > maxWalk { // CHANGED: fail-safe against pathological cycles
-			return true
+		if steps++; steps > maxWalk { // fail-safe against pathological cycles
+			return false // treat exhaustion as not-prefixed so caller still annotates once
 		}
 
 		e := stack[len(stack)-1]
@@ -69,7 +69,7 @@ func alreadyLogPrefixed(err error) (prefixed bool) {
 				continue
 			}
 			seenComparable[e] = struct{}{}
-		} else { // CHANGED: dedupe non-comparable errors when pointer identity is available
+		} else { // dedupe non-comparable errors when pointer identity is available
 			v := reflect.ValueOf(e)
 			if v.Kind() == reflect.Pointer || v.Kind() == reflect.UnsafePointer {
 				if ptr := v.Pointer(); ptr != 0 {

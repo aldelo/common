@@ -92,8 +92,9 @@ func alreadyLogPrefixed(err error) (prefixed bool) {
 			}
 		}
 
-		// detect prefix anywhere in the message, not only at the start
-		if strings.Contains(e.Error(), "\nLogE:") {
+		msg := e.Error()
+		// detect prefix even if the leading newline was stripped (e.g., by formatting)
+		if strings.Contains(msg, "\nLogE:") || strings.Contains(msg, "LogE:") {
 			return true
 		}
 

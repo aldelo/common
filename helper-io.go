@@ -71,7 +71,10 @@ func FileWrite(path string, data string) error {
 	// default to 0644 but preserve existing file mode when present
 	mode := os.FileMode(0o644)
 
-	if info, err := os.Stat(path); err == nil {
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("path is a symlink: %s", path)
+		}
 		if info.IsDir() {
 			return fmt.Errorf("path is a directory: %s", path)
 		}
@@ -149,7 +152,10 @@ func FileWriteBytes(path string, data []byte) error {
 	// default to 0644 but preserve existing file mode when present
 	mode := os.FileMode(0o644)
 
-	if info, err := os.Stat(path); err == nil {
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("path is a symlink: %s", path)
+		}
 		if info.IsDir() {
 			return fmt.Errorf("path is a directory: %s", path)
 		}
@@ -237,7 +243,7 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	var srcinfo os.FileInfo
 
 	// validate source is a regular file before copying
-	if srcinfo, err = os.Stat(src); err != nil {
+	if srcinfo, err = os.Lstat(src); err != nil {
 		return err
 	}
 	if !srcinfo.Mode().IsRegular() {
@@ -245,7 +251,10 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	}
 
 	// prevent copying onto the same file (path or hardlink), which would truncate the source
-	if dstinfo, statErr := os.Stat(dst); statErr == nil {
+	if dstinfo, statErr := os.Lstat(dst); statErr == nil {
+		if dstinfo.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("destination is a symlink: %s", dst)
+		}
 		if dstinfo.IsDir() {
 			return fmt.Errorf("destination is a directory: %s", dst)
 		}

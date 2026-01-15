@@ -300,9 +300,7 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		}
 	}()
 
-	if dstfd, err = os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcinfo.Mode()); err != nil {
-		return err
-	}
+	dstfd = tmpFile // reuse opened temp file
 	defer func() {        // propagate close error
 		if dstfd != nil { // avoid double-close after explicit close
 			if cerr := dstfd.Close(); err == nil && cerr != nil {

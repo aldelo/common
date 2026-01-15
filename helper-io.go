@@ -31,9 +31,12 @@ import (
 // return as string if successful,
 // if failed, error will contain the error reason
 func FileRead(path string) (string, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 { // reject symlinks (matches write paths)
+		return "", fmt.Errorf("path is a symlink: %s", path)
 	}
 	if info.IsDir() {
 		return "", fmt.Errorf("path is a directory: %s", path)
@@ -49,9 +52,12 @@ func FileRead(path string) (string, error) {
 
 // FileReadBytes will read all file content and return slice of byte
 func FileReadBytes(path string) ([]byte, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 { // reject symlinks (matches write paths)
+		return nil, fmt.Errorf("path is a symlink: %s", path)
 	}
 	if info.IsDir() {
 		return nil, fmt.Errorf("path is a directory: %s", path)

@@ -302,9 +302,14 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		return fmt.Errorf("unsupported file type: %s", src)
 	}
 
-	// prevent writing into a directory path
-	if dstInfo, err := os.Lstat(dstAbs); err == nil && dstInfo.IsDir() {
-		return fmt.Errorf("destination is a directory: %s", dst)
+	// prevent writing into a directory path or overwriting a symlink      // CHANGED
+	if dstInfo, err := os.Lstat(dstAbs); err == nil { // CHANGED
+		if dstInfo.Mode()&os.ModeSymlink != 0 { // CHANGED
+			return fmt.Errorf("destination is a symlink: %s", dst) // CHANGED
+		}                    // CHANGED
+		if dstInfo.IsDir() { // existing behavior
+			return fmt.Errorf("destination is a directory: %s", dst)
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dstAbs), 0o755); err != nil {
@@ -326,11 +331,35 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		}
 	}()
 
+	// open source after temp exists, then revalidate to avoid TOCTTOU      // CHANGED
 	srcf, err := os.Open(srcAbs)
 	if err != nil {
 		_ = tmpFile.Close()
 		return err
-	}
+	} // CHANGED
+	finfo, err := srcf.Stat() // CHANGED
+	if err != nil {           // CHANGED
+		_ = srcf.Close()    // CHANGED
+		_ = tmpFile.Close() // CHANGED
+		return err          // CHANGED
+	} // CHANGED
+	linfo2, err := os.Lstat(srcAbs) // CHANGED
+	if err != nil {                 // CHANGED
+		_ = srcf.Close()    // CHANGED
+		_ = tmpFile.Close() // CHANGED
+		return err          // CHANGED
+	}                                                                     // CHANGED
+	if linfo2.Mode()&os.ModeSymlink != 0 || !os.SameFile(finfo, linfo2) { // CHANGED
+		_ = srcf.Close()                                               // CHANGED
+		_ = tmpFile.Close()                                            // CHANGED
+		return fmt.Errorf("source changed or became symlink: %s", src) // CHANGED
+	}                              // CHANGED
+	if !finfo.Mode().IsRegular() { // CHANGED
+		_ = srcf.Close()                                    // CHANGED
+		_ = tmpFile.Close()                                 // CHANGED
+		return fmt.Errorf("unsupported file type: %s", src) // CHANGED
+	} // CHANGED
+
 	_, err = io.Copy(tmpFile, srcf) // actual file copy
 	_ = srcf.Close()
 	if err != nil {
@@ -403,6 +432,13 @@ func CopyDir(src string, dst string) error {
 	if pathsEqual(srcAbs, dstAbs) || pathWithin(dstAbs, srcAbs) {
 		return fmt.Errorf("destination is the same as or within the source: %s -> %s", src, dst)
 	}
+
+	// reject copying into an existing symlink destination                    // CHANGED
+	if dstInfo, err := os.Lstat(dst); err == nil { // CHANGED
+		if dstInfo.Mode()&os.ModeSymlink != 0 { // CHANGED
+			return fmt.Errorf("destination is a symlink: %s", dst) // CHANGED
+		} // CHANGED
+	} // CHANGED
 
 	srcinfo, err := os.Lstat(src)
 	if err != nil {

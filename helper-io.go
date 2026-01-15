@@ -31,21 +31,13 @@ import (
 // return as string if successful,
 // if failed, error will contain the error reason
 func FileRead(path string) (string, error) {
-	info, err := os.Lstat(path)
+	f, _, err := openRegularRead(path)
 	if err != nil {
 		return "", err
 	}
-	if info.Mode()&os.ModeSymlink != 0 { // reject symlinks (matches write paths)
-		return "", fmt.Errorf("path is a symlink: %s", path)
-	}
-	if info.IsDir() {
-		return "", fmt.Errorf("path is a directory: %s", path)
-	}
-	if !info.Mode().IsRegular() { // block special files (pipes, devices, sockets)
-		return "", fmt.Errorf("path is not a regular file: %s", path)
-	}
+	defer f.Close()
 
-	data, err := os.ReadFile(path)
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return "", err
 	}
@@ -55,21 +47,13 @@ func FileRead(path string) (string, error) {
 
 // FileReadBytes will read all file content and return slice of byte
 func FileReadBytes(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
+	f, _, err := openRegularRead(path)
 	if err != nil {
 		return nil, err
 	}
-	if info.Mode()&os.ModeSymlink != 0 { // reject symlinks (matches write paths)
-		return nil, fmt.Errorf("path is a symlink: %s", path)
-	}
-	if info.IsDir() {
-		return nil, fmt.Errorf("path is a directory: %s", path)
-	}
-	if !info.Mode().IsRegular() { // block special files (pipes, devices, sockets)
-		return nil, fmt.Errorf("path is not a regular file: %s", path)
-	}
+	defer f.Close()
 
-	data, err := os.ReadFile(path)
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}
@@ -260,13 +244,15 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	var dstfd *os.File
 	var srcinfo os.FileInfo
 
-	// validate source is a regular file before copying
-	if srcinfo, err = os.Lstat(src); err != nil {
+	// validate source and hold an fd to prevent TOCTOU swap to symlink/special file
+	if srcfd, srcinfo, err = openRegularRead(src); err != nil {
 		return err
 	}
-	if !srcinfo.Mode().IsRegular() {
-		return fmt.Errorf("source is not a regular file: %s", src)
-	}
+	defer func() { // propagate src close error too
+		if cerr := srcfd.Close(); err == nil && cerr != nil {
+			err = cerr
+		}
+	}()
 
 	// prevent copying onto the same file (path or hardlink), which would truncate the source
 	if dstinfo, statErr := os.Lstat(dst); statErr == nil {
@@ -303,15 +289,6 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	defer func() {
 		if cleanupTmp {
 			_ = os.Remove(tmp)
-		}
-	}()
-
-	if srcfd, err = os.Open(src); err != nil {
-		return err
-	}
-	defer func() { // propagate src close error too
-		if cerr := srcfd.Close(); err == nil && cerr != nil {
-			err = cerr
 		}
 	}()
 
@@ -500,4 +477,48 @@ func pathWithin(path, parent string) bool {
 	rel = normPath(rel)
 	// inside if rel is "." or does not start with ".."
 	return rel == "." || (!strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != "..")
+}
+
+// helper to open a regular file safely without following swapped-in symlinks.
+func openRegularRead(path string) (*os.File, os.FileInfo, error) {
+	linfo, err := os.Lstat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if linfo.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, fmt.Errorf("path is a symlink: %s", path)
+	}
+	if linfo.IsDir() {
+		return nil, nil, fmt.Errorf("path is a directory: %s", path)
+	}
+	if !linfo.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("path is not a regular file: %s", path)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	finfo, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, nil, err
+	}
+
+	linfo2, err := os.Lstat(path)
+	if err != nil {
+		_ = f.Close()
+		return nil, nil, err
+	}
+	if linfo2.Mode()&os.ModeSymlink != 0 || !os.SameFile(finfo, linfo2) {
+		_ = f.Close()
+		return nil, nil, fmt.Errorf("path changed during open: %s", path)
+	}
+	if !finfo.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, nil, fmt.Errorf("path is not a regular file: %s", path)
+	}
+
+	return f, finfo, nil
 }

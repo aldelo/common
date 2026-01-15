@@ -19,7 +19,7 @@ func ErrAddLineTimeFileInfo(err error) error {
 	if alreadyLogPrefixed(err) { // detect existing prefix anywhere in unwrap chain
 		return err
 	}
-	return fmt.Errorf("%s%w", logPrefix(0), err) // CHANGED: prefix once, preserve cause
+	return fmt.Errorf("%s%w", logPrefix(0), err) // prefix once, preserve cause
 }
 
 func ErrNewAddLineTimeFileInfo(msg string) error {

@@ -49,6 +49,18 @@ func alreadyLogPrefixed(err error) (prefixed bool) {
 	seenComparable := make(map[error]struct{})
 	seenPtr := make(map[uintptr]struct{}) // track non-comparable errors by pointer
 
+	// avoid reflect.Type.Comparable (Go 1.20+) and safely detect comparables via map insert with recover
+	addComparable := func(e error) (added bool, dup bool) {
+		defer func() {
+			if r := recover(); r != nil { // non-comparable dynamic type will panic when used as a map key
+				added, dup = false, false
+			}
+		}()
+		_, exists := seenComparable[e]
+		seenComparable[e] = struct{}{}
+		return true, exists
+	}
+
 	stack := []error{err}
 	steps := 0
 
@@ -64,11 +76,10 @@ func alreadyLogPrefixed(err error) (prefixed bool) {
 			continue
 		}
 
-		if t := reflect.TypeOf(e); t != nil && t.Comparable() {
-			if _, ok := seenComparable[e]; ok {
+		if added, dup := addComparable(e); added {
+			if dup {
 				continue
 			}
-			seenComparable[e] = struct{}{}
 		} else { // dedupe non-comparable errors when pointer identity is available
 			v := reflect.ValueOf(e)
 			if v.Kind() == reflect.Pointer || v.Kind() == reflect.UnsafePointer {

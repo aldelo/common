@@ -648,24 +648,50 @@ func openRegularRead(path string) (*os.File, os.FileInfo, error) {
 
 // ensureNoSymlinkDirs walks ancestor directories (existing ones) to reject symlinked parents.
 // This prevents path redirection via swapped-in parent symlinks.
-func ensureNoSymlinkDirs(dir string) error { // ADDED
+func ensureNoSymlinkDirs(dir string) error {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return err
 	}
+
+	visited := map[string]struct{}{} // CHANGED: loop guard to prevent cycles
+
 	for {
+		if _, seen := visited[absDir]; seen { // CHANGED
+			return fmt.Errorf("symlink loop detected: %s", absDir) // CHANGED
+		}
+		visited[absDir] = struct{}{} // CHANGED
+
 		info, err := os.Lstat(absDir)
-		if err == nil {
-			if info.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("ancestor directory is a symlink: %s", absDir)
-			}
-		} else if !os.IsNotExist(err) {
+		if err == nil && info.Mode()&os.ModeSymlink != 0 {
+			// CHANGED: tolerate stable macOS system symlinks (/var, /tmp, /etc) by following once
+			if runtime.GOOS == "darwin" && isDarwinSystemSymlink(absDir) { // CHANGED
+				target, err := filepath.EvalSymlinks(absDir) // CHANGED
+				if err != nil {                              // CHANGED
+					return err // CHANGED
+				} // CHANGED
+				absDir = target // CHANGED
+				continue        // CHANGED
+			} // CHANGED
+			return fmt.Errorf("ancestor directory is a symlink: %s", absDir)
+		} else if err != nil && !os.IsNotExist(err) {
 			return err
 		}
+
 		parent := filepath.Dir(absDir)
 		if parent == absDir {
 			return nil
 		}
 		absDir = parent
+	}
+}
+
+// CHANGED: allowlist macOS system symlinks so default /var, /tmp, /etc paths work
+func isDarwinSystemSymlink(path string) bool {
+	switch filepath.Clean(path) {
+	case "/var", "/tmp", "/etc", "/private/var", "/private/tmp", "/private/etc":
+		return true
+	default:
+		return false
 	}
 }

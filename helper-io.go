@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // FileRead will read all file content of given file in path,
@@ -113,6 +114,15 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		return fmt.Errorf("source is not a regular file: %s", src)
 	}
 
+	// prevent copying onto the same file (path or hardlink), which would truncate the source
+	if dstinfo, statErr := os.Stat(dst); statErr == nil {
+		if os.SameFile(srcinfo, dstinfo) {
+			return fmt.Errorf("source and destination are the same file: %s", src)
+		}
+	} else if !os.IsNotExist(statErr) { // propagate unexpected stat errors
+		return statErr
+	}
+
 	// ensure destination directory exists
 	if err = os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
@@ -121,7 +131,7 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	if srcfd, err = os.Open(src); err != nil {
 		return err
 	}
-	defer func() { // CHANGED: propagate src close error too
+	defer func() { // propagate src close error too
 		if cerr := srcfd.Close(); err == nil && cerr != nil {
 			err = cerr
 		}
@@ -146,13 +156,28 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 
 // CopyDir - Dir copies a whole directory recursively
 func CopyDir(src string, dst string) error {
+	srcAbs, err := filepath.Abs(src)
+	if err != nil {
+		return err
+	}
+	dstAbs, err := filepath.Abs(dst)
+	if err != nil {
+		return err
+	}
+	if srcAbs == dstAbs || strings.HasPrefix(dstAbs, srcAbs+string(os.PathSeparator)) {
+		return fmt.Errorf("destination is the same as or within the source: %s -> %s", src, dst)
+	}
+
 	srcinfo, err := os.Lstat(src)
 	if err != nil {
 		return err
 	}
 
-	// NEW: if src is a symlink, recreate the symlink instead of copying target
+	// if src is a symlink, recreate the symlink instead of copying target
 	if srcinfo.Mode()&os.ModeSymlink != 0 {
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil { // ensure parent exists
+			return err
+		}
 		target, err := os.Readlink(src)
 		if err != nil {
 			return err
@@ -161,14 +186,14 @@ func CopyDir(src string, dst string) error {
 		return os.Symlink(target, dst)
 	}
 
-	if !srcinfo.IsDir() { // NEW
+	if !srcinfo.IsDir() {
 		return fmt.Errorf("source is not a directory: %s", src)
 	}
 
 	if err = os.MkdirAll(dst, srcinfo.Mode()); err != nil {
 		return err
 	}
-	if err = os.Chmod(dst, srcinfo.Mode()); err != nil { // CHANGED: ensure mode matches source
+	if err = os.Chmod(dst, srcinfo.Mode()); err != nil { // ensure mode matches source
 		return err
 	}
 
@@ -181,7 +206,7 @@ func CopyDir(src string, dst string) error {
 		srcfp := filepath.Join(src, entry.Name())
 		dstfp := filepath.Join(dst, entry.Name())
 
-		// CHANGED: use Lstat so symlink type is detected without following it
+		// use Lstat so symlink type is detected without following it
 		info, err := os.Lstat(srcfp)
 		if err != nil {
 			return err
@@ -189,6 +214,9 @@ func CopyDir(src string, dst string) error {
 
 		// handle symlinks explicitly
 		if info.Mode()&os.ModeSymlink != 0 {
+			if err := os.MkdirAll(filepath.Dir(dstfp), 0o755); err != nil { // ensure parent exists
+				return err
+			}
 			target, err := os.Readlink(srcfp)
 			if err != nil {
 				return err
@@ -204,11 +232,11 @@ func CopyDir(src string, dst string) error {
 			if err = CopyDir(srcfp, dstfp); err != nil {
 				return err
 			}
-		} else if info.Mode().IsRegular() { // NEW: guard non-regular files
+		} else if info.Mode().IsRegular() { // guard non-regular files
 			if err = CopyFile(srcfp, dstfp); err != nil {
 				return err
 			}
-		} else { // NEW: explicit unsupported type handling
+		} else { // explicit unsupported type handling
 			return fmt.Errorf("unsupported file type at %s", srcfp)
 		}
 	}

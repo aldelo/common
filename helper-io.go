@@ -302,14 +302,17 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		return fmt.Errorf("unsupported file type: %s", src)
 	}
 
-	// prevent writing into a directory path or overwriting a symlink      // CHANGED
-	if dstInfo, err := os.Lstat(dstAbs); err == nil { // CHANGED
-		if dstInfo.Mode()&os.ModeSymlink != 0 { // CHANGED
-			return fmt.Errorf("destination is a symlink: %s", dst) // CHANGED
-		}                    // CHANGED
-		if dstInfo.IsDir() { // existing behavior
+	// prevent writing into a directory path or overwriting a symlink
+	if dstInfo, err := os.Lstat(dstAbs); err == nil {
+		if dstInfo.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("destination is a symlink: %s", dst)
+		}
+		if dstInfo.IsDir() {
 			return fmt.Errorf("destination is a directory: %s", dst)
 		}
+		if !dstInfo.Mode().IsRegular() { // CHANGED: block special files (sockets, devices, FIFOs)
+			return fmt.Errorf("destination is not a regular file: %s", dst) // CHANGED
+		} // CHANGED
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dstAbs), 0o755); err != nil {
@@ -331,34 +334,34 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		}
 	}()
 
-	// open source after temp exists, then revalidate to avoid TOCTTOU      // CHANGED
+	// open source after temp exists, then revalidate to avoid TOCTTOU
 	srcf, err := os.Open(srcAbs)
 	if err != nil {
 		_ = tmpFile.Close()
 		return err
-	} // CHANGED
-	finfo, err := srcf.Stat() // CHANGED
-	if err != nil {           // CHANGED
-		_ = srcf.Close()    // CHANGED
-		_ = tmpFile.Close() // CHANGED
-		return err          // CHANGED
-	} // CHANGED
-	linfo2, err := os.Lstat(srcAbs) // CHANGED
-	if err != nil {                 // CHANGED
-		_ = srcf.Close()    // CHANGED
-		_ = tmpFile.Close() // CHANGED
-		return err          // CHANGED
-	}                                                                     // CHANGED
-	if linfo2.Mode()&os.ModeSymlink != 0 || !os.SameFile(finfo, linfo2) { // CHANGED
-		_ = srcf.Close()                                               // CHANGED
-		_ = tmpFile.Close()                                            // CHANGED
-		return fmt.Errorf("source changed or became symlink: %s", src) // CHANGED
-	}                              // CHANGED
-	if !finfo.Mode().IsRegular() { // CHANGED
-		_ = srcf.Close()                                    // CHANGED
-		_ = tmpFile.Close()                                 // CHANGED
-		return fmt.Errorf("unsupported file type: %s", src) // CHANGED
-	} // CHANGED
+	}
+	finfo, err := srcf.Stat()
+	if err != nil {
+		_ = srcf.Close()
+		_ = tmpFile.Close()
+		return err
+	}
+	linfo2, err := os.Lstat(srcAbs)
+	if err != nil {
+		_ = srcf.Close()
+		_ = tmpFile.Close()
+		return err
+	}
+	if linfo2.Mode()&os.ModeSymlink != 0 || !os.SameFile(finfo, linfo2) {
+		_ = srcf.Close()
+		_ = tmpFile.Close()
+		return fmt.Errorf("source changed or became symlink: %s", src)
+	}
+	if !finfo.Mode().IsRegular() {
+		_ = srcf.Close()
+		_ = tmpFile.Close()
+		return fmt.Errorf("unsupported file type: %s", src)
+	}
 
 	_, err = io.Copy(tmpFile, srcf) // actual file copy
 	_ = srcf.Close()
@@ -433,12 +436,15 @@ func CopyDir(src string, dst string) error {
 		return fmt.Errorf("destination is the same as or within the source: %s -> %s", src, dst)
 	}
 
-	// reject copying into an existing symlink destination                    // CHANGED
-	if dstInfo, err := os.Lstat(dst); err == nil { // CHANGED
-		if dstInfo.Mode()&os.ModeSymlink != 0 { // CHANGED
-			return fmt.Errorf("destination is a symlink: %s", dst) // CHANGED
+	// reject copying into an existing symlink destination
+	if dstInfo, err := os.Lstat(dst); err == nil {
+		if dstInfo.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("destination is a symlink: %s", dst)
+		}
+		if !dstInfo.IsDir() { // CHANGED: explicit guard for non-directory destinations
+			return fmt.Errorf("destination is not a directory: %s", dst) // CHANGED
 		} // CHANGED
-	} // CHANGED
+	}
 
 	srcinfo, err := os.Lstat(src)
 	if err != nil {
@@ -524,9 +530,9 @@ func CopyDir(src string, dst string) error {
 // helper functions for safe, case-aware path comparison
 func normPath(p string) string {
 	p = filepath.Clean(p)
-	if runtime.GOOS == "windows" {
-		p = strings.ToLower(p)
-	}
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" { // CHANGED: treat macOS default case-insensitive FS conservatively
+		p = strings.ToLower(p) // CHANGED
+	} // CHANGED
 	return p
 }
 

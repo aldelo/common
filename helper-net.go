@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -138,18 +139,38 @@ func ParseHostFromURL(u string) string {
 		return ""
 	}
 
-	// Detect bare IPv6 literal without brackets and without scheme, wrap in brackets so url.Parse succeeds.
-	isBareIPv6 := strings.Contains(trimmed, ":") &&
-		!strings.Contains(trimmed, "[") &&
-		!strings.Contains(trimmed, "]") &&
-		!strings.Contains(trimmed, "://") &&
-		net.ParseIP(trimmed) != nil
-
+	// normalize scheme-less inputs, safely handling IPv6 literals with optional port/zone
 	if !strings.Contains(trimmed, "://") {
-		if isBareIPv6 {
-			trimmed = "[" + trimmed + "]"
+		hostPort := trimmed
+
+		// Detect IPv6 literal without brackets; add them and preserve port if present.
+		if strings.Count(hostPort, ":") >= 2 && !strings.Contains(hostPort, "[") && !strings.Contains(hostPort, "]") {
+			var hostOnly, port string
+
+			// Try to detect a trailing port by last colon
+			if idx := strings.LastIndex(hostPort, ":"); idx != -1 {
+				possiblePort := hostPort[idx+1:]
+				if _, err := strconv.Atoi(possiblePort); err == nil {
+					hostOnly = hostPort[:idx]
+					port = possiblePort
+				} else {
+					hostOnly = hostPort
+				}
+			} else {
+				hostOnly = hostPort
+			}
+
+			// Escape zone identifiers to keep url.Parse happy
+			hostOnlyEscaped := strings.ReplaceAll(hostOnly, "%", "%25")
+
+			if port != "" {
+				hostPort = "[" + hostOnlyEscaped + "]:" + port
+			} else {
+				hostPort = "[" + hostOnlyEscaped + "]"
+			}
 		}
-		trimmed = "http://" + trimmed
+
+		trimmed = "http://" + hostPort
 	}
 
 	parsed, err := url.Parse(trimmed)
@@ -161,6 +182,11 @@ func ParseHostFromURL(u string) string {
 	if host == "" && parsed.Host != "" {
 		// Fallback for unusual cases where Host is set but Hostname is empty.
 		host = parsed.Host
+	}
+
+	// unescape zone back to original form (if any)
+	if unescaped, unescapeErr := url.PathUnescape(host); unescapeErr == nil {
+		host = unescaped
 	}
 
 	return host

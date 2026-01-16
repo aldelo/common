@@ -138,7 +138,8 @@ func FileWrite(path string, data string) error {
 		return err
 	}
 	if haveMode {
-		if err := os.Chmod(tmp, mode); err != nil { // ensure final mode
+		const mask = os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+		if err := os.Chmod(tmp, mode&mask); err != nil { // ensure final mode
 			return err
 		}
 	}
@@ -258,7 +259,8 @@ func FileWriteBytes(path string, data []byte) error {
 		return err
 	}
 	if haveMode {
-		if err := os.Chmod(tmp, mode); err != nil { // ensure final mode
+		const mask = os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+		if err := os.Chmod(tmp, mode&mask); err != nil { // ensure final mode
 			return err
 		}
 	}

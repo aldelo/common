@@ -796,7 +796,7 @@ func ensureNoSymlinkDirs(dir string) error {
 		if _, seen := visited[key]; seen {
 			return fmt.Errorf("symlink loop detected: %s", absDir)
 		}
-		visited[absDir] = struct{}{}
+		visited[key] = struct{}{}
 
 		info, err := os.Lstat(absDir)
 		if err == nil && info.Mode()&os.ModeSymlink != 0 {

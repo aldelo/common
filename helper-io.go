@@ -31,10 +31,10 @@ import (
 // return as string if successful,
 // if failed, error will contain the error reason
 func FileRead(path string) (string, error) {
-	if strings.TrimSpace(path) == "" { // CHANGED: guard empty/whitespace paths
+	if strings.TrimSpace(path) == "" { // guard empty/whitespace paths
 		return "", fmt.Errorf("path is empty")
 	}
-	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil { // CHANGED: block parent-dir symlink traversal
+	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil { // block parent-dir symlink traversal
 		return "", err
 	}
 
@@ -54,10 +54,10 @@ func FileRead(path string) (string, error) {
 
 // FileReadBytes will read all file content and return slice of byte
 func FileReadBytes(path string) ([]byte, error) {
-	if strings.TrimSpace(path) == "" { // CHANGED
+	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("path is empty")
 	}
-	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil { // CHANGED
+	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 
@@ -78,10 +78,10 @@ func FileReadBytes(path string) ([]byte, error) {
 // FileWrite will write data into file at the given path,
 // if successful, no error is returned (nil)
 func FileWrite(path string, data string) error {
-	if strings.TrimSpace(path) == "" { // CHANGED
+	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("path is empty")
 	}
-	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil { // CHANGED
+	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil {
 		return err
 	}
 
@@ -176,7 +176,7 @@ func FileWriteBytes(path string, data []byte) error {
 	if strings.TrimSpace(path) == "" { // CHANGED
 		return fmt.Errorf("path is empty")
 	}
-	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil { // CHANGED
+	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil {
 		return err
 	}
 
@@ -267,16 +267,25 @@ func FileWriteBytes(path string, data []byte) error {
 
 // FileExists checks if input file in path exists
 func FileExists(path string) bool {
-	// use Lstat so broken symlinks are reported as existing paths
-	if _, err := os.Lstat(path); err != nil {
+	if strings.TrimSpace(path) == "" { // guard empty/whitespace paths
+		return false
+	}
+
+	info, err := os.Lstat(path)
+	if err != nil {
 		return !os.IsNotExist(err)
 	}
-	return true
+
+	if info.Mode()&os.ModeSymlink != 0 { // do not treat symlinks as existing files
+		return false
+	}
+
+	return info.Mode().IsRegular()
 }
 
 // CopyFile - File copies a single file from src to dst
-func CopyFile(src string, dst string) (err error) {                   // named return for close error propagation
-	if strings.TrimSpace(src) == "" || strings.TrimSpace(dst) == "" { // CHANGED
+func CopyFile(src string, dst string) (err error) { // named return for close error propagation
+	if strings.TrimSpace(src) == "" || strings.TrimSpace(dst) == "" {
 		return fmt.Errorf("source or destination path is empty")
 	}
 
@@ -290,10 +299,10 @@ func CopyFile(src string, dst string) (err error) {                   // named r
 	}
 
 	// ensure no symlink in ancestor directories for either side
-	if err := ensureNoSymlinkDirs(filepath.Dir(srcAbs)); err != nil { // CHANGED
+	if err := ensureNoSymlinkDirs(filepath.Dir(srcAbs)); err != nil {
 		return err
 	}
-	if err := ensureNoSymlinkDirs(filepath.Dir(dstAbs)); err != nil { // CHANGED
+	if err := ensureNoSymlinkDirs(filepath.Dir(dstAbs)); err != nil {
 		return err
 	}
 
@@ -350,7 +359,7 @@ func CopyFile(src string, dst string) (err error) {                   // named r
 			return fmt.Errorf("destination is a directory: %s", dst)
 		}
 		if !dstInfo.Mode().IsRegular() { // CHANGED: block special files (sockets, devices, FIFOs)
-			return fmt.Errorf("destination is not a regular file: %s", dst) // CHANGED
+			return fmt.Errorf("destination is not a regular file: %s", dst)
 		} // CHANGED
 	}
 
@@ -454,7 +463,7 @@ func CopyFile(src string, dst string) (err error) {                   // named r
 
 // CopyDir - Dir copies a whole directory recursively
 func CopyDir(src string, dst string) error {
-	if strings.TrimSpace(src) == "" || strings.TrimSpace(dst) == "" { // CHANGED
+	if strings.TrimSpace(src) == "" || strings.TrimSpace(dst) == "" {
 		return fmt.Errorf("source or destination path is empty")
 	}
 
@@ -475,10 +484,10 @@ func CopyDir(src string, dst string) error {
 	}
 
 	// ensure no symlink in ancestor directories
-	if err := ensureNoSymlinkDirs(filepath.Dir(srcAbs)); err != nil { // CHANGED
+	if err := ensureNoSymlinkDirs(filepath.Dir(srcAbs)); err != nil {
 		return err
 	}
-	if err := ensureNoSymlinkDirs(filepath.Dir(dstAbs)); err != nil { // CHANGED
+	if err := ensureNoSymlinkDirs(filepath.Dir(dstAbs)); err != nil {
 		return err
 	}
 
@@ -492,9 +501,9 @@ func CopyDir(src string, dst string) error {
 		if dstInfo.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("destination is a symlink: %s", dst)
 		}
-		if !dstInfo.IsDir() { // CHANGED: explicit guard for non-directory destinations
-			return fmt.Errorf("destination is not a directory: %s", dst) // CHANGED
-		} // CHANGED
+		if !dstInfo.IsDir() { // explicit guard for non-directory destinations
+			return fmt.Errorf("destination is not a directory: %s", dst)
+		}
 	}
 
 	srcinfo, err := os.Lstat(src)
@@ -522,6 +531,27 @@ func CopyDir(src string, dst string) error {
 		return fmt.Errorf("source is not a directory: %s", src)
 	}
 
+	dirHandle, err := os.Open(src) // hold directory handle to prevent TOCTTOU
+	if err != nil {
+		return err
+	}
+	defer dirHandle.Close()
+
+	dirStat, err := dirHandle.Stat() // revalidate using opened handle
+	if err != nil {
+		return err
+	}
+	linfo2, err := os.Lstat(src) // double-check path has not become a symlink or different inode
+	if err != nil {
+		return err
+	}
+	if linfo2.Mode()&os.ModeSymlink != 0 || !os.SameFile(dirStat, linfo2) {
+		return fmt.Errorf("source changed or became symlink: %s", src)
+	}
+	if !dirStat.IsDir() { // ensure still a directory
+		return fmt.Errorf("source is not a directory: %s", src)
+	}
+
 	if err = os.MkdirAll(dst, srcinfo.Mode()); err != nil {
 		return err
 	}
@@ -529,23 +559,19 @@ func CopyDir(src string, dst string) error {
 		return err
 	}
 
-	entries, err := os.ReadDir(src)
+	entries, err := dirHandle.Readdir(-1) // enumerate via the validated handle
 	if err != nil {
 		return err
 	}
 
-	for _, entry := range entries {
-		srcfp := filepath.Join(src, entry.Name())
-		dstfp := filepath.Join(dst, entry.Name())
+	for _, entryInfo := range entries { // loop over FileInfo from Readdir
+		srcfp := filepath.Join(src, entryInfo.Name())
+		dstfp := filepath.Join(dst, entryInfo.Name())
 
-		// use Lstat so symlink type is detected without following it
-		info, err := os.Lstat(srcfp)
-		if err != nil {
-			return err
-		}
+		mode := entryInfo.Mode()
 
 		// handle symlinks explicitly
-		if info.Mode()&os.ModeSymlink != 0 {
+		if mode&os.ModeSymlink != 0 {
 			if err := os.MkdirAll(filepath.Dir(dstfp), 0o755); err != nil { // ensure parent exists
 				return err
 			}
@@ -563,11 +589,11 @@ func CopyDir(src string, dst string) error {
 			continue
 		}
 
-		if info.IsDir() {
+		if mode.IsDir() {
 			if err = CopyDir(srcfp, dstfp); err != nil {
 				return err
 			}
-		} else if info.Mode().IsRegular() { // guard non-regular files
+		} else if mode.IsRegular() { // guard non-regular files
 			if err = CopyFile(srcfp, dstfp); err != nil {
 				return err
 			}
@@ -581,9 +607,9 @@ func CopyDir(src string, dst string) error {
 // helper functions for safe, case-aware path comparison
 func normPath(p string) string {
 	p = filepath.Clean(p)
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" { // CHANGED: treat macOS default case-insensitive FS conservatively
-		p = strings.ToLower(p) // CHANGED
-	} // CHANGED
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" { // treat macOS default case-insensitive FS conservatively
+		p = strings.ToLower(p)
+	}
 	return p
 }
 
@@ -654,25 +680,25 @@ func ensureNoSymlinkDirs(dir string) error {
 		return err
 	}
 
-	visited := map[string]struct{}{} // CHANGED: loop guard to prevent cycles
+	visited := map[string]struct{}{} // loop guard to prevent cycles
 
 	for {
-		if _, seen := visited[absDir]; seen { // CHANGED
-			return fmt.Errorf("symlink loop detected: %s", absDir) // CHANGED
+		if _, seen := visited[absDir]; seen {
+			return fmt.Errorf("symlink loop detected: %s", absDir)
 		}
 		visited[absDir] = struct{}{} // CHANGED
 
 		info, err := os.Lstat(absDir)
 		if err == nil && info.Mode()&os.ModeSymlink != 0 {
-			// CHANGED: tolerate stable macOS system symlinks (/var, /tmp, /etc) by following once
-			if runtime.GOOS == "darwin" && isDarwinSystemSymlink(absDir) { // CHANGED
-				target, err := filepath.EvalSymlinks(absDir) // CHANGED
-				if err != nil {                              // CHANGED
-					return err // CHANGED
-				} // CHANGED
-				absDir = target // CHANGED
-				continue        // CHANGED
-			} // CHANGED
+			// tolerate stable macOS system symlinks (/var, /tmp, /etc) by following once
+			if runtime.GOOS == "darwin" && isDarwinSystemSymlink(absDir) {
+				target, err := filepath.EvalSymlinks(absDir)
+				if err != nil {
+					return err
+				}
+				absDir = target
+				continue
+			}
 			return fmt.Errorf("ancestor directory is a symlink: %s", absDir)
 		} else if err != nil && !os.IsNotExist(err) {
 			return err

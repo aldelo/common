@@ -790,10 +790,13 @@ func ensureNoSymlinkDirs(dir string) error {
 	visited := map[string]struct{}{} // loop guard to prevent cycles
 
 	for {
-		if _, seen := visited[absDir]; seen {
+		absDir = filepath.Clean(absDir) // ensure stable representation for normalization
+		key := normPath(absDir)         // normalize for case-insensitive filesystems
+
+		if _, seen := visited[key]; seen {
 			return fmt.Errorf("symlink loop detected: %s", absDir)
 		}
-		visited[absDir] = struct{}{} // CHANGED
+		visited[absDir] = struct{}{}
 
 		info, err := os.Lstat(absDir)
 		if err == nil && info.Mode()&os.ModeSymlink != 0 {

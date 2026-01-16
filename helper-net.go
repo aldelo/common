@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -90,7 +90,8 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		return []string{}
 	} else {
 		for _, v := range addrs {
-			ipList = append(ipList, fmt.Sprintf("%s:%d", v.Target, v.Port))
+			target := strings.TrimSuffix(v.Target, ".")
+			ipList = append(ipList, fmt.Sprintf("%s:%d", target, v.Port))
 		}
 
 		if len(ipList) == 0 {
@@ -104,7 +105,14 @@ func DnsLookupSrvs(host string) (ipList []string) {
 
 // ParseHostFromURL will parse out the host name from url
 func ParseHostFromURL(u string) string {
-	parsed, err := url.Parse(strings.TrimSpace(u)) // robust URL parsing
+	trimmed := strings.TrimSpace(u) // normalize input early
+	if trimmed == "" {              // guard empty input
+		return ""
+	}
+	if !strings.Contains(trimmed, "://") { // allow bare hosts without scheme
+		trimmed = "http://" + trimmed
+	}
+	parsed, err := url.Parse(trimmed) // robust URL parsing
 	if err != nil {
 		return ""
 	}
@@ -175,13 +183,19 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 	if req == nil {
 		return []byte{}, fmt.Errorf("Http Request Nil")
 	}
-
-	if body, err := ioutil.ReadAll(req.Body); err != nil {
-		return []byte{}, err
-	} else {
-		req.Body = ioutil.NopCloser(bytes.NewBuffer(body))
-		return body, nil
+	if req.Body == nil { // avoid nil body panic
+		return []byte{}, fmt.Errorf("Http Request Body Nil")
 	}
+
+	body, err := io.ReadAll(req.Body)
+	req.Body.Close()
+
+	if err != nil {
+		return []byte{}, err
+	}
+
+	req.Body = io.NopCloser(bytes.NewBuffer(body))
+	return body, nil
 }
 
 // ReadHttpRequestHeaders parses headers into map

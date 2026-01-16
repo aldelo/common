@@ -86,8 +86,9 @@ func FileWrite(path string, data string) error {
 		return err
 	}
 
-	// default to 0644 but preserve existing file mode when present
-	mode := os.FileMode(0o644)
+	// default to preserving existing file mode when present; otherwise keep temp's umask-respecting default
+	var mode os.FileMode
+	var haveMode bool
 
 	if info, err := os.Lstat(path); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
@@ -99,7 +100,7 @@ func FileWrite(path string, data string) error {
 		if !info.Mode().IsRegular() { // forbid writing over special files
 			return fmt.Errorf("path is not a regular file: %s", path)
 		}
-		mode = info.Mode()
+		mode, haveMode = info.Mode(), true
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -203,8 +204,9 @@ func FileWriteBytes(path string, data []byte) error {
 		return err
 	}
 
-	// default to 0644 but preserve existing file mode when present
-	mode := os.FileMode(0o644)
+	// default to preserving existing file mode when present; otherwise keep temp's umask-respecting default
+	var mode os.FileMode
+	var haveMode bool
 
 	if info, err := os.Lstat(path); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
@@ -216,7 +218,7 @@ func FileWriteBytes(path string, data []byte) error {
 		if !info.Mode().IsRegular() { // forbid writing over special files
 			return fmt.Errorf("path is not a regular file: %s", path)
 		}
-		mode = info.Mode()
+		mode, haveMode = info.Mode(), true
 	} else if !os.IsNotExist(err) {
 		return err
 	}

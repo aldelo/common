@@ -140,6 +140,10 @@ func FileWrite(path string, data string) error {
 		return err
 	}
 
+	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate just before rename
+		return err
+	}
+
 	if err := os.Rename(tmp, path); err != nil {
 		// surface failure to remove old destination before retry
 		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
@@ -250,6 +254,10 @@ func FileWriteBytes(path string, data []byte) error {
 		return err
 	}
 	if err := os.Chmod(tmp, mode); err != nil { // ensure final mode
+		return err
+	}
+
+	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate just before rename
 		return err
 	}
 
@@ -465,6 +473,10 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		return err
 	}
 
+	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate just before rename
+		return err
+	}
+
 	// atomic replace with Windows overwrite handling
 	if err := os.Rename(tmp, dstAbs); err != nil {
 		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
@@ -546,7 +558,12 @@ func CopyDir(src string, dst string) error {
 		dstCanon = real
 	}
 
-	// CHANGED: re-validate canonical parents to catch swapped-in symlink ancestors
+	// canonical guard to prevent copy-into-self via resolved symlinks
+	if pathsEqual(srcCanon, dstCanon) || pathWithin(dstCanon, srcCanon) {
+		return fmt.Errorf("destination is the same as or within the source: %s -> %s", src, dst)
+	}
+
+	// re-validate canonical parents to catch swapped-in symlink ancestors
 	if err := ensureNoSymlinkDirs(filepath.Dir(srcCanon)); err != nil {
 		return err
 	}

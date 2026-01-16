@@ -388,7 +388,14 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		if err != nil {
 			return err
 		}
-		if err := os.RemoveAll(dstAbs); err != nil && !os.IsNotExist(err) {
+		if info, err := os.Lstat(dstAbs); err == nil { // precise replacement rules
+			if info.IsDir() {
+				return fmt.Errorf("destination is a directory: %s", dst)
+			}
+			if err := os.Remove(dstAbs); err != nil {
+				return err
+			}
+		} else if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		return os.Symlink(target, dstAbs)
@@ -410,9 +417,9 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 		if dstInfo.IsDir() {
 			return fmt.Errorf("destination is a directory: %s", dst)
 		}
-		if !dstInfo.Mode().IsRegular() { // CHANGED: block special files (sockets, devices, FIFOs)
+		if !dstInfo.Mode().IsRegular() { // block special files (sockets, devices, FIFOs)
 			return fmt.Errorf("destination is not a regular file: %s", dst)
-		} // CHANGED
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dstAbs), 0o755); err != nil {
@@ -608,8 +615,14 @@ func CopyDir(src string, dst string) error {
 		if err != nil {
 			return err
 		}
-		// remove any existing path (file/dir/symlink) before recreating the symlink
-		if err := os.RemoveAll(dst); err != nil && !os.IsNotExist(err) {
+		if info, err := os.Lstat(dst); err == nil { // safe replacement rules
+			if info.IsDir() {
+				return fmt.Errorf("destination is a directory: %s", dst)
+			}
+			if err := os.Remove(dst); err != nil {
+				return err
+			}
+		} else if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		return os.Symlink(target, dst)
@@ -667,8 +680,14 @@ func CopyDir(src string, dst string) error {
 			if err != nil {
 				return err
 			}
-			// remove any existing path (file/dir/symlink) before recreating the symlink
-			if err := os.RemoveAll(dstfp); err != nil && !os.IsNotExist(err) {
+			if info, err := os.Lstat(dstfp); err == nil { // safe replacement rules for entries
+				if info.IsDir() {
+					return fmt.Errorf("destination entry is a directory: %s", dstfp)
+				}
+				if err := os.Remove(dstfp); err != nil {
+					return err
+				}
+			} else if err != nil && !os.IsNotExist(err) {
 				return err
 			}
 			if err := os.Symlink(target, dstfp); err != nil {

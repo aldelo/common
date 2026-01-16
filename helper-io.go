@@ -27,6 +27,8 @@ import (
 	"strings"
 )
 
+const maxReadBytes = int64(64 << 20) // cap file reads at 64MiB
+
 // FileRead will read all file content of given file in path,
 // return as string if successful,
 // if failed, error will contain the error reason
@@ -38,13 +40,17 @@ func FileRead(path string) (string, error) {
 		return "", err
 	}
 
-	f, _, err := openRegularRead(path)
+	f, finfo, err := openRegularRead(path)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
 
-	data, err := io.ReadAll(f)
+	if size := finfo.Size(); size >= 0 && size > maxReadBytes { // preflight size guard
+		return "", fmt.Errorf("file too large: %d bytes (limit %d)", size, maxReadBytes)
+	}
+
+	data, err := readAllWithLimit(f, maxReadBytes) // bounded read
 	if err != nil {
 		return "", err
 	}
@@ -61,13 +67,17 @@ func FileReadBytes(path string) ([]byte, error) {
 		return nil, err
 	}
 
-	f, _, err := openRegularRead(path)
+	f, finfo, err := openRegularRead(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	data, err := io.ReadAll(f)
+	if size := finfo.Size(); size >= 0 && size > maxReadBytes { // preflight size guard
+		return nil, fmt.Errorf("file too large: %d bytes (limit %d)", size, maxReadBytes)
+	}
+
+	data, err := readAllWithLimit(f, maxReadBytes) // bounded read
 	if err != nil {
 		return nil, err
 	}
@@ -822,7 +832,7 @@ func ensureNoSymlinkDirs(dir string) error {
 	}
 }
 
-// CHANGED: allowlist macOS system symlinks so default /var, /tmp, /etc paths work
+// allowlist macOS system symlinks so default /var, /tmp, /etc paths work
 func isDarwinSystemSymlink(path string) bool {
 	switch filepath.Clean(path) {
 	case "/var", "/tmp", "/etc", "/private/var", "/private/tmp", "/private/etc":
@@ -830,4 +840,17 @@ func isDarwinSystemSymlink(path string) bool {
 	default:
 		return false
 	}
+}
+
+// bounded reader to prevent OOM on large files
+func readAllWithLimit(r io.Reader, limit int64) ([]byte, error) {
+	lr := &io.LimitedReader{R: r, N: limit + 1}
+	data, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("file too large; limit %d bytes", limit)
+	}
+	return data, nil
 }

@@ -136,6 +136,11 @@ func FileWrite(path string, data string) error {
 		}
 	}()
 
+	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate immediately after temp creation
+		_ = tmpFile.Close()
+		return err
+	}
+
 	if _, err := io.WriteString(tmpFile, data); err != nil {
 		_ = tmpFile.Close()
 		return err
@@ -256,6 +261,11 @@ func FileWriteBytes(path string, data []byte) error {
 			_ = os.Remove(tmp)
 		}
 	}()
+
+	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate immediately after temp creation
+		_ = tmpFile.Close()
+		return err
+	}
 
 	if _, err := tmpFile.Write(data); err != nil {
 		_ = tmpFile.Close()
@@ -450,6 +460,11 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 			_ = os.Remove(tmp)
 		}
 	}()
+
+	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate immediately after temp creation
+		_ = tmpFile.Close()
+		return err
+	}
 
 	// open source after temp exists, then revalidate to avoid TOCTTOU
 	srcf, err := os.Open(srcAbs)

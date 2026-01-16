@@ -140,6 +140,21 @@ func FileWrite(path string, data string) error {
 	if err := os.Rename(tmp, path); err != nil {
 		// surface failure to remove old destination before retry
 		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
+			// revalidate destination before removing to avoid deleting dirs/symlinks
+			if info, statErr := os.Lstat(path); statErr == nil {
+				if info.Mode()&os.ModeSymlink != 0 {
+					return fmt.Errorf("destination is a symlink: %s", path)
+				}
+				if info.IsDir() {
+					return fmt.Errorf("destination is a directory: %s", path)
+				}
+				if !info.Mode().IsRegular() {
+					return fmt.Errorf("destination is not a regular file: %s", path)
+				}
+			} else if !os.IsNotExist(statErr) {
+				return statErr
+			}
+
 			_ = os.Chmod(path, 0o666) // best-effort; ignore error
 			if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
 				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
@@ -173,7 +188,7 @@ func FileWrite(path string, data string) error {
 // FileWriteBytes will write byte data into file at the given path,
 // if successful, no error is returned (nil)
 func FileWriteBytes(path string, data []byte) error {
-	if strings.TrimSpace(path) == "" { // CHANGED
+	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("path is empty")
 	}
 	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil {
@@ -235,6 +250,21 @@ func FileWriteBytes(path string, data []byte) error {
 	if err := os.Rename(tmp, path); err != nil { // handle overwrite on Windows
 		// surface failure to remove old destination before retry
 		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
+			// revalidate destination before removing to avoid deleting dirs/symlinks
+			if info, statErr := os.Lstat(path); statErr == nil {
+				if info.Mode()&os.ModeSymlink != 0 {
+					return fmt.Errorf("destination is a symlink: %s", path)
+				}
+				if info.IsDir() {
+					return fmt.Errorf("destination is a directory: %s", path)
+				}
+				if !info.Mode().IsRegular() {
+					return fmt.Errorf("destination is not a regular file: %s", path)
+				}
+			} else if !os.IsNotExist(statErr) {
+				return statErr
+			}
+
 			_ = os.Chmod(path, 0o666) // best-effort; ignore error
 			if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
 				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
@@ -432,6 +462,21 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 	// atomic replace with Windows overwrite handling
 	if err := os.Rename(tmp, dstAbs); err != nil {
 		if errors.Is(err, fs.ErrExist) || runtime.GOOS == "windows" {
+			// revalidate destination before removing to avoid deleting dirs/symlinks
+			if info, statErr := os.Lstat(dstAbs); statErr == nil {
+				if info.Mode()&os.ModeSymlink != 0 {
+					return fmt.Errorf("destination is a symlink: %s", dst)
+				}
+				if info.IsDir() {
+					return fmt.Errorf("destination is a directory: %s", dst)
+				}
+				if !info.Mode().IsRegular() {
+					return fmt.Errorf("destination is not a regular file: %s", dst)
+				}
+			} else if !os.IsNotExist(statErr) {
+				return statErr
+			}
+
 			_ = os.Chmod(dstAbs, 0o666) // best-effort; ignore error
 			if remErr := os.Remove(dstAbs); remErr != nil && !os.IsNotExist(remErr) {
 				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)

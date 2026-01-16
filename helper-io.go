@@ -137,8 +137,10 @@ func FileWrite(path string, data string) error {
 	if err := tmpFile.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(tmp, mode); err != nil { // ensure final mode
-		return err
+	if haveMode {
+		if err := os.Chmod(tmp, mode); err != nil { // ensure final mode
+			return err
+		}
 	}
 
 	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate just before rename
@@ -255,8 +257,10 @@ func FileWriteBytes(path string, data []byte) error {
 	if err := tmpFile.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(tmp, mode); err != nil { // ensure final mode
-		return err
+	if haveMode {
+		if err := os.Chmod(tmp, mode); err != nil { // ensure final mode
+			return err
+		}
 	}
 
 	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate just before rename

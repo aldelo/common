@@ -81,7 +81,8 @@ func FileWrite(path string, data string) error {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("path is empty")
 	}
-	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil {
+	dir := filepath.Dir(path)
+	if err := ensureNoSymlinkDirs(dir); err != nil {
 		return err
 	}
 
@@ -103,12 +104,14 @@ func FileWrite(path string, data string) error {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate parent to shrink TOCTTOU window
 		return err
 	}
 
 	// use unique temp file in target directory to avoid races/symlink attacks
-	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 	tmpFile, err := os.CreateTemp(dir, "."+base+".tmp-*")
 	if err != nil {
@@ -191,7 +194,8 @@ func FileWriteBytes(path string, data []byte) error {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("path is empty")
 	}
-	if err := ensureNoSymlinkDirs(filepath.Dir(path)); err != nil {
+	dir := filepath.Dir(path)
+	if err := ensureNoSymlinkDirs(dir); err != nil {
 		return err
 	}
 
@@ -216,9 +220,11 @@ func FileWriteBytes(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	if err := ensureNoSymlinkDirs(dir); err != nil { // re-validate parent to shrink TOCTTOU window
+		return err
+	}
 
 	// use unique temp file in target directory to avoid races/symlink attacks
-	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 	tmpFile, err := os.CreateTemp(dir, "."+base+".tmp-*")
 	if err != nil {
@@ -516,16 +522,10 @@ func CopyDir(src string, dst string) error {
 	if err != nil {
 		return err
 	}
-	if real, err := filepath.EvalSymlinks(srcAbs); err == nil { // normalize source
-		srcAbs = real
-	}
 
 	dstAbs, err := filepath.Abs(dst)
 	if err != nil {
 		return err
-	}
-	if real, err := filepath.EvalSymlinks(dstAbs); err == nil { // normalize destination if it exists
-		dstAbs = real
 	}
 
 	// ensure no symlink in ancestor directories
@@ -533,6 +533,24 @@ func CopyDir(src string, dst string) error {
 		return err
 	}
 	if err := ensureNoSymlinkDirs(filepath.Dir(dstAbs)); err != nil {
+		return err
+	}
+
+	// normalize canonical (symlink-resolved) paths without discarding originals
+	srcCanon := srcAbs
+	if real, err := filepath.EvalSymlinks(srcAbs); err == nil { // normalize source
+		srcCanon = real
+	}
+	dstCanon := dstAbs
+	if real, err := filepath.EvalSymlinks(dstAbs); err == nil { // normalize destination if it exists
+		dstCanon = real
+	}
+
+	// CHANGED: re-validate canonical parents to catch swapped-in symlink ancestors
+	if err := ensureNoSymlinkDirs(filepath.Dir(srcCanon)); err != nil {
+		return err
+	}
+	if err := ensureNoSymlinkDirs(filepath.Dir(dstCanon)); err != nil {
 		return err
 	}
 

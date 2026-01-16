@@ -47,19 +47,34 @@ func IsHttpsEndpoint(url string) bool {
 
 // GetLocalIP returns the first non loopback ip
 func GetLocalIP() string {
-	if addrs, err := net.InterfaceAddrs(); err != nil {
-		return ""
-	} else {
-		for _, a := range addrs {
-			if ip, ok := a.(*net.IPNet); ok && !ip.IP.IsLoopback() && !ip.IP.IsInterfaceLocalMulticast() && !ip.IP.IsLinkLocalMulticast() && !ip.IP.IsLinkLocalUnicast() && !ip.IP.IsMulticast() && !ip.IP.IsUnspecified() {
-				if ip.IP.To4() != nil {
-					return ip.IP.String()
-				}
-			}
-		}
-
+	// walk interfaces to ensure we only return IPv4, global-unicast addresses on UP/non-loopback interfaces
+	ifaces, err := net.Interfaces()
+	if err != nil {
 		return ""
 	}
+	for _, iface := range ifaces {
+		if (iface.Flags&net.FlagUp) == 0 || (iface.Flags&net.FlagLoopback) != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok || ipNet.IP == nil {
+				continue
+			}
+			if ipNet.IP.IsLoopback() || ipNet.IP.IsUnspecified() || !ipNet.IP.IsGlobalUnicast() {
+				continue
+			}
+			if v4 := ipNet.IP.To4(); v4 != nil {
+				return v4.String()
+			}
+		}
+	}
+
+	return ""
 }
 
 // DnsLookupIps returns list of IPs for the given host
@@ -136,7 +151,7 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: %s", e)
 	}
 	if statusCode != http.StatusOK {
-		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: Status Code %d", statusCode)
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: Status Code %d, Body: %s", statusCode, responseBody)
 	}
 
 	// strongly typed JSON parsing
@@ -190,11 +205,12 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 	body, err := io.ReadAll(req.Body)
 	req.Body.Close()
 
+	req.Body = io.NopCloser(bytes.NewBuffer(body))
+
 	if err != nil {
-		return []byte{}, err
+		return body, err
 	}
 
-	req.Body = io.NopCloser(bytes.NewBuffer(body))
 	return body, nil
 }
 

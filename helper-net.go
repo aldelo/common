@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -80,7 +81,13 @@ func GetLocalIP() string {
 // DnsLookupIps returns list of IPs for the given host
 // if host is private on aws route 53, then lookup ip will work only when within given aws vpc that host was registered with
 func DnsLookupIps(host string) (ipList []net.IP) {
-	if ips, err := net.LookupIP(host); err != nil {
+	target := ParseHostFromURL(host)
+	if target == "" {
+		log.Printf("DNS Lookup IP Failed for Host: invalid host '%s'", host)
+		return []net.IP{}
+	}
+
+	if ips, err := net.LookupIP(target); err != nil {
 		log.Printf("DNS Lookup IP Failed for Host: %v, %s", err, host)
 		return []net.IP{}
 	} else {
@@ -100,13 +107,19 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 // DnsLookupSrvs returns list of IP and port addresses based on host
 // if host is private on aws route 53, then lookup ip will work only when within given aws vpc that host was registered with
 func DnsLookupSrvs(host string) (ipList []string) {
-	if _, addrs, err := net.LookupSRV("", "", host); err != nil {
+	target := ParseHostFromURL(host)
+	if target == "" {
+		log.Printf("DNS Lookup SRV Failed for Host: invalid host '%s'", host)
+		return []string{}
+	}
+
+	if _, addrs, err := net.LookupSRV("", "", target); err != nil {
 		log.Printf("DNS Lookup SRV Failed for Host: %v, %s", err, host)
 		return []string{}
 	} else {
 		for _, v := range addrs {
-			target := strings.TrimSuffix(v.Target, ".")
-			ipList = append(ipList, fmt.Sprintf("%s:%d", target, v.Port))
+			targetHost := strings.TrimSuffix(v.Target, ".")
+			ipList = append(ipList, fmt.Sprintf("%s:%d", targetHost, v.Port))
 		}
 
 		if len(ipList) == 0 {
@@ -120,18 +133,37 @@ func DnsLookupSrvs(host string) (ipList []string) {
 
 // ParseHostFromURL will parse out the host name from url
 func ParseHostFromURL(u string) string {
-	trimmed := strings.TrimSpace(u) // normalize input early
-	if trimmed == "" {              // guard empty input
+	trimmed := strings.TrimSpace(u)
+	if trimmed == "" {
 		return ""
 	}
-	if !strings.Contains(trimmed, "://") { // allow bare hosts without scheme
+
+	// Detect bare IPv6 literal without brackets and without scheme, wrap in brackets so url.Parse succeeds.
+	isBareIPv6 := strings.Contains(trimmed, ":") &&
+		!strings.Contains(trimmed, "[") &&
+		!strings.Contains(trimmed, "]") &&
+		!strings.Contains(trimmed, "://") &&
+		net.ParseIP(trimmed) != nil
+
+	if !strings.Contains(trimmed, "://") {
+		if isBareIPv6 {
+			trimmed = "[" + trimmed + "]"
+		}
 		trimmed = "http://" + trimmed
 	}
-	parsed, err := url.Parse(trimmed) // robust URL parsing
+
+	parsed, err := url.Parse(trimmed)
 	if err != nil {
 		return ""
 	}
-	return parsed.Hostname() // use standard hostname extraction (handles ports, schemes)
+
+	host := parsed.Hostname()
+	if host == "" && parsed.Host != "" {
+		// Fallback for unusual cases where Host is set but Hostname is empty.
+		host = parsed.Host
+	}
+
+	return host
 }
 
 // VerifyGoogleReCAPTCHAv2 will verify recaptcha v2 response data against given secret and obtain a response from google server
@@ -198,17 +230,24 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 	if req == nil {
 		return []byte{}, fmt.Errorf("Http Request Nil")
 	}
-	if req.Body == nil { // avoid nil body panic
+	if req.Body == nil {
 		return []byte{}, fmt.Errorf("Http Request Body Nil")
 	}
 
-	body, err := io.ReadAll(req.Body)
-	req.Body.Close()
+	body, readErr := io.ReadAll(req.Body)
+	closeErr := req.Body.Close()
 
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 
-	if err != nil {
-		return body, err
+	// Prefer reporting the read error; if none, surface close error if present.
+	if readErr != nil && closeErr != nil {
+		return body, fmt.Errorf("read error: %v; close error: %v", readErr, closeErr)
+	}
+	if readErr != nil {
+		return body, readErr
+	}
+	if closeErr != nil {
+		return body, closeErr
 	}
 
 	return body, nil
@@ -269,13 +308,18 @@ func ParseHttpHeader(respHeader http.Header) (map[string]string, error) {
 func EncodeHttpHeaderMapToString(headerMap map[string]string) string {
 	if headerMap == nil {
 		return ""
-	} else {
-		buf := ""
-
-		for k, v := range headerMap {
-			buf += fmt.Sprintf("%s: %s\n", k, v)
-		}
-
-		return buf
 	}
+
+	keys := make([]string, 0, len(headerMap))
+	for k := range headerMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	buf := ""
+	for _, k := range keys {
+		buf += fmt.Sprintf("%s: %s\n", k, headerMap[k])
+	}
+
+	return buf
 }

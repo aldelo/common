@@ -306,30 +306,25 @@ func ParseHostFromURL(u string) string {
 	if !strings.Contains(trimmed, "://") {
 		hostPort := trimmed
 
-		// Detect IPv6 literal without brackets; add them and preserve port if present.
-		if strings.Count(hostPort, ":") >= 2 && !strings.Contains(hostPort, "[") && !strings.Contains(hostPort, "]") {
-			var hostOnly, port string
-
-			// Try to detect a trailing port by last colon
-			if idx := strings.LastIndex(hostPort, ":"); idx != -1 {
-				possiblePort := hostPort[idx+1:]
-				if _, err := strconv.Atoi(possiblePort); err == nil {
-					hostOnly = hostPort[:idx]
-					port = possiblePort
-				} else {
-					hostOnly = hostPort
-				}
-			} else {
-				hostOnly = hostPort
-			}
-
-			// Escape zone identifiers to keep url.Parse happy
-			hostOnlyEscaped := strings.ReplaceAll(hostOnly, "%", "%25")
-
-			if port != "" {
-				hostPort = "[" + hostOnlyEscaped + "]:" + port
-			} else {
+		// First see if the entire input is already a valid IP literal (incl. IPv6 hextets that look like ports).
+		if strings.Count(hostPort, ":") >= 2 && !strings.ContainsAny(hostPort, "[]") {
+			rawHost := strings.Split(hostPort, "%")[0] // drop zone for parsing check
+			if ip := net.ParseIP(rawHost); ip != nil { // pure IP literal, no port splitting
+				hostOnlyEscaped := strings.ReplaceAll(hostPort, "%", "%25")
 				hostPort = "[" + hostOnlyEscaped + "]"
+			} else {
+				// Only treat the tail as a port if the full value is NOT a valid IP, but the stripped tail is.
+				if idx := strings.LastIndex(hostPort, ":"); idx != -1 {
+					possiblePort := hostPort[idx+1:]
+					hostOnly := hostPort[:idx]
+
+					if _, err := strconv.Atoi(possiblePort); err == nil {
+						if hostIP := net.ParseIP(strings.Split(hostOnly, "%")[0]); hostIP != nil {
+							hostOnlyEscaped := strings.ReplaceAll(hostOnly, "%", "%25")
+							hostPort = "[" + hostOnlyEscaped + "]:" + possiblePort
+						}
+					}
+				}
 			}
 		}
 
@@ -456,6 +451,7 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 		if ts, parseErr := time.Parse(time.RFC3339, resp.ChallengeTS); parseErr == nil {
 			challengeTs = ts
 		} else {
+			success = false
 			err = fmt.Errorf("ReCAPTCHA Service Response Failed: (Parse challenge_ts Error) %s", parseErr)
 			return success, challengeTs, hostName, err
 		}
@@ -464,7 +460,7 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 	if !success {
 		if len(resp.ErrorCodes) > 0 {
 			err = fmt.Errorf("ReCAPTCHA Verify Errors: %s", strings.Join(resp.ErrorCodes, ", "))
-		} else {
+		} else if err == nil {
 			err = fmt.Errorf("ReCAPTCHA Verify Errors: unknown error")
 		}
 	}

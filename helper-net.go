@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -38,6 +39,9 @@ const (
 	recaptchaVerifyTimeout = 5 * time.Second // bounded ReCAPTCHA verification timeout
 	maxReCaptchaBodyBytes  = 1 << 20         // cap google response body to 1mb
 	maxRequestBodyBytes    = 10 << 20        // cap inbound http request body to 10mb
+
+	maxHostLength  = 255 // RFC-compliant max hostname length
+	maxLabelLength = 63  // RFC-compliant max label length
 )
 
 // GetNetListener triggers the specified port to listen via tcp
@@ -108,6 +112,12 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 		return []net.IP{}
 	}
 
+	// early host validation to avoid resolver misuse
+	if !isValidHostInput(host) {
+		log.Printf("DNS Lookup IP Failed for Host: invalid host '%s'", host)
+		return []net.IP{}
+	}
+
 	target := ParseHostFromURL(host)
 	if target == "" {
 		log.Printf("DNS Lookup IP Failed for Host: invalid host '%s'", host)
@@ -138,6 +148,11 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 		} else {
 			log.Printf("DNS Lookup IP Failed for Host: %v, %s", err, host)
 		}
+		return []net.IP{}
+	}
+
+	// guard against ctx cancellation after lookup but before processing
+	if ctx.Err() != nil {
 		return []net.IP{}
 	}
 
@@ -173,7 +188,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 	}
 
 	raw := strings.TrimSpace(host)
-	if raw == "" {
+	if raw == "" || !isValidHostInput(raw) {
 		log.Printf("DNS Lookup SRV Failed for Host: invalid host '%s'", host)
 		return []string{}
 	}
@@ -191,7 +206,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 	case strings.Contains(raw, "://"):
 		// interpret scheme as service[+proto], default proto tcp (e.g., grpc://example.com or sip+udp://example.com)
 		parsed, err := url.Parse(raw)
-		if err != nil {
+		if err != nil || parsed.Hostname() == "" {
 			log.Printf("DNS Lookup SRV Failed for Host: %v, %s", err, host)
 			return []string{}
 		}
@@ -206,7 +221,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		target = ParseHostFromURL(raw)
 	}
 
-	if target == "" {
+	if target == "" || !isValidHostName(target) { // hostname validation (length/labels/control chars)
 		log.Printf("DNS Lookup SRV Failed for Host: invalid host '%s'", host)
 		return []string{}
 	}
@@ -262,7 +277,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		}
 
 		targetHost := strings.TrimSuffix(strings.TrimSuffix(v.Target, "."), ".") // normalize trailing dot safely
-		if targetHost == "" || targetHost == "." {
+		if targetHost == "" || targetHost == "." || !isValidHostName(targetHost) {
 			continue
 		}
 
@@ -323,8 +338,15 @@ func ParseHostFromURL(u string) string {
 		return ""
 	}
 
-	// Reject control characters early to avoid injection/parse surprises.
-	if strings.ContainsAny(trimmed, "\r\n\t") {
+	// reject any Unicode control chars or separators to avoid injection/parse surprises
+	for _, r := range trimmed {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return ""
+		}
+	}
+
+	// Reject obvious bad byte ranges quickly (covers remaining ASCII control chars, DEL)
+	if strings.ContainsAny(trimmed, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f") {
 		return ""
 	}
 
@@ -453,6 +475,11 @@ func ParseHostFromURL(u string) string {
 	// to avoid turning percent-encoded labels into invalid hostnames.
 	if strings.Contains(host, ":") && strings.Contains(host, "%25") {
 		host = strings.ReplaceAll(host, "%25", "%")
+	}
+
+	// Validate host length/labels post-parse
+	if !isValidHostName(host) {
+		return ""
 	}
 
 	return host
@@ -667,4 +694,57 @@ func EncodeHttpHeaderMapToString(headerMap map[string]string) string {
 	}
 
 	return buf
+}
+
+// helper validation functions for host input/labels
+func isValidHostInput(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return false
+		}
+	}
+	if strings.ContainsAny(s, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f") {
+		return false
+	}
+	return true
+}
+
+func isValidHostName(h string) bool {
+	if h == "" {
+		return false
+	}
+
+	// allow IP literals
+	if ip := net.ParseIP(strings.TrimSuffix(h, ".")); ip != nil {
+		return true
+	}
+
+	if len(h) > maxHostLength {
+		return false
+	}
+	labels := strings.Split(h, ".")
+
+	for _, lbl := range labels {
+		if lbl == "" {
+			continue // allow empty labels for trailing dot cases handled earlier
+		}
+		if len(lbl) > maxLabelLength {
+			return false
+		}
+		// basic LDH validation
+		for _, r := range lbl {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+				continue
+			}
+			return false
+		}
+		// label cannot start or end with hyphen
+		if lbl[0] == '-' || lbl[len(lbl)-1] == '-' {
+			return false
+		}
+	}
+	return true
 }

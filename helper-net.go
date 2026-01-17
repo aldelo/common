@@ -205,7 +205,10 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		}
 
 		for _, ipAddr := range ipAddrs { // use LookupIP result type
-			entry := net.JoinHostPort(ipAddr.To4().String(), strconv.Itoa(int(v.Port))) // IPv6-safe host:port
+			if ipAddr == nil || len(ipAddr) == 0 {
+				continue
+			}
+			entry := net.JoinHostPort(ipAddr.String(), strconv.Itoa(int(v.Port))) // IPv4/IPv6 safe
 			if _, exists := seen[entry]; exists {
 				continue
 			}

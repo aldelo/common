@@ -516,7 +516,12 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 	closeErr := req.Body.Close()
 
 	if readErr == nil && int64(len(body)) > maxRequestBodyBytes {
-		return body, fmt.Errorf("Http Request Body exceeds limit of %d bytes", maxRequestBodyBytes)
+		truncated := body[:maxRequestBodyBytes]
+		req.Body = io.NopCloser(bytes.NewBuffer(truncated))
+		if closeErr != nil {
+			return truncated, fmt.Errorf("Http Request Body exceeds limit of %d bytes; close error: %v", maxRequestBodyBytes, closeErr)
+		}
+		return truncated, fmt.Errorf("Http Request Body exceeds limit of %d bytes", maxRequestBodyBytes)
 	}
 
 	req.Body = io.NopCloser(bytes.NewBuffer(body))

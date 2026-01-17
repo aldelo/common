@@ -32,8 +32,12 @@ import (
 	"time"
 )
 
-const dnsLookupTimeout = 5 * time.Second       // bounded DNS timeout
-const recaptchaVerifyTimeout = 5 * time.Second // bounded ReCAPTCHA verification timeout
+const (
+	dnsLookupTimeout       = 5 * time.Second // bounded DNS timeout
+	recaptchaVerifyTimeout = 5 * time.Second // bounded ReCAPTCHA verification timeout
+	maxReCaptchaBodyBytes  = 1 << 20         // cap google response body to 1mb
+	maxRequestBodyBytes    = 10 << 20        // cap inbound http request body to 10mb
+)
 
 // GetNetListener triggers the specified port to listen via tcp
 func GetNetListener(port uint) (net.Listener, error) {
@@ -227,6 +231,10 @@ func DnsLookupSrvs(host string) (ipList []string) {
 
 	for _, v := range addrs {
 		targetHost := strings.TrimSuffix(v.Target, ".")
+		if targetHost == "" || targetHost == "." {
+			continue
+		}
+
 		// bounded, context-aware A/AAAA resolution
 		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, targetHost)
 		if err != nil {
@@ -425,9 +433,13 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 	}
 	defer httpResp.Body.Close()
 
-	bodyBytes, readErr := io.ReadAll(httpResp.Body)
+	limitedResp := io.LimitReader(httpResp.Body, maxReCaptchaBodyBytes+1)
+	bodyBytes, readErr := io.ReadAll(limitedResp)
 	if readErr != nil {
 		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Read Failed: %v", readErr)
+	}
+	if int64(len(bodyBytes)) > maxReCaptchaBodyBytes {
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Failed: body exceeds %d bytes", maxReCaptchaBodyBytes)
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
@@ -483,8 +495,13 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 		return []byte{}, fmt.Errorf("Http Request Body Nil")
 	}
 
-	body, readErr := io.ReadAll(req.Body)
+	limited := io.LimitReader(req.Body, maxRequestBodyBytes+1)
+	body, readErr := io.ReadAll(limited)
 	closeErr := req.Body.Close()
+
+	if readErr == nil && int64(len(body)) > maxRequestBodyBytes {
+		return body, fmt.Errorf("Http Request Body exceeds limit of %d bytes", maxRequestBodyBytes)
+	}
 
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 

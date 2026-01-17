@@ -227,17 +227,32 @@ func ParseBool(s string) (bool, bool) {
 
 // ExponentialToNumber converts exponential representation of a number into actual number equivalent
 func ExponentialToNumber(exp string) string {
-	if strings.Index(strings.ToLower(exp), "e") >= 0 {
-		v, _ := ParseFloat64(exp)
+	if strings.Contains(strings.ToLower(exp), "e") { // simpler contains check
+		v, err := strconv.ParseFloat(exp, 64)
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) { // preserve original on error/NaN/Inf
+			return exp
+		}
 		return strconv.FormatFloat(v, 'f', -1, 64)
-	} else {
-		return exp
 	}
+	return exp
 }
 
 // RoundFloat64 converts float64 value to target precision
 func RoundFloat64(val float64, precision uint) float64 {
+	if math.IsNaN(val) || math.IsInf(val, 0) { // passthrough special values
+		return val
+	}
+
+	const maxSafePrecision = 308 // 10^308 fits in float64; 10^309 overflows to +Inf
+	if precision > maxSafePrecision {
+		precision = maxSafePrecision // cap to avoid Inf ratio
+	}
+
 	ratio := math.Pow(10, float64(precision))
+	if math.IsInf(ratio, 0) || ratio == 0 { // extra safety (should not occur after cap)
+		return val
+	}
+
 	return math.Round(val*ratio) / ratio
 }
 

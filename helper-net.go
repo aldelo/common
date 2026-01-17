@@ -130,7 +130,10 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 	// bounded, context-aware DNS lookup using IPAddr for Go <=1.21 compatibility
 	ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, target)
 	if err != nil {
+		// classify resolver timeouts using net.Error in addition to context deadline
 		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("DNS Lookup IP Failed for Host (timeout %s): %s", dnsLookupTimeout, host)
+		} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			log.Printf("DNS Lookup IP Failed for Host (timeout %s): %s", dnsLookupTimeout, host)
 		} else {
 			log.Printf("DNS Lookup IP Failed for Host: %v, %s", err, host)
@@ -278,17 +281,18 @@ func DnsLookupSrvs(host string) (ipList []string) {
 
 		ipCtx, ipCancel := context.WithTimeout(ctx, remaining)
 		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ipCtx, targetHost)
-		// classify resolver timeouts using the lookup error (ipCancel is still invoked).
+		ipCancel() // cancel immediately after lookup to free timers before logging/processing
+		// classify resolver timeouts using both context and net.Error timeout flag
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) { // CHANGED
+			if errors.Is(err, context.DeadlineExceeded) {
+				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed (timeout %s) for Host: %s Target: %s", dnsLookupTimeout, host, targetHost)
+			} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed (timeout %s) for Host: %s Target: %s", dnsLookupTimeout, host, targetHost)
 			} else {
 				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed for Host: %s Target: %s, Error: %v", host, targetHost, err)
 			}
-			ipCancel() // still ensure cancellation, but after classification via err
 			continue
 		}
-		ipCancel()
 
 		for _, ipAddr := range ipAddrs {
 			if ipAddr.IP == nil || len(ipAddr.IP) == 0 {

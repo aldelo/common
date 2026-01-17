@@ -253,7 +253,12 @@ func RoundFloat64(val float64, precision uint) float64 {
 		return val
 	}
 
-	return math.Round(val*ratio) / ratio
+	scaled := val * ratio                            // compute once to check overflow
+	if math.IsInf(scaled, 0) || math.IsNaN(scaled) { // avoid overflow/NaN on scaling
+		return val // fall back to original value if scaling overflows
+	}
+
+	return math.Round(scaled) / ratio // use precomputed scaled value
 }
 
 // RoundIntegerToNearestBlock returns conformed block size value where val fall into.

@@ -8,7 +8,7 @@ import (
 )
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,15 @@ import (
 
 // AbsInt returns absolute value of i
 func AbsInt(i int) int {
+	maxInt := int(^uint(0) >> 1) // compute platform max int
+	minInt := -maxInt - 1        // compute platform min int
+
+	if i == minInt { // guard overflow on MinInt
+		return maxInt // saturate to max to avoid overflow
+	}
+
 	if i < 0 {
-		return i * -1
+		return -i
 	} else {
 		return i
 	}
@@ -34,6 +41,10 @@ func AbsInt(i int) int {
 
 // AbsInt64 returns absolute value of i
 func AbsInt64(i int64) int64 {
+	if i == math.MinInt64 { // guard overflow on MinInt64
+		return math.MaxInt64 // saturate to max to avoid overflow
+	}
+
 	if i < 0 {
 		return i * -1
 	} else {
@@ -43,6 +54,10 @@ func AbsInt64(i int64) int64 {
 
 // AbsDuration returns absolute value of d
 func AbsDuration(d time.Duration) time.Duration {
+	if d == time.Duration(math.MinInt64) { // guard overflow on MinInt64
+		return time.Duration(math.MaxInt64) // saturate to max to avoid overflow
+	}
+
 	if d < 0 {
 		return d * -1
 	} else {
@@ -98,6 +113,7 @@ func IsFloat64(s string) bool {
 
 // IsBoolType tests if input string is boolean
 func IsBoolType(s string) bool {
+	s = strings.TrimSpace(s) // trim surrounding whitespace
 	x := []string{"yes", "on", "running", "started"}
 
 	if StringSliceContains(&x, strings.ToLower(s)) {
@@ -191,6 +207,8 @@ func ParseFloat64(s string) (float64, bool) {
 // return value 1st bool is the boolean result,
 // return value 2nd bool is the ParseBool success or failure indicator
 func ParseBool(s string) (bool, bool) {
+	s = strings.TrimSpace(s) // trim surrounding whitespace
+
 	var result bool
 	var err error
 
@@ -240,13 +258,9 @@ func RoundIntegerToNearestBlock(val int, blockSize int) int {
 		return blockSize
 	}
 
-	number := float64(val) / float64(blockSize)
-	whole := RoundFloat64(number, 0)
-	frac := number - whole
-
-	if frac <= 0 {
-		return int(whole) * blockSize
-	} else {
-		return (int(whole) + 1) * blockSize
+	remainder := val % blockSize // integer-only rounding
+	if remainder == 0 {          // exact multiple, return as-is
+		return val
 	}
+	return val + blockSize - remainder // round up to next block
 }

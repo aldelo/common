@@ -552,19 +552,24 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 	limited := io.LimitReader(req.Body, maxRequestBodyBytes+1)
 	body, readErr := io.ReadAll(limited)
 
-	// if oversized, drain the remainder so the connection can be safely reused
-	if int64(len(body)) > maxRequestBodyBytes {
-		_, _ = io.Copy(io.Discard, req.Body) // best-effort drain
-		closeErr := req.Body.Close()
-		truncated := body[:maxRequestBodyBytes]
-		req.Body = io.NopCloser(bytes.NewBuffer(truncated))
-		if closeErr != nil {
-			return truncated, fmt.Errorf("Http Request Body exceeds limit of %d bytes; close error: %v", maxRequestBodyBytes, closeErr)
-		}
-		return truncated, fmt.Errorf("Http Request Body exceeds limit of %d bytes", maxRequestBodyBytes)
+	// Always drain the remainder to keep the connection reusable,
+	// not only when oversized. This prevents keep-alive breakage on mid-stream errors.
+	if drainErr := func() error {
+		_, err := io.Copy(io.Discard, req.Body)
+		return err
+	}(); drainErr != nil && readErr == nil {
+		readErr = drainErr
 	}
 
-	closeErr := req.Body.Close() // close after oversize handling
+	closeErr := req.Body.Close()
+
+	oversized := int64(len(body)) > maxRequestBodyBytes
+	if oversized {
+		body = body[:maxRequestBodyBytes]
+		readErr = fmt.Errorf("Http Request Body exceeds limit of %d bytes", maxRequestBodyBytes)
+	}
+
+	// Restore body for downstream readers, even when truncated
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	// Prefer reporting the read error; if none, surface close error if present.

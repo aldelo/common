@@ -66,15 +66,27 @@ func GetLocalIP() string {
 			continue
 		}
 		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if !ok || ipNet.IP == nil {
-				continue
-			}
-			if ipNet.IP.IsLoopback() || ipNet.IP.IsUnspecified() || !ipNet.IP.IsGlobalUnicast() {
-				continue
-			}
-			if v4 := ipNet.IP.To4(); v4 != nil {
-				return v4.String()
+			switch a := addr.(type) {
+			case *net.IPNet:
+				if a == nil || a.IP == nil {
+					continue
+				}
+				if a.IP.IsLoopback() || a.IP.IsUnspecified() || !a.IP.IsGlobalUnicast() {
+					continue
+				}
+				if v4 := a.IP.To4(); v4 != nil {
+					return v4.String()
+				}
+			case *net.IPAddr: // handle *net.IPAddr to cover platforms that return IPAddr
+				if a == nil || a.IP == nil {
+					continue
+				}
+				if a.IP.IsLoopback() || a.IP.IsUnspecified() || !a.IP.IsGlobalUnicast() {
+					continue
+				}
+				if v4 := a.IP.To4(); v4 != nil {
+					return v4.String()
+				}
 			}
 		}
 	}
@@ -173,9 +185,29 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		return []string{}
 	}
 
-	// ensure service/proto are paired per net.LookupSRV contract
-	if service == "" {
-		proto = ""
+	// Validate service/proto before calling LookupSRV to avoid deterministic resolver errors.
+	if service == "" && !strings.HasPrefix(target, "_") {
+		log.Printf("DNS Lookup SRV Failed for Host: service/proto missing for target '%s' (expected _service._proto.domain or scheme://host)", host)
+		return []string{}
+	}
+
+	if service == "" && strings.HasPrefix(target, "_") {
+		// If caller supplied full SRV name in target (leading underscore), split it.
+		parts := strings.SplitN(target, ".", 3)
+		if len(parts) >= 2 {
+			service = strings.TrimPrefix(parts[0], "_")
+			proto = strings.TrimPrefix(parts[1], "_")
+			if len(parts) == 3 {
+				target = parts[2]
+			} else {
+				target = ""
+			}
+		}
+	}
+
+	if service == "" || proto == "" || target == "" {
+		log.Printf("DNS Lookup SRV Failed for Host: incomplete service/proto/target after parsing '%s'", host)
+		return []string{}
 	}
 
 	// bounded, context-aware SRV lookup

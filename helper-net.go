@@ -114,22 +114,41 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		return []string{}
 	}
 
-	if _, addrs, err := net.LookupSRV("", "", target); err != nil {
+	_, addrs, err := net.LookupSRV("", "", target)
+	if err != nil {
 		log.Printf("DNS Lookup SRV Failed for Host: %v, %s", err, host)
 		return []string{}
-	} else {
-		for _, v := range addrs {
-			targetHost := strings.TrimSuffix(v.Target, ".")
-			ipList = append(ipList, fmt.Sprintf("%s:%d", targetHost, v.Port))
-		}
-
-		if len(ipList) == 0 {
-			log.Printf("DNS Lookup SRV Returned No Results for Host: %s", host)
-		}
-
-		log.Printf("DNS Lookup SRV Returned %v for Host: %s", ipList, host)
-		return ipList
 	}
+
+	seen := make(map[string]struct{})
+
+	for _, v := range addrs {
+		targetHost := strings.TrimSuffix(v.Target, ".")
+		ips, err := net.LookupIP(targetHost)
+		if err != nil {
+			log.Printf("DNS Lookup SRV A/AAAA Resolve Failed for Host: %s Target: %s, Error: %v", host, targetHost, err)
+			continue
+		}
+
+		for _, ip := range ips {
+			entry := fmt.Sprintf("%s:%d", ip.String(), v.Port)
+			if _, exists := seen[entry]; exists {
+				continue
+			}
+			seen[entry] = struct{}{}
+			ipList = append(ipList, entry)
+		}
+	}
+
+	if len(ipList) == 0 {
+		log.Printf("DNS Lookup SRV Returned No Results for Host: %s", host)
+		return []string{}
+	}
+
+	// keep deterministic ordering
+	sort.Strings(ipList)
+	log.Printf("DNS Lookup SRV Returned %v for Host: %s", ipList, host)
+	return ipList
 }
 
 // ParseHostFromURL will parse out the host name from url

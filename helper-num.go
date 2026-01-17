@@ -140,11 +140,12 @@ func ParseInt32(s string) (int, bool) {
 		return 0, false
 	}
 
-	if result >= math.MinInt && result <= math.MaxInt {
-		return int(result), true
-	} else {
+	// validate using 32-bit bounds before converting to platform int
+	if result < int64(math.MinInt32) || result > int64(math.MaxInt32) {
 		return 0, false
 	}
+
+	return int(result), true
 }
 
 // ParseInt64 tests and parses if input string is big integer (whole number greater 64 bits)

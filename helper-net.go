@@ -253,6 +253,11 @@ func DnsLookupSrvs(host string) (ipList []string) {
 	seen := make(map[string]struct{})
 
 	for _, v := range addrs {
+		// honor parent context cancellation before expensive per-target lookups
+		if ctx.Err() != nil {
+			return ipList
+		}
+
 		targetHost := strings.TrimSuffix(strings.TrimSuffix(v.Target, "."), ".") // normalize trailing dot safely
 		if targetHost == "" || targetHost == "." {
 			continue
@@ -434,9 +439,10 @@ func ParseHostFromURL(u string) string {
 		host = parsed.Host
 	}
 
-	// unescape zone back to original form (if any)
-	if unescaped, unescapeErr := url.PathUnescape(host); unescapeErr == nil {
-		host = unescaped
+	// Only undo %25 in IPv6 zone identifiers; do NOT unescape arbitrary host labels
+	// to avoid turning percent-encoded labels into invalid hostnames.
+	if strings.Contains(host, ":") && strings.Contains(host, "%25") {
+		host = strings.ReplaceAll(host, "%25", "%")
 	}
 
 	return host

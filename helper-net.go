@@ -18,6 +18,7 @@ package helper
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +33,8 @@ import (
 
 	"github.com/aldelo/common/rest"
 )
+
+const dnsLookupTimeout = 5 * time.Second // bounded DNS timeout
 
 // GetNetListener triggers the specified port to listen via tcp
 func GetNetListener(port uint) (net.Listener, error) {
@@ -82,32 +85,55 @@ func GetLocalIP() string {
 // DnsLookupIps returns list of IPs for the given host
 // if host is private on aws route 53, then lookup ip will work only when within given aws vpc that host was registered with
 func DnsLookupIps(host string) (ipList []net.IP) {
+	ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
+	defer cancel()
+
 	target := ParseHostFromURL(host)
 	if target == "" {
 		log.Printf("DNS Lookup IP Failed for Host: invalid host '%s'", host)
 		return []net.IP{}
 	}
 
-	if ips, err := net.LookupIP(target); err != nil {
-		log.Printf("DNS Lookup IP Failed for Host: %v, %s", err, host)
-		return []net.IP{}
-	} else {
-		for _, ip := range ips {
-			ipList = append(ipList, ip)
-		}
-
-		if len(ipList) == 0 {
-			log.Printf("DNS Lookup IP Returned No Results for Host: %s", host)
-		}
-
-		log.Printf("DNS Lookup IP Returned %v for Host: %s", ipList, host)
+	// short-circuit IP literals (including zone-stripped IPv6) to avoid needless DNS and zone failures
+	ipOnly := target
+	if zoneIdx := strings.Index(target, "%"); zoneIdx != -1 {
+		ipOnly = target[:zoneIdx]
+	}
+	if ip := net.ParseIP(ipOnly); ip != nil {
+		ipList = append(ipList, ip)
+		log.Printf("DNS Lookup IP Returned %v for Host: %s (literal)", ipList, host)
 		return ipList
 	}
+
+	// bounded, context-aware DNS lookup
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", target)
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("DNS Lookup IP Failed for Host (timeout %s): %s", dnsLookupTimeout, host)
+		} else {
+			log.Printf("DNS Lookup IP Failed for Host: %v, %s", err, host)
+		}
+		return []net.IP{}
+	}
+
+	for _, addr := range ips { // use LookupIP result type
+		ipList = append(ipList, addr)
+	}
+
+	if len(ipList) == 0 {
+		log.Printf("DNS Lookup IP Returned No Results for Host: %s", host)
+	}
+
+	log.Printf("DNS Lookup IP Returned %v for Host: %s", ipList, host)
+	return ipList
 }
 
 // DnsLookupSrvs returns list of IP and port addresses based on host
 // if host is private on aws route 53, then lookup ip will work only when within given aws vpc that host was registered with
 func DnsLookupSrvs(host string) (ipList []string) {
+	ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
+	defer cancel()
+
 	raw := strings.TrimSpace(host)
 	if raw == "" {
 		log.Printf("DNS Lookup SRV Failed for Host: invalid host '%s'", host)
@@ -152,9 +178,14 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		proto = ""
 	}
 
-	_, addrs, err := net.LookupSRV(service, proto, target)
+	// bounded, context-aware SRV lookup
+	_, addrs, err := net.DefaultResolver.LookupSRV(ctx, service, proto, target)
 	if err != nil {
-		log.Printf("DNS Lookup SRV Failed for Host: %v, %s", err, host)
+		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("DNS Lookup SRV Failed for Host (timeout %s): %s", dnsLookupTimeout, host)
+		} else {
+			log.Printf("DNS Lookup SRV Failed for Host: %v, %s", err, host)
+		}
 		return []string{}
 	}
 
@@ -162,14 +193,19 @@ func DnsLookupSrvs(host string) (ipList []string) {
 
 	for _, v := range addrs {
 		targetHost := strings.TrimSuffix(v.Target, ".")
-		ips, err := net.LookupIP(targetHost)
+		// bounded, context-aware A/AAAA resolution
+		ipAddrs, err := net.DefaultResolver.LookupIP(ctx, "ip", targetHost)
 		if err != nil {
-			log.Printf("DNS Lookup SRV A/AAAA Resolve Failed for Host: %s Target: %s, Error: %v", host, targetHost, err)
+			if ctx.Err() == context.DeadlineExceeded {
+				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed (timeout %s) for Host: %s Target: %s", dnsLookupTimeout, host, targetHost)
+			} else {
+				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed for Host: %s Target: %s, Error: %v", host, targetHost, err)
+			}
 			continue
 		}
 
-		for _, ip := range ips {
-			entry := net.JoinHostPort(ip.String(), strconv.Itoa(int(v.Port))) // IPv6-safe host:port
+		for _, ipAddr := range ipAddrs { // use LookupIP result type
+			entry := net.JoinHostPort(ipAddr.To4().String(), strconv.Itoa(int(v.Port))) // IPv6-safe host:port
 			if _, exists := seen[entry]; exists {
 				continue
 			}
@@ -261,6 +297,39 @@ func ParseHostFromURL(u string) string {
 		}
 
 		trimmed = "http://" + hostPort
+	} else {
+		// recover scheme-bearing unbracketed IPv6 literals (e.g., http://fe80::1%en0)
+		split := strings.SplitN(trimmed, "://", 2)
+		if len(split) == 2 {
+			scheme, rest := split[0], split[1]
+			authority := rest
+			path := ""
+			if slash := strings.Index(rest, "/"); slash != -1 {
+				authority = rest[:slash]
+				path = rest[slash:]
+			}
+			if strings.Count(authority, ":") >= 2 && !strings.ContainsAny(authority, "[]") {
+				var hostOnly, port string
+				if idx := strings.LastIndex(authority, ":"); idx != -1 {
+					possiblePort := authority[idx+1:]
+					if _, err := strconv.Atoi(possiblePort); err == nil {
+						hostOnly = authority[:idx]
+						port = possiblePort
+					} else {
+						hostOnly = authority
+					}
+				} else {
+					hostOnly = authority
+				}
+				hostOnlyEscaped := strings.ReplaceAll(hostOnly, "%", "%25")
+				if port != "" {
+					authority = "[" + hostOnlyEscaped + "]:" + port
+				} else {
+					authority = "[" + hostOnlyEscaped + "]"
+				}
+			}
+			trimmed = scheme + "://" + authority + path
+		}
 	}
 
 	// also escape zones when a scheme was already present

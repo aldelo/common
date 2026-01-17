@@ -129,7 +129,10 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 	}
 
 	for _, addr := range ips { // use LookupIP result type
-		ipList = append(ipList, addr)
+		if addr == nil {
+			continue
+		}
+		ipList = append(ipList, addr) // append the concrete net.IP
 	}
 
 	if len(ipList) == 0 {

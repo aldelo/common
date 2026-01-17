@@ -108,13 +108,51 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 // DnsLookupSrvs returns list of IP and port addresses based on host
 // if host is private on aws route 53, then lookup ip will work only when within given aws vpc that host was registered with
 func DnsLookupSrvs(host string) (ipList []string) {
-	target := ParseHostFromURL(host)
+	raw := strings.TrimSpace(host)
+	if raw == "" {
+		log.Printf("DNS Lookup SRV Failed for Host: invalid host '%s'", host)
+		return []string{}
+	}
+
+	var (
+		service string
+		proto   string
+		target  string
+	)
+
+	switch {
+	case strings.HasPrefix(raw, "_"):
+		// allow full SRV name (e.g., _ldap._tcp.example.com)
+		target = raw
+	case strings.Contains(raw, "://"):
+		// interpret scheme as service[+proto], default proto tcp (e.g., grpc://example.com or sip+udp://example.com)
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			log.Printf("DNS Lookup SRV Failed for Host: %v, %s", err, host)
+			return []string{}
+		}
+		schemeParts := strings.Split(parsed.Scheme, "+")
+		service = schemeParts[0]
+		proto = "tcp"
+		if len(schemeParts) > 1 && schemeParts[1] != "" {
+			proto = schemeParts[1]
+		}
+		target = parsed.Hostname()
+	default:
+		target = ParseHostFromURL(raw)
+	}
+
 	if target == "" {
 		log.Printf("DNS Lookup SRV Failed for Host: invalid host '%s'", host)
 		return []string{}
 	}
 
-	_, addrs, err := net.LookupSRV("", "", target)
+	// ensure service/proto are paired per net.LookupSRV contract
+	if service == "" {
+		proto = ""
+	}
+
+	_, addrs, err := net.LookupSRV(service, proto, target)
 	if err != nil {
 		log.Printf("DNS Lookup SRV Failed for Host: %v, %s", err, host)
 		return []string{}
@@ -131,12 +169,12 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		}
 
 		for _, ip := range ips {
-			entry := fmt.Sprintf("%s:%d", ip.String(), v.Port)
+			entry := net.JoinHostPort(ip.String(), strconv.Itoa(int(v.Port))) // IPv6-safe host:port
 			if _, exists := seen[entry]; exists {
 				continue
 			}
 			seen[entry] = struct{}{}
-			ipList = append(ipList, entry)
+			ipList = append(ipList, entry) // preserve SRV priority/weight order from resolver
 		}
 	}
 
@@ -145,8 +183,6 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		return []string{}
 	}
 
-	// keep deterministic ordering
-	sort.Strings(ipList)
 	log.Printf("DNS Lookup SRV Returned %v for Host: %s", ipList, host)
 	return ipList
 }
@@ -156,6 +192,41 @@ func ParseHostFromURL(u string) string {
 	trimmed := strings.TrimSpace(u)
 	if trimmed == "" {
 		return ""
+	}
+
+	// escape IPv6 zone identifiers inside bracketed hosts, even when a scheme is present
+	escapeIPv6Zone := func(raw string) string {
+		start := strings.Index(raw, "[")
+		end := strings.Index(raw, "]")
+		if start == -1 || end == -1 || end <= start {
+			return raw
+		}
+
+		hostPart := raw[start+1 : end]
+		if !strings.Contains(hostPart, "%") {
+			return raw
+		}
+
+		isHex := func(b byte) bool {
+			return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
+		}
+
+		var b strings.Builder
+		b.Grow(len(hostPart) + 4)
+		for i := 0; i < len(hostPart); i++ {
+			if hostPart[i] == '%' {
+				if i+2 < len(hostPart) && isHex(hostPart[i+1]) && isHex(hostPart[i+2]) {
+					// already percent-encoded
+					b.WriteByte('%')
+					continue
+				}
+				b.WriteString("%25")
+				continue
+			}
+			b.WriteByte(hostPart[i])
+		}
+
+		return raw[:start+1] + b.String() + raw[end:]
 	}
 
 	// normalize scheme-less inputs, safely handling IPv6 literals with optional port/zone
@@ -191,6 +262,9 @@ func ParseHostFromURL(u string) string {
 
 		trimmed = "http://" + hostPort
 	}
+
+	// also escape zones when a scheme was already present
+	trimmed = escapeIPv6Zone(trimmed)
 
 	parsed, err := url.Parse(trimmed)
 	if err != nil {

@@ -306,24 +306,29 @@ func ParseHostFromURL(u string) string {
 	if !strings.Contains(trimmed, "://") {
 		hostPort := trimmed
 
-		// First see if the entire input is already a valid IP literal (incl. IPv6 hextets that look like ports).
+		// detect IPv6 (with optional zone) and separate port before bracketing
 		if strings.Count(hostPort, ":") >= 2 && !strings.ContainsAny(hostPort, "[]") {
-			rawHost := strings.Split(hostPort, "%")[0] // drop zone for parsing check
-			if ip := net.ParseIP(rawHost); ip != nil { // pure IP literal, no port splitting
-				hostOnlyEscaped := strings.ReplaceAll(hostPort, "%", "%25")
-				hostPort = "[" + hostOnlyEscaped + "]"
-			} else {
-				// Only treat the tail as a port if the full value is NOT a valid IP, but the stripped tail is.
-				if idx := strings.LastIndex(hostPort, ":"); idx != -1 {
-					possiblePort := hostPort[idx+1:]
-					hostOnly := hostPort[:idx]
-
+			raw := hostPort
+			port := ""
+			if idx := strings.LastIndex(raw, ":"); idx != -1 {
+				possiblePort := raw[idx+1:]
+				if possiblePort != "" {
 					if _, err := strconv.Atoi(possiblePort); err == nil {
-						if hostIP := net.ParseIP(strings.Split(hostOnly, "%")[0]); hostIP != nil {
-							hostOnlyEscaped := strings.ReplaceAll(hostOnly, "%", "%25")
-							hostPort = "[" + hostOnlyEscaped + "]:" + possiblePort
+						hostOnly := raw[:idx]
+						if ip := net.ParseIP(strings.Split(hostOnly, "%")[0]); ip != nil {
+							hostPort = hostOnly // host portion only
+							port = possiblePort
 						}
 					}
+				}
+			}
+
+			if ip := net.ParseIP(strings.Split(hostPort, "%")[0]); ip != nil {
+				hostOnlyEscaped := strings.ReplaceAll(hostPort, "%", "%25")
+				if port != "" {
+					hostPort = "[" + hostOnlyEscaped + "]:" + port // keep port outside brackets
+				} else {
+					hostPort = "[" + hostOnlyEscaped + "]" // no port
 				}
 			}
 		}

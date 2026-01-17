@@ -249,7 +249,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 				return ipList
 			}
 		}
-		ipCtx, ipCancel := context.WithTimeout(context.Background(), remaining)
+		ipCtx, ipCancel := context.WithTimeout(ctx, remaining)
 		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ipCtx, targetHost)
 		ipCancel()
 

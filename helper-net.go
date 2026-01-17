@@ -278,16 +278,17 @@ func DnsLookupSrvs(host string) (ipList []string) {
 
 		ipCtx, ipCancel := context.WithTimeout(ctx, remaining)
 		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ipCtx, targetHost)
-		ipCancel()
-
+		// classify resolver timeouts using the lookup error (ipCancel is still invoked).
 		if err != nil {
-			if errors.Is(ipCtx.Err(), context.DeadlineExceeded) {
+			if errors.Is(err, context.DeadlineExceeded) { // CHANGED
 				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed (timeout %s) for Host: %s Target: %s", dnsLookupTimeout, host, targetHost)
 			} else {
 				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed for Host: %s Target: %s, Error: %v", host, targetHost, err)
 			}
+			ipCancel() // still ensure cancellation, but after classification via err
 			continue
 		}
+		ipCancel()
 
 		for _, ipAddr := range ipAddrs {
 			if ipAddr.IP == nil || len(ipAddr.IP) == 0 {

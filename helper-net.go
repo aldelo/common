@@ -104,11 +104,17 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 	ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
 	defer cancel()
 
+	if ctx.Err() != nil { // honor pre-cancelled context
+		return []net.IP{}
+	}
+
 	target := ParseHostFromURL(host)
 	if target == "" {
 		log.Printf("DNS Lookup IP Failed for Host: invalid host '%s'", host)
 		return []net.IP{}
 	}
+
+	target = strings.TrimSuffix(target, ".") // avoid trailing-dot queries that can fail on some resolvers
 
 	// short-circuit IP literals (including zone-stripped IPv6) to avoid needless DNS and zone failures
 	ipOnly := target
@@ -132,10 +138,16 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 		return []net.IP{}
 	}
 
-	for _, addr := range ipAddrs { // work with net.IPAddr results
+	seen := make(map[string]struct{}) // dedupe results
+	for _, addr := range ipAddrs {    // work with net.IPAddr results
 		if addr.IP == nil {
 			continue
 		}
+		key := addr.IP.String()
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
 		ipList = append(ipList, addr.IP)
 	}
 
@@ -152,6 +164,10 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 func DnsLookupSrvs(host string) (ipList []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), dnsLookupTimeout)
 	defer cancel()
+
+	if ctx.Err() != nil { // bail early on cancelled context
+		return []string{}
+	}
 
 	raw := strings.TrimSpace(host)
 	if raw == "" {
@@ -191,6 +207,8 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		log.Printf("DNS Lookup SRV Failed for Host: invalid host '%s'", host)
 		return []string{}
 	}
+
+	target = strings.TrimSuffix(target, ".") // prevent double-dot SRV queries
 
 	// Validate service/proto before calling LookupSRV to avoid deterministic resolver errors.
 	if service == "" && !strings.HasPrefix(target, "_") {
@@ -235,7 +253,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 	seen := make(map[string]struct{})
 
 	for _, v := range addrs {
-		targetHost := strings.TrimSuffix(v.Target, ".")
+		targetHost := strings.TrimSuffix(strings.TrimSuffix(v.Target, "."), ".") // normalize trailing dot safely
 		if targetHost == "" || targetHost == "." {
 			continue
 		}
@@ -249,6 +267,10 @@ func DnsLookupSrvs(host string) (ipList []string) {
 				return ipList
 			}
 		}
+		if ctx.Err() != nil { // stop if parent context is done
+			return ipList
+		}
+
 		ipCtx, ipCancel := context.WithTimeout(ctx, remaining)
 		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ipCtx, targetHost)
 		ipCancel()

@@ -30,11 +30,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/aldelo/common/rest"
 )
 
-const dnsLookupTimeout = 5 * time.Second // bounded DNS timeout
+const dnsLookupTimeout = 5 * time.Second       // bounded DNS timeout
+const recaptchaVerifyTimeout = 5 * time.Second // bounded ReCAPTCHA verification timeout
 
 // GetNetListener triggers the specified port to listen via tcp
 func GetNetListener(port uint) (net.Listener, error) {
@@ -117,8 +116,8 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 		return ipList
 	}
 
-	// bounded, context-aware DNS lookup
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", target)
+	// bounded, context-aware DNS lookup using IPAddr for Go <=1.21 compatibility
+	ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, target)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			log.Printf("DNS Lookup IP Failed for Host (timeout %s): %s", dnsLookupTimeout, host)
@@ -128,11 +127,11 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 		return []net.IP{}
 	}
 
-	for _, addr := range ips { // use LookupIP result type
-		if addr == nil {
+	for _, addr := range ipAddrs { // work with net.IPAddr results
+		if addr.IP == nil {
 			continue
 		}
-		ipList = append(ipList, addr) // append the concrete net.IP
+		ipList = append(ipList, addr.IP)
 	}
 
 	if len(ipList) == 0 {
@@ -229,7 +228,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 	for _, v := range addrs {
 		targetHost := strings.TrimSuffix(v.Target, ".")
 		// bounded, context-aware A/AAAA resolution
-		ipAddrs, err := net.DefaultResolver.LookupIP(ctx, "ip", targetHost)
+		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, targetHost)
 		if err != nil {
 			if ctx.Err() == context.DeadlineExceeded {
 				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed (timeout %s) for Host: %s Target: %s", dnsLookupTimeout, host, targetHost)
@@ -240,7 +239,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		}
 
 		for _, ipAddr := range ipAddrs { // use LookupIP result type
-			if ipAddr == nil || len(ipAddr) == 0 {
+			if ipAddr.IP == nil || len(ipAddr.IP) == 0 {
 				continue
 			}
 			entry := net.JoinHostPort(ipAddr.String(), strconv.Itoa(int(v.Port))) // IPv4/IPv6 safe
@@ -402,14 +401,37 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Secret Key is Required")
 	}
 
-	u := fmt.Sprintf("https://www.google.com/recaptcha/api/siteverify?secret=%s&response=%s", url.PathEscape(secret), url.PathEscape(response))
+	// bounded context and stdlib HTTP client with form POST per Google spec
+	ctx, cancel := context.WithTimeout(context.Background(), recaptchaVerifyTimeout)
+	defer cancel()
 
-	statusCode, responseBody, e := rest.POST(u, []*rest.HeaderKeyValue{}, "")
-	if e != nil {
-		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: %s", e)
+	form := url.Values{}
+	form.Set("secret", secret)
+	form.Set("response", response)
+
+	req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, "https://www.google.com/recaptcha/api/siteverify", strings.NewReader(form.Encode()))
+	if reqErr != nil {
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Request Build Failed: %v", reqErr)
 	}
-	if statusCode != http.StatusOK {
-		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: Status Code %d, Body: %s", statusCode, responseBody)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{Timeout: recaptchaVerifyTimeout}
+	httpResp, httpErr := client.Do(req)
+	if httpErr != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: timeout after %s", recaptchaVerifyTimeout)
+		}
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: %v", httpErr)
+	}
+	defer httpResp.Body.Close()
+
+	bodyBytes, readErr := io.ReadAll(httpResp.Body)
+	if readErr != nil {
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Read Failed: %v", readErr)
+	}
+
+	if httpResp.StatusCode != http.StatusOK {
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: Status Code %d, Body: %s", httpResp.StatusCode, string(bodyBytes))
 	}
 
 	// strongly typed JSON parsing
@@ -421,7 +443,7 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 	}
 
 	var resp recaptchaResponse
-	if err = json.Unmarshal([]byte(responseBody), &resp); err != nil {
+	if err = json.Unmarshal(bodyBytes, &resp); err != nil {
 		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Failed: (Parse Json Response Error) %s", err)
 	}
 

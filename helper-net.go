@@ -313,6 +313,11 @@ func ParseHostFromURL(u string) string {
 		return ""
 	}
 
+	// handle protocol-relative URLs (e.g., //example.com, //[fe80::1%eth0])
+	if strings.HasPrefix(trimmed, "//") {
+		trimmed = "http:" + trimmed
+	}
+
 	// escape IPv6 zone identifiers inside bracketed hosts, even when a scheme is present
 	escapeIPv6Zone := func(raw string) string {
 		start := strings.Index(raw, "[")
@@ -535,9 +540,11 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 
 	limited := io.LimitReader(req.Body, maxRequestBodyBytes+1)
 	body, readErr := io.ReadAll(limited)
-	closeErr := req.Body.Close()
 
-	if readErr == nil && int64(len(body)) > maxRequestBodyBytes {
+	// if oversized, drain the remainder so the connection can be safely reused
+	if int64(len(body)) > maxRequestBodyBytes {
+		_, _ = io.Copy(io.Discard, req.Body) // best-effort drain
+		closeErr := req.Body.Close()
 		truncated := body[:maxRequestBodyBytes]
 		req.Body = io.NopCloser(bytes.NewBuffer(truncated))
 		if closeErr != nil {
@@ -546,6 +553,7 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 		return truncated, fmt.Errorf("Http Request Body exceeds limit of %d bytes", maxRequestBodyBytes)
 	}
 
+	closeErr := req.Body.Close() // close after oversize handling
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	// Prefer reporting the read error; if none, surface close error if present.

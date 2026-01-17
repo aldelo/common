@@ -95,19 +95,19 @@ func IsInt64(s string) bool {
 
 // IsFloat32 tests if input string is float 32 bit (decimal point value)
 func IsFloat32(s string) bool {
-	if _, err := strconv.ParseFloat(strings.TrimSpace(s), 32); err != nil {
+	v, err := strconv.ParseFloat(strings.TrimSpace(s), 32)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) { // reject NaN/Inf
 		return false
 	}
-
 	return true
 }
 
 // IsFloat64 tests if input string is float 64 bit (decimal point value)
 func IsFloat64(s string) bool {
-	if _, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err != nil {
+	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) { // reject NaN/Inf
 		return false
 	}
-
 	return true
 }
 
@@ -154,10 +154,8 @@ func ParseInt64(s string) (int64, bool) {
 		s = SplitString(s, ".", 0)
 	}
 
-	var result int64
-	var err error
-
-	if result, err = strconv.ParseInt(strings.TrimSpace(s), 10, 64); err != nil {
+	result, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
 		return 0, false
 	}
 
@@ -170,10 +168,8 @@ func ParseUint64(s string) (uint64, bool) {
 		s = SplitString(s, ".", 0)
 	}
 
-	var result uint64
-	var err error
-
-	if result, err = strconv.ParseUint(strings.TrimSpace(s), 10, 64); err != nil {
+	result, err := strconv.ParseUint(strings.TrimSpace(s), 10, 64)
+	if err != nil {
 		return 0, false
 	}
 
@@ -182,26 +178,20 @@ func ParseUint64(s string) (uint64, bool) {
 
 // ParseFloat32 tests and parses if input string is float 32 bit (decimal point value)
 func ParseFloat32(s string) (float32, bool) {
-	var result float64
-	var err error
-
-	if result, err = strconv.ParseFloat(strings.TrimSpace(s), 32); err != nil {
+	v, err := strconv.ParseFloat(strings.TrimSpace(s), 32)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) { // reject NaN/Inf
 		return 0.00, false
 	}
-
-	return float32(result), true
+	return float32(v), true
 }
 
 // ParseFloat64 tests and parses if input string is float 64 bit (decimal point value)
 func ParseFloat64(s string) (float64, bool) {
-	var result float64
-	var err error
-
-	if result, err = strconv.ParseFloat(strings.TrimSpace(s), 64); err != nil {
+	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) { // reject NaN/Inf
 		return 0.00, false
 	}
-
-	return result, true
+	return v, true
 }
 
 // ParseBool tests and parses if input string is boolean,

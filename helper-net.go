@@ -323,6 +323,11 @@ func ParseHostFromURL(u string) string {
 		return ""
 	}
 
+	// Reject control characters early to avoid injection/parse surprises.
+	if strings.ContainsAny(trimmed, "\r\n\t") {
+		return ""
+	}
+
 	// handle protocol-relative URLs (e.g., //example.com, //[fe80::1%eth0])
 	if strings.HasPrefix(trimmed, "//") {
 		trimmed = "http:" + trimmed
@@ -552,21 +557,28 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 	limited := io.LimitReader(req.Body, maxRequestBodyBytes+1)
 	body, readErr := io.ReadAll(limited)
 
-	// Always drain the remainder to keep the connection reusable,
-	// not only when oversized. This prevents keep-alive breakage on mid-stream errors.
-	if drainErr := func() error {
-		_, err := io.Copy(io.Discard, req.Body)
-		return err
-	}(); drainErr != nil && readErr == nil {
-		readErr = drainErr
+	oversized := int64(len(body)) > maxRequestBodyBytes
+
+	// avoid unbounded draining when oversized (prevents hang/DoS on huge/streaming bodies).
+	if !oversized {
+		if drainErr := func() error {
+			_, err := io.Copy(io.Discard, req.Body)
+			return err
+		}(); drainErr != nil && readErr == nil {
+			readErr = drainErr
+		}
 	}
 
 	closeErr := req.Body.Close()
 
-	oversized := int64(len(body)) > maxRequestBodyBytes
 	if oversized {
 		body = body[:maxRequestBodyBytes]
-		readErr = fmt.Errorf("Http Request Body exceeds limit of %d bytes", maxRequestBodyBytes)
+		// Prefer a clear size error; if there was also a read error, include it.
+		if readErr != nil {
+			readErr = fmt.Errorf("Http Request Body exceeds limit of %d bytes; read error: %v", maxRequestBodyBytes, readErr)
+		} else {
+			readErr = fmt.Errorf("Http Request Body exceeds limit of %d bytes", maxRequestBodyBytes)
+		}
 	}
 
 	// Restore body for downstream readers, even when truncated

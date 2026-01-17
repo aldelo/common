@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -216,6 +217,9 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		return []string{}
 	}
 
+	service = strings.ToLower(service) // normalize to avoid resolver mismatches
+	proto = strings.ToLower(proto)     // normalize to avoid resolver mismatches
+
 	// bounded, context-aware SRV lookup
 	_, addrs, err := net.DefaultResolver.LookupSRV(ctx, service, proto, target)
 	if err != nil {
@@ -227,6 +231,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		return []string{}
 	}
 
+	deadline, hasDeadline := ctx.Deadline() // track remaining time for A/AAAA lookups
 	seen := make(map[string]struct{})
 
 	for _, v := range addrs {
@@ -235,10 +240,21 @@ func DnsLookupSrvs(host string) (ipList []string) {
 			continue
 		}
 
-		// bounded, context-aware A/AAAA resolution
-		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, targetHost)
+		// ensure A/AAAA lookups do not run on an already-expired context
+		remaining := dnsLookupTimeout
+		if hasDeadline {
+			remaining = time.Until(deadline)
+			if remaining <= 0 {
+				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed (timeout %s) for Host: %s Target: %s", dnsLookupTimeout, host, targetHost)
+				return ipList
+			}
+		}
+		ipCtx, ipCancel := context.WithTimeout(context.Background(), remaining)
+		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ipCtx, targetHost)
+		ipCancel()
+
 		if err != nil {
-			if ctx.Err() == context.DeadlineExceeded {
+			if errors.Is(ipCtx.Err(), context.DeadlineExceeded) {
 				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed (timeout %s) for Host: %s Target: %s", dnsLookupTimeout, host, targetHost)
 			} else {
 				log.Printf("DNS Lookup SRV A/AAAA Resolve Failed for Host: %s Target: %s, Error: %v", host, targetHost, err)
@@ -246,16 +262,16 @@ func DnsLookupSrvs(host string) (ipList []string) {
 			continue
 		}
 
-		for _, ipAddr := range ipAddrs { // use LookupIP result type
+		for _, ipAddr := range ipAddrs {
 			if ipAddr.IP == nil || len(ipAddr.IP) == 0 {
 				continue
 			}
-			entry := net.JoinHostPort(ipAddr.String(), strconv.Itoa(int(v.Port))) // IPv4/IPv6 safe
+			entry := net.JoinHostPort(ipAddr.String(), strconv.Itoa(int(v.Port)))
 			if _, exists := seen[entry]; exists {
 				continue
 			}
 			seen[entry] = struct{}{}
-			ipList = append(ipList, entry) // preserve SRV priority/weight order from resolver
+			ipList = append(ipList, entry)
 		}
 	}
 

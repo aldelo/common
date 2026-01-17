@@ -221,21 +221,8 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		target = ParseHostFromURL(raw)
 	}
 
-	if target == "" || !isValidHostName(target) { // hostname validation (length/labels/control chars)
-		log.Printf("DNS Lookup SRV Failed for Host: invalid host '%s'", host)
-		return []string{}
-	}
-
-	target = strings.TrimSuffix(target, ".") // prevent double-dot SRV queries
-
-	// Validate service/proto before calling LookupSRV to avoid deterministic resolver errors.
-	if service == "" && !strings.HasPrefix(target, "_") {
-		log.Printf("DNS Lookup SRV Failed for Host: service/proto missing for target '%s' (expected _service._proto.domain or scheme://host)", host)
-		return []string{}
-	}
-
+	// parse _service._proto.domain before hostname validation so underscores don't invalidate full SRV inputs.
 	if service == "" && strings.HasPrefix(target, "_") {
-		// If caller supplied full SRV name in target (leading underscore), split it.
 		parts := strings.SplitN(target, ".", 3)
 		if len(parts) >= 2 {
 			service = strings.TrimPrefix(parts[0], "_")
@@ -248,9 +235,20 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		}
 	}
 
-	if service == "" || proto == "" || target == "" {
-		log.Printf("DNS Lookup SRV Failed for Host: incomplete service/proto/target after parsing '%s'", host)
+	target = strings.TrimSuffix(target, ".") // prevent double-dot SRV queries
+
+	if target == "" || !isValidHostName(target) { // hostname validation (length/labels/control chars)
+		log.Printf("DNS Lookup SRV Failed for Host: invalid host '%s'", host)
 		return []string{}
+	}
+
+	// Validate service/proto after extraction.
+	if service == "" {
+		log.Printf("DNS Lookup SRV Failed for Host: service/proto missing for target '%s' (expected _service._proto.domain or scheme://host)", host)
+		return []string{}
+	}
+	if proto == "" {
+		proto = "tcp"
 	}
 
 	service = strings.ToLower(service) // normalize to avoid resolver mismatches
@@ -717,19 +715,32 @@ func isValidHostName(h string) bool {
 		return false
 	}
 
-	// allow IP literals
-	if ip := net.ParseIP(strings.TrimSuffix(h, ".")); ip != nil {
+	trimmed := strings.TrimSuffix(h, ".") // validate length without trailing root dot
+	if ip := net.ParseIP(trimmed); ip != nil {
 		return true
 	}
 
-	if len(h) > maxHostLength {
+	if len(trimmed) > maxHostLength {
 		return false
 	}
-	labels := strings.Split(h, ".")
+
+	// reject leading dot or consecutive dots (empty labels)
+	if strings.HasPrefix(h, ".") || strings.Contains(h, "..") {
+		return false
+	}
+
+	// drop a single trailing dot (already handled in trimmed) for label checks
+	host := trimmed
+	labels := strings.Split(host, ".")
+
+	if len(labels) == 0 {
+		return false
+	}
 
 	for _, lbl := range labels {
+		// disallow empty labels (other than the stripped trailing root)
 		if lbl == "" {
-			continue // allow empty labels for trailing dot cases handled earlier
+			return false
 		}
 		if len(lbl) > maxLabelLength {
 			return false

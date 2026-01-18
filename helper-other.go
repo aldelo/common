@@ -251,6 +251,13 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 		return slice // return original input instead of nil to avoid silent unexpected nil
 	}
 
+	// for non-addressable slice values, work on a settable copy to avoid reflect.Set panic
+	if !v.CanSet() {
+		tmp := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		reflect.Copy(tmp, v)
+		v = tmp
+	}
+
 	length := v.Len()
 	if length == 0 {
 		// honor doc by returning a nil slice shape

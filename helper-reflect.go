@@ -56,6 +56,17 @@ func ReflectTypeRegistryAdd(customStructObj interface{}, customFullTypeName ...s
 		}
 	}
 
+	if LenTrim(typeName) == 0 { // reject anonymous/unnamed structs to avoid empty-key collisions
+		return false
+	}
+
+	// use package-qualified name by default to avoid collisions across packages
+	if len(customFullTypeName) == 0 {
+		if pkg := Trim(o.PkgPath()); len(pkg) > 0 {
+			typeName = pkg + "." + typeName
+		}
+	}
+
 	customTypeRegistryMu.Lock()
 	defer customTypeRegistryMu.Unlock()
 
@@ -1079,28 +1090,23 @@ func ConvertStructToSlice(input interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("Struct Input is Nil")
 	}
 
-	// Get the reflect.Value and reflect.Type of the input
 	v := reflect.ValueOf(input)
 	t := reflect.TypeOf(input)
-
-	var v2 reflect.Value
 
 	// Handle pointer to struct
 	if v.Kind() == reflect.Ptr {
 		if v.IsNil() {
 			return nil, fmt.Errorf("Struct Input is Nil Pointer")
 		}
-		v2 = v.Elem()
-	} else {
-		v2 = v // allow direct struct values
+		v = v.Elem() // always work with the concrete struct value
+		t = t.Elem() // use the underlying struct type for slice element type
 	}
 
-	// Ensure the input is a struct
-	if v2.Kind() != reflect.Struct {
+	if v.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("Struct Input Expects a Struct Object or Pointer to Struct Object")
 	}
 
-	// Create a slice of the struct's type with one element
+	// slice element type is the struct type (not pointer), per docstring
 	sliceType := reflect.SliceOf(t)
 	slice := reflect.MakeSlice(sliceType, 1, 1)
 	slice.Index(0).Set(v)

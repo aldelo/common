@@ -284,6 +284,11 @@ func GetStructFieldTagAndValues(input interface{}, tagName string, getDynamoDBAt
 // ReflectCall uses reflection to invoke a method by name, and pass in param values if any,
 // result is returned via reflect.Value object slice
 func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) (resultSlice []reflect.Value, notFound bool) {
+	// guard invalid receiver to avoid panic
+	if !o.IsValid() {
+		return nil, true
+	}
+
 	method := o.MethodByName(methodName)
 
 	// guard invalid method to avoid panic on Kind()
@@ -710,6 +715,22 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 //	05, 5 = second
 //	PM pm = AM PM
 func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
+	// guard invalid / unsettable values to avoid panic
+	if !o.IsValid() {
+		return fmt.Errorf("invalid reflect.Value")
+	}
+	if !o.CanSet() {
+		return fmt.Errorf("field is not settable; ensure you pass an addressable value")
+	}
+
+	// allocate full pointer chain so multi-level pointers (**T, etc.) are handled safely
+	for o.Kind() == reflect.Ptr {
+		if o.IsNil() {
+			o.Set(reflect.New(o.Type().Elem()))
+		}
+		o = o.Elem()
+	}
+
 	switch o.Kind() {
 	case reflect.String:
 		o.SetString(v)
@@ -924,6 +945,12 @@ func ReflectObjectNewPtr(objType reflect.Type) interface{} {
 // If the input is not a slice or array, it returns 0 and false.
 func ReflectInterfaceSliceLen(slice interface{}) (int, bool) {
 	v := reflect.ValueOf(slice)
+
+	// handle nil input safely to avoid panic on Kind()
+	if !v.IsValid() {
+		return 0, false
+	}
+
 	if v.Kind() != reflect.Slice && v.Kind() != reflect.Array {
 		return 0, false
 	}

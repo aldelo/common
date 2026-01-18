@@ -358,6 +358,10 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 		if !v.IsValid() || !v.CanInterface() {
 			return "", false, nil
 		}
+		// avoid calling methods on nil pointers that implement Stringer/TextMarshaler
+		if v.Kind() == reflect.Ptr && v.IsNil() {
+			return "", false, nil
+		}
 		if tm, ok := v.Interface().(encoding.TextMarshaler); ok {
 			b, err := tm.MarshalText()
 			if err != nil {
@@ -844,6 +848,14 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 	}
 	if !o.CanSet() {
 		return fmt.Errorf("field is not settable; ensure you pass an addressable value")
+	}
+
+	// allocate and walk the entire pointer chain (**T, ***T, etc.) safely
+	for o.Kind() == reflect.Ptr {
+		if o.IsNil() {
+			o.Set(reflect.New(o.Type().Elem()))
+		}
+		o = o.Elem()
 	}
 
 	// allocate full pointer chain so multi-level pointers (**T, etc.) are handled safely

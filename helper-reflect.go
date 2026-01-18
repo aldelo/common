@@ -2,6 +2,7 @@ package helper
 
 import (
 	"database/sql"
+	"encoding"
 	"fmt"
 	"reflect"
 	"sync"
@@ -352,6 +353,37 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 		return "", true, fmt.Errorf("unexported or inaccessible field")
 	}
 
+	// common handler for TextMarshaler/Stringer (honors skipBlank)
+	marshalStringish := func(v reflect.Value) (string, bool, error) {
+		if !v.IsValid() || !v.CanInterface() {
+			return "", false, nil
+		}
+		if tm, ok := v.Interface().(encoding.TextMarshaler); ok {
+			b, err := tm.MarshalText()
+			if err != nil {
+				return "", true, err
+			}
+			s := string(b)
+			if skipBlank && LenTrim(s) == 0 {
+				return "", true, nil
+			}
+			return s, true, nil
+		}
+		if str, ok := v.Interface().(fmt.Stringer); ok {
+			s := str.String()
+			if skipBlank && LenTrim(s) == 0 {
+				return "", true, nil
+			}
+			return s, true, nil
+		}
+		return "", false, nil
+	}
+
+	// attempt early stringer/text-marshaler handling
+	if s, handled, err := marshalStringish(o); handled {
+		return s, false, err
+	}
+
 	buf := ""
 
 	switch o.Kind() {
@@ -458,6 +490,11 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 			if skipZero || skipBlank {
 				return "", true, nil
 			}
+		}
+
+		// stringer/text-marshaler support after deref
+		if s, handled, err := marshalStringish(o2); handled {
+			return s, false, err
 		}
 
 		switch f := o2.Interface().(type) {
@@ -673,7 +710,7 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 				}
 			}
 		default:
-			return "", false, fmt.Errorf("%s Unhandled [1]", o2.Type().Name())
+			return fmt.Sprintf("%v", o2.Interface()), false, nil
 		}
 	default:
 		switch f := o.Interface().(type) {
@@ -782,7 +819,7 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 				buf = ""
 			}
 		default:
-			return "", false, fmt.Errorf("%s Unhandled [2]", o.Type().Name())
+			return fmt.Sprintf("%v", o.Interface()), false, nil
 		}
 	}
 
@@ -856,6 +893,8 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 		if !o.OverflowUint(ui64) {
 			o.SetUint(ui64)
 		}
+	case reflect.Interface: // allow assigning into interface fields
+		o.Set(reflect.ValueOf(v))
 	case reflect.Ptr:
 		if o.IsZero() || o.IsNil() {
 			// create object

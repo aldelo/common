@@ -222,48 +222,55 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 		return nil
 	}
 
-	sliceObj := reflect.ValueOf(slice)
-	if !sliceObj.IsValid() {
+	v := reflect.ValueOf(slice)
+	wasPtr := false // track whether caller provided a pointer
+	if !v.IsValid() {
 		return nil
 	}
 
-	if sliceObj.Kind() == reflect.Ptr {
-		if sliceObj.IsNil() {
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
 			return nil
 		}
-		sliceObj = sliceObj.Elem()
+		wasPtr = true
+		v = v.Elem()
 	}
 
-	if sliceObj.Kind() != reflect.Slice {
+	if v.Kind() != reflect.Slice {
 		return nil
 	}
 
-	if sliceObj.Len() == 0 {
+	if v.Len() == 0 {
 		return slice
 	}
 
-	if removalIndex < 0 {
-		removalIndex = sliceObj.Len() - AbsInt(removalIndex)
+	idx := removalIndex // work on a local, normalized index
+	if idx < 0 {
+		idx = v.Len() - AbsInt(idx)
 
-		if removalIndex < 0 {
+		if idx < 0 {
 			return slice
 		}
 	}
 
-	if removalIndex > sliceObj.Len()-1 {
+	if idx > v.Len()-1 {
 		return slice
 	}
 
-	rm := sliceObj.Index(removalIndex)
-	last := sliceObj.Index(sliceObj.Len() - 1)
+	// swap target with last element using reflect.Swapper
+	swap := reflect.Swapper(v.Interface())
+	last := v.Len() - 1
+	swap(idx, last)
 
-	if rm.CanSet() {
-		rm.Set(last)
-	} else {
-		return slice
+	// trim the slice to drop the last element
+	v = v.Slice(0, last)
+
+	// if caller passed a pointer, write back the shortened slice
+	if wasPtr {
+		reflect.ValueOf(slice).Elem().Set(v)
 	}
 
-	return sliceObj.Slice(0, sliceObj.Len()-1).Interface()
+	return v.Interface()
 }
 
 // ================================================================================================================

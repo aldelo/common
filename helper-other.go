@@ -1,7 +1,9 @@
 package helper
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -9,7 +11,7 @@ import (
 )
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -260,27 +262,25 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 func ConsolePromptAndAnswer(prompt string, replyLowercase bool, autoTrim ...bool) string {
 	fmt.Print(prompt)
 
-	answer := ""
-
-	if _, e := fmt.Scanln(&answer); e != nil {
-		answer = ""
+	// use buffered line read to capture full input including spaces
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil {
 		fmt.Println()
-	} else {
-		answer = RightTrimLF(answer)
-
-		if replyLowercase {
-			answer = strings.ToLower(answer)
-		}
-
-		if len(autoTrim) > 0 {
-			if autoTrim[0] {
-				answer = Trim(answer)
-			}
-		}
-
-		fmt.Println()
+		return ""
 	}
 
+	answer = RightTrimLF(answer)
+
+	if replyLowercase {
+		answer = strings.ToLower(answer)
+	}
+
+	if len(autoTrim) > 0 && autoTrim[0] {
+		answer = Trim(answer)
+	}
+
+	fmt.Println()
 	return answer
 }
 
@@ -288,31 +288,29 @@ func ConsolePromptAndAnswer(prompt string, replyLowercase bool, autoTrim ...bool
 func ConsolePromptAndAnswerBool(prompt string, defaultTrue ...bool) bool {
 	fmt.Print(prompt)
 
-	answer := ""
-	result := false
 	defVal := false
-
-	if len(defaultTrue) > 0 {
-		if defaultTrue[0] {
-			defVal = true
-		}
+	if len(defaultTrue) > 0 && defaultTrue[0] {
+		defVal = true
 	}
 
-	if _, e := fmt.Scanln(&answer); e != nil {
+	// use buffered line read to capture full input including spaces
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil {
 		fmt.Println()
 		return defVal
-	} else {
-		answer = RightTrimLF(answer)
-
-		if LenTrim(answer) > 0 {
-			result, _ = ParseBool(answer)
-		} else {
-			result = defVal
-		}
-
-		fmt.Println()
 	}
 
+	answer = RightTrimLF(answer)
+
+	result := defVal
+	if LenTrim(answer) > 0 {
+		if parsed, ok := ParseBool(answer); ok {
+			result = parsed
+		}
+	}
+
+	fmt.Println()
 	return result
 }
 
@@ -320,27 +318,22 @@ func ConsolePromptAndAnswerBool(prompt string, defaultTrue ...bool) bool {
 func ConsolePromptAndAnswerInt(prompt string, preventNegative ...bool) int {
 	fmt.Print(prompt)
 
-	answer := ""
-	result := 0
-
-	if _, e := fmt.Scanln(&answer); e != nil {
+	// use buffered line read to capture full input including spaces
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil {
 		fmt.Println()
 		return 0
-	} else {
-		answer = RightTrimLF(answer)
-		result, _ = ParseInt32(answer)
-
-		if result < 0 {
-			if len(preventNegative) > 0 {
-				if preventNegative[0] {
-					result = 0
-				}
-			}
-		}
-
-		fmt.Println()
 	}
 
+	answer = RightTrimLF(answer)
+	result, _ := ParseInt32(answer)
+
+	if result < 0 && len(preventNegative) > 0 && preventNegative[0] {
+		result = 0
+	}
+
+	fmt.Println()
 	return result
 }
 
@@ -348,34 +341,30 @@ func ConsolePromptAndAnswerInt(prompt string, preventNegative ...bool) int {
 func ConsolePromptAndAnswerFloat64(prompt string, preventNegative ...bool) float64 {
 	fmt.Print(prompt)
 
-	answer := ""
-	result := float64(0)
-
-	if _, e := fmt.Scanln(&answer); e != nil {
+	// use buffered line read to capture full input including spaces
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil {
 		fmt.Println()
 		return 0
-	} else {
-		answer = RightTrimLF(answer)
-		result, _ = ParseFloat64(answer)
-
-		if result < 0 {
-			if len(preventNegative) > 0 {
-				if preventNegative[0] {
-					result = 0
-				}
-			}
-		}
-
-		fmt.Println()
 	}
 
+	answer = RightTrimLF(answer)
+	result, _ := ParseFloat64(answer)
+
+	if result < 0 && len(preventNegative) > 0 && preventNegative[0] {
+		result = 0
+	}
+
+	fmt.Println()
 	return result
 }
 
 // ErrorMessage find the error cause time, file, code line number and error message
 func ErrorMessage(err error) string {
+	// skip 2 frames to report the caller of ErrorMessage
+	_, file, line, _ := runtime.Caller(2)
 
-	_, file, line, _ := runtime.Caller(1)
 	indexFunc := func(file string) string {
 		backup := "/" + file
 		lastSlashIndex := strings.LastIndex(backup, "/")

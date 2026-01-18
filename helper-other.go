@@ -254,24 +254,19 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 		return returnAsCallerType(v) // keep caller type on empty slice
 	}
 
-	// normalize index using int64 arithmetic to avoid overflow/underflow and
-	// to remove dependency on AbsInt; negative values count from the end.
-	idx64 := int64(removalIndex)
-	len64 := int64(length)
-
-	if idx64 < 0 {
-		if -idx64 > len64 { // guard underflow for very negative indices
-			return returnAsCallerType(v) // keep caller type on OOB
+	// use overflow-safe int arithmetic for negative indices and bounds checks
+	idx := removalIndex
+	if idx < 0 {
+		idx = length + idx // negative indices count from the end; -1 => last
+		if idx < 0 {
+			return returnAsCallerType(v) // out of bounds (too negative), keep original type
 		}
-		idx64 = len64 + idx64
 	}
 
 	// bounds check after normalization
-	if idx64 < 0 || idx64 >= len64 {
+	if idx < 0 || idx >= length {
 		return returnAsCallerType(v) // keep caller type on OOB
 	}
-
-	idx := int(idx64)
 
 	// swap target with last element using reflect.Swapper
 	swap := reflect.Swapper(v.Interface())

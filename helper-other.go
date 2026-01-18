@@ -270,6 +270,16 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 // console helpers
 // ================================================================================================================
 
+// normalizeConsoleLine trims only trailing CR/LF so we keep intentional spaces in string prompts.
+func normalizeConsoleLine(s string) string {
+	return strings.TrimRight(s, "\r\n")
+}
+
+// normalizeConsoleInput trims trailing CR/LF and surrounding spaces for parsed inputs.
+func normalizeConsoleInput(s string) string {
+	return strings.TrimSpace(normalizeConsoleLine(s))
+}
+
 // ConsolePromptAndAnswer is a helper to prompt a message and then scan a response in console
 func ConsolePromptAndAnswer(prompt string, replyLowercase bool, autoTrim ...bool) string {
 	fmt.Print(prompt)
@@ -282,7 +292,7 @@ func ConsolePromptAndAnswer(prompt string, replyLowercase bool, autoTrim ...bool
 		return ""
 	}
 
-	answer = RightTrimLF(answer)
+	answer = normalizeConsoleLine(answer)
 
 	if replyLowercase {
 		answer = strings.ToLower(answer)
@@ -313,7 +323,7 @@ func ConsolePromptAndAnswerBool(prompt string, defaultTrue ...bool) bool {
 		return defVal
 	}
 
-	answer = RightTrimLF(answer)
+	answer = normalizeConsoleInput(answer)
 
 	result := defVal
 	if LenTrim(answer) > 0 {
@@ -338,7 +348,7 @@ func ConsolePromptAndAnswerInt(prompt string, preventNegative ...bool) int {
 		return 0
 	}
 
-	answer = RightTrimLF(answer)
+	answer = normalizeConsoleInput(answer)
 	result, _ := ParseInt32(answer)
 
 	if result < 0 && len(preventNegative) > 0 && preventNegative[0] {
@@ -361,7 +371,7 @@ func ConsolePromptAndAnswerFloat64(prompt string, preventNegative ...bool) float
 		return 0
 	}
 
-	answer = RightTrimLF(answer)
+	answer = normalizeConsoleInput(answer)
 	result, _ := ParseFloat64(answer)
 
 	if result < 0 && len(preventNegative) > 0 && preventNegative[0] {

@@ -240,22 +240,25 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 		return nil
 	}
 
-	if v.Len() == 0 {
+	length := v.Len()
+	if length == 0 {
 		return slice
 	}
 
-	idx := removalIndex // work on a local, normalized index
-	if idx < 0 {
-		idx = v.Len() - AbsInt(idx)
-
-		if idx < 0 {
-			return slice
-		}
+	// normalize index using int64 arithmetic to avoid overflow/underflow and
+	// to remove dependency on AbsInt; negative values count from the end.
+	idx64 := int64(removalIndex)
+	len64 := int64(length)
+	if idx64 < 0 {
+		idx64 = len64 + idx64
 	}
 
-	if idx > v.Len()-1 {
+	// bounds check after normalization
+	if idx64 < 0 || idx64 >= len64 {
 		return slice
 	}
+
+	idx := int(idx64)
 
 	// swap target with last element using reflect.Swapper
 	swap := reflect.Swapper(v.Interface())
@@ -294,7 +297,7 @@ func ConsolePromptAndAnswer(prompt string, replyLowercase bool, autoTrim ...bool
 	// use buffered line read to capture full input including spaces
 	reader := bufio.NewReader(os.Stdin)
 	answer, err := reader.ReadString('\n')
-	if err != nil {
+	if err != nil && len(answer) == 0 {
 		fmt.Println()
 		return ""
 	}
@@ -350,7 +353,7 @@ func ConsolePromptAndAnswerInt(prompt string, preventNegative ...bool) int {
 	// use buffered line read to capture full input including spaces
 	reader := bufio.NewReader(os.Stdin)
 	answer, err := reader.ReadString('\n')
-	if err != nil {
+	if err != nil && len(answer) == 0 {
 		fmt.Println()
 		return 0
 	}
@@ -373,7 +376,7 @@ func ConsolePromptAndAnswerFloat64(prompt string, preventNegative ...bool) float
 	// use buffered line read to capture full input including spaces
 	reader := bufio.NewReader(os.Stdin)
 	answer, err := reader.ReadString('\n')
-	if err != nil {
+	if err != nil && len(answer) == 0 {
 		fmt.Println()
 		return 0
 	}

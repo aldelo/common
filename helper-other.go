@@ -192,10 +192,6 @@ func SliceSeekElement(slice []interface{}, filterFunc func(input interface{}, fi
 		return nil
 	}
 
-	if len(filterParam) == 0 {
-		return nil
-	}
-
 	for _, v := range slice {
 		if filterFunc(v, filterParam...) {
 			// found
@@ -382,8 +378,8 @@ func ErrorMessage(err error) string {
 		return ""
 	}
 
-	// skip 2 frames to report the caller of ErrorMessage
-	_, file, line, ok := runtime.Caller(2)
+	// skip 1 frame to report the caller of ErrorMessage
+	_, file, line, ok := runtime.Caller(1)
 	if !ok {
 		file = "unknown"
 	}

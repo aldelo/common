@@ -717,6 +717,16 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 		default:
 			return fmt.Sprintf("%v", o2.Interface()), false, nil
 		}
+	case reflect.Interface:
+		// robust handling for interface-typed values without undefined identifiers or panics.
+		if o.IsNil() {
+			if skipZero || skipBlank {
+				return "", true, nil
+			}
+			return "", false, nil
+		}
+		// Recurse into the dynamic value to preserve all formatting/skip rules.
+		return ReflectValueToString(o.Elem(), boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
 	default:
 		switch f := o.Interface().(type) {
 		case sql.NullString:

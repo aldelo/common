@@ -67,11 +67,11 @@ func AbsDuration(d time.Duration) time.Duration {
 
 // AbsFloat64 returns absolute value of f
 func AbsFloat64(f float64) float64 {
-	if f < 0 {
-		return f * -1
-	} else {
+	// normalize -0 to +0 and keep NaN/Inf passthrough semantics
+	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return f
 	}
+	return math.Abs(f)
 }
 
 // IsInt32 tests if input string is integer (whole numbers 32 bits)

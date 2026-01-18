@@ -3,7 +3,6 @@ package helper
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"reflect"
 	"sync"
 	"time"
@@ -50,7 +49,6 @@ func ReflectTypeRegistryAdd(customStructObj interface{}, customFullTypeName ...s
 	}
 
 	typeName := o.Name()
-	log.Println(typeName)
 
 	if len(customFullTypeName) > 0 {
 		if LenTrim(customFullTypeName[0]) > 0 {
@@ -248,7 +246,13 @@ func GetStructFieldTagAndValues(input interface{}, tagName string, getDynamoDBAt
 
 		value := v.Field(i)
 
-		valueStr, _, _ := ReflectValueToString(value, "true", "false", false, false, "", false)
+		valueStr, skip, err := ReflectValueToString(value, "true", "false", false, false, "", false)
+		if err != nil {
+			return nil, fmt.Errorf("field %q value conversion failed: %w", field.Name, err)
+		}
+		if skip {
+			continue
+		}
 
 		// Get the value of the specified tag
 		if tagValue := Replace(field.Tag.Get(tagName), ",omitempty", ""); LenTrim(tagValue) > 0 && tagValue != "-" {
@@ -328,7 +332,7 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 	if !o.IsValid() {
 		return "", true, fmt.Errorf("invalid reflect.Value")
 	}
-	if !o.CanInterface() && o.Kind() != reflect.Ptr && o.Kind() != reflect.Struct {
+	if !o.CanInterface() {
 		return "", true, fmt.Errorf("unexported or inaccessible field")
 	}
 
@@ -1009,6 +1013,9 @@ func GetStructFieldValue(input interface{}, fieldName string) (string, error) {
 
 	// Handle pointer to struct
 	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return "", fmt.Errorf("Input Object is Nil Pointer")
+		}
 		v = v.Elem()
 		t = t.Elem()
 	}

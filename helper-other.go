@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -220,14 +221,29 @@ func SliceSeekElement(slice []interface{}, filterFunc func(input interface{}, fi
 //
 // if resultSlice is nil, then no slice remain
 func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interface{}) {
+	// protect against nil / invalid inputs before reflection
+	if slice == nil {
+		return nil
+	}
+
 	sliceObj := reflect.ValueOf(slice)
+	if !sliceObj.IsValid() {
+		return nil
+	}
 
 	if sliceObj.Kind() == reflect.Ptr {
+		if sliceObj.IsNil() {
+			return nil
+		}
 		sliceObj = sliceObj.Elem()
 	}
 
 	if sliceObj.Kind() != reflect.Slice {
 		return nil
+	}
+
+	if sliceObj.Len() == 0 {
+		return slice
 	}
 
 	if removalIndex < 0 {
@@ -362,23 +378,29 @@ func ConsolePromptAndAnswerFloat64(prompt string, preventNegative ...bool) float
 
 // ErrorMessage find the error cause time, file, code line number and error message
 func ErrorMessage(err error) string {
-	// skip 2 frames to report the caller of ErrorMessage
-	_, file, line, _ := runtime.Caller(2)
-
-	indexFunc := func(file string) string {
-		backup := "/" + file
-		lastSlashIndex := strings.LastIndex(backup, "/")
-		if lastSlashIndex < 0 {
-			return backup
-		}
-		secondLastSlashIndex := strings.LastIndex(backup[:lastSlashIndex], "/")
-		if secondLastSlashIndex < 0 {
-			return backup[lastSlashIndex+1:]
-		}
-		return backup[secondLastSlashIndex+1:]
+	if err == nil {
+		return ""
 	}
 
-	logmessage := fmt.Sprintf("%v %v:%v:%v", time.Now().UTC().Format("2006-01-02 15:04:05.000"), indexFunc(file), line, err.Error())
+	// skip 2 frames to report the caller of ErrorMessage
+	_, file, line, ok := runtime.Caller(2)
+	if !ok {
+		file = "unknown"
+	}
+
+	// cross-platform last-two-segment path handling and normalized separator
+	dir := filepath.Base(filepath.Dir(file))
+	base := filepath.Base(file)
+	location := base
+	if dir != "" && dir != "." && dir != string(os.PathSeparator) {
+		location = filepath.ToSlash(filepath.Join(dir, base))
+	}
+
+	logmessage := fmt.Sprintf("%v %v:%v:%v",
+		time.Now().UTC().Format("2006-01-02 15:04:05.000"),
+		location,
+		line,
+		err.Error())
 
 	return logmessage
 }

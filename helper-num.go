@@ -114,10 +114,16 @@ func IsFloat64(s string) bool {
 // IsBoolType tests if input string is boolean
 func IsBoolType(s string) bool {
 	s = strings.TrimSpace(s) // trim surrounding whitespace
-	x := []string{"yes", "on", "running", "started"}
 
-	if StringSliceContains(&x, strings.ToLower(s)) {
+	truthy := []string{"yes", "on", "running", "started", "y", "1"}
+	falsy := []string{"no", "off", "stopped", "n", "0"}
+
+	ls := strings.ToLower(s)
+	switch {
+	case StringSliceContains(&truthy, ls):
 		s = "true"
+	case StringSliceContains(&falsy, ls):
+		s = "false"
 	}
 
 	if _, err := strconv.ParseBool(s); err != nil {
@@ -203,10 +209,15 @@ func ParseBool(s string) (bool, bool) {
 	var result bool
 	var err error
 
-	x := []string{"yes", "on", "running", "started", "y", "1"}
+	xTruthy := []string{"yes", "on", "running", "started", "y", "1"}
+	xFalsy := []string{"no", "off", "stopped", "n", "0"}
 
-	if StringSliceContains(&x, strings.ToLower(s)) {
+	ls := strings.ToLower(s)
+	switch {
+	case StringSliceContains(&xTruthy, ls):
 		s = "true"
+	case StringSliceContains(&xFalsy, ls):
+		s = "false"
 	}
 
 	if result, err = strconv.ParseBool(s); err != nil {
@@ -218,13 +229,16 @@ func ParseBool(s string) (bool, bool) {
 
 // ExponentialToNumber converts exponential representation of a number into actual number equivalent
 func ExponentialToNumber(exp string) string {
-	if strings.Contains(strings.ToLower(exp), "e") { // simpler contains check
+	exp = strings.TrimSpace(exp) // accept inputs with surrounding whitespace
+
+	if strings.ContainsAny(exp, "eE") { // cheaper check for exponent marker
 		v, err := strconv.ParseFloat(exp, 64)
 		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) { // preserve original on error/NaN/Inf
 			return exp
 		}
 		return strconv.FormatFloat(v, 'f', -1, 64)
 	}
+
 	return exp
 }
 

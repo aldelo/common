@@ -236,13 +236,22 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 		v = v.Elem()
 	}
 
+	// helper to return using the caller's original type shape
+	// preserve pointer inputs instead of downgrading to value slice
+	returnAsCallerType := func(current reflect.Value) interface{} {
+		if wasPtr {
+			return slice
+		}
+		return current.Interface()
+	}
+
 	if v.Kind() != reflect.Slice {
 		return slice // return original input instead of nil to avoid silent unexpected nil
 	}
 
 	length := v.Len()
 	if length == 0 {
-		return v.Interface() // return empty slice value consistently
+		return returnAsCallerType(v) // keep caller type on empty slice
 	}
 
 	// normalize index using int64 arithmetic to avoid overflow/underflow and
@@ -252,14 +261,14 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 
 	if idx64 < 0 {
 		if -idx64 > len64 { // guard underflow for very negative indices
-			return v.Interface()
+			return returnAsCallerType(v) // keep caller type on OOB
 		}
 		idx64 = len64 + idx64
 	}
 
 	// bounds check after normalization
 	if idx64 < 0 || idx64 >= len64 {
-		return v.Interface() // always return slice value (consistent type)
+		return returnAsCallerType(v) // keep caller type on OOB
 	}
 
 	idx := int(idx64)
@@ -277,7 +286,7 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 		reflect.ValueOf(slice).Elem().Set(v)
 	}
 
-	return v.Interface()
+	return returnAsCallerType(v) // return matches caller type (pointer or value)
 }
 
 // ================================================================================================================

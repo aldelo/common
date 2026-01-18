@@ -85,7 +85,7 @@ func IsInt32(s string) bool {
 	return true
 }
 
-// IsInt64 tests if input string is big integer (whole number greater 64 bits)
+// IsInt64 tests if input string is a signed 64-bit integer.
 func IsInt64(s string) bool {
 	if _, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err != nil {
 		return false
@@ -155,7 +155,7 @@ func ParseInt32(s string) (int, bool) {
 	return int(result), true
 }
 
-// ParseInt64 tests and parses if input string is big integer (whole number greater 64 bits)
+// ParseInt64 tests and parses if input string is a signed 64-bit integer.
 func ParseInt64(s string) (int64, bool) {
 	if strings.Index(s, ".") >= 0 {
 		s = SplitString(s, ".", 0)
@@ -169,7 +169,7 @@ func ParseInt64(s string) (int64, bool) {
 	return result, true
 }
 
-// ParseUint64 tests and parses if input string is big integer (whole number greater 64 bits)
+// ParseUint64 tests and parses if input string is an unsigned 64-bit integer.
 func ParseUint64(s string) (uint64, bool) {
 	if strings.Index(s, ".") >= 0 {
 		s = SplitString(s, ".", 0)

@@ -153,15 +153,15 @@ func IntSliceContains(intSlice *[]int, value int) bool {
 func StringSliceContains(strSlice *[]string, value string) bool {
 	if strSlice == nil {
 		return false
-	} else {
-		for _, v := range *strSlice {
-			if strings.ToLower(v) == strings.ToLower(value) {
-				return true
-			}
-		}
-
-		return false
 	}
+
+	for _, v := range *strSlice {
+		if strings.EqualFold(v, value) { // CHANGED: use Unicode-safe, allocation-free compare
+			return true
+		}
+	}
+
+	return false
 }
 
 // StringSliceExtractUnique returns unique string slice elements
@@ -237,25 +237,29 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 	}
 
 	if v.Kind() != reflect.Slice {
-		return nil
+		return slice // return original input instead of nil to avoid silent unexpected nil
 	}
 
 	length := v.Len()
 	if length == 0 {
-		return slice
+		return v.Interface() // return empty slice value consistently
 	}
 
 	// normalize index using int64 arithmetic to avoid overflow/underflow and
 	// to remove dependency on AbsInt; negative values count from the end.
 	idx64 := int64(removalIndex)
 	len64 := int64(length)
+
 	if idx64 < 0 {
+		if -idx64 > len64 { // guard underflow for very negative indices
+			return v.Interface()
+		}
 		idx64 = len64 + idx64
 	}
 
 	// bounds check after normalization
 	if idx64 < 0 || idx64 >= len64 {
-		return slice
+		return v.Interface() // always return slice value (consistent type)
 	}
 
 	idx := int(idx64)

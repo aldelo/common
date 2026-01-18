@@ -597,6 +597,81 @@ func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, sk
 					}
 				}
 			}
+		case sql.NullString: // added pointer support for nullable SQL types
+			buf = FromNullString(f)
+			if skipBlank && LenTrim(buf) == 0 {
+				return "", true, nil
+			}
+		case sql.NullBool: // added pointer support for nullable SQL types
+			if FromNullBool(f) {
+				if len(boolTrue) == 0 {
+					buf = "true"
+				} else {
+					buf = Trim(boolTrue)
+				}
+			} else {
+				if skipZero {
+					return "", true, nil
+				} else {
+					if len(boolFalse) == 0 {
+						buf = "false"
+					} else {
+						if Trim(boolTrue) == Trim(boolFalse) {
+							buf = "false"
+						} else {
+							buf = Trim(boolFalse)
+						}
+					}
+				}
+			}
+		case sql.NullFloat64: // added pointer support for nullable SQL types
+			f64 := FromNullFloat64(f)
+			if skipZero && f64 == 0.00 {
+				return "", true, nil
+			} else {
+				if zeroBlank && f64 == 0.00 {
+					buf = ""
+				} else {
+					buf = FloatToString(f64)
+				}
+			}
+		case sql.NullInt32: // added pointer support for nullable SQL types
+			i32 := FromNullInt(f)
+			if skipZero && i32 == 0 {
+				return "", true, nil
+			} else {
+				if zeroBlank && i32 == 0 {
+					buf = ""
+				} else {
+					buf = Itoa(i32)
+				}
+			}
+		case sql.NullInt64: // added pointer support for nullable SQL types
+			i64 := FromNullInt64(f)
+			if skipZero && i64 == 0 {
+				return "", true, nil
+			} else {
+				if zeroBlank && i64 == 0 {
+					buf = ""
+				} else {
+					buf = Int64ToString(i64)
+				}
+			}
+		case sql.NullTime: // added pointer support for nullable SQL types
+			t := FromNullTime(f)
+			if skipZero && t.IsZero() {
+				return "", true, nil
+			} else {
+				if LenTrim(timeFormat) == 0 {
+					buf = FormatDateTime(t)
+				} else {
+					if zeroBlank && t.IsZero() {
+						buf = ""
+					} else {
+						buf = t.Format(timeFormat)
+					}
+				}
+			}
 		default:
 			return "", false, fmt.Errorf("%s Unhandled [1]", o2.Type().Name())
 		}
@@ -844,8 +919,8 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 			b, _ := ParseBool(v)
 			o2.SetBool(b)
 		case time.Time:
-			if LenTrim(timeFormat) == 0 {
-				o2.Set(reflect.ValueOf(ParseDate(v)))
+			if LenTrim(timeFormat) == 0 { // preserve time component for pointer time.Time
+				o2.Set(reflect.ValueOf(ParseDateTime(v)))
 			} else {
 				o2.Set(reflect.ValueOf(ParseDateTimeCustom(v, timeFormat)))
 			}

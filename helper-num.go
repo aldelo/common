@@ -136,14 +136,15 @@ func IsBoolType(s string) bool {
 
 // ParseInt32 tests and parses if input string is integer (whole numbers 32 bits)
 func ParseInt32(s string) (int, bool) {
-	if strings.Index(s, ".") >= 0 {
-		s = SplitString(s, ".", 0)
+	s = strings.TrimSpace(s)
+
+	// reject non-integer formats instead of truncating decimals/exponents
+	if strings.ContainsAny(s, ".eE") {
+		return 0, false
 	}
 
-	var result int64
-	var err error
-
-	if result, err = strconv.ParseInt(strings.TrimSpace(s), 10, 32); err != nil {
+	result, err := strconv.ParseInt(s, 10, 32)
+	if err != nil {
 		return 0, false
 	}
 
@@ -157,11 +158,14 @@ func ParseInt32(s string) (int, bool) {
 
 // ParseInt64 tests and parses if input string is a signed 64-bit integer.
 func ParseInt64(s string) (int64, bool) {
-	if strings.Index(s, ".") >= 0 {
-		s = SplitString(s, ".", 0)
+	s = strings.TrimSpace(s)
+
+	// reject non-integer formats instead of truncating decimals/exponents
+	if strings.ContainsAny(s, ".eE") {
+		return 0, false
 	}
 
-	result, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	result, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return 0, false
 	}
@@ -171,11 +175,14 @@ func ParseInt64(s string) (int64, bool) {
 
 // ParseUint64 tests and parses if input string is an unsigned 64-bit integer.
 func ParseUint64(s string) (uint64, bool) {
-	if strings.Index(s, ".") >= 0 {
-		s = SplitString(s, ".", 0)
+	s = strings.TrimSpace(s)
+
+	// reject non-integer formats instead of truncating decimals/exponents
+	if strings.ContainsAny(s, ".eE") {
+		return 0, false
 	}
 
-	result, err := strconv.ParseUint(strings.TrimSpace(s), 10, 64)
+	result, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
 		return 0, false
 	}

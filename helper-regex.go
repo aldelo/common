@@ -37,8 +37,8 @@ func RegexReplaceSubString(source string, subStringFrom string, subStringTo stri
 	fromEsc := regexp.QuoteMeta(subStringFrom)
 	toEsc := regexp.QuoteMeta(subStringTo)
 
-	// use non-greedy match to avoid over-consuming text
-	pattern := ci + fromEsc + "(.*?)" + toEsc
+	// capture delimiters and use dot-all so matches can span newlines
+	pattern := ci + "(" + fromEsc + ")(?s)(.*?)(" + toEsc + ")"
 
 	// handle compile errors instead of panicking
 	regE, err := regexp.Compile(pattern)
@@ -46,11 +46,12 @@ func RegexReplaceSubString(source string, subStringFrom string, subStringTo stri
 		return source
 	}
 
-	// short-circuit if no match; clearer intent
-	if !regE.MatchString(source) {
-		return source
-	}
-
-	// replace all matched spans directly via regex
-	return regE.ReplaceAllString(source, replaceWith)
+	// preserve delimiters and treat replaceWith literally (no $ expansion)
+	return regE.ReplaceAllStringFunc(source, func(segment string) string {
+		parts := regE.FindStringSubmatch(segment)
+		if len(parts) != 4 {
+			return segment
+		}
+		return parts[1] + replaceWith + parts[3]
+	})
 }

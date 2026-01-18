@@ -913,19 +913,24 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 		}
 		o.SetUint(ui64)
 	case reflect.Interface: // allow assigning into interface fields
-		o.Set(reflect.ValueOf(v))
-	case reflect.Ptr:
-		if o.IsZero() || o.IsNil() {
-			// create object
-			baseType, _, _ := DerefPointersZero(o)
-			o.Set(reflect.New(baseType.Type()))
-		}
-
-		o2 := o.Elem()
-
-		if o.IsZero() {
+		// prevent panic on non-empty interfaces by checking assignability first
+		val := reflect.ValueOf(v)
+		if val.Type().AssignableTo(o.Type()) {
+			o.Set(val)
 			return nil
 		}
+		// empty interface (interface{}) is always safe; typed interfaces must be compatible
+		if o.Type().NumMethod() == 0 {
+			o.Set(val)
+			return nil
+		}
+		return fmt.Errorf("value of type %T is not assignable to interface %v", v, o.Type())
+	case reflect.Ptr:
+		// robust unsigned handling with overflow/error propagation
+		if o.IsNil() {
+			o.Set(reflect.New(o.Type().Elem()))
+		}
+		o2 := o.Elem()
 
 		switch o2.Interface().(type) {
 		case int:
@@ -992,13 +997,23 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 			}
 			o2.SetFloat(f64)
 		case uint:
-			if !o2.OverflowUint(StrToUint64(v)) {
-				o2.SetUint(StrToUint64(v))
+			ui64, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				return fmt.Errorf("ptr uint parse failed: %w", err)
 			}
+			if o2.OverflowUint(ui64) {
+				return fmt.Errorf("ptr uint overflow for %q", v)
+			}
+			o2.SetUint(ui64)
 		case uint64:
-			if !o2.OverflowUint(StrToUint64(v)) {
-				o2.SetUint(StrToUint64(v))
+			ui64, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				return fmt.Errorf("ptr uint64 parse failed: %w", err)
 			}
+			if o2.OverflowUint(ui64) {
+				return fmt.Errorf("ptr uint64 overflow for %q", v)
+			}
+			o2.SetUint(ui64)
 		case string:
 			o2.SetString(v)
 		case bool:

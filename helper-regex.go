@@ -18,6 +18,7 @@ package helper
 
 import (
 	"regexp"
+	"strings"
 )
 
 // RegexReplaceSubString will search for substring between subStringFrom and subStringTo, replace with the replaceWith string, and optionally case insensitive or not
@@ -37,8 +38,8 @@ func RegexReplaceSubString(source string, subStringFrom string, subStringTo stri
 	fromEsc := regexp.QuoteMeta(subStringFrom)
 	toEsc := regexp.QuoteMeta(subStringTo)
 
-	// capture delimiters and use dot-all so matches can span newlines
-	pattern := ci + "(" + fromEsc + ")(?s)(.*?)(" + toEsc + ")"
+	// scope dot-all to the middle only and avoid later re-matches
+	pattern := ci + "(" + fromEsc + ")(?s:.*?)(" + toEsc + ")"
 
 	// handle compile errors instead of panicking
 	regE, err := regexp.Compile(pattern)
@@ -46,12 +47,9 @@ func RegexReplaceSubString(source string, subStringFrom string, subStringTo stri
 		return source
 	}
 
-	// preserve delimiters and treat replaceWith literally (no $ expansion)
-	return regE.ReplaceAllStringFunc(source, func(segment string) string {
-		parts := regE.FindStringSubmatch(segment)
-		if len(parts) != 4 {
-			return segment
-		}
-		return parts[1] + replaceWith + parts[3]
-	})
+	// build a literal-safe replacement (escape $ and \ so they are not treated as backrefs)
+	literalReplace := strings.ReplaceAll(strings.ReplaceAll(replaceWith, `\`, `\\`), "$", "$$")
+
+	// single-pass replace without re-running the regex per match
+	return regE.ReplaceAllString(source, "${1}"+literalReplace+"${2}")
 }

@@ -224,6 +224,7 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 
 	v := reflect.ValueOf(slice)
 	wasPtr := false // track whether caller provided a pointer
+
 	if !v.IsValid() {
 		return nil
 	}
@@ -232,17 +233,18 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 		if v.IsNil() {
 			return nil
 		}
+
 		wasPtr = true
 		v = v.Elem()
-	}
 
-	// helper to return using the caller's original type shape
-	// preserve pointer inputs instead of downgrading to value slice
-	returnAsCallerType := func(current reflect.Value) interface{} {
-		if wasPtr {
+		if !v.IsValid() {
+			return nil
+		}
+
+		// protect against unsettable pointee to avoid panic
+		if !v.CanSet() {
 			return slice
 		}
-		return current.Interface()
 	}
 
 	if v.Kind() != reflect.Slice {
@@ -251,37 +253,41 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 
 	length := v.Len()
 	if length == 0 {
-		return returnAsCallerType(v) // keep caller type on empty slice
+		// honor doc by returning a nil slice shape
+		zero := reflect.Zero(v.Type())
+		v.Set(zero)
+		if wasPtr {
+			return slice
+		}
+		return zero.Interface()
 	}
 
-	// use overflow-safe int arithmetic for negative indices and bounds checks
+	// normalize index (supports negative indices)
 	idx := removalIndex
 	if idx < 0 {
-		idx = length + idx // negative indices count from the end; -1 => last
-		if idx < 0 {
-			return returnAsCallerType(v) // out of bounds (too negative), keep original type
-		}
+		idx = length + idx
 	}
-
-	// bounds check after normalization
 	if idx < 0 || idx >= length {
-		return returnAsCallerType(v) // keep caller type on OOB
+		return slice // out of bounds, leave unchanged
 	}
 
-	// swap target with last element using reflect.Swapper
-	swap := reflect.Swapper(v.Interface())
-	last := v.Len() - 1
-	swap(idx, last)
+	last := length - 1
+	if idx != last {
+		swap := reflect.Swapper(v.Interface())
+		swap(idx, last)
+	}
 
-	// trim the slice to drop the last element
-	v = v.Slice(0, last)
+	// set to nil when last element removed; otherwise trim
+	if last == 0 {
+		v.Set(reflect.Zero(v.Type()))
+	} else {
+		v.Set(v.Slice(0, last))
+	}
 
-	// if caller passed a pointer, write back the shortened slice
 	if wasPtr {
-		reflect.ValueOf(slice).Elem().Set(v)
+		return slice // pointer already updated
 	}
-
-	return returnAsCallerType(v) // return matches caller type (pointer or value)
+	return v.Interface()
 }
 
 // ================================================================================================================

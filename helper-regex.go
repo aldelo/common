@@ -1,7 +1,7 @@
 package helper
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,28 +18,39 @@ package helper
 
 import (
 	"regexp"
-	"strings"
 )
 
 // RegexReplaceSubString will search for substring between subStringFrom and subStringTo, replace with the replaceWith string, and optionally case insensitive or not
 func RegexReplaceSubString(source string, subStringFrom string, subStringTo string, replaceWith string, caseInsensitive bool) string {
+	// guard empty delimiters to avoid surprising matches
+	if subStringFrom == "" || subStringTo == "" {
+		return source
+	}
+
 	// setup regex
 	ci := ""
-
 	if caseInsensitive {
 		ci = "(?i)"
 	}
 
-	regE := regexp.MustCompile(ci + subStringFrom + "(.*)" + subStringTo)
+	// safely escape user input to avoid regex injection / invalid patterns
+	fromEsc := regexp.QuoteMeta(subStringFrom)
+	toEsc := regexp.QuoteMeta(subStringTo)
 
-	// find sub match
-	m := regE.FindStringSubmatch(source)
+	// use non-greedy match to avoid over-consuming text
+	pattern := ci + fromEsc + "(.*?)" + toEsc
 
-	if len(m) >= 1 {
-		// found one or more match, use the first found only
-		return strings.ReplaceAll(source, m[0], replaceWith)
-	} else {
-		// no match found, return source as is
+	// handle compile errors instead of panicking
+	regE, err := regexp.Compile(pattern)
+	if err != nil {
 		return source
 	}
+
+	// short-circuit if no match; clearer intent
+	if !regE.MatchString(source) {
+		return source
+	}
+
+	// replace all matched spans directly via regex
+	return regE.ReplaceAllString(source, replaceWith)
 }

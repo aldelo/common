@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"sync"
 	"time"
 )
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +28,10 @@ import (
 // ================================================================================================================
 // Custom Type Registry
 // ================================================================================================================
-var customTypeRegistry map[string]reflect.Type
+var (
+	customTypeRegistry   map[string]reflect.Type
+	customTypeRegistryMu sync.RWMutex // mutex for concurrent access
+)
 
 // ReflectTypeRegistryAdd will accept a custom struct object, and add its type into custom type registry,
 // if customFullTypeName is not specified, the type name is inferred from the type itself,
@@ -38,11 +42,9 @@ func ReflectTypeRegistryAdd(customStructObj interface{}, customFullTypeName ...s
 	}
 
 	o := reflect.TypeOf(customStructObj)
-
 	if o.Kind() == reflect.Ptr {
 		o = o.Elem()
 	}
-
 	if o.Kind() != reflect.Struct {
 		return false
 	}
@@ -56,6 +58,9 @@ func ReflectTypeRegistryAdd(customStructObj interface{}, customFullTypeName ...s
 		}
 	}
 
+	customTypeRegistryMu.Lock()
+	defer customTypeRegistryMu.Unlock()
+
 	if customTypeRegistry == nil {
 		customTypeRegistry = make(map[string]reflect.Type)
 	}
@@ -66,6 +71,9 @@ func ReflectTypeRegistryAdd(customStructObj interface{}, customFullTypeName ...s
 
 // ReflectTypeRegistryRemove will remove a pre-registered custom type from type registry for the given type name
 func ReflectTypeRegistryRemove(customFullTypeName string) {
+	customTypeRegistryMu.Lock()
+	defer customTypeRegistryMu.Unlock()
+
 	if customTypeRegistry != nil {
 		delete(customTypeRegistry, customFullTypeName)
 	}
@@ -73,6 +81,9 @@ func ReflectTypeRegistryRemove(customFullTypeName string) {
 
 // ReflectTypeRegistryRemoveAll will clear all previously registered custom types from type registry
 func ReflectTypeRegistryRemoveAll() {
+	customTypeRegistryMu.Lock()
+	defer customTypeRegistryMu.Unlock()
+
 	if customTypeRegistry != nil {
 		customTypeRegistry = make(map[string]reflect.Type)
 	}
@@ -80,6 +91,9 @@ func ReflectTypeRegistryRemoveAll() {
 
 // ReflectTypeRegistryCount returns count of custom types registered in the type registry
 func ReflectTypeRegistryCount() int {
+	customTypeRegistryMu.RLock()
+	defer customTypeRegistryMu.RUnlock()
+
 	if customTypeRegistry != nil {
 		return len(customTypeRegistry)
 	} else {
@@ -89,6 +103,9 @@ func ReflectTypeRegistryCount() int {
 
 // ReflectTypeRegistryGet returns a previously registered custom type in the type registry, based on the given type name string
 func ReflectTypeRegistryGet(customFullTypeName string) reflect.Type {
+	customTypeRegistryMu.RLock()
+	defer customTypeRegistryMu.RUnlock()
+
 	if customTypeRegistry != nil {
 		if t, ok := customTypeRegistry[customFullTypeName]; ok {
 			return t
@@ -115,9 +132,16 @@ func ReflectTypeRegistryGet(customFullTypeName string) reflect.Type {
 func GetStructTagValueByObject(structObj interface{}, structFieldName string, structTagName string) (notFound bool, tagValue string, t reflect.Type) {
 	// get reflect type from struct object
 	t = reflect.TypeOf(structObj)
-
 	if t == nil {
 		// no reflect type found
+		return true, "", nil
+	}
+
+	// dereference pointer-to-struct inputs
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
 		return true, "", nil
 	}
 
@@ -200,6 +224,9 @@ func GetStructFieldTagAndValues(input interface{}, tagName string, getDynamoDBAt
 
 	// Ensure the input is a struct or a pointer to a struct
 	if t.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil, fmt.Errorf("Struct Input Object is Required (Currently Nil Pointer)")
+		}
 		v = v.Elem()
 		t = t.Elem()
 	}
@@ -213,6 +240,12 @@ func GetStructFieldTagAndValues(input interface{}, tagName string, getDynamoDBAt
 	// Iterate over the fields of the struct
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
+
+		// skip unexported fields to avoid reflect panics and to respect visibility
+		if field.PkgPath != "" { // unexported
+			continue
+		}
+
 		value := v.Field(i)
 
 		valueStr, _, _ := ReflectValueToString(value, "true", "false", false, false, "", false)
@@ -249,7 +282,8 @@ func GetStructFieldTagAndValues(input interface{}, tagName string, getDynamoDBAt
 func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) (resultSlice []reflect.Value, notFound bool) {
 	method := o.MethodByName(methodName)
 
-	if method.Kind() == reflect.Invalid {
+	// guard invalid method to avoid panic on Kind()
+	if !method.IsValid() {
 		return nil, true
 	}
 
@@ -290,6 +324,14 @@ func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) 
 //	05, 5 = second
 //	PM pm = AM PM
 func ReflectValueToString(o reflect.Value, boolTrue string, boolFalse string, skipBlank bool, skipZero bool, timeFormat string, zeroBlank bool) (valueStr string, skip bool, err error) {
+	// handle invalid values and unexported fields safely
+	if !o.IsValid() {
+		return "", true, fmt.Errorf("invalid reflect.Value")
+	}
+	if !o.CanInterface() && o.Kind() != reflect.Ptr && o.Kind() != reflect.Struct {
+		return "", true, fmt.Errorf("unexported or inaccessible field")
+	}
+
 	buf := ""
 
 	switch o.Kind() {
@@ -1011,7 +1053,12 @@ func ConvertStructToSlice(input interface{}) (interface{}, error) {
 
 	// Handle pointer to struct
 	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil, fmt.Errorf("Struct Input is Nil Pointer")
+		}
 		v2 = v.Elem()
+	} else {
+		v2 = v // allow direct struct values
 	}
 
 	// Ensure the input is a struct
@@ -1041,13 +1088,20 @@ func ReflectSetStringSliceToField(target interface{}, fieldName string, values [
 	// Get the reflect.Value and reflect.Type of the target
 	v := reflect.ValueOf(target)
 
-	// Ensure the target is a pointer to a struct
-	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("Target Expects a Pointer to a Struct, or Struct Itself")
+	// allow addressable struct values or pointers; clearer errors
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return fmt.Errorf("Target Pointer is Nil")
+		}
+		v = v.Elem()
+	} else if v.Kind() == reflect.Struct {
+		if !v.CanAddr() {
+			return fmt.Errorf("Target Struct Not Addressable; pass a pointer instead")
+		}
+	} else {
+		return fmt.Errorf("Target Expects a Pointer to a Struct or an Addressable Struct Value")
 	}
 
-	// Get the underlying struct
-	v = v.Elem()
 	field := v.FieldByName(fieldName)
 
 	// Check if the field exists

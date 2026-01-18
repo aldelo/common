@@ -5,6 +5,7 @@ import (
 	"encoding"
 	"fmt"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -858,53 +859,59 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 		o = o.Elem()
 	}
 
-	// allocate full pointer chain so multi-level pointers (**T, etc.) are handled safely
-	for o.Kind() == reflect.Ptr {
-		if o.IsNil() {
-			o.Set(reflect.New(o.Type().Elem()))
+	// honor encoding.TextUnmarshaler for custom types
+	tryTextUnmarshal := func(target reflect.Value) (bool, error) {
+		if !target.CanAddr() {
+			return false, nil
 		}
-		o = o.Elem()
+		if tu, ok := target.Addr().Interface().(encoding.TextUnmarshaler); ok {
+			if err := tu.UnmarshalText([]byte(v)); err != nil {
+				return true, err
+			}
+			return true, nil
+		}
+		return false, nil
+	}
+	if handled, err := tryTextUnmarshal(o); handled {
+		return err
 	}
 
 	switch o.Kind() {
 	case reflect.String:
 		o.SetString(v)
 	case reflect.Bool:
-		b, _ := ParseBool(v)
-		o.SetBool(b)
-	case reflect.Int8:
-		fallthrough
-	case reflect.Int16:
-		fallthrough
-	case reflect.Int:
-		fallthrough
-	case reflect.Int32:
-		fallthrough
-	case reflect.Int64:
-		i64, _ := ParseInt64(v)
-		if !o.OverflowInt(i64) {
+		if b, ok := ParseBool(v); ok {
+			o.SetBool(b)
+		} else {
+			return fmt.Errorf("bool parse failed for %q", v)
+		}
+	case reflect.Int8, reflect.Int16, reflect.Int, reflect.Int32, reflect.Int64:
+		if i64, ok := ParseInt64(v); ok {
+			if o.OverflowInt(i64) {
+				return fmt.Errorf("int overflow for %q", v)
+			}
 			o.SetInt(i64)
+		} else {
+			return fmt.Errorf("int parse failed for %q", v)
 		}
-	case reflect.Float32:
-		fallthrough
-	case reflect.Float64:
-		f64, _ := ParseFloat64(v)
-		if !o.OverflowFloat(f64) {
+	case reflect.Float32, reflect.Float64:
+		if f64, ok := ParseFloat64(v); ok {
+			if o.OverflowFloat(f64) {
+				return fmt.Errorf("float overflow for %q", v)
+			}
 			o.SetFloat(f64)
+		} else {
+			return fmt.Errorf("float parse failed for %q", v)
 		}
-	case reflect.Uint8:
-		fallthrough
-	case reflect.Uint16:
-		fallthrough
-	case reflect.Uint:
-		fallthrough
-	case reflect.Uint32:
-		fallthrough
-	case reflect.Uint64:
-		ui64 := StrToUint64(v)
-		if !o.OverflowUint(ui64) {
-			o.SetUint(ui64)
+	case reflect.Uint8, reflect.Uint16, reflect.Uint, reflect.Uint32, reflect.Uint64:
+		ui64, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("uint parse failed: %w", err)
 		}
+		if o.OverflowUint(ui64) {
+			return fmt.Errorf("uint overflow for %q", v)
+		}
+		o.SetUint(ui64)
 	case reflect.Interface: // allow assigning into interface fields
 		o.Set(reflect.ValueOf(v))
 	case reflect.Ptr:
@@ -922,40 +929,68 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 
 		switch o2.Interface().(type) {
 		case int:
-			i64, _ := ParseInt64(v)
-			if !o2.OverflowInt(i64) {
-				o2.SetInt(i64)
+			i64, ok := ParseInt64(v)
+			if !ok {
+				return fmt.Errorf("ptr int parse failed for %q", v)
 			}
+			if o2.OverflowInt(i64) {
+				return fmt.Errorf("ptr int overflow for %q", v)
+			}
+			o2.SetInt(i64)
 		case int8:
-			i64, _ := ParseInt64(v)
-			if !o2.OverflowInt(i64) {
-				o2.SetInt(i64)
+			i64, ok := ParseInt64(v)
+			if !ok {
+				return fmt.Errorf("ptr int8 parse failed for %q", v)
 			}
+			if o2.OverflowInt(i64) {
+				return fmt.Errorf("ptr int8 overflow for %q", v)
+			}
+			o2.SetInt(i64)
 		case int16:
-			i64, _ := ParseInt64(v)
-			if !o2.OverflowInt(i64) {
-				o2.SetInt(i64)
+			i64, ok := ParseInt64(v)
+			if !ok {
+				return fmt.Errorf("ptr int16 parse failed for %q", v)
 			}
+			if o2.OverflowInt(i64) {
+				return fmt.Errorf("ptr int16 overflow for %q", v)
+			}
+			o2.SetInt(i64)
 		case int32:
-			i64, _ := ParseInt64(v)
-			if !o2.OverflowInt(i64) {
-				o2.SetInt(i64)
+			i64, ok := ParseInt64(v)
+			if !ok {
+				return fmt.Errorf("ptr int32 parse failed for %q", v)
 			}
+			if o2.OverflowInt(i64) {
+				return fmt.Errorf("ptr int32 overflow for %q", v)
+			}
+			o2.SetInt(i64)
 		case int64:
-			i64, _ := ParseInt64(v)
-			if !o2.OverflowInt(i64) {
-				o2.SetInt(i64)
+			i64, ok := ParseInt64(v)
+			if !ok {
+				return fmt.Errorf("ptr int64 parse failed for %q", v)
 			}
+			if o2.OverflowInt(i64) {
+				return fmt.Errorf("ptr int64 overflow for %q", v)
+			}
+			o2.SetInt(i64)
 		case float32:
-			f64, _ := ParseFloat64(v)
-			if !o2.OverflowFloat(f64) {
-				o2.SetFloat(f64)
+			f64, ok := ParseFloat64(v)
+			if !ok {
+				return fmt.Errorf("ptr float32 parse failed for %q", v)
 			}
+			if o2.OverflowFloat(f64) {
+				return fmt.Errorf("ptr float32 overflow for %q", v)
+			}
+			o2.SetFloat(f64)
 		case float64:
-			f64, _ := ParseFloat64(v)
-			if !o2.OverflowFloat(f64) {
-				o2.SetFloat(f64)
+			f64, ok := ParseFloat64(v)
+			if !ok {
+				return fmt.Errorf("ptr float64 parse failed for %q", v)
 			}
+			if o2.OverflowFloat(f64) {
+				return fmt.Errorf("ptr float64 overflow for %q", v)
+			}
+			o2.SetFloat(f64)
 		case uint:
 			if !o2.OverflowUint(StrToUint64(v)) {
 				o2.SetUint(StrToUint64(v))
@@ -967,7 +1002,10 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 		case string:
 			o2.SetString(v)
 		case bool:
-			b, _ := ParseBool(v)
+			b, ok := ParseBool(v)
+			if !ok {
+				return fmt.Errorf("ptr bool parse failed for %q", v)
+			}
 			o2.SetBool(b)
 		case time.Time:
 			if LenTrim(timeFormat) == 0 { // preserve time component for pointer time.Time
@@ -983,16 +1021,28 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 		case sql.NullString:
 			o.Set(reflect.ValueOf(sql.NullString{String: v, Valid: true}))
 		case sql.NullBool:
-			b, _ := ParseBool(v)
+			b, ok := ParseBool(v)
+			if !ok {
+				return fmt.Errorf("sql.NullBool parse failed for %q", v)
+			}
 			o.Set(reflect.ValueOf(sql.NullBool{Bool: b, Valid: true}))
 		case sql.NullFloat64:
-			f64, _ := ParseFloat64(v)
+			f64, ok := ParseFloat64(v)
+			if !ok {
+				return fmt.Errorf("sql.NullFloat64 parse failed for %q", v)
+			}
 			o.Set(reflect.ValueOf(sql.NullFloat64{Float64: f64, Valid: true}))
 		case sql.NullInt32:
-			i32, _ := ParseInt32(v)
+			i32, ok := ParseInt32(v)
+			if !ok {
+				return fmt.Errorf("sql.NullInt32 parse failed for %q", v)
+			}
 			o.Set(reflect.ValueOf(sql.NullInt32{Int32: int32(i32), Valid: true}))
 		case sql.NullInt64:
-			i64, _ := ParseInt64(v)
+			i64, ok := ParseInt64(v)
+			if !ok {
+				return fmt.Errorf("sql.NullInt64 parse failed for %q", v)
+			}
 			o.Set(reflect.ValueOf(sql.NullInt64{Int64: i64, Valid: true}))
 		case sql.NullTime:
 			var tv time.Time

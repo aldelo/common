@@ -33,7 +33,8 @@ import (
 
 // LenTrim returns length of space trimmed string s
 func LenTrim(s string) int {
-	return len(strings.TrimSpace(s))
+	trimmed := strings.TrimSpace(s)        // avoid double-trimming and reuse
+	return utf8.RuneCountInString(trimmed) // count runes, not bytes, for correct Unicode length
 }
 
 // NextFixedLength calculates the next fixed length total block size.
@@ -226,21 +227,22 @@ func SplitString(source string, delimiter string, index int) string {
 
 // SliceStringToCSVString unboxes slice of string into comma separated string
 func SliceStringToCSVString(source []string, spaceAfterComma bool) string {
-	output := ""
-
-	for _, v := range source {
-		if LenTrim(output) > 0 {
-			output += ","
-
-			if spaceAfterComma {
-				output += " "
-			}
-		}
-
-		output += v
+	if len(source) == 0 { // fast path and avoids nil/empty loop
+		return ""
 	}
 
-	return output
+	var b strings.Builder // avoid LenTrim(output) sentinel; handle whitespace-only first entry safely
+	for i, v := range source {
+		if i > 0 {
+			b.WriteString(",")
+			if spaceAfterComma {
+				b.WriteString(" ")
+			}
+		}
+		b.WriteString(v)
+	}
+
+	return b.String()
 }
 
 // ParseKeyValue will parse the input string using specified delimiter (= is default),

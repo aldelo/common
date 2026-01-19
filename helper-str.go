@@ -26,6 +26,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/aldelo/common/ascii"
@@ -113,6 +114,9 @@ func Reverse(s string) string {
 
 // Replace will replace old char with new char and return the replaced string
 func Replace(s string, oldChar string, newChar string) string {
+	if oldChar == "" { // prevent unbounded growth when oldChar is empty
+		return s
+	}
 	return strings.Replace(s, oldChar, newChar, -1)
 }
 
@@ -235,10 +239,7 @@ func ParseKeyValue(s string, delimiter string, key *string, val *string) error {
 
 	if len(delimiter) == 0 {
 		delimiter = "="
-	} else {
-		delimiter = string([]rune(delimiter)[0])
 	}
-
 	if !strings.Contains(s, delimiter) {
 		*key = ""
 		*val = ""
@@ -372,11 +373,12 @@ func IsAlphanumericAndSpaceOnly(s string) bool {
 // IsBase64Only checks if the input string is a-z, A-Z, 0-9, +, /, =
 // require non-empty input and anchor regex to full string
 func IsBase64Only(s string) bool {
-	if len(s) == 0 {
+	clean := stripBase64Whitespace(s) // validate after whitespace removal
+	if len(clean) == 0 {
 		return false
 	}
 
-	if len(s)%4 != 0 { // base64 requires blocks of 4 (with padding as needed)
+	if len(clean)%4 != 0 { // base64 requires blocks of 4 (with padding as needed)
 		return false
 	}
 
@@ -444,25 +446,15 @@ func IsNumericIntAndNegativeSignOnly(s string) bool {
 		return false
 	}
 
-	if !IsNumericIntOnly(Left(s, 1)) && Left(s, 1) != "-" {
-		return false
+	r := []rune(s) // use rune-aware logic
+	if r[0] == '-' {
+		if len(r) == 1 {
+			return false
+		}
+		return IsNumericIntOnly(string(r[1:]))
 	}
 
-	if len(s) > 1 {
-		v := Right(s, len(s)-1)
-
-		if !IsNumericIntOnly(v) {
-			return false
-		} else {
-			return true
-		}
-	} else {
-		if s == "-" {
-			return false
-		} else {
-			return true
-		}
-	}
+	return IsNumericIntOnly(string(r))
 }
 
 // ================================================================================================================
@@ -511,12 +503,13 @@ func Base64StdEncode(data string) string {
 }
 
 // helper to strip common whitespace in base64 payloads
-func stripBase64Whitespace(data string) string { // FIX
-	data = strings.ReplaceAll(data, "\n", "")
-	data = strings.ReplaceAll(data, "\r", "")
-	data = strings.ReplaceAll(data, " ", "")
-	data = strings.ReplaceAll(data, "\t", "")
-	return data
+func stripBase64Whitespace(data string) string {
+	return strings.Map(func(r rune) rune { // remove all Unicode whitespace
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, data)
 }
 
 // Base64StdDecode will decode given data from base 64 standard encoded string

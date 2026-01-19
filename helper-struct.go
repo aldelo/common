@@ -751,7 +751,18 @@ func Fill(src interface{}, dst interface{}) error {
 	for i := 0; i < srcType.NumField(); i++ {
 		dstField := dstValue.Elem().FieldByName(srcType.Field(i).Name)
 		if dstField.CanSet() {
-			dstField.Set(srcValue.Field(i))
+			srcField := srcValue.Field(i)
+
+			// avoid panic when types differ; allow assignable or convertible only
+			switch {
+			case srcField.Type().AssignableTo(dstField.Type()):
+				dstField.Set(srcField)
+			case srcField.Type().ConvertibleTo(dstField.Type()):
+				dstField.Set(srcField.Convert(dstField.Type()))
+			default:
+				return fmt.Errorf("field %s types are not assignable or convertible (src=%s, dst=%s)",
+					srcType.Field(i).Name, srcField.Type(), dstField.Type())
+			}
 		}
 	}
 
@@ -1951,6 +1962,16 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 		// get raw CSV value
 		rawVal, found := csvExtractValue(csvElements, cfg, prefixProcessedMap)
+
+		// enforce required fields when missing entirely
+		if !found {
+			if cfg.tagReq == "true" {
+				StructClearFields(inputStructPtr)
+				return fmt.Errorf("%s is a Required Field", field.Name)
+			}
+			continue
+		}
+
 		if !found && cfg.pos >= 0 && LenTrim(cfg.outPrefix) == 0 {
 			continue
 		}

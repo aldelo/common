@@ -1722,79 +1722,97 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 				continue
 			}
 
+			// normalize setter info (support base. prefix) and allocate pointer/interface targets before calling setters.
+			tagSetter := Trim(field.Tag.Get("setter"))
+			setterBase := false
+			if LenTrim(tagSetter) > 0 && strings.ToLower(Left(tagSetter, 5)) == "base." {
+				setterBase = true
+				tagSetter = Right(tagSetter, len(tagSetter)-5)
+			}
+
+			applySetter := func() (handled bool, updatedDef string) {
+				updatedDef = tagDef
+				if LenTrim(tagSetter) == 0 {
+					return false, updatedDef
+				}
+
+				// ensure allocation for pointer/interface targets
+				if o.Kind() != reflect.Slice {
+					if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
+						o.Set(reflect.New(baseType.Type()))
+					} else if o.Kind() == reflect.Interface && o.Interface() == nil {
+						if customType := ReflectTypeRegistryGet(o.Type().String()); customType != nil {
+							o.Set(reflect.New(customType))
+						} else {
+							return true, updatedDef
+						}
+					}
+				}
+
+				var ov []reflect.Value
+				var notFound bool
+				if setterBase {
+					ov, notFound = ReflectCall(s.Addr(), tagSetter, updatedDef)
+				} else {
+					ov, notFound = ReflectCall(o, tagSetter, updatedDef)
+				}
+				if notFound {
+					return false, updatedDef
+				}
+
+				if len(ov) == 1 {
+					if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
+						o.Set(ov[0])
+						return true, updatedDef
+					}
+					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {
+						return false, val
+					}
+					return true, updatedDef
+				} else if len(ov) > 1 {
+					if err := DerefError(ov[len(ov)-1]); err != nil {
+						return true, updatedDef
+					}
+					if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
+						o.Set(ov[0])
+						return true, updatedDef
+					}
+					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {
+						return false, val
+					}
+					return true, updatedDef
+				}
+
+				return false, updatedDef
+			}
+
+			if handled, newDef := applySetter(); handled {
+				continue
+			} else {
+				tagDef = newDef
+			}
+
 			switch o.Kind() {
 			case reflect.String:
 				if LenTrim(o.String()) == 0 {
 					o.SetString(tagDef)
 				}
-			case reflect.Int8:
-				fallthrough
-			case reflect.Int16:
-				fallthrough
-			case reflect.Int:
-				fallthrough
-			case reflect.Int32:
-				fallthrough
-			case reflect.Int64:
+			case reflect.Int8, reflect.Int16, reflect.Int, reflect.Int32, reflect.Int64:
 				if o.Int() == 0 {
-					tagSetter := Trim(field.Tag.Get("setter"))
-
-					if LenTrim(tagSetter) == 0 {
-						if i64, ok := ParseInt64(tagDef); ok && i64 != 0 {
-							if !o.OverflowInt(i64) {
-								o.SetInt(i64)
-							}
-						}
-					} else {
-						if res, notFound := ReflectCall(o, tagSetter, tagDef); !notFound {
-							if len(res) == 1 {
-								if val, skip, err := ReflectValueToString(res[0], "", "", false, false, "", false); err == nil && !skip {
-									tagDef = val
-								} else {
-									continue
-								}
-							} else if len(res) > 1 {
-								if err := DerefError(res[len(res)-1:][0]); err == nil {
-									if val, skip, err := ReflectValueToString(res[0], "", "", false, false, "", false); err == nil && !skip {
-										tagDef = val
-									} else {
-										continue
-									}
-								}
-							}
-
-							if i64, ok := ParseInt64(tagDef); ok && i64 != 0 {
-								if !o.OverflowInt(i64) {
-									o.SetInt(i64)
-								}
-							}
-						}
+					if i64, ok := ParseInt64(tagDef); ok && i64 != 0 && !o.OverflowInt(i64) {
+						o.SetInt(i64)
 					}
 				}
-			case reflect.Float32:
-				fallthrough
-			case reflect.Float64:
+			case reflect.Float32, reflect.Float64:
 				if o.Float() == 0 {
-					if f64, ok := ParseFloat64(tagDef); ok && f64 != 0 {
-						if !o.OverflowFloat(f64) {
-							o.SetFloat(f64)
-						}
+					if f64, ok := ParseFloat64(tagDef); ok && f64 != 0 && !o.OverflowFloat(f64) {
+						o.SetFloat(f64)
 					}
 				}
-			case reflect.Uint8:
-				fallthrough
-			case reflect.Uint16:
-				fallthrough
-			case reflect.Uint:
-				fallthrough
-			case reflect.Uint32:
-				fallthrough
-			case reflect.Uint64:
+			case reflect.Uint8, reflect.Uint16, reflect.Uint, reflect.Uint32, reflect.Uint64:
 				if o.Uint() == 0 {
-					if u64 := StrToUint64(tagDef); u64 != 0 {
-						if !o.OverflowUint(u64) {
-							o.SetUint(u64)
-						}
+					if u64 := StrToUint64(tagDef); u64 != 0 && !o.OverflowUint(u64) {
+						o.SetUint(u64)
 					}
 				}
 			default:
@@ -1829,11 +1847,9 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 				case sql.NullTime:
 					if !f.Valid {
 						tagTimeFormat := Trim(field.Tag.Get("timeformat"))
-
 						if LenTrim(tagTimeFormat) == 0 {
 							tagTimeFormat = DateTimeFormatString()
 						}
-
 						if t := ParseDateTimeCustom(tagDef, tagTimeFormat); !t.IsZero() {
 							o.Set(reflect.ValueOf(sql.NullTime{Time: t, Valid: true}))
 						}
@@ -1841,11 +1857,9 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 				case time.Time:
 					if f.IsZero() {
 						tagTimeFormat := Trim(field.Tag.Get("timeformat"))
-
 						if LenTrim(tagTimeFormat) == 0 {
 							tagTimeFormat = DateTimeFormatString()
 						}
-
 						if t := ParseDateTimeCustom(tagDef, tagTimeFormat); !t.IsZero() {
 							o.Set(reflect.ValueOf(t))
 						}
@@ -1946,6 +1960,14 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 	SetStructFieldDefaultValues(inputStructPtr)
 	prefixProcessedMap := make(map[string]string)
 
+	// collect virtual fields (pos < 0) that rely on setters so we can execute them after positional fields are loaded.
+	type virtualSetter struct {
+		cfg   csvUnmarshalConfig
+		field reflect.StructField
+		o     reflect.Value
+	}
+	var virtualSetters []virtualSetter
+
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
 		o := s.FieldByName(field.Name)
@@ -2025,6 +2047,17 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		// set field
 		if err := ReflectStringToField(o, csvValue, cfg.timeFormat); err != nil {
 			return err
+		}
+	}
+
+	// execute virtual setters (pos < 0) after positional fields are populated.
+	for _, vs := range virtualSetters {
+		if _, setDone, err := csvApplySetter(s, vs.cfg, vs.o, ""); err != nil {
+			return err
+		} else if setDone {
+			if err := csvValidateCustomUnmarshal("", vs.cfg, s, vs.field.Name); err != nil {
+				return err
+			}
 		}
 	}
 

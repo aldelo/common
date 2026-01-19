@@ -426,16 +426,12 @@ func IsHexOnly(s string) bool {
 		return false
 	}
 
-	// hex strings must have even length to be decodable
-	if len(s)%2 != 0 {
-		return false
-	}
-
 	exp, err := regexp.Compile("^[A-Fa-f0-9]+$")
 	if err != nil {
 		return false
 	}
 
+	// Removed even-length enforcement so validation matches the stated contract
 	return exp.MatchString(s)
 }
 

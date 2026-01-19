@@ -231,6 +231,11 @@ func SliceStringToCSVString(source []string, spaceAfterComma bool) string {
 // ParseKeyValue will parse the input string using specified delimiter (= is default),
 // result is set in the key and val fields
 func ParseKeyValue(s string, delimiter string, key *string, val *string) error {
+	// guard against nil pointers to avoid panic
+	if key == nil || val == nil {
+		return fmt.Errorf("Key and Val pointers are required")
+	}
+
 	if len(s) <= 2 {
 		*key = ""
 		*val = ""
@@ -378,8 +383,9 @@ func IsBase64Only(s string) bool {
 		return false
 	}
 
-	if len(clean)%4 != 0 { // base64 requires blocks of 4 (with padding as needed)
-		return false
+	// allow unpadded input by adding required padding to multiples of 4
+	if m := len(clean) % 4; m != 0 {
+		clean += strings.Repeat("=", 4-m)
 	}
 
 	exp, err := regexp.Compile(`^[A-Za-z0-9+/]+={0,2}$`)
@@ -387,13 +393,27 @@ func IsBase64Only(s string) bool {
 		return false
 	}
 
-	return exp.MatchString(s)
+	if !exp.MatchString(clean) {
+		return false
+	}
+
+	// actual decode validation to reject syntactically valid but undecodable data
+	if _, err := base64.StdEncoding.DecodeString(clean); err != nil {
+		return false
+	}
+
+	return true
 }
 
 // IsHexOnly checks if the input string is a-f, A-F, 0-9
 // require non-empty input and anchor regex to full string
 func IsHexOnly(s string) bool {
 	if len(s) == 0 {
+		return false
+	}
+
+	// hex strings must have even length to be decodable
+	if len(s)%2 != 0 {
 		return false
 	}
 
@@ -698,6 +718,11 @@ func MarshalXML(v interface{}, indentXML bool) (string, error) {
 //
 // if unmarshal is successful, nil is returned, otherwise error info is returned
 func UnmarshalXML(xmlData string, v interface{}) error {
+	// prevent panic on nil target
+	if v == nil {
+		return fmt.Errorf("Target object for XML Unmarshal must not be nil")
+	}
+
 	if LenTrim(xmlData) == 0 {
 		return fmt.Errorf("XML Data is Required")
 	}
@@ -791,6 +816,11 @@ func MarshalJSONIndent(v interface{}) (string, error) {
 //
 // if unmarshal is successful, nil is returned, otherwise error info is returned
 func UnmarshalJSON(jsonData string, v interface{}) error {
+	// prevent panic on nil target
+	if v == nil {
+		return fmt.Errorf("Target object for JSON Unmarshal must not be nil")
+	}
+
 	if LenTrim(jsonData) == 0 {
 		return fmt.Errorf("JSON Data is Required")
 	}

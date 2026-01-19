@@ -18,7 +18,6 @@ package helper
 
 import (
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -103,52 +102,46 @@ func replaceAllBetweenCI(source, from, to, replace string) string {
 	return b.String()
 }
 
-// indexEqualFold finds the first index of substr in s at or after start using Unicode case-folding without
-// changing string length (avoids ToLower length-mismatch bugs). Returns -1 if not found.
+// indexEqualFold finds the first index of substr in s at or after start using Unicode case-folding.
+// Handles multi-rune fold expansions (e.g., ß <-> SS, İ <-> i̇) by searching over a small window.
+// Returns -1 if not found.
+const maxFoldExpansionRunes = 2 // allow small expansion to cover known multi-rune folds
+
 func indexEqualFold(s, substr string, start int) int {
 	if substr == "" {
 		return start
 	}
-	// walk s on rune boundaries to stay UTF-8 safe
-	for i := start; i < len(s); {
-		if hasPrefixEqualFold(s[i:], substr) {
-			return i
+
+	minRunes := utf8.RuneCountInString(substr)
+	maxRunes := minRunes + maxFoldExpansionRunes
+
+	for i := 0; i < len(s); {
+		if i < start {
+			_, sz := utf8.DecodeRuneInString(s[i:])
+			i += sz
+			continue
 		}
-		_, size := utf8.DecodeRuneInString(s[i:])
-		if size == 0 {
+
+		// Expand a window from i over [minRunes, maxRunes] runes to catch fold expansions.
+		for windowRunes, end := 0, i; windowRunes < maxRunes && end <= len(s); windowRunes++ {
+			if end == len(s) {
+				break
+			}
+			_, sz := utf8.DecodeRuneInString(s[end:])
+			if sz == 0 {
+				break
+			}
+			end += sz
+			if windowRunes+1 >= minRunes && strings.EqualFold(s[i:end], substr) {
+				return i
+			}
+		}
+
+		_, sz := utf8.DecodeRuneInString(s[i:])
+		if sz == 0 {
 			break
 		}
-		i += size
+		i += sz
 	}
 	return -1
-}
-
-// hasPrefixEqualFold reports whether s has the given substr prefix using Unicode case-folding.
-func hasPrefixEqualFold(s, substr string) bool {
-	for len(substr) > 0 {
-		r1, size1 := utf8.DecodeRuneInString(s)
-		r2, size2 := utf8.DecodeRuneInString(substr)
-		if size1 == 0 || size2 == 0 { // ran out of runes in either string
-			return false
-		}
-		if !foldRuneEqual(r1, r2) {
-			return false
-		}
-		s = s[size1:]
-		substr = substr[size2:]
-	}
-	return true
-}
-
-// foldRuneEqual performs Unicode-aware case folding comparison for two runes.
-func foldRuneEqual(a, b rune) bool {
-	if a == b {
-		return true
-	}
-	for r := unicode.SimpleFold(a); r != a; r = unicode.SimpleFold(r) {
-		if r == b {
-			return true
-		}
-	}
-	return false
 }

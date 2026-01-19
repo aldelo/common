@@ -139,6 +139,10 @@ func RightTrimLF(s string) string {
 		return s[:len(s)-1]
 	}
 
+	if strings.HasSuffix(s, "\r") { // also trim lone carriage return
+		return s[:len(s)-1]
+	}
+
 	return s
 }
 
@@ -192,6 +196,14 @@ func PadX(data string, totalSize int, padRight ...bool) string {
 // if nothing is found, blank is returned,
 // index = -1 returns last index
 func SplitString(source string, delimiter string, index int) string {
+	if len(delimiter) == 0 { // guard empty delimiter to avoid unexpected split behavior
+		return ""
+	}
+
+	if !strings.Contains(source, delimiter) { // honor contract—return blank when delimiter not found
+		return ""
+	}
+
 	ar := strings.Split(source, delimiter)
 
 	if len(ar) > 0 {

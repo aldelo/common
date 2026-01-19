@@ -23,6 +23,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"html"
+	"math"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -235,28 +236,25 @@ func ParseKeyValue(s string, delimiter string, key *string, val *string) error {
 	if len(delimiter) == 0 {
 		delimiter = "="
 	} else {
-		delimiter = string(delimiter[0])
+		delimiter = string([]rune(delimiter)[0])
 	}
 
-	if strings.Contains(s, delimiter) {
-		p := strings.Split(s, delimiter)
+	if !strings.Contains(s, delimiter) {
+		*key = ""
+		*val = ""
+		return fmt.Errorf("Delimiter Not Found in Source Data")
+	}
 
-		if len(p) == 2 {
-			*key = Trim(p[0])
-			*val = Trim(p[1])
-			return nil
-		}
-
-		// parts not valid
+	parts := strings.SplitN(s, delimiter, 2)
+	if len(parts) != 2 {
 		*key = ""
 		*val = ""
 		return fmt.Errorf("Parsed Parts Must Equal 2")
 	}
 
-	// no delimiter found
-	*key = ""
-	*val = ""
-	return fmt.Errorf("Delimiter Not Found in Source Data")
+	*key = Trim(parts[0])
+	*val = Trim(parts[1])
+	return nil
 }
 
 // ExtractNumeric will extract only 0-9 out of string to be returned
@@ -426,18 +424,17 @@ func IsNumericFloat64(s string, positiveOnly bool) bool {
 		return false
 	}
 
-	if f, ok := ParseFloat64(s); !ok {
+	clean := strings.TrimSpace(s)
+	if f, ok := ParseFloat64(clean); !ok {
 		return false
 	} else {
-		if positiveOnly {
-			if f < 0 {
-				return false
-			} else {
-				return true
-			}
-		} else {
-			return true
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return false
 		}
+		if positiveOnly && f < 0 {
+			return false
+		}
+		return true
 	}
 }
 
@@ -513,9 +510,19 @@ func Base64StdEncode(data string) string {
 	return base64.StdEncoding.EncodeToString([]byte(data))
 }
 
+// helper to strip common whitespace in base64 payloads
+func stripBase64Whitespace(data string) string { // FIX
+	data = strings.ReplaceAll(data, "\n", "")
+	data = strings.ReplaceAll(data, "\r", "")
+	data = strings.ReplaceAll(data, " ", "")
+	data = strings.ReplaceAll(data, "\t", "")
+	return data
+}
+
 // Base64StdDecode will decode given data from base 64 standard encoded string
 func Base64StdDecode(data string) (string, error) {
-	padded := data
+	clean := stripBase64Whitespace(data)
+	padded := clean
 	if m := len(padded) % 4; m != 0 {
 		padded += strings.Repeat("=", 4-m)
 	}
@@ -535,7 +542,9 @@ func Base64UrlEncode(data string) string {
 
 // Base64UrlDecode will decode given data from base 64 url encoded string
 func Base64UrlDecode(data string) (string, error) {
-	padded := data
+	clean := stripBase64Whitespace(data)
+
+	padded := clean
 	if m := len(padded) % 4; m != 0 {
 		padded += strings.Repeat("=", 4-m)
 	}
@@ -543,7 +552,7 @@ func Base64UrlDecode(data string) (string, error) {
 	b, err := base64.URLEncoding.DecodeString(padded)
 	if err != nil {
 		// fallback for strictly unpadded inputs
-		b, err = base64.RawURLEncoding.DecodeString(data)
+		b, err = base64.RawURLEncoding.DecodeString(clean) // use whitespace-stripped input
 		if err != nil {
 			return "", err
 		}

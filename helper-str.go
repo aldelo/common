@@ -25,6 +25,7 @@ import (
 	"html"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/aldelo/common/ascii"
 )
@@ -57,11 +58,12 @@ func Left(s string, l int) string {
 		return ""
 	}
 
-	if len(s) <= l {
+	r := []rune(s)
+	if len(r) <= l {
 		return s
 	}
 
-	return s[:l]
+	return string(r[:l])
 }
 
 // Right returns the right side of string indicated by variable l (size of substring)
@@ -71,11 +73,12 @@ func Right(s string, l int) string {
 		return ""
 	}
 
-	if len(s) <= l {
+	r := []rune(s)
+	if len(r) <= l {
 		return s
 	}
 
-	return s[len(s)-l:]
+	return string(r[len(r)-l:])
 }
 
 // Mid returns the middle of string indicated by variable start and l positions (size of substring)
@@ -84,15 +87,18 @@ func Mid(s string, start int, l int) string {
 	if l <= 0 || start < 0 {
 		return ""
 	}
-	if start >= len(s) {
+
+	r := []rune(s)
+	if start >= len(r) {
 		return ""
 	}
 
 	end := start + l
-	if end > len(s) {
-		end = len(s)
+	if end > len(r) {
+		end = len(r)
 	}
-	return s[start:end]
+
+	return string(r[start:end])
 }
 
 // Reverse a string
@@ -116,14 +122,16 @@ func Trim(s string) string {
 
 // RightTrimLF will remove linefeed (return char) from the right most char and return result string
 func RightTrimLF(s string) string {
-	if LenTrim(s) > 0 {
-		if Right(s, 2) == "\r\n" {
-			return Left(s, len(s)-2)
-		}
+	if len(s) == 0 {
+		return s
+	}
 
-		if Right(s, 1) == "\n" {
-			return Left(s, len(s)-1)
-		}
+	if strings.HasSuffix(s, "\r\n") {
+		return s[:len(s)-2]
+	}
+
+	if strings.HasSuffix(s, "\n") {
+		return s[:len(s)-1]
 	}
 
 	return s
@@ -131,23 +139,18 @@ func RightTrimLF(s string) string {
 
 // Padding will pad the data with specified char either to the left or right
 func Padding(data string, totalSize int, padRight bool, padChar string) string {
-	var result string
-	result = data
+	result := data
 
-	b := []byte(data)
-	diff := totalSize - len(b)
-
+	diff := totalSize - utf8.RuneCountInString(data)
 	if diff > 0 {
 		var pChar string
-
 		if len(padChar) == 0 {
 			pChar = " "
 		} else {
-			pChar = string(padChar[0])
+			pChar = string([]rune(padChar)[0])
 		}
 
 		pad := strings.Repeat(pChar, diff)
-
 		if padRight {
 			result += pad
 		} else {
@@ -155,7 +158,6 @@ func Padding(data string, totalSize int, padRight bool, padChar string) string {
 		}
 	}
 
-	// return result
 	return result
 }
 
@@ -376,7 +378,11 @@ func IsBase64Only(s string) bool {
 		return false
 	}
 
-	exp, err := regexp.Compile("^[A-Za-z0-9+/=]+$")
+	if len(s)%4 != 0 { // base64 requires blocks of 4 (with padding as needed)
+		return false
+	}
+
+	exp, err := regexp.Compile(`^[A-Za-z0-9+/]+={0,2}$`)
 	if err != nil {
 		return false
 	}
@@ -509,8 +515,12 @@ func Base64StdEncode(data string) string {
 
 // Base64StdDecode will decode given data from base 64 standard encoded string
 func Base64StdDecode(data string) (string, error) {
-	b, err := base64.StdEncoding.DecodeString(data)
+	padded := data
+	if m := len(padded) % 4; m != 0 {
+		padded += strings.Repeat("=", 4-m)
+	}
 
+	b, err := base64.StdEncoding.DecodeString(padded)
 	if err != nil {
 		return "", err
 	}
@@ -525,10 +535,18 @@ func Base64UrlEncode(data string) string {
 
 // Base64UrlDecode will decode given data from base 64 url encoded string
 func Base64UrlDecode(data string) (string, error) {
-	b, err := base64.URLEncoding.DecodeString(data)
+	padded := data
+	if m := len(padded) % 4; m != 0 {
+		padded += strings.Repeat("=", 4-m)
+	}
 
+	b, err := base64.URLEncoding.DecodeString(padded)
 	if err != nil {
-		return "", err
+		// fallback for strictly unpadded inputs
+		b, err = base64.RawURLEncoding.DecodeString(data)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	return string(b), nil

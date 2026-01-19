@@ -28,6 +28,18 @@ func RegexReplaceSubString(source string, subStringFrom string, subStringTo stri
 		return source
 	}
 
+	// fast-path bail-out if delimiters aren’t present, to avoid regex work
+	if !caseInsensitive {
+		if !strings.Contains(source, subStringFrom) || !strings.Contains(source, subStringTo) {
+			return source
+		}
+	} else {
+		lowerSource := strings.ToLower(source)
+		if !strings.Contains(lowerSource, strings.ToLower(subStringFrom)) || !strings.Contains(lowerSource, strings.ToLower(subStringTo)) {
+			return source
+		}
+	}
+
 	// setup regex
 	ci := ""
 	if caseInsensitive {

@@ -12,7 +12,7 @@ import (
 )
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,8 +30,25 @@ import (
 // Fill copies the src struct with same tag name to dst struct tag pointer,
 // src and dst both must be struct，and dst must be pointer
 func Fill(src interface{}, dst interface{}) error {
-	srcType := reflect.TypeOf(src)
+	if src == nil {
+		return errors.New("src cannot be nil")
+	}
+	if dst == nil {
+		return errors.New("dst cannot be nil")
+	}
+
 	srcValue := reflect.ValueOf(src)
+	srcType := srcValue.Type()
+
+	// allow pointer-to-struct for src while still rejecting non-structs
+	if srcType.Kind() == reflect.Ptr {
+		if srcValue.IsNil() {
+			return errors.New("src pointer cannot be nil")
+		}
+		srcValue = srcValue.Elem()
+		srcType = srcType.Elem()
+	}
+
 	dstValue := reflect.ValueOf(dst)
 
 	if srcType.Kind() != reflect.Struct {
@@ -39,6 +56,12 @@ func Fill(src interface{}, dst interface{}) error {
 	}
 	if dstValue.Kind() != reflect.Ptr {
 		return errors.New("dst must be point")
+	}
+	if dstValue.IsNil() {
+		return errors.New("dst pointer cannot be nil")
+	}
+	if dstValue.Elem().Kind() != reflect.Struct {
+		return errors.New("dst must point to struct")
 	}
 
 	for i := 0; i < srcType.NumField(); i++ {
@@ -1374,7 +1397,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 					if csvElements != nil {
 						if tagPos > csvLen-1 {
 							// no more elements to unmarshal, rest of fields using default values
-							return nil
+							continue
 						} else {
 							csvValue = csvElements[tagPos]
 

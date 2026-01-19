@@ -1,7 +1,7 @@
 package helper
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,11 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"github.com/aldelo/common/ascii"
 	"html"
 	"regexp"
 	"strings"
+
+	"github.com/aldelo/common/ascii"
 )
 
 // LenTrim returns length of space trimmed string s
@@ -33,35 +34,44 @@ func LenTrim(s string) int {
 	return len(strings.TrimSpace(s))
 }
 
-// NextFixedLength calculates the next fixed length total block size,
-// for example, if block size is 16, then the total size should be 16, 32, 48 and so on based on data length
+// NextFixedLength calculates the next fixed length total block size.
+// handle blockSize <= 0 safely and fix exact-multiple off-by-one.
 func NextFixedLength(data string, blockSize int) int {
-	blocks := (len(data) / blockSize) + 1
-	blocks = blocks * blockSize
+	if blockSize <= 0 {
+		return 0
+	}
 
-	return blocks
+	n := len(data)
+	if n == 0 {
+		return blockSize
+	}
+
+	blocks := (n + blockSize - 1) / blockSize
+	return blocks * blockSize
 }
 
 // Left returns the left side of string indicated by variable l (size of substring)
+// negative or zero length returns empty string; otherwise clamp to length.
 func Left(s string, l int) string {
+	if l <= 0 {
+		return ""
+	}
+
 	if len(s) <= l {
 		return s
 	}
 
-	if l <= 0 {
-		return s
-	}
-
-	return s[0:l]
+	return s[:l]
 }
 
 // Right returns the right side of string indicated by variable l (size of substring)
+// negative or zero length returns empty string; otherwise clamp to length.
 func Right(s string, l int) string {
-	if len(s) <= l {
-		return s
+	if l <= 0 {
+		return ""
 	}
 
-	if l <= 0 {
+	if len(s) <= l {
 		return s
 	}
 
@@ -69,24 +79,20 @@ func Right(s string, l int) string {
 }
 
 // Mid returns the middle of string indicated by variable start and l positions (size of substring)
+// robust bounds handling; negative start/length yield empty; clamp end to len(s); return "" when out of range.
 func Mid(s string, start int, l int) string {
-	if len(s) <= l {
-		return s
+	if l <= 0 || start < 0 {
+		return ""
+	}
+	if start >= len(s) {
+		return ""
 	}
 
-	if l <= 0 {
-		return s
+	end := start + l
+	if end > len(s) {
+		end = len(s)
 	}
-
-	if start > len(s)-1 {
-		return s
-	}
-
-	if (len(s) - start) < l {
-		return s
-	}
-
-	return s[start : l+start]
+	return s[start:end]
 }
 
 // Reverse a string
@@ -334,88 +340,78 @@ func ExtractByRegex(s string, regexStr string) (string, error) {
 // ================================================================================================================
 
 // IsAlphanumericOnly checks if the input string is A-Z, a-z, and 0-9 only
+// require non-empty input and anchor regex to full string
 func IsAlphanumericOnly(s string) bool {
-	exp, err := regexp.Compile("[A-Za-z0-9]+")
+	if len(s) == 0 {
+		return false
+	}
 
+	exp, err := regexp.Compile("^[A-Za-z0-9]+$")
 	if err != nil {
 		return false
 	}
 
-	if len(exp.ReplaceAllString(s, "")) > 0 {
-		// has non alphanumeric
-		return false
-	} else {
-		// alphanumeric only
-		return true
-	}
+	return exp.MatchString(s)
 }
 
 // IsAlphanumericAndSpaceOnly checks if the input string is A-Z, a-z, 0-9, and space
+// require non-empty input and anchor regex to full string
 func IsAlphanumericAndSpaceOnly(s string) bool {
-	exp, err := regexp.Compile("[A-Za-z0-9 ]+")
+	if len(s) == 0 {
+		return false
+	}
 
+	exp, err := regexp.Compile("^[A-Za-z0-9 ]+$")
 	if err != nil {
 		return false
 	}
 
-	if len(exp.ReplaceAllString(s, "")) > 0 {
-		// has non alphanumeric and space
-		return false
-	} else {
-		// alphanumeric and space only
-		return true
-	}
+	return exp.MatchString(s)
 }
 
 // IsBase64Only checks if the input string is a-z, A-Z, 0-9, +, /, =
+// require non-empty input and anchor regex to full string
 func IsBase64Only(s string) bool {
-	exp, err := regexp.Compile("[A-Za-z0-9+/=]+")
+	if len(s) == 0 {
+		return false
+	}
 
+	exp, err := regexp.Compile("^[A-Za-z0-9+/=]+$")
 	if err != nil {
 		return false
 	}
 
-	if len(exp.ReplaceAllString(s, "")) > 0 {
-		// has non base 64
-		return false
-	} else {
-		// base 64 only
-		return true
-	}
+	return exp.MatchString(s)
 }
 
 // IsHexOnly checks if the input string is a-f, A-F, 0-9
+// require non-empty input and anchor regex to full string
 func IsHexOnly(s string) bool {
-	exp, err := regexp.Compile("[A-Fa-f0-9]+")
+	if len(s) == 0 {
+		return false
+	}
 
+	exp, err := regexp.Compile("^[A-Fa-f0-9]+$")
 	if err != nil {
 		return false
 	}
 
-	if len(exp.ReplaceAllString(s, "")) > 0 {
-		// has non hex
-		return false
-	} else {
-		// hex only
-		return true
-	}
+	return exp.MatchString(s)
 }
 
 // IsNumericIntOnly checks if the input string is 0-9 only
+// require non-empty input and anchor regex to full string
 func IsNumericIntOnly(s string) bool {
-	exp, err := regexp.Compile("[0-9]+")
+	if len(s) == 0 {
+		return false
+	}
 
+	exp, err := regexp.Compile("^[0-9]+$")
 	if err != nil {
 		return false
 	}
 
-	if len(exp.ReplaceAllString(s, "")) > 0 {
-		// has non numeric
-		return false
-	} else {
-		// numeric only
-		return true
-	}
+	return exp.MatchString(s)
 }
 
 // IsNumericFloat64 checks if string is float

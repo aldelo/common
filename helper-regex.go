@@ -55,6 +55,7 @@ func replaceAllBetween(source, from, to, replace string) string {
 
 		b.WriteString(source[start : fromIdx+len(from)])
 		b.WriteString(replace)
+		b.WriteString(source[toIdx : toIdx+len(to)]) // preserve trailing delimiter
 		start = toIdx + len(to)
 		replaced = true
 	}
@@ -92,6 +93,7 @@ func replaceAllBetweenCI(source, from, to, replace string) string {
 
 		b.WriteString(source[start : fromIdx+len(from)]) // preserve original casing on boundaries
 		b.WriteString(replace)
+		b.WriteString(source[toIdx : toIdx+len(to)]) // preserve trailing delimiter
 		start = toIdx + len(to)
 		replaced = true
 	}

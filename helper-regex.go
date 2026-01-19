@@ -76,21 +76,21 @@ func replaceAllBetweenCI(source, from, to, replace string) string {
 	replaced := false
 
 	for {
-		fromIdx := indexEqualFold(source, from, start) // Unicode-safe case-insensitive search
+		fromIdx, fromEnd := indexEqualFoldSpan(source, from, start) // track matched span (start,end)
 		if fromIdx == -1 {
 			break
 		}
 
-		toIdx := indexEqualFold(source, to, fromIdx+len(from)) // Unicode-safe case-insensitive search
+		toIdx, toEnd := indexEqualFoldSpan(source, to, fromEnd) // start search after actual matched bytes
 		if toIdx == -1 {
 			break
 		}
 
-		b.WriteString(source[start : fromIdx+len(from)]) // preserve original casing on boundaries
+		b.WriteString(source[start:fromEnd]) // preserve boundary using matched end
 		b.WriteString(replace)
-		b.WriteString(source[toIdx : toIdx+len(to)]) // preserve trailing delimiter
+		b.WriteString(source[toIdx:toEnd]) // preserve trailing delimiter using matched span
 
-		start = toIdx + len(to)
+		start = toEnd // advance by actual matched length to avoid overlap/corruption
 		replaced = true
 	}
 
@@ -102,14 +102,14 @@ func replaceAllBetweenCI(source, from, to, replace string) string {
 	return b.String()
 }
 
-// indexEqualFold finds the first index of substr in s at or after start using Unicode case-folding.
-// Handles multi-rune fold expansions (e.g., ß <-> SS, İ <-> i̇) by searching over a small window.
-// Returns -1 if not found.
-const maxFoldExpansionRunes = 2 // allow small expansion to cover known multi-rune folds
+// indexEqualFoldSpan finds the first match of substr in s at or after start using Unicode case-folding.
+// Returns the byte start and end of the matched span; (-1, -1) if not found.
+// Handles multi-rune fold expansions (e.g., ß <-> SS, İ <-> i̇, ligatures) by searching over a small window.
+const maxFoldExpansionRunes = 3 // allow up to 3-rune expansions for safety
 
-func indexEqualFold(s, substr string, start int) int {
+func indexEqualFoldSpan(s, substr string, start int) (int, int) { // new span-returning helper
 	if substr == "" {
-		return start
+		return start, start
 	}
 
 	minRunes := utf8.RuneCountInString(substr)
@@ -133,7 +133,7 @@ func indexEqualFold(s, substr string, start int) int {
 			}
 			end += sz
 			if windowRunes+1 >= minRunes && strings.EqualFold(s[i:end], substr) {
-				return i
+				return i, end // return both start and end
 			}
 		}
 
@@ -143,5 +143,11 @@ func indexEqualFold(s, substr string, start int) int {
 		}
 		i += sz
 	}
-	return -1
+	return -1, -1
+}
+
+// indexEqualFold is kept for any callers expecting just the index.
+func indexEqualFold(s, substr string, start int) int { // now delegates to span helper
+	idx, _ := indexEqualFoldSpan(s, substr, start)
+	return idx
 }

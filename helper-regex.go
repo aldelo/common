@@ -112,8 +112,13 @@ func indexEqualFoldSpan(s, substr string, start int) (int, int) { // new span-re
 		return start, start
 	}
 
+	// support both fold expansions and contractions by widening the search window symmetrically.
 	minRunes := utf8.RuneCountInString(substr)
-	maxRunes := minRunes + maxFoldExpansionRunes
+	minMatchRunes := minRunes - maxFoldExpansionRunes
+	if minMatchRunes < 1 {
+		minMatchRunes = 1
+	}
+	maxMatchRunes := minRunes + maxFoldExpansionRunes
 
 	for i := 0; i < len(s); {
 		if i < start {
@@ -123,7 +128,7 @@ func indexEqualFoldSpan(s, substr string, start int) (int, int) { // new span-re
 		}
 
 		// Expand a window from i over [minRunes, maxRunes] runes to catch fold expansions.
-		for windowRunes, end := 0, i; windowRunes < maxRunes && end <= len(s); windowRunes++ {
+		for windowRunes, end := 0, i; windowRunes < maxMatchRunes && end <= len(s); windowRunes++ {
 			if end == len(s) {
 				break
 			}
@@ -132,7 +137,8 @@ func indexEqualFoldSpan(s, substr string, start int) (int, int) { // new span-re
 				break
 			}
 			end += sz
-			if windowRunes+1 >= minRunes && strings.EqualFold(s[i:end], substr) {
+			curRunes := windowRunes + 1
+			if curRunes >= minMatchRunes && strings.EqualFold(s[i:end], substr) {
 				return i, end // return both start and end
 			}
 		}

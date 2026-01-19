@@ -418,8 +418,11 @@ func IsBase64Only(s string) bool {
 		return false
 	}
 
-	// allow unpadded input by adding required padding to multiples of 4
-	if m := len(clean) % 4; m != 0 {
+	// FReject impossible base64 lengths (len % 4 == 1); pad only valid short cases.
+	switch m := len(clean) % 4; m {
+	case 1:
+		return false
+	case 2, 3:
 		clean += strings.Repeat("=", 4-m)
 	}
 
@@ -571,7 +574,11 @@ func Base64StdDecode(data string) (string, error) {
 	}
 
 	padded := clean
-	if m := len(padded) % 4; m != 0 {
+	// Reject impossible base64 lengths (len % 4 == 1); pad only valid short cases.
+	switch m := len(clean) % 4; m {
+	case 1:
+		return "", fmt.Errorf("invalid base64 length")
+	case 2, 3:
 		padded += strings.Repeat("=", 4-m)
 	}
 
@@ -596,7 +603,11 @@ func Base64UrlDecode(data string) (string, error) {
 	}
 
 	padded := clean
-	if m := len(padded) % 4; m != 0 {
+	// Reject impossible base64url lengths (len % 4 == 1); pad only valid short cases.
+	switch m := len(clean) % 4; m {
+	case 1:
+		return "", fmt.Errorf("invalid base64url length")
+	case 2, 3:
 		padded += strings.Repeat("=", 4-m)
 	}
 

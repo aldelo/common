@@ -17,6 +17,7 @@ package helper
  */
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -28,8 +29,6 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/aldelo/common/ascii"
 )
 
 // LenTrim returns length of space trimmed string s
@@ -626,30 +625,19 @@ func HTMLEncode(s string) string {
 
 // XMLToEscaped will escape the data whose xml special chars > < & % ' " are escaped into &gt; &lt; &amp; &#37; &apos; &quot;
 func XMLToEscaped(data string) string {
-	var r string
-
-	r = strings.Replace(data, "&", "&amp;", -1)
-	r = strings.Replace(r, ">", "&gt;", -1)
-	r = strings.Replace(r, "<", "&lt;", -1)
-	r = strings.Replace(r, "%", "&#37;", -1)
-	r = strings.Replace(r, "'", "&apos;", -1)
-	r = strings.Replace(r, "\"", "&quot;", -1)
-
-	return r
+	// use xml.EscapeText to avoid double-escaping and to cover all XML entities safely
+	var buf bytes.Buffer
+	if err := xml.EscapeText(&buf, []byte(data)); err != nil {
+		return ""
+	}
+	// preserve legacy behavior for '%' -> &#37;
+	return strings.ReplaceAll(buf.String(), "%", "&#37;")
 }
 
 // XMLFromEscaped will un-escape the data whose &gt; &lt; &amp; &#37; &apos; &quot; are converted to > < & % ' "
 func XMLFromEscaped(data string) string {
-	var r string
-
-	r = strings.Replace(data, "&amp;", "&", -1)
-	r = strings.Replace(r, "&gt;", ">", -1)
-	r = strings.Replace(r, "&lt;", "<", -1)
-	r = strings.Replace(r, "&#37;", "%", -1)
-	r = strings.Replace(r, "&apos;", "'", -1)
-	r = strings.Replace(r, "&quot;", "\"", -1)
-
-	return r
+	// rely on html.UnescapeString to handle standard entities comprehensively
+	return html.UnescapeString(data)
 }
 
 // MarshalXMLCompact will accept an input variable, typically struct with xml struct tags, to serialize from object into xml string
@@ -751,32 +739,28 @@ func UnmarshalXML(xmlData string, v interface{}) error {
 
 // JsonToEscaped will escape the data whose json special chars are escaped
 func JsonToEscaped(data string) string {
-	var r string
-
-	r = strings.Replace(data, `\`, `\\`, -1)
-	r = ascii.EscapeNonPrintable(r)
-
-	return r
+	// canonical escaping via encoding/json to cover quotes and control chars
+	b, err := json.Marshal(data)
+	if err != nil || len(b) < 2 {
+		return ""
+	}
+	// json.Marshal for a string returns a quoted JSON string; strip the outer quotes
+	return string(b[1 : len(b)-1])
 }
 
 // JsonFromEscaped will unescape the json data that may be special character escaped
 func JsonFromEscaped(data string) string {
-	var r string
-
-	r = strings.Replace(data, `\\`, `\`, -1)
-	r = ascii.UnescapeNonPrintable(r)
-
-	// rune-safe quote trimming to correctly handle multibyte content
-	runes := []rune(r)
-	if len(runes) >= 2 && runes[0] == '"' && runes[len(runes)-1] == '"' {
-		r = string(runes[1 : len(runes)-1])
-	} else if len(runes) >= 1 && runes[0] == '"' {
-		r = string(runes[1:])
-	} else if len(runes) >= 1 && runes[len(runes)-1] == '"' {
-		r = string(runes[:len(runes)-1])
+	// canonical unescape via encoding/json; tolerate missing surrounding quotes
+	wrapped := data
+	if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
+		wrapped = `"` + data + `"`
 	}
 
-	return r
+	var out string
+	if err := json.Unmarshal([]byte(wrapped), &out); err != nil {
+		return ""
+	}
+	return out
 }
 
 // MarshalJSONCompact will accept an input variable, typically struct with json struct tags, to serialize from object into json string with compact formatting

@@ -206,16 +206,20 @@ func SplitString(source string, delimiter string, index int) string {
 
 	ar := strings.Split(source, delimiter)
 
-	if len(ar) > 0 {
-		if index <= -1 {
-			return ar[len(ar)-1]
-		} else {
-			if len(ar) > index {
-				return ar[index]
-			} else {
-				return ""
-			}
-		}
+	if len(ar) == 0 {
+		return ""
+	}
+
+	// honor the contract strictly: only -1 means "last element"
+	if index == -1 {
+		return ar[len(ar)-1]
+	}
+	if index < -1 {
+		return ""
+	}
+
+	if len(ar) > index {
+		return ar[index]
 	}
 
 	return ""
@@ -605,6 +609,8 @@ func HTMLDecode(s string) string {
 	buf = strings.Replace(buf, "&#169;", "©", -1)
 	buf = strings.Replace(buf, "&lt;FS&gt;", "=", -1)
 	buf = strings.Replace(buf, "&lt;GS&gt;", "\n", -1)
+	buf = strings.Replace(buf, "<FS>", "=", -1)
+	buf = strings.Replace(buf, "<GS>", "\n", -1)
 
 	return buf
 }

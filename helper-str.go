@@ -44,7 +44,7 @@ func NextFixedLength(data string, blockSize int) int {
 		return 0
 	}
 
-	n := len(data)
+	n := utf8.RuneCountInString(data) //use rune count to align with other rune-aware helpers
 	if n == 0 {
 		return blockSize
 	}
@@ -239,7 +239,13 @@ func SliceStringToCSVString(source []string, spaceAfterComma bool) string {
 				b.WriteString(" ")
 			}
 		}
-		b.WriteString(v)
+
+		field := v // ensure proper CSV quoting
+		if strings.IndexAny(field, ",\"\r\n") != -1 {
+			field = `"` + strings.ReplaceAll(field, `"`, `""`) + `"`
+		}
+
+		b.WriteString(field)
 	}
 
 	return b.String()
@@ -545,6 +551,10 @@ func stripBase64Whitespace(data string) string {
 // Base64StdDecode will decode given data from base 64 standard encoded string
 func Base64StdDecode(data string) (string, error) {
 	clean := stripBase64Whitespace(data)
+	if len(clean) == 0 { // reject empty input instead of silently returning empty
+		return "", fmt.Errorf("base64 data is required")
+	}
+
 	padded := clean
 	if m := len(padded) % 4; m != 0 {
 		padded += strings.Repeat("=", 4-m)
@@ -566,6 +576,9 @@ func Base64UrlEncode(data string) string {
 // Base64UrlDecode will decode given data from base 64 url encoded string
 func Base64UrlDecode(data string) (string, error) {
 	clean := stripBase64Whitespace(data)
+	if len(clean) == 0 { // reject empty input instead of silently returning empty
+		return "", fmt.Errorf("base64url data is required")
+	}
 
 	padded := clean
 	if m := len(padded) % 4; m != 0 {

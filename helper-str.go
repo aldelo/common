@@ -25,11 +25,26 @@ import (
 	"fmt"
 	"html"
 	"math"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 )
+
+// unified typed-nil detector to enforce non-nil contracts
+func isNilInterface(v interface{}) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.Slice, reflect.Interface:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
 
 // LenTrim returns length of space trimmed string s
 func LenTrim(s string) int {
@@ -652,6 +667,7 @@ func XMLFromEscaped(data string) string {
 }
 
 // MarshalXMLCompact will accept an input variable, typically struct with xml struct tags, to serialize from object into xml string
+// reject typed-nil inputs consistently
 //
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***
 //
@@ -670,7 +686,7 @@ func XMLFromEscaped(data string) string {
 //	`xml:"...,omitempty"`								<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
 //	`xml:"-"` <<< Omit From XML Marshal
 func MarshalXMLCompact(v interface{}) (string, error) {
-	if v == nil {
+	if isNilInterface(v) {
 		return "", fmt.Errorf("Object For XML Marshal Must Not Be Nil")
 	}
 
@@ -684,6 +700,7 @@ func MarshalXMLCompact(v interface{}) (string, error) {
 }
 
 // MarshalXMLIndent will accept an input variable, typically struct with xml struct tags, to serialize from object into xml string with indented formatting
+// reject typed-nil inputs consistently
 //
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***
 //
@@ -702,7 +719,7 @@ func MarshalXMLCompact(v interface{}) (string, error) {
 //	`xml:"...,omitempty"`								<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
 //	`xml:"-"` <<< Omit From XML Marshal
 func MarshalXMLIndent(v interface{}) (string, error) {
-	if v == nil {
+	if isNilInterface(v) {
 		return "", fmt.Errorf("Object For XML Marshal Must Not Be Nil")
 	}
 
@@ -725,6 +742,7 @@ func MarshalXML(v interface{}, indentXML bool) (string, error) {
 }
 
 // UnmarshalXML will accept input xml data string and deserialize into target object indicated by parameter v
+// reject typed-nil targets up front for consistent error reporting
 //
 // *** PASS PARAMETER AS "&v" IN ORDER TO BE WRITABLE ***
 //
@@ -732,8 +750,7 @@ func MarshalXML(v interface{}, indentXML bool) (string, error) {
 //
 // if unmarshal is successful, nil is returned, otherwise error info is returned
 func UnmarshalXML(xmlData string, v interface{}) error {
-	// prevent panic on nil target
-	if v == nil {
+	if isNilInterface(v) {
 		return fmt.Errorf("Target object for XML Unmarshal must not be nil")
 	}
 
@@ -775,6 +792,7 @@ func JsonFromEscaped(data string) string {
 }
 
 // MarshalJSONCompact will accept an input variable, typically struct with json struct tags, to serialize from object into json string with compact formatting
+// reject typed-nil inputs consistently
 //
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***
 //
@@ -784,7 +802,7 @@ func JsonFromEscaped(data string) string {
 //	`json:"...,omitempty"`							<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
 //	`json:"-"` <<< Omit From JSON Marshal
 func MarshalJSONCompact(v interface{}) (string, error) {
-	if v == nil {
+	if isNilInterface(v) {
 		return "", fmt.Errorf("Object For JSON Marshal Must Not Be Nil")
 	}
 
@@ -798,6 +816,7 @@ func MarshalJSONCompact(v interface{}) (string, error) {
 }
 
 // MarshalJSONIndent will accept an input variable, typically struct with json struct tags, to serialize from object into json string with indented formatting
+// reject typed-nil inputs consistently
 //
 // *** STRUCT FIELDS MUST BE EXPORTED FOR MARSHAL AND UNMARSHAL ***
 //
@@ -807,7 +826,7 @@ func MarshalJSONCompact(v interface{}) (string, error) {
 //	`json:"...,omitempty"`							<<< Omit This Line if Empty Value (false, 0, nil, zero length array)
 //	`json:"-"` <<< Omit From JSON Marshal
 func MarshalJSONIndent(v interface{}) (string, error) {
-	if v == nil {
+	if isNilInterface(v) {
 		return "", fmt.Errorf("Object For JSON Marshal Must Not Be Nil")
 	}
 
@@ -821,6 +840,7 @@ func MarshalJSONIndent(v interface{}) (string, error) {
 }
 
 // UnmarshalJSON will accept input json data string and deserialize into target object indicated by parameter v
+// reject typed-nil targets up front for consistent error reporting
 //
 // *** PASS PARAMETER AS "&v" IN ORDER TO BE WRITABLE ***
 // *** v interface{} MUST BE initialized first ***
@@ -828,8 +848,7 @@ func MarshalJSONIndent(v interface{}) (string, error) {
 //
 // if unmarshal is successful, nil is returned, otherwise error info is returned
 func UnmarshalJSON(jsonData string, v interface{}) error {
-	// prevent panic on nil target
-	if v == nil {
+	if isNilInterface(v) {
 		return fmt.Errorf("Target object for JSON Unmarshal must not be nil")
 	}
 

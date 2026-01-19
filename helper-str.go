@@ -236,16 +236,13 @@ func ParseKeyValue(s string, delimiter string, key *string, val *string) error {
 		return fmt.Errorf("Key and Val pointers are required")
 	}
 
-	if len(s) <= 2 {
-		*key = ""
-		*val = ""
-		return fmt.Errorf("Source Data Must Exceed 2 Characters")
-	}
-
+	// allow minimal key/value pairs (e.g., "a=") and avoid over-strict length check
 	if len(delimiter) == 0 {
 		delimiter = "="
 	}
-	if !strings.Contains(s, delimiter) {
+
+	idx := strings.Index(s, delimiter) // single pass lookup to validate presence
+	if idx == -1 {
 		*key = ""
 		*val = ""
 		return fmt.Errorf("Delimiter Not Found in Source Data")
@@ -751,12 +748,14 @@ func JsonFromEscaped(data string) string {
 	r = strings.Replace(data, `\\`, `\`, -1)
 	r = ascii.UnescapeNonPrintable(r)
 
-	if Left(r, 1) == "\"" {
-		r = Right(r, len(r)-1)
-	}
-
-	if Right(r, 1) == "\"" {
-		r = Left(r, len(r)-1)
+	// rune-safe quote trimming to correctly handle multibyte content
+	runes := []rune(r)
+	if len(runes) >= 2 && runes[0] == '"' && runes[len(runes)-1] == '"' {
+		r = string(runes[1 : len(runes)-1])
+	} else if len(runes) >= 1 && runes[0] == '"' {
+		r = string(runes[1:])
+	} else if len(runes) >= 1 && runes[len(runes)-1] == '"' {
+		r = string(runes[:len(runes)-1])
 	}
 
 	return r

@@ -1025,8 +1025,8 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 		return "", fmt.Errorf("MarshalStructToJson Requires Struct Object")
 	}
 
-	output := ""
 	uniqueMap := make(map[string]string)
+	jsonMap := make(map[string]string) // build a map and let json.Marshal handle escaping
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -1165,23 +1165,21 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					buf = outPrefix + defVal
 				}
 
-				buf = strings.Replace(buf, `"`, `\"`, -1)
-				buf = strings.Replace(buf, `'`, `\'`, -1)
-
-				if LenTrim(output) > 0 {
-					output += ", "
-				}
-
-				output += fmt.Sprintf(`"%s":"%s"`, tag, JsonToEscaped(buf))
+				jsonMap[tag] = buf // defer escaping/encoding to json.Marshal
 			}
 		}
 	}
 
-	if LenTrim(output) == 0 {
+	if len(jsonMap) == 0 {
 		return "", fmt.Errorf("MarshalStructToJson Yielded Blank Output")
-	} else {
-		return fmt.Sprintf("{%s}", output), nil
 	}
+
+	encoded, err := json.Marshal(jsonMap) // safe JSON encoding
+	if err != nil {
+		return "", err
+	}
+
+	return string(encoded), nil
 }
 
 // UnmarshalJsonToStruct will parse jsonPayload string,
@@ -1965,6 +1963,10 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 		// enforce required fields when missing entirely
 		if !found {
+			// virtual fields (pos < 0) are not sourced from CSV, so they should not trigger required errors
+			if cfg.pos < 0 {
+				continue
+			}
 			if cfg.tagReq == "true" {
 				StructClearFields(inputStructPtr)
 				return fmt.Errorf("%s is a Required Field", field.Name)

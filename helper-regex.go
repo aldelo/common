@@ -18,6 +18,8 @@ package helper
 
 import (
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // RegexReplaceSubString will search for substring between subStringFrom and subStringTo, replace with the replaceWith string, and optionally case insensitive or not
@@ -70,30 +72,25 @@ func replaceAllBetween(source, from, to, replace string) string {
 
 // deterministic, literal, case-insensitive replacement for all occurrences
 func replaceAllBetweenCI(source, from, to, replace string) string {
-	lower := strings.ToLower(source)
-	lowerFrom := strings.ToLower(from)
-	lowerTo := strings.ToLower(to)
-
 	var b strings.Builder
 	start := 0
 	replaced := false
 
 	for {
-		fromIdx := strings.Index(lower[start:], lowerFrom)
+		fromIdx := indexEqualFold(source, from, start) // Unicode-safe case-insensitive search
 		if fromIdx == -1 {
 			break
 		}
-		fromIdx += start
 
-		toIdx := strings.Index(lower[fromIdx+len(from):], lowerTo)
+		toIdx := indexEqualFold(source, to, fromIdx+len(from)) // Unicode-safe case-insensitive search
 		if toIdx == -1 {
 			break
 		}
-		toIdx += fromIdx + len(from)
 
 		b.WriteString(source[start : fromIdx+len(from)]) // preserve original casing on boundaries
 		b.WriteString(replace)
 		b.WriteString(source[toIdx : toIdx+len(to)]) // preserve trailing delimiter
+
 		start = toIdx + len(to)
 		replaced = true
 	}
@@ -104,4 +101,54 @@ func replaceAllBetweenCI(source, from, to, replace string) string {
 
 	b.WriteString(source[start:])
 	return b.String()
+}
+
+// indexEqualFold finds the first index of substr in s at or after start using Unicode case-folding without
+// changing string length (avoids ToLower length-mismatch bugs). Returns -1 if not found.
+func indexEqualFold(s, substr string, start int) int {
+	if substr == "" {
+		return start
+	}
+	// walk s on rune boundaries to stay UTF-8 safe
+	for i := start; i < len(s); {
+		if hasPrefixEqualFold(s[i:], substr) {
+			return i
+		}
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if size == 0 {
+			break
+		}
+		i += size
+	}
+	return -1
+}
+
+// hasPrefixEqualFold reports whether s has the given substr prefix using Unicode case-folding.
+func hasPrefixEqualFold(s, substr string) bool {
+	for len(substr) > 0 {
+		r1, size1 := utf8.DecodeRuneInString(s)
+		r2, size2 := utf8.DecodeRuneInString(substr)
+		if size1 == 0 || size2 == 0 { // ran out of runes in either string
+			return false
+		}
+		if !foldRuneEqual(r1, r2) {
+			return false
+		}
+		s = s[size1:]
+		substr = substr[size2:]
+	}
+	return true
+}
+
+// foldRuneEqual performs Unicode-aware case folding comparison for two runes.
+func foldRuneEqual(a, b rune) bool {
+	if a == b {
+		return true
+	}
+	for r := unicode.SimpleFold(a); r != a; r = unicode.SimpleFold(r) {
+		if r == b {
+			return true
+		}
+	}
+	return false
 }

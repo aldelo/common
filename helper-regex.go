@@ -17,7 +17,6 @@ package helper
  */
 
 import (
-	"regexp"
 	"strings"
 )
 
@@ -28,40 +27,79 @@ func RegexReplaceSubString(source string, subStringFrom string, subStringTo stri
 		return source
 	}
 
-	// fast-path bail-out if delimiters aren’t present, to avoid regex work
+	// replace regex-based implementation with deterministic O(n) scanning to avoid regex backtracking / CPU blow-ups
 	if !caseInsensitive {
-		if !strings.Contains(source, subStringFrom) || !strings.Contains(source, subStringTo) {
-			return source
+		return replaceAllBetween(source, subStringFrom, subStringTo, replaceWith)
+	}
+	return replaceAllBetweenCI(source, subStringFrom, subStringTo, replaceWith)
+}
+
+// deterministic, literal, case-sensitive replacement for all occurrences
+func replaceAllBetween(source, from, to, replace string) string {
+	var b strings.Builder
+	start := 0
+	replaced := false
+
+	for {
+		fromIdx := strings.Index(source[start:], from)
+		if fromIdx == -1 {
+			break
 		}
-	} else {
-		lowerSource := strings.ToLower(source)
-		if !strings.Contains(lowerSource, strings.ToLower(subStringFrom)) || !strings.Contains(lowerSource, strings.ToLower(subStringTo)) {
-			return source
+		fromIdx += start
+
+		toIdx := strings.Index(source[fromIdx+len(from):], to)
+		if toIdx == -1 {
+			break
 		}
+		toIdx += fromIdx + len(from)
+
+		b.WriteString(source[start : fromIdx+len(from)])
+		b.WriteString(replace)
+		start = toIdx + len(to)
+		replaced = true
 	}
 
-	// setup regex
-	ci := ""
-	if caseInsensitive {
-		ci = "(?i)"
-	}
-
-	// safely escape user input to avoid regex injection / invalid patterns
-	fromEsc := regexp.QuoteMeta(subStringFrom)
-	toEsc := regexp.QuoteMeta(subStringTo)
-
-	// scope dot-all to the middle only and avoid later re-matches
-	pattern := ci + "(" + fromEsc + ")(?s:.*?)(" + toEsc + ")"
-
-	// handle compile errors instead of panicking
-	regE, err := regexp.Compile(pattern)
-	if err != nil {
+	if !replaced {
 		return source
 	}
 
-	// build a literal-safe replacement (escape $ and \ so they are not treated as backrefs)
-	literalReplace := strings.ReplaceAll(strings.ReplaceAll(replaceWith, `\`, `\\`), "$", "$$")
+	b.WriteString(source[start:])
+	return b.String()
+}
 
-	// single-pass replace without re-running the regex per match
-	return regE.ReplaceAllString(source, "${1}"+literalReplace+"${2}")
+// deterministic, literal, case-insensitive replacement for all occurrences
+func replaceAllBetweenCI(source, from, to, replace string) string {
+	lower := strings.ToLower(source)
+	lowerFrom := strings.ToLower(from)
+	lowerTo := strings.ToLower(to)
+
+	var b strings.Builder
+	start := 0
+	replaced := false
+
+	for {
+		fromIdx := strings.Index(lower[start:], lowerFrom)
+		if fromIdx == -1 {
+			break
+		}
+		fromIdx += start
+
+		toIdx := strings.Index(lower[fromIdx+len(from):], lowerTo)
+		if toIdx == -1 {
+			break
+		}
+		toIdx += fromIdx + len(from)
+
+		b.WriteString(source[start : fromIdx+len(from)]) // preserve original casing on boundaries
+		b.WriteString(replace)
+		start = toIdx + len(to)
+		replaced = true
+	}
+
+	if !replaced {
+		return source
+	}
+
+	b.WriteString(source[start:])
+	return b.String()
 }

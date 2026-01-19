@@ -383,10 +383,13 @@ func csvParseUnmarshalConfig(field reflect.StructField) (cfg csvUnmarshalConfig,
 		if tagPosBuf != "-" || LenTrim(field.Tag.Get("setter")) == 0 {
 			return cfg, false
 		}
-	} else if tagPos < 0 {
-		return cfg, false
+		cfg.pos = -1
+	} else {
+		if tagPos < 0 {
+			return cfg, false
+		}
+		cfg.pos = int32(tagPos)
 	}
-	cfg.pos = int32(tagPos)
 
 	cfg.tagType = Trim(strings.ToLower(field.Tag.Get("type")))
 	switch cfg.tagType {
@@ -1574,37 +1577,19 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 				if o.Bool() {
 					return true
 				}
-			case reflect.Int8:
-				fallthrough
-			case reflect.Int16:
-				fallthrough
-			case reflect.Int:
-				fallthrough
-			case reflect.Int32:
-				fallthrough
-			case reflect.Int64:
+			case reflect.Int8, reflect.Int16, reflect.Int, reflect.Int32, reflect.Int64:
 				if o.Int() != 0 {
 					if Int64ToString(o.Int()) != tagDef {
 						return true
 					}
 				}
-			case reflect.Float32:
-				fallthrough
-			case reflect.Float64:
+			case reflect.Float32, reflect.Float64:
 				if o.Float() != 0 {
 					if Float64ToString(o.Float()) != tagDef {
 						return true
 					}
 				}
-			case reflect.Uint8:
-				fallthrough
-			case reflect.Uint16:
-				fallthrough
-			case reflect.Uint:
-				fallthrough
-			case reflect.Uint32:
-				fallthrough
-			case reflect.Uint64:
+			case reflect.Uint8, reflect.Uint16, reflect.Uint, reflect.Uint32, reflect.Uint64:
 				if o.Uint() > 0 {
 					if UInt64ToString(o.Uint()) != tagDef {
 						return true
@@ -1622,52 +1607,35 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 				switch f := o.Interface().(type) {
 				case sql.NullString:
 					if f.Valid {
-						if len(tagDef) == 0 {
+						if len(tagDef) == 0 || f.String != tagDef {
 							return true
-						} else {
-							if f.String != tagDef {
-								return true
-							}
 						}
 					}
 				case sql.NullBool:
 					if f.Valid {
 						if len(tagDef) == 0 {
 							return true
-						} else {
-							if f.Bool, _ = ParseBool(tagDef); f.Bool {
-								return true
-							}
+						}
+						if defVal, _ := ParseBool(tagDef); f.Bool != defVal { // compare without overwriting actual value
+							return true
 						}
 					}
 				case sql.NullFloat64:
 					if f.Valid {
-						if len(tagDef) == 0 {
+						if len(tagDef) == 0 || Float64ToString(f.Float64) != tagDef {
 							return true
-						} else {
-							if Float64ToString(f.Float64) != tagDef {
-								return true
-							}
 						}
 					}
 				case sql.NullInt32:
 					if f.Valid {
-						if len(tagDef) == 0 {
+						if len(tagDef) == 0 || Itoa(int(f.Int32)) != tagDef {
 							return true
-						} else {
-							if Itoa(int(f.Int32)) != tagDef {
-								return true
-							}
 						}
 					}
 				case sql.NullInt64:
 					if f.Valid {
-						if len(tagDef) == 0 {
+						if len(tagDef) == 0 || Int64ToString(f.Int64) != tagDef {
 							return true
-						} else {
-							if Int64ToString(f.Int64) != tagDef {
-								return true
-							}
 						}
 					}
 				case sql.NullTime:

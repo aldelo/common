@@ -571,7 +571,10 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			return csvValue, false, nil
 		}
 		if len(ov) == 1 {
-			// honor booltrue/boolfalse literals when stringifying setter return
+			if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
+				o.Set(ov[0])
+				return csvValue, true, nil
+			}
 			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
 				return val, false, nil
 			}
@@ -2621,26 +2624,24 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		csvList[cfg.pos] = cfg.outPrefix + fv
 	}
 
-	firstCsvElement := true
 	for _, v := range csvList {
 		if excludePlaceholders {
 			if v != "{?}" && LenTrim(v) > 0 {
-				if LenTrim(csvPayload) > 0 {
+				if len(csvPayload) > 0 { // only add delimiter after an emitted value
 					csvPayload += csvDelimiter
 				}
 				csvPayload += v
 			}
-		} else {
-			if !firstCsvElement {
-				csvPayload += csvDelimiter
-			}
-			if v != "{?}" {
-				csvPayload += v
-			}
-			if firstCsvElement {
-				firstCsvElement = false
-			}
+			continue
 		}
+
+		if v == "{?}" {
+			continue // skip placeholders without advancing delimiter state
+		}
+		if len(csvPayload) > 0 { // avoid leading delimiter
+			csvPayload += csvDelimiter
+		}
+		csvPayload += v
 	}
 
 	return csvPayload, nil

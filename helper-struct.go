@@ -138,16 +138,19 @@ func csvParseFieldConfig(field reflect.StructField) (cfg csvFieldConfig, ok bool
 		cfg.zeroBlank, _ = ParseBool(vs[6])
 	}
 
+	// safer getter parsing (no Left/Right on short strings)
 	if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
-		cfg.tagGetter = tagGetter
-		if strings.ToLower(Left(tagGetter, 5)) == "base." {
+		lg := strings.ToLower(tagGetter)
+		if strings.HasPrefix(lg, "base.") {
 			cfg.getterBase = true
-			cfg.tagGetter = Right(tagGetter, len(tagGetter)-5)
+			tagGetter = tagGetter[5:]
+			lg = strings.ToLower(tagGetter)
 		}
-		if strings.ToLower(Right(cfg.tagGetter, 3)) == "(x)" {
+		if strings.HasSuffix(lg, "(x)") && len(tagGetter) >= 3 {
 			cfg.getterParam = true
-			cfg.tagGetter = Left(cfg.tagGetter, len(cfg.tagGetter)-3)
+			tagGetter = tagGetter[:len(tagGetter)-3]
 		}
+		cfg.tagGetter = tagGetter
 	}
 
 	return cfg, true
@@ -420,9 +423,9 @@ func csvParseUnmarshalConfig(field reflect.StructField) (cfg csvUnmarshalConfig,
 	}
 
 	cfg.tagSetter = Trim(field.Tag.Get("setter"))
-	if LenTrim(cfg.tagSetter) > 0 && strings.ToLower(Left(cfg.tagSetter, 5)) == "base." {
+	if len(cfg.tagSetter) > 0 && strings.HasPrefix(strings.ToLower(cfg.tagSetter), "base.") {
 		cfg.setterBase = true
-		cfg.tagSetter = Right(cfg.tagSetter, len(cfg.tagSetter)-5)
+		cfg.tagSetter = cfg.tagSetter[5:]
 	}
 
 	cfg.timeFormat = Trim(field.Tag.Get("timeformat"))
@@ -485,6 +488,10 @@ func csvExtractValue(csvElements []string, cfg csvUnmarshalConfig, prefixProcess
 
 	// variable-length with outprefix
 	for _, v := range csvElements {
+		// guard against short strings before slicing
+		if len(v) < len(cfg.outPrefix) {
+			continue
+		}
 		if strings.ToLower(Left(v, len(cfg.outPrefix))) == strings.ToLower(cfg.outPrefix) {
 			if _, ok := prefixProcessedMap[strings.ToLower(cfg.outPrefix)]; ok {
 				continue
@@ -788,9 +795,10 @@ func jsonParseFieldConfig(field reflect.StructField) (cfg jsonFieldConfig, ok bo
 	}
 
 	cfg.tagSetter = Trim(field.Tag.Get("setter"))
-	if LenTrim(cfg.tagSetter) > 0 && strings.ToLower(Left(cfg.tagSetter, 5)) == "base." {
+	// safer setter parsing
+	if len(cfg.tagSetter) > 0 && strings.HasPrefix(strings.ToLower(cfg.tagSetter), "base.") {
 		cfg.setterBase = true
-		cfg.tagSetter = Right(cfg.tagSetter, len(cfg.tagSetter)-5)
+		cfg.tagSetter = cfg.tagSetter[5:]
 	}
 
 	cfg.timeFormat = Trim(field.Tag.Get("timeformat"))
@@ -1156,13 +1164,15 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					useParam := false
 					paramVal := ""
 					var paramSlice interface{}
+					lg := strings.ToLower(tagGetter)
 
-					if strings.ToLower(Left(tagGetter, 5)) == "base." {
+					if strings.HasPrefix(lg, "base.") {
 						isBase = true
-						tagGetter = Right(tagGetter, len(tagGetter)-5)
+						tagGetter = tagGetter[5:]
+						lg = strings.ToLower(tagGetter)
 					}
 
-					if strings.ToLower(Right(tagGetter, 3)) == "(x)" {
+					if strings.HasSuffix(lg, "(x)") && len(tagGetter) >= 3 {
 						useParam = true
 
 						if o.Kind() != reflect.Slice {
@@ -1173,7 +1183,7 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 							}
 						}
 
-						tagGetter = Left(tagGetter, len(tagGetter)-3)
+						tagGetter = tagGetter[:len(tagGetter)-3]
 					}
 
 					var ov []reflect.Value
@@ -1363,13 +1373,15 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					useParam := false
 					paramVal := ""
 					var paramSlice interface{}
+					lg := strings.ToLower(tagGetter)
 
-					if strings.ToLower(Left(tagGetter, 5)) == "base." {
+					if strings.HasPrefix(lg, "base.") {
 						isBase = true
-						tagGetter = Right(tagGetter, len(tagGetter)-5)
+						tagGetter = tagGetter[5:]
+						lg = strings.ToLower(tagGetter)
 					}
 
-					if strings.ToLower(Right(tagGetter, 3)) == "(x)" {
+					if strings.HasSuffix(lg, "(x)") && len(tagGetter) >= 3 {
 						useParam = true
 
 						if o.Kind() != reflect.Slice {
@@ -1380,7 +1392,7 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 							}
 						}
 
-						tagGetter = Left(tagGetter, len(tagGetter)-3)
+						tagGetter = tagGetter[:len(tagGetter)-3]
 					}
 
 					var ov []reflect.Value
@@ -1805,6 +1817,88 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
 			tagDef := field.Tag.Get("def")
+
+			if len(tagDef) == 0 {
+				continue
+			}
+
+			// safer setter parsing (no Left/Right on short strings)
+			tagSetter := Trim(field.Tag.Get("setter"))
+			setterBase := false
+			if len(tagSetter) > 0 && strings.HasPrefix(strings.ToLower(tagSetter), "base.") {
+				setterBase = true
+				tagSetter = tagSetter[5:]
+			}
+
+			applySetter := func() (handled bool, updatedDef string, err error) { // error surfaced
+				updatedDef = tagDef
+				if LenTrim(tagSetter) == 0 {
+					return false, updatedDef, nil
+				}
+
+				// ensure allocation for pointer/interface targets
+				if o.Kind() != reflect.Slice {
+					if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
+						o.Set(reflect.New(baseType.Type()))
+					} else if o.Kind() == reflect.Interface && o.Interface() == nil {
+						if customType := ReflectTypeRegistryGet(o.Type().String()); customType != nil {
+							o.Set(reflect.New(customType))
+						} else {
+							return true, updatedDef, fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
+						}
+					}
+				}
+
+				var ov []reflect.Value
+				var notFound bool
+
+				if setterBase {
+					ov, notFound = ReflectCall(s.Addr(), tagSetter, updatedDef)
+				} else {
+					// allow pointer-receiver setters for value fields by using an addressable target when possible
+					callTarget := o
+					if o.Kind() != reflect.Ptr && callTarget.CanAddr() {
+						callTarget = callTarget.Addr()
+					}
+					ov, notFound = ReflectCall(callTarget, tagSetter, updatedDef)
+				}
+				if notFound {
+					return false, updatedDef, nil
+				}
+
+				if len(ov) == 1 {
+					if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
+						o.Set(ov[0])
+						return true, updatedDef, nil
+					}
+					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {
+						return false, val, nil
+					}
+					return true, updatedDef, nil
+				} else if len(ov) > 1 {
+					if err := DerefError(ov[len(ov)-1]); err != nil { // propagate setter error
+						return true, updatedDef, err
+					}
+					if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
+						o.Set(ov[0])
+						return true, updatedDef, nil
+					}
+					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {
+						return false, val, nil
+					}
+					return true, updatedDef, nil
+				}
+
+				return false, updatedDef, nil
+			}
+
+			if handled, newDef, err := applySetter(); err != nil { // propagate error
+				return false
+			} else if handled {
+				continue
+			} else {
+				tagDef = newDef
+			}
 
 			switch o.Kind() {
 			case reflect.String:

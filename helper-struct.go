@@ -168,7 +168,12 @@ func csvApplyGetter(s reflect.Value, cfg csvFieldConfig, o reflect.Value, boolTr
 
 	if useParam {
 		if o.Kind() != reflect.Slice {
-			paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+			// avoid stringifying nil pointers
+			if o.Kind() == reflect.Ptr && o.IsNil() {
+				paramVal = ""
+			} else {
+				paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+			}
 		} else if o.Len() > 0 {
 			paramSlice = o.Slice(0, o.Len()).Interface()
 		}
@@ -188,6 +193,10 @@ func csvApplyGetter(s reflect.Value, cfg csvFieldConfig, o reflect.Value, boolTr
 			ov, notFound = ReflectCall(s.Addr(), cfg.tagGetter)
 		}
 	} else {
+		// guard against nil pointer receiver
+		if o.Kind() == reflect.Ptr && o.IsNil() {
+			return o
+		}
 		if useParam {
 			if paramSlice == nil {
 				ov, notFound = ReflectCall(o, cfg.tagGetter, paramVal)
@@ -573,6 +582,10 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 		if len(ov) == 1 {
 			if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
 				o.Set(ov[0])
+				// return string form of the newly set value so downstream validation sees real data
+				if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
+					return val, true, nil
+				}
 				return csvValue, true, nil
 			}
 			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
@@ -623,6 +636,10 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 	if !notFound {
 		if len(ov) == 1 && (ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice) {
 			o.Set(ov[0])
+			// provide string form of setter result for validation
+			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
+				return val, true, nil
+			}
 			return csvValue, true, nil
 		} else if len(ov) > 1 {
 			// propagate setter error if present
@@ -631,6 +648,10 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			}
 			if (ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice) && !ov[0].IsNil() {
 				o.Set(ov[0])
+				// provide string form for validation when setter handled assignment
+				if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
+					return val, true, nil
+				}
 				return csvValue, true, nil
 			}
 			// honor booltrue/boolfalse literals when stringifying setter return
@@ -2624,22 +2645,25 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		csvList[cfg.pos] = cfg.outPrefix + fv
 	}
 
-	for _, v := range csvList {
+	// preserve column positions when placeholders remain (fixed-length CSV)
+	for idx, v := range csvList {
 		if excludePlaceholders {
-			if v != "{?}" && LenTrim(v) > 0 {
-				if len(csvPayload) > 0 { // only add delimiter after an emitted value
-					csvPayload += csvDelimiter
-				}
-				csvPayload += v
+			if v == "{?}" || LenTrim(v) == 0 {
+				continue
 			}
+			if len(csvPayload) > 0 {
+				csvPayload += csvDelimiter
+			}
+			csvPayload += v
 			continue
 		}
 
-		if v == "{?}" {
-			continue // skip placeholders without advancing delimiter state
-		}
-		if len(csvPayload) > 0 { // avoid leading delimiter
+		if idx > 0 {
 			csvPayload += csvDelimiter
+		}
+		if v == "{?}" {
+			// leave empty slot to keep positional alignment
+			continue
 		}
 		csvPayload += v
 	}

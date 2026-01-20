@@ -552,16 +552,16 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			if val, _, err := ReflectValueToString(ov[0], "", "", false, false, cfg.timeFormat, false); err == nil {
 				return val, false, nil
 			}
+			return csvValue, false, nil
 		} else if len(ov) > 1 {
-			getFirst := true
-			if e, ok := ov[len(ov)-1].Interface().(error); ok && e != nil {
-				getFirst = false
+			// propagate setter error if present
+			if err := DerefError(ov[len(ov)-1]); err != nil {
+				return csvValue, false, err
 			}
-			if getFirst {
-				if val, _, err := ReflectValueToString(ov[0], "", "", false, false, cfg.timeFormat, false); err == nil {
-					return val, false, nil
-				}
+			if val, _, err := ReflectValueToString(ov[0], "", "", false, false, cfg.timeFormat, false); err == nil {
+				return val, false, nil
 			}
+			return csvValue, false, nil
 		}
 		return csvValue, false, nil
 	}
@@ -591,8 +591,11 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			o.Set(ov[0])
 			return csvValue, true, nil
 		} else if len(ov) > 1 {
-			getFirst := DerefError(ov[len(ov)-1]) == nil
-			if getFirst && (ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice) {
+			// propagate setter error if present
+			if err := DerefError(ov[len(ov)-1]); err != nil {
+				return csvValue, false, err
+			}
+			if (ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice) && !ov[0].IsNil() {
 				o.Set(ov[0])
 				return csvValue, true, nil
 			}
@@ -1251,7 +1254,10 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 	}
 
 	StructClearFields(inputStructPtr)
-	SetStructFieldDefaultValues(inputStructPtr)
+	// propagate default-setting errors
+	if _, err := SetStructFieldDefaultValues(inputStructPtr); err != nil {
+		return err
+	}
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -1305,6 +1311,10 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 
 							if !notFound && len(results) > 0 {
 								if len(results) == 1 {
+									// propagate setter error if present
+									if err := DerefError(results[len(results)-1]); err != nil {
+										return err
+									}
 									if jv, _, err := ReflectValueToString(results[0], "", "", false, false, timeFormat, false); err == nil {
 										jValue = jv
 									}
@@ -1360,16 +1370,12 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 										o.Set(ov[0])
 									}
 								} else if len(ov) > 1 {
-									getFirstVar := true
-
-									if e := DerefError(ov[len(ov)-1]); e != nil {
-										getFirstVar = false
+									// propagate setter error if present
+									if err := DerefError(ov[len(ov)-1]); err != nil {
+										return err
 									}
-
-									if getFirstVar {
-										if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
-											o.Set(ov[0])
-										}
+									if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
+										o.Set(ov[0])
 									}
 								}
 							}
@@ -1699,21 +1705,21 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 // this method is used during unmarshal action only,
 // default value setting is for value types and fields with `setter:""` defined only,
 // time format is used if field is datetime, for overriding default format of ISO style
-func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
+func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 	if inputStructPtr == nil {
-		return false
+		return false, nil
 	}
 
 	s := reflect.ValueOf(inputStructPtr)
 
 	if s.Kind() != reflect.Ptr {
-		return false
+		return false, nil
 	} else {
 		s = s.Elem()
 	}
 
 	if s.Kind() != reflect.Struct {
-		return false
+		return false, nil
 	}
 
 	for i := 0; i < s.NumField(); i++ {
@@ -1734,10 +1740,10 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 				tagSetter = Right(tagSetter, len(tagSetter)-5)
 			}
 
-			applySetter := func() (handled bool, updatedDef string) {
+			applySetter := func() (handled bool, updatedDef string, err error) { // error surfaced
 				updatedDef = tagDef
 				if LenTrim(tagSetter) == 0 {
-					return false, updatedDef
+					return false, updatedDef, nil
 				}
 
 				// ensure allocation for pointer/interface targets
@@ -1748,7 +1754,7 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 						if customType := ReflectTypeRegistryGet(o.Type().String()); customType != nil {
 							o.Set(reflect.New(customType))
 						} else {
-							return true, updatedDef
+							return true, updatedDef, fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
 						}
 					}
 				}
@@ -1761,36 +1767,38 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 					ov, notFound = ReflectCall(o, tagSetter, updatedDef)
 				}
 				if notFound {
-					return false, updatedDef
+					return false, updatedDef, nil
 				}
 
 				if len(ov) == 1 {
 					if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
 						o.Set(ov[0])
-						return true, updatedDef
+						return true, updatedDef, nil
 					}
 					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {
-						return false, val
+						return false, val, nil
 					}
-					return true, updatedDef
+					return true, updatedDef, nil
 				} else if len(ov) > 1 {
-					if err := DerefError(ov[len(ov)-1]); err != nil {
-						return true, updatedDef
+					if err := DerefError(ov[len(ov)-1]); err != nil { // propagate setter error
+						return true, updatedDef, err
 					}
 					if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
 						o.Set(ov[0])
-						return true, updatedDef
+						return true, updatedDef, nil
 					}
 					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {
-						return false, val
+						return false, val, nil
 					}
-					return true, updatedDef
+					return true, updatedDef, nil
 				}
 
-				return false, updatedDef
+				return false, updatedDef, nil
 			}
 
-			if handled, newDef := applySetter(); handled {
+			if handled, newDef, err := applySetter(); err != nil { // propagate error
+				return false, err
+			} else if handled {
 				continue
 			} else {
 				tagDef = newDef
@@ -1803,19 +1811,19 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 				}
 			case reflect.Int8, reflect.Int16, reflect.Int, reflect.Int32, reflect.Int64:
 				if o.Int() == 0 {
-					if i64, ok := ParseInt64(tagDef); ok && i64 != 0 && !o.OverflowInt(i64) {
+					if i64, ok := ParseInt64(tagDef); ok && !o.OverflowInt(i64) { // allow zero defaults
 						o.SetInt(i64)
 					}
 				}
 			case reflect.Float32, reflect.Float64:
 				if o.Float() == 0 {
-					if f64, ok := ParseFloat64(tagDef); ok && f64 != 0 && !o.OverflowFloat(f64) {
+					if f64, ok := ParseFloat64(tagDef); ok && !o.OverflowFloat(f64) { // allow zero defaults
 						o.SetFloat(f64)
 					}
 				}
 			case reflect.Uint8, reflect.Uint16, reflect.Uint, reflect.Uint32, reflect.Uint64:
 				if o.Uint() == 0 {
-					if u64 := StrToUint64(tagDef); u64 != 0 && !o.OverflowUint(u64) {
+					if u64 := StrToUint64(tagDef); u64 >= 0 && !o.OverflowUint(u64) { // allow zero defaults
 						o.SetUint(u64)
 					}
 				}
@@ -1832,20 +1840,20 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 					}
 				case sql.NullFloat64:
 					if !f.Valid {
-						if f64, ok := ParseFloat64(tagDef); ok && f64 != 0 {
-							o.Set(reflect.ValueOf(sql.NullFloat64{Float64: f64, Valid: true}))
+						if f64, ok := ParseFloat64(tagDef); ok {
+							o.Set(reflect.ValueOf(sql.NullFloat64{Float64: f64, Valid: true})) // allow zero defaults
 						}
 					}
 				case sql.NullInt32:
 					if !f.Valid {
-						if i32, ok := ParseInt32(tagDef); ok && i32 != 0 {
-							o.Set(reflect.ValueOf(sql.NullInt32{Int32: int32(i32), Valid: true}))
+						if i32, ok := ParseInt32(tagDef); ok {
+							o.Set(reflect.ValueOf(sql.NullInt32{Int32: int32(i32), Valid: true})) // allow zero defaults
 						}
 					}
 				case sql.NullInt64:
 					if !f.Valid {
-						if i64, ok := ParseInt64(tagDef); ok && i64 != 0 {
-							o.Set(reflect.ValueOf(sql.NullInt64{Int64: i64, Valid: true}))
+						if i64, ok := ParseInt64(tagDef); ok {
+							o.Set(reflect.ValueOf(sql.NullInt64{Int64: i64, Valid: true})) // allow zero defaults
 						}
 					}
 				case sql.NullTime:
@@ -1873,7 +1881,7 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) bool {
 		}
 	}
 
-	return true
+	return true, nil
 }
 
 // UnmarshalCSVToStruct will parse csvPayload string (one line of csv data) using csvDelimiter, (if csvDelimiter = "", then customDelimiterParserFunc is required)
@@ -1961,7 +1969,9 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 	}
 
 	StructClearFields(inputStructPtr)
-	SetStructFieldDefaultValues(inputStructPtr)
+	if _, err := SetStructFieldDefaultValues(inputStructPtr); err != nil { // propagate default-setting errors
+		return err
+	}
 	prefixProcessedMap := make(map[string]string)
 
 	// collect virtual fields (pos < 0) that rely on setters so we can execute them after positional fields are loaded.

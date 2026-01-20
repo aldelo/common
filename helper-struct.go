@@ -28,7 +28,7 @@ import (
  */
 
 // =====================================================================================================================
-// helper type and functions
+// Csv Parser Helpers
 // =====================================================================================================================
 
 type csvFieldConfig struct {
@@ -360,7 +360,9 @@ func csvValidateCustom(fv string, cfg csvFieldConfig, tagReq string, s reflect.V
 	return nil
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
+// =====================================================================================================================
+// Csv Unmarshal Helpers
+// =====================================================================================================================
 
 type csvUnmarshalConfig struct {
 	pos         int32
@@ -731,6 +733,258 @@ func csvValidateCustomUnmarshal(csvValue string, cfg csvUnmarshalConfig, s refle
 		}
 	}
 	return nil
+}
+
+// =====================================================================================================================
+// Json Parser Helpers
+// =====================================================================================================================
+
+// NEW: json field config + helpers for validation parity with CSV
+type jsonFieldConfig struct {
+	tagType     string
+	tagRegEx    string
+	sizeMin     int32
+	sizeMax     int32
+	tagModulo   int32
+	tagReq      string
+	tagSetter   string
+	setterBase  bool
+	timeFormat  string
+	tagRangeMin int32
+	tagRangeMax int32
+	outPrefix   string
+	boolTrue    string
+	boolFalse   string
+	validate    string
+}
+
+func jsonParseFieldConfig(field reflect.StructField) (cfg jsonFieldConfig, ok bool) {
+	cfg.tagType = Trim(strings.ToLower(field.Tag.Get("type")))
+	switch cfg.tagType {
+	case "a", "n", "an", "ans", "b", "b64", "regex", "h":
+	default:
+		cfg.tagType = ""
+	}
+
+	cfg.tagRegEx = Trim(field.Tag.Get("regex"))
+	if cfg.tagType != "regex" {
+		cfg.tagRegEx = ""
+	} else if LenTrim(cfg.tagRegEx) == 0 {
+		cfg.tagType = ""
+		cfg.tagRegEx = ""
+	}
+
+	cfg.tagReq = Trim(strings.ToLower(field.Tag.Get("req")))
+	if cfg.tagReq != "true" && cfg.tagReq != "false" {
+		cfg.tagReq = ""
+	}
+
+	cfg.tagSetter = Trim(field.Tag.Get("setter"))
+	if LenTrim(cfg.tagSetter) > 0 && strings.ToLower(Left(cfg.tagSetter, 5)) == "base." {
+		cfg.setterBase = true
+		cfg.tagSetter = Right(cfg.tagSetter, len(cfg.tagSetter)-5)
+	}
+
+	cfg.timeFormat = Trim(field.Tag.Get("timeformat"))
+	cfg.outPrefix = Trim(field.Tag.Get("outprefix"))
+	cfg.boolTrue = Trim(field.Tag.Get("booltrue"))
+	cfg.boolFalse = Trim(field.Tag.Get("boolfalse"))
+	cfg.validate = Trim(field.Tag.Get("validate"))
+
+	// size
+	tagSize := Trim(strings.ToLower(field.Tag.Get("size")))
+	arModulo := strings.Split(tagSize, "+%")
+	if len(arModulo) == 2 {
+		tagSize = arModulo[0]
+		if n, _ := ParseInt32(arModulo[1]); n < 0 {
+			cfg.tagModulo = 0
+		} else {
+			cfg.tagModulo = int32(n)
+		}
+	}
+	arSize := strings.Split(tagSize, "..")
+	if len(arSize) == 2 {
+		iMin, _ := ParseInt32(arSize[0])
+		cfg.sizeMin = int32(iMin)
+		iMax, _ := ParseInt32(arSize[1])
+		cfg.sizeMax = int32(iMax)
+	} else {
+		iMin, _ := ParseInt32(tagSize)
+		cfg.sizeMin = int32(iMin)
+		cfg.sizeMax = int32(iMin)
+	}
+
+	// range
+	tagRange := Trim(strings.ToLower(field.Tag.Get("range")))
+	arRange := strings.Split(tagRange, "..")
+	if len(arRange) == 2 {
+		iMin, _ := ParseInt32(arRange[0])
+		cfg.tagRangeMin = int32(iMin)
+		iMax, _ := ParseInt32(arRange[1])
+		cfg.tagRangeMax = int32(iMax)
+	} else {
+		iMin, _ := ParseInt32(tagRange)
+		cfg.tagRangeMin = int32(iMin)
+		cfg.tagRangeMax = int32(iMin)
+	}
+
+	return cfg, true
+}
+
+func jsonPreprocessValue(raw string, cfg jsonFieldConfig, hasSetter bool, trueList []string) (string, error) {
+	val := raw
+	switch cfg.tagType {
+	case "a":
+		val, _ = ExtractAlpha(val)
+	case "n":
+		val, _ = ExtractNumeric(val)
+	case "an":
+		val, _ = ExtractAlphaNumeric(val)
+	case "ans":
+		if !hasSetter {
+			val, _ = ExtractAlphaNumericPrintableSymbols(val)
+		}
+	case "b":
+		if StringSliceContains(&trueList, strings.ToLower(val)) {
+			val = "true"
+		} else {
+			val = "false"
+		}
+	case "regex":
+		val, _ = ExtractByRegex(val, cfg.tagRegEx)
+	case "h":
+		val, _ = ExtractHex(val)
+	case "b64":
+		val, _ = ExtractAlphaNumericPrintableSymbols(val)
+	}
+
+	if cfg.tagType == "a" || cfg.tagType == "an" || cfg.tagType == "ans" || cfg.tagType == "n" || cfg.tagType == "regex" || cfg.tagType == "h" || cfg.tagType == "b64" {
+		if cfg.sizeMax > 0 && len(val) > int(cfg.sizeMax) {
+			val = Left(val, int(cfg.sizeMax))
+		}
+		if cfg.tagModulo > 0 && len(val)%int(cfg.tagModulo) != 0 {
+			return "", fmt.Errorf("Expects Value In Blocks of %d Characters", cfg.tagModulo)
+		}
+	}
+
+	return val, nil
+}
+
+func jsonValidateValue(val string, cfg jsonFieldConfig, fieldName string) error {
+	if cfg.tagType == "a" || cfg.tagType == "an" || cfg.tagType == "ans" || cfg.tagType == "n" || cfg.tagType == "regex" || cfg.tagType == "h" || cfg.tagType == "b64" {
+		if cfg.sizeMin > 0 && len(val) > 0 && len(val) < int(cfg.sizeMin) {
+			return fmt.Errorf("%s Min Length is %d", fieldName, cfg.sizeMin)
+		}
+	}
+	if cfg.tagType == "n" {
+		n, ok := ParseInt32(val)
+		if len(val) > 0 && !ok {
+			return fmt.Errorf("%s expects numeric value", fieldName)
+		}
+		if ok {
+			if cfg.tagRangeMin > 0 && int32(n) < cfg.tagRangeMin && !(n == 0 && cfg.tagReq != "true") {
+				return fmt.Errorf("%s Range Minimum is %d", fieldName, cfg.tagRangeMin)
+			}
+			if cfg.tagRangeMax > 0 && int32(n) > cfg.tagRangeMax {
+				return fmt.Errorf("%s Range Maximum is %d", fieldName, cfg.tagRangeMax)
+			}
+		}
+	}
+	if cfg.tagReq == "true" && len(val) == 0 {
+		return fmt.Errorf("%s is a Required Field", fieldName)
+	}
+	return nil
+}
+
+func jsonValidateCustom(val string, cfg jsonFieldConfig, s reflect.Value, fieldName string) error {
+	if len(cfg.validate) < 3 {
+		return nil
+	}
+	valComp := Left(cfg.validate, 2)
+	valData := Right(cfg.validate, len(cfg.validate)-2)
+
+	switch valComp {
+	case "==":
+		valAr := strings.Split(valData, "||")
+		if len(valAr) <= 1 {
+			if strings.ToLower(val) != strings.ToLower(valData) && (len(val) > 0 || cfg.tagReq == "true") {
+				return fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", fieldName, valData, val)
+			}
+		} else {
+			found := false
+			for _, va := range valAr {
+				if strings.ToLower(val) == strings.ToLower(va) {
+					found = true
+					break
+				}
+			}
+			if !found && (len(val) > 0 || cfg.tagReq == "true") {
+				return fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", fieldName, strings.ReplaceAll(valData, "||", " or "), val)
+			}
+		}
+	case "!=":
+		valAr := strings.Split(valData, "&&")
+		if len(valAr) <= 1 {
+			if strings.ToLower(val) == strings.ToLower(valData) && (len(val) > 0 || cfg.tagReq == "true") {
+				return fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", fieldName, valData, val)
+			}
+		} else {
+			found := false
+			for _, va := range valAr {
+				if strings.ToLower(val) == strings.ToLower(va) {
+					found = true
+					break
+				}
+			}
+			if found && (len(val) > 0 || cfg.tagReq == "true") {
+				return fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", fieldName, strings.ReplaceAll(valData, "&&", " and "), val)
+			}
+		}
+	case "<=":
+		if valNum, valOk := ParseFloat64(valData); valOk {
+			if srcNum, _ := ParseFloat64(val); srcNum > valNum && (len(val) > 0 || cfg.tagReq == "true") {
+				return fmt.Errorf("%s Validation Failed: Expected To Be Less or Equal To '%s', But Received '%s'", fieldName, valData, val)
+			}
+		}
+	case "<<":
+		if valNum, valOk := ParseFloat64(valData); valOk {
+			if srcNum, _ := ParseFloat64(val); srcNum >= valNum && (len(val) > 0 || cfg.tagReq == "true") {
+				return fmt.Errorf("%s Validation Failed: Expected To Be Less Than '%s', But Received '%s'", fieldName, valData, val)
+			}
+		}
+	case ">=":
+		if valNum, valOk := ParseFloat64(valData); valOk {
+			if srcNum, _ := ParseFloat64(val); srcNum < valNum && (len(val) > 0 || cfg.tagReq == "true") {
+				return fmt.Errorf("%s Validation Failed: Expected To Be Greater or Equal To '%s', But Received '%s'", fieldName, valData, val)
+			}
+		}
+	case ">>":
+		if valNum, valOk := ParseFloat64(valData); valOk {
+			if srcNum, _ := ParseFloat64(val); srcNum <= valNum && (len(val) > 0 || cfg.tagReq == "true") {
+				return fmt.Errorf("%s Validation Failed: Expected To Be Greater Than '%s', But Received '%s'", fieldName, valData, val)
+			}
+		}
+	case ":=":
+		if len(valData) > 0 {
+			if retV, nf := ReflectCall(s.Addr(), valData); !nf && len(retV) > 0 {
+				if retV[0].Kind() == reflect.Bool && !retV[0].Bool() {
+					return fmt.Errorf("%s Validation Failed: %s() Returned Result is False", fieldName, valData)
+				}
+				if retErr := DerefError(retV[0]); retErr != nil {
+					return fmt.Errorf("%s Validation On %s() Failed: %s", fieldName, valData, retErr.Error())
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func jsonApplySetter(s reflect.Value, cfg jsonFieldConfig, o reflect.Value, jsonValue string) (string, bool, error) {
+	return csvApplySetter(s, csvUnmarshalConfig{ // reuse proven setter logic
+		tagSetter:  cfg.tagSetter,
+		setterBase: cfg.setterBase,
+		timeFormat: cfg.timeFormat,
+	}, o, jsonValue)
 }
 
 // =====================================================================================================================
@@ -1245,7 +1499,7 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 		return fmt.Errorf("TagName is Required")
 	}
 
-	// reset state and apply defaults before unmarshalling (parity with CSV unmarshal)
+	// reset state and defaults up front
 	StructClearFields(inputStructPtr)
 	if _, err := SetStructFieldDefaultValues(inputStructPtr); err != nil {
 		return err
@@ -1278,16 +1532,14 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 		return fmt.Errorf("Unmarshaled Json Map Has No Elements")
 	}
 
-	StructClearFields(inputStructPtr)
-	// propagate default-setting errors
-	if _, err := SetStructFieldDefaultValues(inputStructPtr); err != nil {
-		return err
-	}
+	trueList := []string{"true", "yes", "on", "1", "enabled"}
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
+			cfg, _ := jsonParseFieldConfig(field)
+
 			// get json field name if defined
 			jName := Trim(field.Tag.Get(tagName))
 
@@ -1305,148 +1557,65 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 				jName = field.Name
 			}
 
-			// get json field value based on jName from jsonMap
-			jValue := ""
-			timeFormat := Trim(field.Tag.Get("timeformat"))
-
-			if jRaw, ok := jsonMap[jName]; !ok {
-				continue
-			} else {
-				jValue = JsonFromEscaped(string(jRaw))
-
-				if len(jValue) > 0 {
-					if tagSetter := Trim(field.Tag.Get("setter")); len(tagSetter) > 0 {
-						isBase := false
-
-						if strings.ToLower(Left(tagSetter, 5)) == "base." {
-							isBase = true
-							tagSetter = Right(tagSetter, len(tagSetter)-5)
-						}
-
-						if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct && o.Kind() != reflect.Slice {
-							// o is not ptr, interface, struct
-							var results []reflect.Value
-							var notFound bool
-
-							// allow pointer-receiver setters when addressable
-							callTarget := o
-							if callTarget.CanAddr() {
-								callTarget = callTarget.Addr()
-							}
-
-							if isBase {
-								results, notFound = ReflectCall(s.Addr(), tagSetter, jValue)
-							} else {
-								results, notFound = ReflectCall(callTarget, tagSetter, jValue)
-							}
-
-							if !notFound && len(results) > 0 {
-								if len(results) == 1 {
-									// propagate setter error if present
-									if err := DerefError(results[len(results)-1]); err != nil {
-										return err
-									}
-									if jv, _, err := ReflectValueToString(results[0], "", "", false, false, timeFormat, false); err == nil {
-										jValue = jv
-									}
-								} else if len(results) > 1 {
-									getFirstVar := true
-
-									if e, ok := results[len(results)-1].Interface().(error); ok {
-										// last var is error, check if error exists
-										if e != nil {
-											getFirstVar = false
-										}
-									}
-
-									if getFirstVar {
-										if jv, _, err := ReflectValueToString(results[0], "", "", false, false, timeFormat, false); err == nil {
-											jValue = jv
-										}
-									}
-								}
-							}
-						} else {
-							// o is ptr, interface, struct
-							// get base type
-							if o.Kind() != reflect.Slice {
-								if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
-									// create new struct pointer
-									o.Set(reflect.New(baseType.Type()))
-								} else {
-									if o.Kind() == reflect.Interface && o.Interface() == nil {
-										customType := ReflectTypeRegistryGet(o.Type().String())
-
-										if customType == nil {
-											return fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
-										} else {
-											o.Set(reflect.New(customType))
-										}
-									}
-								}
-							}
-
-							var ov []reflect.Value
-							var notFound bool
-
-							// allow pointer-receiver setters when addressable
-							callTarget := o
-							if callTarget.CanAddr() {
-								callTarget = callTarget.Addr()
-							}
-
-							if isBase {
-								ov, notFound = ReflectCall(s.Addr(), tagSetter, jValue)
-							} else {
-								ov, notFound = ReflectCall(callTarget, tagSetter, jValue)
-							}
-
-							if !notFound {
-								if len(ov) == 1 {
-									if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
-										o.Set(ov[0])
-									}
-								} else if len(ov) > 1 {
-									// propagate setter error if present
-									if err := DerefError(ov[len(ov)-1]); err != nil {
-										return err
-									}
-									if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
-										o.Set(ov[0])
-									}
-								}
-							}
-
-							// for o as ptr
-							// once complete, continue
-							continue
-						}
-					}
+			jRaw, ok := jsonMap[jName]
+			if !ok {
+				// enforce required when missing and no default
+				if cfg.tagReq == "true" && LenTrim(field.Tag.Get("def")) == 0 {
+					StructClearFields(inputStructPtr)
+					return fmt.Errorf("%s is a Required Field", field.Name)
 				}
+				continue
 			}
 
-			// set validated csv value into corresponding struct field
-			outPrefix := field.Tag.Get("outprefix")
-			boolTrue := field.Tag.Get("booltrue")
-			boolFalse := field.Tag.Get("boolfalse")
+			jValue := JsonFromEscaped(string(jRaw))
 
-			if boolTrue == " " && len(outPrefix) > 0 && jValue == outPrefix {
+			// bool literal overrides and outprefix handling
+			if cfg.boolTrue == " " && len(cfg.outPrefix) > 0 && jValue == cfg.outPrefix {
 				jValue = "true"
 			} else {
-				evalOk := false
-				if LenTrim(boolTrue) > 0 && len(jValue) > 0 && boolTrue == jValue {
+				if LenTrim(cfg.boolTrue) > 0 && jValue == cfg.boolTrue {
 					jValue = "true"
-					evalOk = true
-				}
-
-				if !evalOk {
-					if LenTrim(boolFalse) > 0 && len(jValue) > 0 && boolFalse == jValue {
-						jValue = "false"
-					}
+				} else if LenTrim(cfg.boolFalse) > 0 && jValue == cfg.boolFalse {
+					jValue = "false"
 				}
 			}
 
-			if err := ReflectStringToField(o, jValue, timeFormat); err != nil {
+			hasSetter := LenTrim(cfg.tagSetter) > 0
+
+			valPrep, err := jsonPreprocessValue(jValue, cfg, hasSetter, trueList)
+			if err != nil {
+				StructClearFields(inputStructPtr)
+				return fmt.Errorf("%s %s", field.Name, err.Error())
+			}
+			jValue = valPrep
+
+			if newVal, setDone, err := jsonApplySetter(s, cfg, o, jValue); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			} else if setDone { // setter handled assignment; still validate
+				if err := jsonValidateValue(newVal, cfg, field.Name); err != nil {
+					StructClearFields(inputStructPtr)
+					return err
+				}
+				if err := jsonValidateCustom(newVal, cfg, s, field.Name); err != nil {
+					StructClearFields(inputStructPtr)
+					return err
+				}
+				continue
+			} else {
+				jValue = newVal
+			}
+
+			if err := jsonValidateValue(jValue, cfg, field.Name); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			}
+			if err := jsonValidateCustom(jValue, cfg, s, field.Name); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			}
+
+			if err := ReflectStringToField(o, jValue, cfg.timeFormat); err != nil {
 				return err
 			}
 		}
@@ -2089,8 +2258,12 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		if newVal, setDone, err := csvApplySetter(s, cfg, o, csvValue); err != nil {
 			return err
 		} else if setDone {
-			// setter already set the field; validation still needed if string path?
-			if err := csvValidateCustomUnmarshal(csvValue, cfg, s, field.Name); err != nil {
+			if err := csvValidateValue(newVal, cfg, field.Name); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			}
+			if err := csvValidateCustomUnmarshal(newVal, cfg, s, field.Name); err != nil {
+				StructClearFields(inputStructPtr)
 				return err
 			}
 			continue

@@ -1199,8 +1199,13 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					if strings.HasSuffix(lg, "(x)") && len(tagGetter) >= 3 {
 						useParam = true
 
+						// guard nil pointers before stringifying getter param
 						if o.Kind() != reflect.Slice {
-							paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroblank)
+							if o.Kind() == reflect.Ptr && o.IsNil() {
+								paramVal = ""
+							} else {
+								paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroblank)
+							}
 						} else {
 							if o.Len() > 0 {
 								paramSlice = o.Slice(0, o.Len()).Interface()
@@ -1408,8 +1413,13 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					if strings.HasSuffix(lg, "(x)") && len(tagGetter) >= 3 {
 						useParam = true
 
+						// guard nil pointers before stringifying getter param
 						if o.Kind() != reflect.Slice {
-							paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+							if o.Kind() == reflect.Ptr && o.IsNil() {
+								paramVal = ""
+							} else {
+								paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+							}
 						} else {
 							if o.Len() > 0 {
 								paramSlice = o.Slice(0, o.Len()).Interface()
@@ -1849,9 +1859,12 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 			// safer setter parsing (no Left/Right on short strings)
 			tagSetter := Trim(field.Tag.Get("setter"))
 			setterBase := false
-			if len(tagSetter) > 0 && strings.HasPrefix(strings.ToLower(tagSetter), "base.") {
-				setterBase = true
-				tagSetter = tagSetter[5:]
+			if len(tagSetter) > 0 {
+				lgs := strings.ToLower(tagSetter)
+				if strings.HasPrefix(lgs, "base.") {
+					setterBase = true
+					tagSetter = tagSetter[len("base."):]
+				}
 			}
 
 			applySetter := func() (handled bool, updatedDef string, err error) { // error surfaced
@@ -2074,9 +2087,12 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 			// normalize setter info (support base. prefix) and allocate pointer/interface targets before calling setters.
 			tagSetter := Trim(field.Tag.Get("setter"))
 			setterBase := false
-			if LenTrim(tagSetter) > 0 && strings.ToLower(Left(tagSetter, 5)) == "base." {
-				setterBase = true
-				tagSetter = Right(tagSetter, len(tagSetter)-5)
+			if len(tagSetter) > 0 {
+				lgs := strings.ToLower(tagSetter)
+				if strings.HasPrefix(lgs, "base.") {
+					setterBase = true
+					tagSetter = tagSetter[len("base."):]
+				}
 			}
 
 			applySetter := func() (handled bool, updatedDef string, err error) { // error surfaced

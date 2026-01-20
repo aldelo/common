@@ -347,11 +347,12 @@ func csvValidateCustom(fv string, cfg csvFieldConfig, tagReq string, s reflect.V
 		case ":=":
 			if len(valData) > 0 {
 				if retV, nf := ReflectCall(s.Addr(), valData); !nf && len(retV) > 0 {
+					// also honor error returns and any boolean false result
+					if err := DerefError(retV[len(retV)-1]); err != nil {
+						return fmt.Errorf("Validation On %s() Failed: %s", valData, err.Error())
+					}
 					if retV[0].Kind() == reflect.Bool && !retV[0].Bool() {
 						return fmt.Errorf("Validation Failed: %s() Returned Result is False", valData)
-					}
-					if retErr := DerefError(retV[0]); retErr != nil {
-						return fmt.Errorf("Validation On %s() Failed: %s", valData, retErr.Error())
 					}
 				}
 			}
@@ -729,11 +730,12 @@ func csvValidateCustomUnmarshal(csvValue string, cfg csvUnmarshalConfig, s refle
 	case ":=":
 		if len(valData) > 0 {
 			if retV, nf := ReflectCall(s.Addr(), valData); !nf && len(retV) > 0 {
+				// capture errors and boolean failures
+				if err := DerefError(retV[len(retV)-1]); err != nil {
+					return fmt.Errorf("%s Validation On %s() Failed: %s", fieldName, valData, err.Error())
+				}
 				if retV[0].Kind() == reflect.Bool && !retV[0].Bool() {
 					return fmt.Errorf("%s Validation Failed: %s() Returned Result is False", fieldName, valData)
-				}
-				if retErr := DerefError(retV[0]); retErr != nil {
-					return fmt.Errorf("%s Validation On %s() Failed: %s", fieldName, valData, retErr.Error())
 				}
 			}
 		}
@@ -973,11 +975,12 @@ func jsonValidateCustom(val string, cfg jsonFieldConfig, s reflect.Value, fieldN
 	case ":=":
 		if len(valData) > 0 {
 			if retV, nf := ReflectCall(s.Addr(), valData); !nf && len(retV) > 0 {
+				// capture errors and boolean failures
+				if err := DerefError(retV[len(retV)-1]); err != nil {
+					return fmt.Errorf("%s Validation On %s() Failed: %s", fieldName, valData, err.Error())
+				}
 				if retV[0].Kind() == reflect.Bool && !retV[0].Bool() {
 					return fmt.Errorf("%s Validation Failed: %s() Returned Result is False", fieldName, valData)
-				}
-				if retErr := DerefError(retV[0]); retErr != nil {
-					return fmt.Errorf("%s Validation On %s() Failed: %s", fieldName, valData, retErr.Error())
 				}
 			}
 		}
@@ -1979,10 +1982,16 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 
 				var ov []reflect.Value
 				var notFound bool
+
 				if setterBase {
 					ov, notFound = ReflectCall(s.Addr(), tagSetter, updatedDef)
 				} else {
-					ov, notFound = ReflectCall(o, tagSetter, updatedDef)
+					// allow pointer-receiver setters for value fields by using an addressable target when possible
+					callTarget := o
+					if o.Kind() != reflect.Ptr && callTarget.CanAddr() {
+						callTarget = callTarget.Addr()
+					}
+					ov, notFound = ReflectCall(callTarget, tagSetter, updatedDef)
 				}
 				if notFound {
 					return false, updatedDef, nil

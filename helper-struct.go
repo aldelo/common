@@ -1568,6 +1568,9 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 			}
 
 			jValue := JsonFromEscaped(string(jRaw))
+			if strings.EqualFold(Trim(jValue), "null") { // treat JSON null as empty to avoid spurious validation failures
+				jValue = ""
+			}
 
 			// bool literal overrides and outprefix handling
 			if cfg.boolTrue == " " && len(cfg.outPrefix) > 0 && jValue == cfg.outPrefix {
@@ -2233,6 +2236,9 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			continue
 		}
 		csvValue := rawVal
+		if strings.EqualFold(Trim(csvValue), "null") { // treat literal null as empty input to prevent numeric/regex validation errors
+			csvValue = ""
+		}
 
 		// bool literal overrides
 		if cfg.boolTrue == " " && len(cfg.outPrefix) > 0 && csvValue == cfg.outPrefix {
@@ -2423,12 +2429,12 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			continue
 		}
 
+		uniqueKey := "" // defer uniqueID claim until we know the field will be emitted
 		if len(cfg.uniqueID) > 0 {
-			lk := strings.ToLower(cfg.uniqueID)
-			if _, seen := uniqueMap[lk]; seen {
+			uniqueKey = strings.ToLower(cfg.uniqueID)
+			if _, seen := uniqueMap[uniqueKey]; seen {
 				continue
 			}
-			uniqueMap[lk] = field.Name
 		}
 
 		// only exclude placeholders if ALL fields have outprefix; once a field lacks outprefix, keep placeholders
@@ -2444,15 +2450,9 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 
 		fv, skip, e := ReflectValueToString(o, cfg.boolTrue, cfg.boolFalse, cfg.skipBlank, cfg.skipZero, cfg.timeFormat, cfg.zeroBlank)
 		if e != nil {
-			if len(cfg.uniqueID) > 0 {
-				delete(uniqueMap, strings.ToLower(cfg.uniqueID))
-			}
 			return "", e
 		}
 		if skip {
-			if len(cfg.uniqueID) > 0 {
-				delete(uniqueMap, strings.ToLower(cfg.uniqueID))
-			}
 			continue
 		}
 
@@ -2460,8 +2460,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			fv = ""
 			if len(cfg.defVal) > 0 {
 				fv = cfg.defVal
-			} else if len(cfg.uniqueID) > 0 {
-				delete(uniqueMap, strings.ToLower(cfg.uniqueID))
+			} else if len(uniqueKey) > 0 {
 				continue
 			}
 		}
@@ -2481,11 +2480,17 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 
 		if cfg.skipBlank && LenTrim(fv) == 0 {
 			csvList[cfg.pos] = ""
+			continue
 		} else if cfg.skipZero && fv == "0" {
 			csvList[cfg.pos] = ""
-		} else {
-			csvList[cfg.pos] = cfg.outPrefix + fv
+			continue
 		}
+
+		if len(uniqueKey) > 0 {
+			uniqueMap[uniqueKey] = field.Name // claim uniqueID only when we actually emit a value
+		}
+
+		csvList[cfg.pos] = cfg.outPrefix + fv
 	}
 
 	firstCsvElement := true

@@ -1980,6 +1980,14 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			continue
 		}
 
+		// capture virtual setters immediately and skip positional parsing
+		if cfg.pos < 0 {
+			if LenTrim(cfg.tagSetter) > 0 {
+				virtualSetters = append(virtualSetters, virtualSetter{cfg: cfg, field: field, o: o})
+			}
+			continue
+		}
+
 		// get raw CSV value
 		rawVal, found := csvExtractValue(csvElements, cfg, prefixProcessedMap)
 
@@ -2177,8 +2185,9 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			uniqueMap[lk] = field.Name
 		}
 
-		if excludePlaceholders {
-			excludePlaceholders = LenTrim(cfg.outPrefix) > 0
+		// only exclude placeholders if ALL fields have outprefix; once a field lacks outprefix, keep placeholders
+		if excludePlaceholders && LenTrim(cfg.outPrefix) == 0 {
+			excludePlaceholders = false
 		}
 
 		oldVal := o

@@ -255,8 +255,13 @@ func csvValidateAndNormalize(fv string, cfg csvFieldConfig, oldVal reflect.Value
 		}
 	}
 
+	// enforce numeric validation for type "n" even during marshal normalization
 	if cfg.tagType == "n" {
-		if n, ok := ParseInt32(fv); ok {
+		n, ok := ParseInt32(fv)
+		if len(fv) > 0 && !ok { // previously silently accepted non-numeric
+			return "", false, fmt.Errorf("expects numeric value")
+		}
+		if ok {
 			if cfg.rangeMin > 0 && n < cfg.rangeMin && !(n == 0 && cfg.tagReq != "true") {
 				return "", false, fmt.Errorf("Range Minimum is %d", cfg.rangeMin)
 			}
@@ -540,10 +545,17 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 	if o.Kind() != reflect.Ptr && o.Kind() != reflect.Interface && o.Kind() != reflect.Struct && o.Kind() != reflect.Slice {
 		var ov []reflect.Value
 		var notFound bool
+
+		// try both value and pointer receivers when possible
+		callTarget := o
+		if callTarget.CanAddr() {
+			callTarget = callTarget.Addr() // enable pointer-receiver methods
+		}
+
 		if cfg.setterBase {
 			ov, notFound = ReflectCall(s.Addr(), cfg.tagSetter, csvValue)
 		} else {
-			ov, notFound = ReflectCall(o, cfg.tagSetter, csvValue)
+			ov, notFound = ReflectCall(callTarget, cfg.tagSetter, csvValue)
 		}
 		if notFound {
 			return csvValue, false, nil
@@ -581,10 +593,17 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 
 	var ov []reflect.Value
 	var notFound bool
+
+	// try pointer receiver when the field is addressable
+	callTarget := o
+	if callTarget.CanAddr() {
+		callTarget = callTarget.Addr()
+	}
+
 	if cfg.setterBase {
 		ov, notFound = ReflectCall(s.Addr(), cfg.tagSetter, csvValue)
 	} else {
-		ov, notFound = ReflectCall(o, cfg.tagSetter, csvValue)
+		ov, notFound = ReflectCall(callTarget, cfg.tagSetter, csvValue)
 	}
 	if !notFound {
 		if len(ov) == 1 && (ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice) {
@@ -1226,6 +1245,12 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 		return fmt.Errorf("TagName is Required")
 	}
 
+	// reset state and apply defaults before unmarshalling (parity with CSV unmarshal)
+	StructClearFields(inputStructPtr)
+	if _, err := SetStructFieldDefaultValues(inputStructPtr); err != nil {
+		return err
+	}
+
 	s := reflect.ValueOf(inputStructPtr)
 
 	if s.Kind() != reflect.Ptr {
@@ -1303,10 +1328,16 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 							var results []reflect.Value
 							var notFound bool
 
+							// allow pointer-receiver setters when addressable
+							callTarget := o
+							if callTarget.CanAddr() {
+								callTarget = callTarget.Addr()
+							}
+
 							if isBase {
 								results, notFound = ReflectCall(s.Addr(), tagSetter, jValue)
 							} else {
-								results, notFound = ReflectCall(o, tagSetter, jValue)
+								results, notFound = ReflectCall(callTarget, tagSetter, jValue)
 							}
 
 							if !notFound && len(results) > 0 {
@@ -1358,10 +1389,16 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 							var ov []reflect.Value
 							var notFound bool
 
+							// allow pointer-receiver setters when addressable
+							callTarget := o
+							if callTarget.CanAddr() {
+								callTarget = callTarget.Addr()
+							}
+
 							if isBase {
 								ov, notFound = ReflectCall(s.Addr(), tagSetter, jValue)
 							} else {
-								ov, notFound = ReflectCall(o, tagSetter, jValue)
+								ov, notFound = ReflectCall(callTarget, tagSetter, jValue)
 							}
 
 							if !notFound {

@@ -563,7 +563,8 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			return csvValue, false, nil
 		}
 		if len(ov) == 1 {
-			if val, _, err := ReflectValueToString(ov[0], "", "", false, false, cfg.timeFormat, false); err == nil {
+			// honor booltrue/boolfalse literals when stringifying setter return
+			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
 				return val, false, nil
 			}
 			return csvValue, false, nil
@@ -572,7 +573,8 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			if err := DerefError(ov[len(ov)-1]); err != nil {
 				return csvValue, false, err
 			}
-			if val, _, err := ReflectValueToString(ov[0], "", "", false, false, cfg.timeFormat, false); err == nil {
+			// honor booltrue/boolfalse literals when stringifying setter return
+			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil { // CHANGED
 				return val, false, nil
 			}
 			return csvValue, false, nil
@@ -619,6 +621,10 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			if (ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice) && !ov[0].IsNil() {
 				o.Set(ov[0])
 				return csvValue, true, nil
+			}
+			// honor booltrue/boolfalse literals when stringifying setter return
+			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
+				return val, false, nil
 			}
 		}
 	}
@@ -984,6 +990,8 @@ func jsonApplySetter(s reflect.Value, cfg jsonFieldConfig, o reflect.Value, json
 		tagSetter:  cfg.tagSetter,
 		setterBase: cfg.setterBase,
 		timeFormat: cfg.timeFormat,
+		boolTrue:   cfg.boolTrue,  // preserve bool literal mapping in JSON setters
+		boolFalse:  cfg.boolFalse, // preserve bool literal mapping in JSON setters
 	}, o, jsonValue)
 }
 
@@ -2219,13 +2227,10 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		// get raw CSV value
 		rawVal, found := csvExtractValue(csvElements, cfg, prefixProcessedMap)
 
+		defVal := Trim(field.Tag.Get("def")) // consider defaults for required fields
 		// enforce required fields when missing entirely
 		if !found {
-			// virtual fields (pos < 0) are not sourced from CSV, so they should not trigger required errors
-			if cfg.pos < 0 {
-				continue
-			}
-			if cfg.tagReq == "true" {
+			if cfg.tagReq == "true" && LenTrim(defVal) == 0 { // CHANGED
 				StructClearFields(inputStructPtr)
 				return fmt.Errorf("%s is a Required Field", field.Name)
 			}
@@ -2314,7 +2319,8 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 	// enforce required virtual fields after setter execution
 	for _, vs := range virtualSetters {
 		if strings.ToLower(vs.cfg.tagReq) == "true" {
-			if vs.o.IsZero() {
+			defVal := Trim(vs.field.Tag.Get("def")) // respect defaults for virtual required fields
+			if vs.o.IsZero() && LenTrim(defVal) == 0 {
 				StructClearFields(inputStructPtr)
 				return fmt.Errorf("%s is a Required Field", vs.field.Name)
 			}

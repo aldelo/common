@@ -2410,11 +2410,27 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			StructClearFields(inputStructPtr)
 			return err
 		} else if setDone { // validate virtual setter output
+			// validation for setter-handled assignments (e.g., pointer/slice returns)
+			if err := csvValidateValue(newVal, vs.cfg, vs.field.Name); err != nil { // ensure validation runs even when setter handled assignment
+				StructClearFields(inputStructPtr)
+				return err
+			}
+			if err := csvValidateCustomUnmarshal(newVal, vs.cfg, s, vs.field.Name); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			}
+			continue
+		} else {
+			// handle scalar-returning setters by validating and assigning to the field
 			if err := csvValidateValue(newVal, vs.cfg, vs.field.Name); err != nil {
 				StructClearFields(inputStructPtr)
 				return err
 			}
 			if err := csvValidateCustomUnmarshal(newVal, vs.cfg, s, vs.field.Name); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			}
+			if err := ReflectStringToField(vs.o, newVal, vs.cfg.timeFormat); err != nil {
 				StructClearFields(inputStructPtr)
 				return err
 			}

@@ -260,15 +260,15 @@ func csvValidateAndNormalize(fv string, cfg csvFieldConfig, oldVal reflect.Value
 
 	// enforce numeric validation for type "n" even during marshal normalization
 	if cfg.tagType == "n" {
-		n, ok := ParseInt32(fv)
-		if len(fv) > 0 && !ok { // previously silently accepted non-numeric
+		n, ok := ParseInt64(fv)
+		if len(fv) > 0 && !ok {
 			return "", false, fmt.Errorf("expects numeric value")
 		}
 		if ok {
-			if cfg.rangeMin > 0 && n < cfg.rangeMin && !(n == 0 && cfg.tagReq != "true") {
+			if cfg.rangeMin > 0 && n < int64(cfg.rangeMin) && !(n == 0 && cfg.tagReq != "true") {
 				return "", false, fmt.Errorf("Range Minimum is %d", cfg.rangeMin)
 			}
-			if cfg.rangeMax > 0 && n > cfg.rangeMax {
+			if cfg.rangeMax > 0 && n > int64(cfg.rangeMax) {
 				return "", false, fmt.Errorf("Range Maximum is %d", cfg.rangeMax)
 			}
 		}
@@ -649,15 +649,15 @@ func csvValidateValue(csvValue string, cfg csvUnmarshalConfig, fieldName string)
 		}
 	}
 	if cfg.tagType == "n" {
-		n, ok := ParseInt32(csvValue)
+		n, ok := ParseInt64(csvValue)
 		if len(csvValue) > 0 && !ok { // enforce numeric validation error when parsing fails
 			return fmt.Errorf("%s expects numeric value", fieldName)
 		}
 		if ok {
-			if cfg.tagRangeMin > 0 && int32(n) < cfg.tagRangeMin && !(n == 0 && cfg.tagReq != "true") {
+			if cfg.tagRangeMin > 0 && n < int64(cfg.tagRangeMin) && !(n == 0 && cfg.tagReq != "true") {
 				return fmt.Errorf("%s Range Minimum is %d", fieldName, cfg.tagRangeMin)
 			}
-			if cfg.tagRangeMax > 0 && int32(n) > cfg.tagRangeMax {
+			if cfg.tagRangeMax > 0 && n > int64(cfg.tagRangeMax) {
 				return fmt.Errorf("%s Range Maximum is %d", fieldName, cfg.tagRangeMax)
 			}
 		}
@@ -896,15 +896,15 @@ func jsonValidateValue(val string, cfg jsonFieldConfig, fieldName string) error 
 		}
 	}
 	if cfg.tagType == "n" {
-		n, ok := ParseInt32(val)
+		n, ok := ParseInt64(val)
 		if len(val) > 0 && !ok {
 			return fmt.Errorf("%s expects numeric value", fieldName)
 		}
 		if ok {
-			if cfg.tagRangeMin > 0 && int32(n) < cfg.tagRangeMin && !(n == 0 && cfg.tagReq != "true") {
+			if cfg.tagRangeMin > 0 && n < int64(cfg.tagRangeMin) && !(n == 0 && cfg.tagReq != "true") {
 				return fmt.Errorf("%s Range Minimum is %d", fieldName, cfg.tagRangeMin)
 			}
-			if cfg.tagRangeMax > 0 && int32(n) > cfg.tagRangeMax {
+			if cfg.tagRangeMax > 0 && n > int64(cfg.tagRangeMax) {
 				return fmt.Errorf("%s Range Maximum is %d", fieldName, cfg.tagRangeMax)
 			}
 		}

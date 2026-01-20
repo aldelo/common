@@ -2256,6 +2256,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 		// apply setter if needed
 		if newVal, setDone, err := csvApplySetter(s, cfg, o, csvValue); err != nil {
+			StructClearFields(inputStructPtr)
 			return err
 		} else if setDone {
 			if err := csvValidateValue(newVal, cfg, field.Name); err != nil {
@@ -2289,10 +2290,16 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 	// execute virtual setters (pos < 0) after positional fields are populated.
 	for _, vs := range virtualSetters {
-		if _, setDone, err := csvApplySetter(s, vs.cfg, vs.o, ""); err != nil {
+		if newVal, setDone, err := csvApplySetter(s, vs.cfg, vs.o, ""); err != nil { // clear struct on setter error
+			StructClearFields(inputStructPtr)
 			return err
-		} else if setDone {
-			if err := csvValidateCustomUnmarshal("", vs.cfg, s, vs.field.Name); err != nil {
+		} else if setDone { // validate virtual setter output
+			if err := csvValidateValue(newVal, vs.cfg, vs.field.Name); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			}
+			if err := csvValidateCustomUnmarshal(newVal, vs.cfg, s, vs.field.Name); err != nil {
+				StructClearFields(inputStructPtr)
 				return err
 			}
 		}

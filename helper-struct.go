@@ -1627,6 +1627,7 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 			}
 
 			if err := ReflectStringToField(o, jValue, cfg.timeFormat); err != nil {
+				StructClearFields(inputStructPtr) // avoid partial state on assignment failure
 				return err
 			}
 		}
@@ -2230,7 +2231,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		defVal := Trim(field.Tag.Get("def")) // consider defaults for required fields
 		// enforce required fields when missing entirely
 		if !found {
-			if cfg.tagReq == "true" && LenTrim(defVal) == 0 { // CHANGED
+			if cfg.tagReq == "true" && LenTrim(defVal) == 0 {
 				StructClearFields(inputStructPtr)
 				return fmt.Errorf("%s is a Required Field", field.Name)
 			}
@@ -2295,6 +2296,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 		// set field
 		if err := ReflectStringToField(o, csvValue, cfg.timeFormat); err != nil {
+			StructClearFields(inputStructPtr) // clear partial state on assignment failure
 			return err
 		}
 	}
@@ -2402,7 +2404,8 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 	}
 
 	if !IsStructFieldSet(inputStructPtr) && StructNonDefaultRequiredFieldsCount(inputStructPtr) > 0 {
-		return "", nil
+		// fail fast instead of silently returning blank when required fields are missing
+		return "", fmt.Errorf("MarshalStructToCSV Requires Required Fields To Be Set")
 	}
 
 	trueList := []string{"true", "yes", "on", "1", "enabled"}

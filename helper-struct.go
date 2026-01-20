@@ -608,7 +608,11 @@ func csvValidateValue(csvValue string, cfg csvUnmarshalConfig, fieldName string)
 		}
 	}
 	if cfg.tagType == "n" {
-		if n, ok := ParseInt32(csvValue); ok {
+		n, ok := ParseInt32(csvValue)
+		if len(csvValue) > 0 && !ok { // enforce numeric validation error when parsing fails
+			return fmt.Errorf("%s expects numeric value", fieldName)
+		}
+		if ok {
 			if cfg.tagRangeMin > 0 && int32(n) < cfg.tagRangeMin && !(n == 0 && cfg.tagReq != "true") {
 				return fmt.Errorf("%s Range Minimum is %d", fieldName, cfg.tagRangeMin)
 			}
@@ -1982,6 +1986,11 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 		// capture virtual setters immediately and skip positional parsing
 		if cfg.pos < 0 {
+			// fail fast if a required virtual field has no setter
+			if LenTrim(cfg.tagSetter) == 0 && strings.ToLower(cfg.tagReq) == "true" {
+				StructClearFields(inputStructPtr)
+				return fmt.Errorf("%s is a Required Field", field.Name)
+			}
 			if LenTrim(cfg.tagSetter) > 0 {
 				virtualSetters = append(virtualSetters, virtualSetter{cfg: cfg, field: field, o: o})
 			}
@@ -2065,6 +2074,16 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		} else if setDone {
 			if err := csvValidateCustomUnmarshal("", vs.cfg, s, vs.field.Name); err != nil {
 				return err
+			}
+		}
+	}
+
+	// enforce required virtual fields after setter execution
+	for _, vs := range virtualSetters {
+		if strings.ToLower(vs.cfg.tagReq) == "true" {
+			if vs.o.IsZero() {
+				StructClearFields(inputStructPtr)
+				return fmt.Errorf("%s is a Required Field", vs.field.Name)
 			}
 		}
 	}

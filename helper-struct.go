@@ -615,8 +615,9 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 
 		// try both value and pointer receivers when possible
 		callTarget := o
-		if callTarget.CanAddr() {
-			callTarget = callTarget.Addr() // enable pointer-receiver methods
+		// avoid taking address of an already-pointer value (prevents **T)
+		if callTarget.Kind() != reflect.Ptr && callTarget.CanAddr() {
+			callTarget = callTarget.Addr() // enable pointer-receiver methods for values
 		}
 
 		if cfg.setterBase {
@@ -682,7 +683,8 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 
 	// try pointer receiver when the field is addressable
 	callTarget := o
-	if callTarget.CanAddr() {
+	// avoid double-pointering pointer fields
+	if callTarget.Kind() != reflect.Ptr && callTarget.CanAddr() {
 		callTarget = callTarget.Addr()
 	}
 
@@ -1508,12 +1510,15 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 	}
 
 	uniqueMap := make(map[string]string)
-	jsonMap := make(map[string]string) // build a map and let json.Marshal handle escaping
+	jsonMap := make(map[string]string)                        // build a map and let json.Marshal handle escaping
+	trueList := []string{"true", "yes", "on", "1", "enabled"} // CHANGED: used for type normalization
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
 
 		if o := s.FieldByName(field.Name); o.IsValid() {
+			cfg, _ := jsonParseFieldConfig(field) // reuse parsed config for validation
+
 			tag := field.Tag.Get(tagName)
 
 			if LenTrim(tag) == 0 {
@@ -1652,6 +1657,19 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 							}
 						}
 					}
+				}
+
+				// normalize & validate before prefixing to match CSV/query behavior
+				if norm, err := jsonPreprocessValue(buf, cfg, false, trueList); err != nil {
+					return "", fmt.Errorf("%s %s", field.Name, err.Error())
+				} else {
+					buf = norm
+				}
+				if err := jsonValidateValue(buf, cfg, field.Name); err != nil {
+					return "", err
+				}
+				if err := jsonValidateCustom(buf, cfg, s, field.Name); err != nil {
+					return "", err
 				}
 
 				outPrefix := field.Tag.Get("outprefix")
@@ -2234,7 +2252,8 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 				} else {
 					// allow pointer-receiver setters for value fields by using an addressable target when possible
 					callTarget := o
-					if o.Kind() != reflect.Ptr && callTarget.CanAddr() {
+					// avoid taking address of pointer fields (prevents **T)
+					if callTarget.Kind() != reflect.Ptr && callTarget.CanAddr() {
 						callTarget = callTarget.Addr()
 					}
 					ov, notFound = ReflectCall(callTarget, tagSetter, updatedDef)

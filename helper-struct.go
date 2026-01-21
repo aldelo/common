@@ -699,7 +699,8 @@ func csvValidateValue(csvValue string, cfg csvUnmarshalConfig, fieldName string)
 			return fmt.Errorf("%s expects numeric value", fieldName)
 		}
 		if ok {
-			if cfg.tagRangeMin > 0 && n < int64(cfg.tagRangeMin) && !(n == 0 && cfg.tagReq != "true") {
+			// honor explicit rangeMin (including zero/negative) instead of only >0
+			if cfg.rangeMinSet && n < int64(cfg.tagRangeMin) && !(n == 0 && cfg.tagReq != "true" && cfg.tagRangeMin == 0) {
 				return fmt.Errorf("%s Range Minimum is %d", fieldName, cfg.tagRangeMin)
 			}
 			if cfg.rangeMaxSet && n > int64(cfg.tagRangeMax) {
@@ -1986,8 +1987,10 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 					}
 				}
 			case reflect.Bool:
-				if o.Bool() {
-					return true
+				if !o.Bool() {
+					if b, ok := ParseBool(tagDef); ok {
+						o.SetBool(b)
+					}
 				}
 			case reflect.Int8, reflect.Int16, reflect.Int, reflect.Int32, reflect.Int64:
 				if o.Int() != 0 {
@@ -2396,10 +2399,12 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			continue
 		}
 
+		defVal := Trim(field.Tag.Get("def")) // compute default early for virtual fields
+
 		// capture virtual setters immediately and skip positional parsing
 		if cfg.pos < 0 {
-			// fail fast if a required virtual field has no setter
-			if LenTrim(cfg.tagSetter) == 0 && strings.ToLower(cfg.tagReq) == "true" {
+			// allow default to satisfy required virtual fields without a setter
+			if LenTrim(cfg.tagSetter) == 0 && strings.ToLower(cfg.tagReq) == "true" && LenTrim(defVal) == 0 {
 				StructClearFields(inputStructPtr)
 				return fmt.Errorf("%s is a Required Field", field.Name)
 			}
@@ -2412,7 +2417,6 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		// get raw CSV value
 		rawVal, found := csvExtractValue(csvElements, cfg, prefixProcessedMap)
 
-		defVal := Trim(field.Tag.Get("def")) // consider defaults for required fields
 		// enforce required fields when missing entirely
 		if !found {
 			if cfg.tagReq == "true" && LenTrim(defVal) == 0 {

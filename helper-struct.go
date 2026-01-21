@@ -1483,6 +1483,14 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 		return "", fmt.Errorf("MarshalStructToJson Requires Input Struct Variable Pointer")
 	}
 
+	// apply defaults early and fail fast when required fields are unset
+	if _, err := SetStructFieldDefaultValues(inputStructPtr); err != nil {
+		return "", fmt.Errorf("MarshalStructToJson default application failed: %w", err)
+	}
+	if !IsStructFieldSet(inputStructPtr) && StructNonDefaultRequiredFieldsCount(inputStructPtr) > 0 {
+		return "", fmt.Errorf("MarshalStructToJson Requires Required Fields To Be Set")
+	}
+
 	if LenTrim(tagName) == 0 {
 		return "", fmt.Errorf("MarshalStructToJson Requires TagName (Tag Name defines Json name)")
 	}
@@ -1519,11 +1527,11 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					}
 				}
 
+				uniqueKey := ""
 				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-					if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-						continue
-					} else {
-						uniqueMap[strings.ToLower(tagUniqueId)] = field.Name
+					uniqueKey = strings.ToLower(tagUniqueId)
+					if _, ok := uniqueMap[uniqueKey]; ok {
+						continue // already claimed by an earlier emitted field
 					}
 				}
 
@@ -1665,6 +1673,11 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				// enforce required after all normalization/output-prefix logic
 				if req == "true" && LenTrim(buf) == 0 {
 					return "", fmt.Errorf("%s is a Required Field", field.Name)
+				}
+
+				// claim uniqueId only when actually emitting a value
+				if len(uniqueKey) > 0 {
+					uniqueMap[uniqueKey] = field.Name
 				}
 
 				jsonMap[tag] = buf // defer escaping/encoding to json.Marshal

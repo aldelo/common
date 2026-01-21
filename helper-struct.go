@@ -2817,11 +2817,14 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			return "", e
 		}
 		if skip {
-			// enforce required fields cannot be skipped by tag-based omission
-			if strings.ToLower(cfg.tagReq) == "true" {
+			// honor defaults on skipped fields before enforcing required
+			if LenTrim(cfg.defVal) > 0 {
+				fv = cfg.defVal
+			} else if strings.ToLower(cfg.tagReq) == "true" {
 				return "", fmt.Errorf("%s is a Required Field", field.Name)
+			} else {
+				continue
 			}
-			continue
 		}
 
 		// safe enum unknown check that also supports pointer-to-int kinds
@@ -2876,6 +2879,22 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		}
 
 		csvList[cfg.pos] = cfg.outPrefix + fv
+	}
+
+	// emit variable-length CSV when all fields are outprefix-based (skip placeholders entirely)
+	if excludePlaceholders {
+		first := true
+		for _, v := range csvList {
+			if v == "{?}" {
+				continue
+			}
+			if !first {
+				csvPayload += csvDelimiter
+			}
+			csvPayload += v
+			first = false
+		}
+		return csvPayload, nil
 	}
 
 	// Preserve column positions even when placeholders are excluded to avoid collapsing columns.

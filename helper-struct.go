@@ -346,25 +346,41 @@ func csvValidateCustom(fv string, cfg csvFieldConfig, tagReq string, s reflect.V
 			}
 		case "<=":
 			if valNum, valOk := ParseFloat64(valData); valOk {
-				if srcNum, _ := ParseFloat64(fv); srcNum > valNum && (len(fv) > 0 || tagReq == "true") {
+				srcNum, srcOk := ParseFloat64(fv)
+				if (len(fv) > 0 || tagReq == "true") && !srcOk {
+					return fmt.Errorf("Validation Failed: Expected Numeric Value, But Received '%s'", fv)
+				}
+				if srcOk && srcNum > valNum && (len(fv) > 0 || tagReq == "true") {
 					return fmt.Errorf("Validation Failed: Expected To Be Less or Equal To '%s', But Received '%s'", valData, fv)
 				}
 			}
 		case "<<":
 			if valNum, valOk := ParseFloat64(valData); valOk {
-				if srcNum, _ := ParseFloat64(fv); srcNum >= valNum && (len(fv) > 0 || tagReq == "true") {
+				srcNum, srcOk := ParseFloat64(fv)
+				if (len(fv) > 0 || tagReq == "true") && !srcOk {
+					return fmt.Errorf("Validation Failed: Expected Numeric Value, But Received '%s'", fv)
+				}
+				if srcOk && srcNum >= valNum && (len(fv) > 0 || tagReq == "true") {
 					return fmt.Errorf("Validation Failed: Expected To Be Less Than '%s', But Received '%s'", valData, fv)
 				}
 			}
 		case ">=":
 			if valNum, valOk := ParseFloat64(valData); valOk {
-				if srcNum, _ := ParseFloat64(fv); srcNum < valNum && (len(fv) > 0 || tagReq == "true") {
+				srcNum, srcOk := ParseFloat64(fv)
+				if (len(fv) > 0 || tagReq == "true") && !srcOk {
+					return fmt.Errorf("Validation Failed: Expected Numeric Value, But Received '%s'", fv)
+				}
+				if srcOk && srcNum < valNum && (len(fv) > 0 || tagReq == "true") {
 					return fmt.Errorf("Validation Failed: Expected To Be Greater or Equal To '%s', But Received '%s'", valData, fv)
 				}
 			}
 		case ">>":
 			if valNum, valOk := ParseFloat64(valData); valOk {
-				if srcNum, _ := ParseFloat64(fv); srcNum <= valNum && (len(fv) > 0 || tagReq == "true") {
+				srcNum, srcOk := ParseFloat64(fv)
+				if (len(fv) > 0 || tagReq == "true") && !srcOk {
+					return fmt.Errorf("Validation Failed: Expected Numeric Value, But Received '%s'", fv)
+				}
+				if srcOk && srcNum <= valNum && (len(fv) > 0 || tagReq == "true") {
 					return fmt.Errorf("Validation Failed: Expected To Be Greater Than '%s', But Received '%s'", valData, fv)
 				}
 			}
@@ -767,25 +783,41 @@ func csvValidateCustomUnmarshal(csvValue string, cfg csvUnmarshalConfig, s refle
 		}
 	case "<=":
 		if valNum, valOk := ParseFloat64(valData); valOk {
-			if srcNum, _ := ParseFloat64(csvValue); srcNum > valNum && (len(csvValue) > 0 || cfg.tagReq == "true") {
+			srcNum, srcOk := ParseFloat64(csvValue)
+			if (len(csvValue) > 0 || cfg.tagReq == "true") && !srcOk {
+				return fmt.Errorf("%s Validation Failed: Expected Numeric Value, But Received '%s'", fieldName, csvValue)
+			}
+			if srcOk && srcNum > valNum && (len(csvValue) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Be Less or Equal To '%s', But Received '%s'", fieldName, valData, csvValue)
 			}
 		}
 	case "<<":
 		if valNum, valOk := ParseFloat64(valData); valOk {
-			if srcNum, _ := ParseFloat64(csvValue); srcNum >= valNum && (len(csvValue) > 0 || cfg.tagReq == "true") {
+			srcNum, srcOk := ParseFloat64(csvValue)
+			if (len(csvValue) > 0 || cfg.tagReq == "true") && !srcOk {
+				return fmt.Errorf("%s Validation Failed: Expected Numeric Value, But Received '%s'", fieldName, csvValue)
+			}
+			if srcOk && srcNum >= valNum && (len(csvValue) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Be Less Than '%s', But Received '%s'", fieldName, valData, csvValue)
 			}
 		}
 	case ">=":
 		if valNum, valOk := ParseFloat64(valData); valOk {
-			if srcNum, _ := ParseFloat64(csvValue); srcNum < valNum && (len(csvValue) > 0 || cfg.tagReq == "true") {
+			srcNum, srcOk := ParseFloat64(csvValue)
+			if (len(csvValue) > 0 || cfg.tagReq == "true") && !srcOk {
+				return fmt.Errorf("%s Validation Failed: Expected Numeric Value, But Received '%s'", fieldName, csvValue)
+			}
+			if srcOk && srcNum < valNum && (len(csvValue) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Be Greater or Equal To '%s', But Received '%s'", fieldName, valData, csvValue)
 			}
 		}
 	case ">>":
 		if valNum, valOk := ParseFloat64(valData); valOk {
-			if srcNum, _ := ParseFloat64(csvValue); srcNum <= valNum && (len(csvValue) > 0 || cfg.tagReq == "true") {
+			srcNum, srcOk := ParseFloat64(csvValue)
+			if (len(csvValue) > 0 || cfg.tagReq == "true") && !srcOk {
+				return fmt.Errorf("%s Validation Failed: Expected Numeric Value, But Received '%s'", fieldName, csvValue)
+			}
+			if srcOk && srcNum <= valNum && (len(csvValue) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Be Greater Than '%s', But Received '%s'", fieldName, valData, csvValue)
 			}
 		}
@@ -1025,25 +1057,41 @@ func jsonValidateCustom(val string, cfg jsonFieldConfig, s reflect.Value, fieldN
 		}
 	case "<=":
 		if valNum, valOk := ParseFloat64(valData); valOk {
-			if srcNum, _ := ParseFloat64(val); srcNum > valNum && (len(val) > 0 || cfg.tagReq == "true") {
+			srcNum, srcOk := ParseFloat64(val)
+			if (len(val) > 0 || cfg.tagReq == "true") && !srcOk {
+				return fmt.Errorf("%s Validation Failed: Expected Numeric Value, But Received '%s'", fieldName, val)
+			}
+			if srcOk && srcNum > valNum && (len(val) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Be Less or Equal To '%s', But Received '%s'", fieldName, valData, val)
 			}
 		}
 	case "<<":
 		if valNum, valOk := ParseFloat64(valData); valOk {
-			if srcNum, _ := ParseFloat64(val); srcNum >= valNum && (len(val) > 0 || cfg.tagReq == "true") {
+			srcNum, srcOk := ParseFloat64(val)
+			if (len(val) > 0 || cfg.tagReq == "true") && !srcOk {
+				return fmt.Errorf("%s Validation Failed: Expected Numeric Value, But Received '%s'", fieldName, val)
+			}
+			if srcOk && srcNum >= valNum && (len(val) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Be Less Than '%s', But Received '%s'", fieldName, valData, val)
 			}
 		}
 	case ">=":
 		if valNum, valOk := ParseFloat64(valData); valOk {
-			if srcNum, _ := ParseFloat64(val); srcNum < valNum && (len(val) > 0 || cfg.tagReq == "true") {
+			srcNum, srcOk := ParseFloat64(val)
+			if (len(val) > 0 || cfg.tagReq == "true") && !srcOk {
+				return fmt.Errorf("%s Validation Failed: Expected Numeric Value, But Received '%s'", fieldName, val)
+			}
+			if srcOk && srcNum < valNum && (len(val) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Be Greater or Equal To '%s', But Received '%s'", fieldName, valData, val)
 			}
 		}
 	case ">>":
 		if valNum, valOk := ParseFloat64(valData); valOk {
-			if srcNum, _ := ParseFloat64(val); srcNum <= valNum && (len(val) > 0 || cfg.tagReq == "true") {
+			srcNum, srcOk := ParseFloat64(val)
+			if (len(val) > 0 || cfg.tagReq == "true") && !srcOk {
+				return fmt.Errorf("%s Validation Failed: Expected Numeric Value, But Received '%s'", fieldName, val)
+			}
+			if srcOk && srcNum <= valNum && (len(val) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Be Greater Than '%s', But Received '%s'", fieldName, valData, val)
 			}
 		}

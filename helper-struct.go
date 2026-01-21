@@ -1372,15 +1372,23 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 						if len(buf) == 0 && len(defVal) > 0 {
 							buf = defVal
 						}
-
-						if skipBlank && LenTrim(buf) == 0 {
-							buf = ""
-						} else if skipZero && buf == "0" {
-							buf = ""
-						} else {
-							buf = outPrefix + buf
-						}
 					}
+
+					// Respect skipblank/skipzero by skipping emission and releasing unique claims.
+					if skipBlank && LenTrim(buf) == 0 {
+						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+							delete(uniqueMap, strings.ToLower(tagUniqueId))
+						}
+						continue
+					}
+					if skipZero && buf == "0" {
+						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+							delete(uniqueMap, strings.ToLower(tagUniqueId))
+						}
+						continue
+					}
+
+					buf = outPrefix + buf
 
 					if LenTrim(output) > 0 {
 						output += "&"
@@ -1948,93 +1956,8 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
 			tagDef := field.Tag.Get("def")
 
+			// Do not mutate struct; purely observe.
 			if len(tagDef) == 0 {
-				continue
-			}
-
-			// safer setter parsing (no Left/Right on short strings)
-			tagSetter := Trim(field.Tag.Get("setter"))
-			setterBase := false
-			if len(tagSetter) > 0 {
-				lgs := strings.ToLower(tagSetter)
-				if strings.HasPrefix(lgs, "base.") {
-					setterBase = true
-					tagSetter = tagSetter[len("base."):]
-				}
-			}
-
-			applySetter := func() (handled bool, updatedDef string, err error) { // error surfaced
-				updatedDef = tagDef
-				if LenTrim(tagSetter) == 0 {
-					return false, updatedDef, nil
-				}
-
-				// ensure allocation for pointer/interface targets
-				if o.Kind() != reflect.Slice {
-					if baseType, _, isNilPtr := DerefPointersZero(o); isNilPtr {
-						o.Set(reflect.New(baseType.Type()))
-					} else if o.Kind() == reflect.Interface && o.Interface() == nil {
-						if customType := ReflectTypeRegistryGet(o.Type().String()); customType != nil {
-							o.Set(reflect.New(customType))
-						} else {
-							return true, updatedDef, fmt.Errorf("%s Struct Field %s is Interface Without Actual Object Assignment", s.Type(), o.Type())
-						}
-					}
-				}
-
-				var ov []reflect.Value
-				var notFound bool
-
-				if setterBase {
-					ov, notFound = ReflectCall(s.Addr(), tagSetter, updatedDef)
-				} else {
-					// allow pointer-receiver setters for value fields by using an addressable target when possible
-					callTarget := o
-					if o.Kind() != reflect.Ptr && callTarget.CanAddr() {
-						callTarget = callTarget.Addr()
-					}
-					ov, notFound = ReflectCall(callTarget, tagSetter, updatedDef)
-				}
-				if notFound {
-					return false, updatedDef, nil
-				}
-
-				if len(ov) == 1 {
-					if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
-						o.Set(ov[0])
-						return true, updatedDef, nil
-					}
-					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {
-						return false, val, nil
-					}
-					return true, updatedDef, nil
-				} else if len(ov) > 1 {
-					if err := DerefError(ov[len(ov)-1]); err != nil { // propagate setter error
-						return true, updatedDef, err
-					}
-					if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
-						o.Set(ov[0])
-						return true, updatedDef, nil
-					}
-					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {
-						return false, val, nil
-					}
-					return true, updatedDef, nil
-				}
-
-				return false, updatedDef, nil
-			}
-
-			if handled, newDef, err := applySetter(); err != nil { // propagate error
-				return false
-			} else if handled {
-				continue
-			} else {
-				tagDef = newDef
-			}
-
-			// consider fields WITHOUT def tags by using IsZero to detect any user-set value
-			if LenTrim(tagDef) == 0 {
 				if !o.IsZero() {
 					return true
 				}
@@ -2043,34 +1966,40 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 
 			switch o.Kind() {
 			case reflect.String:
-				if LenTrim(o.String()) > 0 {
-					if o.String() != tagDef {
-						return true
-					}
+				if o.String() != tagDef {
+					return true
 				}
 			case reflect.Bool:
-				if !o.Bool() {
-					if b, ok := ParseBool(tagDef); ok {
-						o.SetBool(b)
+				if b, ok := ParseBool(tagDef); ok {
+					if o.Bool() != b {
+						return true
 					}
+				} else if o.Bool() {
+					return true
 				}
 			case reflect.Int8, reflect.Int16, reflect.Int, reflect.Int32, reflect.Int64:
-				if o.Int() != 0 {
-					if Int64ToString(o.Int()) != tagDef {
+				if i64, ok := ParseInt64(tagDef); ok {
+					if o.Int() != i64 {
 						return true
 					}
+				} else if o.Int() != 0 {
+					return true
 				}
 			case reflect.Float32, reflect.Float64:
-				if o.Float() != 0 {
-					if Float64ToString(o.Float()) != tagDef {
+				if f64, ok := ParseFloat64(tagDef); ok {
+					if o.Float() != f64 {
 						return true
 					}
+				} else if o.Float() != 0 {
+					return true
 				}
 			case reflect.Uint8, reflect.Uint16, reflect.Uint, reflect.Uint32, reflect.Uint64:
-				if o.Uint() > 0 {
-					if UInt64ToString(o.Uint()) != tagDef {
+				if u64 := StrToUint64(tagDef); u64 >= 0 {
+					if o.Uint() != u64 {
 						return true
 					}
+				} else if o.Uint() != 0 {
+					return true
 				}
 			case reflect.Ptr:
 				if !o.IsNil() {
@@ -2083,68 +2012,51 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 			default:
 				switch f := o.Interface().(type) {
 				case sql.NullString:
-					if f.Valid {
-						if len(tagDef) == 0 || f.String != tagDef {
-							return true
-						}
+					if f.Valid && (len(tagDef) == 0 || f.String != tagDef) {
+						return true
 					}
 				case sql.NullBool:
 					if f.Valid {
-						if len(tagDef) == 0 {
-							return true
-						}
-						if defVal, _ := ParseBool(tagDef); f.Bool != defVal { // compare without overwriting actual value
+						if b, ok := ParseBool(tagDef); !ok || f.Bool != b {
 							return true
 						}
 					}
 				case sql.NullFloat64:
 					if f.Valid {
-						if len(tagDef) == 0 || Float64ToString(f.Float64) != tagDef {
+						if f64, ok := ParseFloat64(tagDef); !ok || f.Float64 != f64 {
 							return true
 						}
 					}
 				case sql.NullInt32:
 					if f.Valid {
-						if len(tagDef) == 0 || Itoa(int(f.Int32)) != tagDef {
+						if i32, ok := ParseInt32(tagDef); !ok || f.Int32 != int32(i32) {
 							return true
 						}
 					}
 				case sql.NullInt64:
 					if f.Valid {
-						if len(tagDef) == 0 || Int64ToString(f.Int64) != tagDef {
+						if i64, ok := ParseInt64(tagDef); !ok || f.Int64 != i64 {
 							return true
 						}
 					}
 				case sql.NullTime:
 					if f.Valid {
-						if len(tagDef) == 0 {
+						tagTimeFormat := Trim(field.Tag.Get("timeformat"))
+						if LenTrim(tagTimeFormat) == 0 {
+							tagTimeFormat = DateTimeFormatString()
+						}
+						if t := ParseDateTimeCustom(tagDef, tagTimeFormat); t.IsZero() || !t.Equal(f.Time) {
 							return true
-						} else {
-							tagTimeFormat := Trim(field.Tag.Get("timeformat"))
-
-							if LenTrim(tagTimeFormat) == 0 {
-								tagTimeFormat = DateTimeFormatString()
-							}
-
-							if f.Time != ParseDateTimeCustom(tagDef, tagTimeFormat) {
-								return true
-							}
 						}
 					}
 				case time.Time:
 					if !f.IsZero() {
-						if len(tagDef) == 0 {
+						tagTimeFormat := Trim(field.Tag.Get("timeformat"))
+						if LenTrim(tagTimeFormat) == 0 {
+							tagTimeFormat = DateTimeFormatString()
+						}
+						if t := ParseDateTimeCustom(tagDef, tagTimeFormat); t.IsZero() || !t.Equal(f) {
 							return true
-						} else {
-							tagTimeFormat := Trim(field.Tag.Get("timeformat"))
-
-							if LenTrim(tagTimeFormat) == 0 {
-								tagTimeFormat = DateTimeFormatString()
-							}
-
-							if f != ParseDateTimeCustom(tagDef, tagTimeFormat) {
-								return true
-							}
 						}
 					}
 				default:

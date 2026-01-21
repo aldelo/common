@@ -40,6 +40,8 @@ type csvFieldConfig struct {
 	tagModulo   int
 	rangeMin    int
 	rangeMax    int
+	rangeMinSet bool
+	rangeMaxSet bool
 	tagReq      string
 	boolTrue    string
 	boolFalse   string
@@ -119,13 +121,23 @@ func csvParseFieldConfig(field reflect.StructField) (cfg csvFieldConfig, ok bool
 	}
 
 	tagRange := Trim(strings.ToLower(field.Tag.Get("range")))
-	arRange := strings.Split(tagRange, "..")
-	if len(arRange) == 2 {
-		cfg.rangeMin, _ = ParseInt32(arRange[0])
-		cfg.rangeMax, _ = ParseInt32(arRange[1])
-	} else {
-		cfg.rangeMin, _ = ParseInt32(tagRange)
-		cfg.rangeMax = cfg.rangeMin
+	if LenTrim(tagRange) > 0 {
+		arRange := strings.Split(tagRange, "..")
+		if len(arRange) == 2 {
+			if LenTrim(arRange[0]) > 0 {
+				cfg.rangeMinSet = true
+				cfg.rangeMin, _ = ParseInt32(arRange[0])
+			}
+			if LenTrim(arRange[1]) > 0 {
+				cfg.rangeMaxSet = true
+				cfg.rangeMax, _ = ParseInt32(arRange[1])
+			}
+		} else {
+			cfg.rangeMinSet = true
+			cfg.rangeMaxSet = true
+			cfg.rangeMin, _ = ParseInt32(tagRange)
+			cfg.rangeMax = cfg.rangeMin
+		}
 	}
 
 	if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "outprefix", "zeroblank"); len(vs) == 7 {
@@ -274,10 +286,10 @@ func csvValidateAndNormalize(fv string, cfg csvFieldConfig, oldVal reflect.Value
 			return "", false, fmt.Errorf("expects numeric value")
 		}
 		if ok {
-			if cfg.rangeMin > 0 && n < int64(cfg.rangeMin) && !(n == 0 && cfg.tagReq != "true") {
+			if cfg.rangeMinSet && n < int64(cfg.rangeMin) && !(n == 0 && cfg.tagReq != "true" && cfg.rangeMin == 0) {
 				return "", false, fmt.Errorf("Range Minimum is %d", cfg.rangeMin)
 			}
-			if cfg.rangeMax > 0 && n > int64(cfg.rangeMax) {
+			if cfg.rangeMaxSet && n > int64(cfg.rangeMax) {
 				return "", false, fmt.Errorf("Range Maximum is %d", cfg.rangeMax)
 			}
 		}
@@ -390,6 +402,8 @@ type csvUnmarshalConfig struct {
 	timeFormat  string
 	tagRangeMin int32
 	tagRangeMax int32
+	rangeMinSet bool
+	rangeMaxSet bool
 	outPrefix   string
 	boolTrue    string
 	boolFalse   string
@@ -466,18 +480,28 @@ func csvParseUnmarshalConfig(field reflect.StructField) (cfg csvUnmarshalConfig,
 		cfg.sizeMax = int32(iMin)
 	}
 
-	// range
+	// capture explicit range bounds even when zero/negative.
 	tagRange := Trim(strings.ToLower(field.Tag.Get("range")))
-	arRange := strings.Split(tagRange, "..")
-	if len(arRange) == 2 {
-		iMin, _ := ParseInt32(arRange[0])
-		cfg.tagRangeMin = int32(iMin)
-		iMax, _ := ParseInt32(arRange[1])
-		cfg.tagRangeMax = int32(iMax)
-	} else {
-		iMin, _ := ParseInt32(tagRange)
-		cfg.tagRangeMin = int32(iMin)
-		cfg.tagRangeMax = int32(iMin)
+	if LenTrim(tagRange) > 0 {
+		arRange := strings.Split(tagRange, "..")
+		if len(arRange) == 2 {
+			if LenTrim(arRange[0]) > 0 {
+				iMin, _ := ParseInt32(arRange[0])
+				cfg.tagRangeMin = int32(iMin)
+				cfg.rangeMinSet = true
+			}
+			if LenTrim(arRange[1]) > 0 {
+				iMax, _ := ParseInt32(arRange[1])
+				cfg.tagRangeMax = int32(iMax)
+				cfg.rangeMaxSet = true
+			}
+		} else {
+			iMin, _ := ParseInt32(tagRange)
+			cfg.tagRangeMin = int32(iMin)
+			cfg.tagRangeMax = int32(iMin)
+			cfg.rangeMinSet = true
+			cfg.rangeMaxSet = true
+		}
 	}
 
 	return cfg, true
@@ -678,7 +702,7 @@ func csvValidateValue(csvValue string, cfg csvUnmarshalConfig, fieldName string)
 			if cfg.tagRangeMin > 0 && n < int64(cfg.tagRangeMin) && !(n == 0 && cfg.tagReq != "true") {
 				return fmt.Errorf("%s Range Minimum is %d", fieldName, cfg.tagRangeMin)
 			}
-			if cfg.tagRangeMax > 0 && n > int64(cfg.tagRangeMax) {
+			if cfg.rangeMaxSet && n > int64(cfg.tagRangeMax) {
 				return fmt.Errorf("%s Range Maximum is %d", fieldName, cfg.tagRangeMax)
 			}
 		}
@@ -791,6 +815,8 @@ type jsonFieldConfig struct {
 	timeFormat  string
 	tagRangeMin int32
 	tagRangeMax int32
+	rangeMinSet bool
+	rangeMaxSet bool
 	outPrefix   string
 	boolTrue    string
 	boolFalse   string
@@ -854,18 +880,28 @@ func jsonParseFieldConfig(field reflect.StructField) (cfg jsonFieldConfig, ok bo
 		cfg.sizeMax = int32(iMin)
 	}
 
-	// range
+	// capture explicit range bounds even when zero/negative.
 	tagRange := Trim(strings.ToLower(field.Tag.Get("range")))
-	arRange := strings.Split(tagRange, "..")
-	if len(arRange) == 2 {
-		iMin, _ := ParseInt32(arRange[0])
-		cfg.tagRangeMin = int32(iMin)
-		iMax, _ := ParseInt32(arRange[1])
-		cfg.tagRangeMax = int32(iMax)
-	} else {
-		iMin, _ := ParseInt32(tagRange)
-		cfg.tagRangeMin = int32(iMin)
-		cfg.tagRangeMax = int32(iMin)
+	if LenTrim(tagRange) > 0 {
+		arRange := strings.Split(tagRange, "..")
+		if len(arRange) == 2 {
+			if LenTrim(arRange[0]) > 0 {
+				iMin, _ := ParseInt32(arRange[0])
+				cfg.tagRangeMin = int32(iMin)
+				cfg.rangeMinSet = true
+			}
+			if LenTrim(arRange[1]) > 0 {
+				iMax, _ := ParseInt32(arRange[1])
+				cfg.tagRangeMax = int32(iMax)
+				cfg.rangeMaxSet = true
+			}
+		} else {
+			iMin, _ := ParseInt32(tagRange)
+			cfg.tagRangeMin = int32(iMin)
+			cfg.tagRangeMax = int32(iMin)
+			cfg.rangeMinSet = true
+			cfg.rangeMaxSet = true
+		}
 	}
 
 	return cfg, true
@@ -922,10 +958,10 @@ func jsonValidateValue(val string, cfg jsonFieldConfig, fieldName string) error 
 			return fmt.Errorf("%s expects numeric value", fieldName)
 		}
 		if ok {
-			if cfg.tagRangeMin > 0 && n < int64(cfg.tagRangeMin) && !(n == 0 && cfg.tagReq != "true") {
+			if cfg.rangeMinSet && n < int64(cfg.tagRangeMin) && !(n == 0 && cfg.tagReq != "true" && cfg.tagRangeMin == 0) {
 				return fmt.Errorf("%s Range Minimum is %d", fieldName, cfg.tagRangeMin)
 			}
-			if cfg.tagRangeMax > 0 && n > int64(cfg.tagRangeMax) {
+			if cfg.rangeMaxSet && n > int64(cfg.tagRangeMax) {
 				return fmt.Errorf("%s Range Maximum is %d", fieldName, cfg.tagRangeMax)
 			}
 		}
@@ -1500,6 +1536,11 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					buf = ""
 				} else if len(defVal) > 0 && len(buf) == 0 {
 					buf = outPrefix + defVal
+				}
+
+				// apply outprefix for normal values when provided.
+				if LenTrim(outPrefix) > 0 && len(buf) > 0 && !strings.HasPrefix(buf, outPrefix) {
+					buf = outPrefix + buf
 				}
 
 				jsonMap[tag] = buf // defer escaping/encoding to json.Marshal

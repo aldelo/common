@@ -1586,7 +1586,14 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					zeroBlank, _ = ParseBool(vs[5])
 				}
 
-				oldVal := o
+				// safely dereference to support pointer-backed enums and avoid nil panics.
+				baseOldVal := o
+				for baseOldVal.Kind() == reflect.Ptr && !baseOldVal.IsNil() {
+					baseOldVal = baseOldVal.Elem()
+				}
+				if !baseOldVal.IsValid() || (baseOldVal.Kind() == reflect.Ptr && baseOldVal.IsNil()) {
+					baseOldVal = reflect.Value{}
+				}
 
 				if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
 					isBase := false
@@ -1676,18 +1683,21 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 				defVal := field.Tag.Get("def")
 
-				if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
-					// unknown enum value will be serialized as blank
-					buf = ""
-
-					if len(defVal) > 0 {
-						buf = defVal
-					} else {
-						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-							if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-								// remove uniqueid if skip
-								delete(uniqueMap, strings.ToLower(tagUniqueId))
-								continue
+				// normalize “unknown” enums even for pointer-backed numeric types.
+				if baseOldVal.IsValid() {
+					switch baseOldVal.Kind() {
+					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+						if baseOldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
+							buf = ""
+							if len(defVal) > 0 {
+								buf = defVal
+							} else {
+								if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+									if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+										delete(uniqueMap, strings.ToLower(tagUniqueId))
+										continue
+									}
+								}
 							}
 						}
 					}
@@ -1868,10 +1878,49 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 
 			jRaw, ok := jsonMap[jName]
 			if !ok {
-				// enforce required when missing and no default
-				if cfg.tagReq == "true" && LenTrim(field.Tag.Get("def")) == 0 {
+				defVal := Trim(field.Tag.Get("def"))
+				// validate/apply defaults when required field is missing but a default exists
+				if cfg.tagReq == "true" && LenTrim(defVal) == 0 {
 					StructClearFields(inputStructPtr)
 					return fmt.Errorf("%s is a Required Field", field.Name)
+				}
+				if LenTrim(defVal) > 0 && o.IsZero() {
+					// honor setters while applying defaults
+					hasSetter := LenTrim(cfg.tagSetter) > 0
+					if newVal, setDone, err := jsonApplySetter(s, cfg, o, defVal); err != nil {
+						StructClearFields(inputStructPtr)
+						return err
+					} else if setDone {
+						if err := jsonValidateValue(newVal, cfg, field.Name); err != nil {
+							StructClearFields(inputStructPtr)
+							return err
+						}
+						if err := jsonValidateCustom(newVal, cfg, s, field.Name); err != nil {
+							StructClearFields(inputStructPtr)
+							return err
+						}
+						continue
+					} else {
+						if norm, err := jsonPreprocessValue(newVal, cfg, hasSetter, trueList); err != nil {
+							StructClearFields(inputStructPtr)
+							return fmt.Errorf("%s %s", field.Name, err.Error())
+						} else {
+							newVal = norm
+						}
+						if err := jsonValidateValue(newVal, cfg, field.Name); err != nil {
+							StructClearFields(inputStructPtr)
+							return err
+						}
+						if err := jsonValidateCustom(newVal, cfg, s, field.Name); err != nil {
+							StructClearFields(inputStructPtr)
+							return err
+						}
+						if err := ReflectStringToField(o, newVal, cfg.timeFormat); err != nil {
+							StructClearFields(inputStructPtr)
+							return err
+						}
+						continue
+					}
 				}
 				continue
 			}

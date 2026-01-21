@@ -2682,7 +2682,14 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			StructClearFields(inputStructPtr)
 			return err
 		} else if setDone { // validate virtual setter output
-			// validation for setter-handled assignments (e.g., pointer/slice returns)
+			// re-stringify the field after setter execution so validation matches the real value
+			actualVal, _, errStr := ReflectValueToString(vs.o, vs.cfg.boolTrue, vs.cfg.boolFalse, false, false, vs.cfg.timeFormat, false)
+			if errStr != nil {
+				StructClearFields(inputStructPtr)
+				return errStr
+			}
+			newVal = actualVal
+
 			if err := csvValidateValue(newVal, vs.cfg, vs.field.Name); err != nil { // ensure validation runs even when setter handled assignment
 				StructClearFields(inputStructPtr)
 				return err
@@ -2821,6 +2828,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 
 	excludePlaceholders := true
 	uniqueMap := make(map[string]string)
+	emitted := false
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -2901,6 +2909,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 				return "", fmt.Errorf("%s is a Required Field", field.Name)
 			}
 			csvList[cfg.pos] = ""
+			emitted = true
 			continue
 		}
 
@@ -2914,12 +2923,14 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 				return "", fmt.Errorf("%s is a Required Field", field.Name)
 			}
 			csvList[cfg.pos] = ""
+			emitted = true
 			continue
 		} else if cfg.skipZero && fv == "0" {
 			if strings.ToLower(cfg.tagReq) == "true" {
 				return "", fmt.Errorf("%s is a Required Field", field.Name)
 			}
 			csvList[cfg.pos] = ""
+			emitted = true
 			continue
 		}
 
@@ -2928,6 +2939,12 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		}
 
 		csvList[cfg.pos] = cfg.outPrefix + fv
+		emitted = true
+	}
+
+	// fail fast if nothing was emitted to avoid silent empty CSV output
+	if !emitted {
+		return "", fmt.Errorf("MarshalStructToCSV Yielded Blank Output")
 	}
 
 	// emit variable-length CSV when all fields are outprefix-based (skip placeholders entirely)

@@ -263,6 +263,11 @@ func csvValidateAndNormalize(fv string, cfg csvFieldConfig, oldVal reflect.Value
 		return "", true, nil
 	}
 
+	// honor booltrue=" " with outprefix by emitting prefix-only payload for true values
+	if cfg.boolTrue == " " && strings.EqualFold(origFv, "true") && len(cfg.outPrefix) > 0 {
+		fv = "" // value will be prefixed later; do not skip
+	}
+
 	if len(fv) == 0 && len(cfg.defVal) > 0 {
 		fv = cfg.defVal
 	}
@@ -1401,6 +1406,11 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					}
 				}
 
+				// honor booltrue=" " + outprefix by emitting prefix token for true values
+				if boolTrue == " " && len(outPrefix) > 0 && strings.EqualFold(buf, "true") {
+					buf = defVal // allow default to follow prefix if provided
+				}
+
 				if boolFalse == " " && len(outPrefix) > 0 && buf == "false" {
 					buf = ""
 				} else {
@@ -1637,8 +1647,9 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 				outPrefix := field.Tag.Get("outprefix")
 
-				if boolTrue == " " && len(buf) == 0 && len(outPrefix) > 0 {
-					buf = outPrefix + defVal
+				// honor booltrue=" " + outprefix by emitting prefix token for true values
+				if boolTrue == " " && len(outPrefix) > 0 && strings.EqualFold(buf, "true") {
+					buf = outPrefix + defVal // defVal may be empty; still emit prefix
 				} else if boolFalse == " " && buf == "false" && len(outPrefix) > 0 {
 					buf = ""
 				} else if len(defVal) > 0 && len(buf) == 0 {

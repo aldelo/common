@@ -1312,8 +1312,16 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					zeroblank, _ = ParseBool(vs[6])
 				}
 
-				oldVal := reflect.ValueOf(o.Interface()) // snapshot original value to avoid aliasing mutations
-				defVal := field.Tag.Get("def")           // capture default early so it can be applied on skip
+				defVal := field.Tag.Get("def") // capture default early so it can be applied on skip
+
+				// safely capture original value without panicking on nil pointers/interfaces
+				baseOldVal := o
+				for baseOldVal.Kind() == reflect.Ptr && !baseOldVal.IsNil() {
+					baseOldVal = baseOldVal.Elem()
+				}
+				if !baseOldVal.IsValid() || (baseOldVal.Kind() == reflect.Ptr && baseOldVal.IsNil()) {
+					baseOldVal = reflect.Value{}
+				}
 
 				if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
 					isBase := false
@@ -1384,31 +1392,39 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 				if err != nil {
 					return "", fmt.Errorf("%s reflect to string failed: %w", field.Name, err)
 				}
-				// enforce req even when skipBlank/skipZero triggered
-				if skip && strings.ToLower(field.Tag.Get("req")) == "true" {
-					return "", fmt.Errorf("%s is a Required Field", field.Name)
-				}
+
+				// honor def when the value was skipped, and avoid panics on required enforcement
 				if skip {
-					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-							delete(uniqueMap, strings.ToLower(tagUniqueId))
-						}
-					}
-					continue
-				}
-
-				if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
-					// unknown enum value will be serialized as blank
-					buf = ""
-
-					if len(defVal) > 0 {
+					if LenTrim(defVal) > 0 {
 						buf = defVal
 					} else {
+						if strings.ToLower(field.Tag.Get("req")) == "true" {
+							return "", fmt.Errorf("%s is a Required Field", field.Name)
+						}
 						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-							if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-								// remove uniqueid if skip
-								delete(uniqueMap, strings.ToLower(tagUniqueId))
-								continue
+							delete(uniqueMap, strings.ToLower(tagUniqueId))
+						}
+						continue
+					}
+				}
+
+				// safe enum unknown check that also supports pointer-to-int kinds
+				if baseOldVal.IsValid() {
+					switch baseOldVal.Kind() {
+					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+						if baseOldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
+							buf = ""
+
+							if len(defVal) > 0 {
+								buf = defVal
+							} else {
+								if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+									if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+										// remove uniqueid if skip
+										delete(uniqueMap, strings.ToLower(tagUniqueId))
+										continue
+									}
+								}
 							}
 						}
 					}
@@ -2782,7 +2798,15 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			excludePlaceholders = false
 		}
 
-		oldVal := reflect.ValueOf(o.Interface()) // snapshot original value to avoid aliasing mutations
+		// safely dereference for unknown-enum handling without panics
+		baseOldVal := o
+		for baseOldVal.Kind() == reflect.Ptr && !baseOldVal.IsNil() {
+			baseOldVal = baseOldVal.Elem()
+		}
+		if !baseOldVal.IsValid() || (baseOldVal.Kind() == reflect.Ptr && baseOldVal.IsNil()) {
+			baseOldVal = reflect.Value{}
+		}
+
 		hasGetter := len(cfg.tagGetter) > 0
 		if hasGetter {
 			o = csvApplyGetter(s, cfg, o, cfg.boolTrue, cfg.boolFalse, cfg.skipBlank, cfg.skipZero, cfg.timeFormat, cfg.zeroBlank)
@@ -2800,16 +2824,22 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			continue
 		}
 
-		if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(fv) == "unknown" {
-			fv = ""
-			if len(cfg.defVal) > 0 {
-				fv = cfg.defVal
-			} else if len(uniqueKey) > 0 {
-				continue
+		// safe enum unknown check that also supports pointer-to-int kinds
+		if baseOldVal.IsValid() {
+			switch baseOldVal.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				if baseOldVal.Int() == 0 && strings.ToLower(fv) == "unknown" {
+					fv = ""
+					if len(cfg.defVal) > 0 {
+						fv = cfg.defVal
+					} else if len(uniqueKey) > 0 {
+						continue
+					}
+				}
 			}
 		}
 
-		fv, skipVal, errVal := csvValidateAndNormalize(fv, cfg, oldVal, hasGetter, trueList)
+		fv, skipVal, errVal := csvValidateAndNormalize(fv, cfg, baseOldVal, hasGetter, trueList)
 		if errVal != nil {
 			return "", fmt.Errorf("%s %s", field.Name, errVal.Error())
 		}

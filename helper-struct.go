@@ -620,34 +620,38 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			return csvValue, false, nil
 		}
 		if len(ov) == 1 {
-			// only assign when types are compatible; otherwise just stringify result
+			assigned := false
 			if ov[0].Type().AssignableTo(o.Type()) {
 				o.Set(ov[0])
+				assigned = true
 			} else if ov[0].Type().ConvertibleTo(o.Type()) {
 				o.Set(ov[0].Convert(o.Type()))
+				assigned = true
 			}
 
 			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
-				return val, false, nil
+				return val, assigned, nil
 			}
-			return csvValue, false, nil
+			return csvValue, assigned, nil
 		} else if len(ov) > 1 {
 			// propagate setter error if present
 			if err := DerefError(ov[len(ov)-1]); err != nil {
 				return csvValue, false, err
 			}
 
-			// assign only when compatible; otherwise just stringify first return
+			assigned := false
 			if ov[0].Type().AssignableTo(o.Type()) {
 				o.Set(ov[0])
+				assigned = true
 			} else if ov[0].Type().ConvertibleTo(o.Type()) {
 				o.Set(ov[0].Convert(o.Type()))
+				assigned = true
 			}
 
 			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
-				return val, false, nil
+				return val, assigned, nil
 			}
-			return csvValue, false, nil
+			return csvValue, assigned, nil
 		}
 		return csvValue, false, nil
 	}
@@ -680,13 +684,28 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 		ov, notFound = ReflectCall(callTarget, cfg.tagSetter, csvValue)
 	}
 	if !notFound {
-		if len(ov) == 1 && (ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice) {
-			o.Set(ov[0])
-			// provide string form of setter result for validation
-			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
-				return val, true, nil
+		if len(ov) == 1 {
+			if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
+				o.Set(ov[0])
+				if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
+					return val, true, nil
+				}
+				return csvValue, true, nil
 			}
-			return csvValue, true, nil
+
+			assigned := false
+			if ov[0].Type().AssignableTo(o.Type()) {
+				o.Set(ov[0])
+				assigned = true
+			} else if ov[0].Type().ConvertibleTo(o.Type()) {
+				o.Set(ov[0].Convert(o.Type()))
+				assigned = true
+			}
+
+			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
+				return val, assigned, nil
+			}
+			return csvValue, assigned, nil
 		} else if len(ov) > 1 {
 			// propagate setter error if present
 			if err := DerefError(ov[len(ov)-1]); err != nil {
@@ -694,16 +713,25 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			}
 			if (ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice) && !ov[0].IsNil() {
 				o.Set(ov[0])
-				// provide string form for validation when setter handled assignment
 				if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
 					return val, true, nil
 				}
 				return csvValue, true, nil
 			}
-			// honor booltrue/boolfalse literals when stringifying setter return
-			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
-				return val, false, nil
+
+			assigned := false
+			if ov[0].Type().AssignableTo(o.Type()) {
+				o.Set(ov[0])
+				assigned = true
+			} else if ov[0].Type().ConvertibleTo(o.Type()) {
+				o.Set(ov[0].Convert(o.Type()))
+				assigned = true
 			}
+
+			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
+				return val, assigned, nil
+			}
+			return csvValue, assigned, nil
 		}
 	}
 	return csvValue, false, nil
@@ -2154,6 +2182,13 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 						o.Set(ov[0])
 						return true, updatedDef, nil
 					}
+					if ov[0].Type().AssignableTo(o.Type()) {
+						o.Set(ov[0])
+						return true, updatedDef, nil
+					} else if ov[0].Type().ConvertibleTo(o.Type()) {
+						o.Set(ov[0].Convert(o.Type()))
+						return true, updatedDef, nil
+					}
 					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {
 						return false, val, nil
 					}
@@ -2164,6 +2199,14 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 					}
 					if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
 						o.Set(ov[0])
+						return true, updatedDef, nil
+					}
+					// assign compatible non-pointer results for multi-return setters
+					if ov[0].Type().AssignableTo(o.Type()) {
+						o.Set(ov[0])
+						return true, updatedDef, nil
+					} else if ov[0].Type().ConvertibleTo(o.Type()) {
+						o.Set(ov[0].Convert(o.Type()))
 						return true, updatedDef, nil
 					}
 					if val, _, err := ReflectValueToString(ov[0], "", "", false, false, "", false); err == nil {

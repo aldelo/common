@@ -1366,64 +1366,68 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					}
 				}
 
-				if buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroblank); err != nil || skip {
+				// propagate ReflectValueToString errors instead of silently skipping fields
+				buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroblank)
+				if err != nil {
+					return "", fmt.Errorf("%s reflect to string failed: %w", field.Name, err)
+				}
+				if skip {
 					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
 						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
 							delete(uniqueMap, strings.ToLower(tagUniqueId))
 						}
 					}
-
 					continue
-				} else {
-					defVal := field.Tag.Get("def")
+				}
 
-					if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
-						// unknown enum value will be serialized as blank
-						buf = ""
+				defVal := field.Tag.Get("def")
 
-						if len(defVal) > 0 {
-							buf = defVal
-						} else {
-							if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-								if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-									// remove uniqueid if skip
-									delete(uniqueMap, strings.ToLower(tagUniqueId))
-									continue
-								}
+				if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
+					// unknown enum value will be serialized as blank
+					buf = ""
+
+					if len(defVal) > 0 {
+						buf = defVal
+					} else {
+						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+							if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+								// remove uniqueid if skip
+								delete(uniqueMap, strings.ToLower(tagUniqueId))
+								continue
 							}
 						}
 					}
-
-					if boolFalse == " " && len(outPrefix) > 0 && buf == "false" {
-						buf = ""
-					} else {
-						if len(buf) == 0 && len(defVal) > 0 {
-							buf = defVal
-						}
-					}
-
-					// Respect skipblank/skipzero by skipping emission and releasing unique claims.
-					if skipBlank && LenTrim(buf) == 0 {
-						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-							delete(uniqueMap, strings.ToLower(tagUniqueId))
-						}
-						continue
-					}
-					if skipZero && buf == "0" {
-						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-							delete(uniqueMap, strings.ToLower(tagUniqueId))
-						}
-						continue
-					}
-
-					buf = outPrefix + buf
-
-					if LenTrim(output) > 0 {
-						output += "&"
-					}
-
-					output += fmt.Sprintf("%s=%s", tag, url.PathEscape(buf))
 				}
+
+				if boolFalse == " " && len(outPrefix) > 0 && buf == "false" {
+					buf = ""
+				} else {
+					if len(buf) == 0 && len(defVal) > 0 {
+						buf = defVal
+					}
+				}
+
+				// Respect skipblank/skipzero by skipping emission and releasing unique claims.
+				if skipBlank && LenTrim(buf) == 0 {
+					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+						delete(uniqueMap, strings.ToLower(tagUniqueId))
+					}
+					continue
+				}
+				if skipZero && buf == "0" {
+					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+						delete(uniqueMap, strings.ToLower(tagUniqueId))
+					}
+					continue
+				}
+
+				buf = outPrefix + buf
+
+				if LenTrim(output) > 0 {
+					output += "&"
+				}
+
+				output += fmt.Sprintf("%s=%s", tag, url.PathEscape(buf))
 			}
 		}
 	}
@@ -1589,6 +1593,9 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				}
 
 				buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+				if err != nil {
+					return "", fmt.Errorf("%s reflect to string failed: %w", field.Name, err)
+				}
 
 				if err != nil || skip {
 					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
@@ -2738,26 +2745,15 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		csvList[cfg.pos] = cfg.outPrefix + fv
 	}
 
-	// preserve column positions when placeholders remain (fixed-length CSV)
+	// Preserve column positions even when placeholders are excluded to avoid collapsing columns.
 	for idx, v := range csvList {
-		if excludePlaceholders {
-			if v == "{?}" || LenTrim(v) == 0 {
-				continue
-			}
-			if len(csvPayload) > 0 {
-				csvPayload += csvDelimiter
-			}
-			csvPayload += v
-			continue
-		}
-
 		if idx > 0 {
 			csvPayload += csvDelimiter
 		}
 		if v == "{?}" {
-			// leave empty slot to keep positional alignment
-			continue
+			continue // empty column to keep position
 		}
+		// if excludePlaceholders was true, this still preserves positional alignment
 		csvPayload += v
 	}
 

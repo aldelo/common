@@ -67,8 +67,9 @@ func csvComputeBufferLength(s reflect.Value) (int, error) { // extracted
 			}
 		}
 	}
+	// Fail fast when no positional tags are present to avoid silent empty CSV output.
 	if maxPos < 0 {
-		return 0, nil
+		return 0, fmt.Errorf("csv marshal requires at least one field tagged with pos")
 	}
 	return maxPos + 1, nil
 }
@@ -2656,6 +2657,11 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		return "", fmt.Errorf("InputStructPtr Must Be Struct")
 	}
 
+	// Apply defaults once so required fields that rely on def tags are honored before validation.
+	if _, err := SetStructFieldDefaultValues(inputStructPtr); err != nil {
+		return "", fmt.Errorf("MarshalStructToCSV default application failed: %w", err)
+	}
+
 	if !IsStructFieldSet(inputStructPtr) && StructNonDefaultRequiredFieldsCount(inputStructPtr) > 0 {
 		// fail fast instead of silently returning blank when required fields are missing
 		return "", fmt.Errorf("MarshalStructToCSV Requires Required Fields To Be Set")
@@ -2668,7 +2674,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 		return "", err
 	}
 	if csvLen == 0 {
-		return "", nil
+		return "", fmt.Errorf("MarshalStructToCSV requires at least one field tagged with pos")
 	}
 
 	csvList := make([]string, csvLen)

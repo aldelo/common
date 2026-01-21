@@ -604,14 +604,13 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			return csvValue, false, nil
 		}
 		if len(ov) == 1 {
-			if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
+			// only assign when types are compatible; otherwise just stringify result
+			if ov[0].Type().AssignableTo(o.Type()) {
 				o.Set(ov[0])
-				// return string form of the newly set value so downstream validation sees real data
-				if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
-					return val, true, nil
-				}
-				return csvValue, true, nil
+			} else if ov[0].Type().ConvertibleTo(o.Type()) {
+				o.Set(ov[0].Convert(o.Type()))
 			}
+
 			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
 				return val, false, nil
 			}
@@ -621,8 +620,15 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 			if err := DerefError(ov[len(ov)-1]); err != nil {
 				return csvValue, false, err
 			}
-			// honor booltrue/boolfalse literals when stringifying setter return
-			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil { // CHANGED
+
+			// assign only when compatible; otherwise just stringify first return
+			if ov[0].Type().AssignableTo(o.Type()) {
+				o.Set(ov[0])
+			} else if ov[0].Type().ConvertibleTo(o.Type()) {
+				o.Set(ov[0].Convert(o.Type()))
+			}
+
+			if val, _, err := ReflectValueToString(ov[0], cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false); err == nil {
 				return val, false, nil
 			}
 			return csvValue, false, nil
@@ -1977,6 +1983,14 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 				continue
 			} else {
 				tagDef = newDef
+			}
+
+			// consider fields WITHOUT def tags by using IsZero to detect any user-set value
+			if LenTrim(tagDef) == 0 {
+				if !o.IsZero() {
+					return true
+				}
+				continue
 			}
 
 			switch o.Kind() {

@@ -1670,6 +1670,26 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					buf = outPrefix + buf
 				}
 
+				// honor skipblank/skipzero for JSON marshalling (parity with CSV/query)
+				if skipBlank && LenTrim(buf) == 0 {
+					if req == "true" {
+						return "", fmt.Errorf("%s is a Required Field", field.Name)
+					}
+					if uniqueKey != "" {
+						delete(uniqueMap, uniqueKey)
+					}
+					continue
+				}
+				if skipZero && buf == "0" {
+					if req == "true" {
+						return "", fmt.Errorf("%s is a Required Field", field.Name)
+					}
+					if uniqueKey != "" {
+						delete(uniqueMap, uniqueKey)
+					}
+					continue
+				}
+
 				// enforce required after all normalization/output-prefix logic
 				if req == "true" && LenTrim(buf) == 0 {
 					return "", fmt.Errorf("%s is a Required Field", field.Name)

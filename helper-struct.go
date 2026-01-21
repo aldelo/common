@@ -2680,6 +2680,10 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			return "", e
 		}
 		if skip {
+			// enforce required fields cannot be skipped by tag-based omission
+			if strings.ToLower(cfg.tagReq) == "true" {
+				return "", fmt.Errorf("%s is a Required Field", field.Name)
+			}
 			continue
 		}
 
@@ -2697,6 +2701,10 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			return "", fmt.Errorf("%s %s", field.Name, errVal.Error())
 		}
 		if skipVal {
+			// required fields must not be silently skipped
+			if strings.ToLower(cfg.tagReq) == "true" {
+				return "", fmt.Errorf("%s is a Required Field", field.Name)
+			}
 			csvList[cfg.pos] = ""
 			continue
 		}
@@ -2705,10 +2713,17 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			return "", fmt.Errorf("%s %s", field.Name, errVal.Error())
 		}
 
+		// ensure skipBlank/skipZero cannot bypass required enforcement
 		if cfg.skipBlank && LenTrim(fv) == 0 {
+			if strings.ToLower(cfg.tagReq) == "true" {
+				return "", fmt.Errorf("%s is a Required Field", field.Name)
+			}
 			csvList[cfg.pos] = ""
 			continue
 		} else if cfg.skipZero && fv == "0" {
+			if strings.ToLower(cfg.tagReq) == "true" {
+				return "", fmt.Errorf("%s is a Required Field", field.Name)
+			}
 			csvList[cfg.pos] = ""
 			continue
 		}

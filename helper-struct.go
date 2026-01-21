@@ -1276,7 +1276,9 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 		field := s.Type().Field(i)
 
 		if o := s.FieldByName(field.Name); o.IsValid() {
-			tag := field.Tag.Get(tagName)
+			tagRaw := field.Tag.Get(tagName)
+			tagParts := strings.SplitN(tagRaw, ",", 2) // strip tag options (e.g., omitempty)
+			tag := tagParts[0]
 
 			if LenTrim(tag) == 0 {
 				tag = field.Name
@@ -1381,6 +1383,10 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 				if err != nil {
 					return "", fmt.Errorf("%s reflect to string failed: %w", field.Name, err)
 				}
+				// enforce req even when skipBlank/skipZero triggered
+				if skip && strings.ToLower(field.Tag.Get("req")) == "true" {
+					return "", fmt.Errorf("%s is a Required Field", field.Name)
+				}
 				if skip {
 					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
 						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
@@ -1424,12 +1430,18 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 
 				// Respect skipblank/skipzero by skipping emission and releasing unique claims.
 				if skipBlank && LenTrim(buf) == 0 {
+					if strings.ToLower(field.Tag.Get("req")) == "true" { // required enforcement
+						return "", fmt.Errorf("%s is a Required Field", field.Name)
+					}
 					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
 						delete(uniqueMap, strings.ToLower(tagUniqueId))
 					}
 					continue
 				}
 				if skipZero && buf == "0" {
+					if strings.ToLower(field.Tag.Get("req")) == "true" { // required enforcement
+						return "", fmt.Errorf("%s is a Required Field", field.Name)
+					}
 					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
 						delete(uniqueMap, strings.ToLower(tagUniqueId))
 					}
@@ -1437,6 +1449,11 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 				}
 
 				buf = outPrefix + buf
+
+				// final required check after normalization
+				if strings.ToLower(field.Tag.Get("req")) == "true" && LenTrim(buf) == 0 {
+					return "", fmt.Errorf("%s is a Required Field", field.Name)
+				}
 
 				if LenTrim(output) > 0 {
 					output += "&"
@@ -1519,7 +1536,9 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 		if o := s.FieldByName(field.Name); o.IsValid() {
 			cfg, _ := jsonParseFieldConfig(field) // reuse parsed config for validation
 
-			tag := field.Tag.Get(tagName)
+			tagRaw := field.Tag.Get(tagName)
+			tagParts := strings.SplitN(tagRaw, ",", 2) // strip tag options (e.g., omitempty)
+			tag := tagParts[0]
 
 			if LenTrim(tag) == 0 {
 				tag = field.Name
@@ -1814,7 +1833,9 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 			cfg, _ := jsonParseFieldConfig(field)
 
 			// get json field name if defined
-			jName := Trim(field.Tag.Get(tagName))
+			tagRaw := Trim(field.Tag.Get(tagName))
+			tagParts := strings.SplitN(tagRaw, ",", 2) // strip tag options (e.g., omitempty)
+			jName := Trim(tagParts[0])
 
 			if jName == "-" {
 				continue

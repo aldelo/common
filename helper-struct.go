@@ -1291,11 +1291,12 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					}
 				}
 
+				// Do not claim uniqueid until we know we will emit a value.
+				uniqueKey := ""
 				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-					if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-						continue
-					} else {
-						uniqueMap[strings.ToLower(tagUniqueId)] = field.Name
+					uniqueKey = strings.ToLower(tagUniqueId)
+					if _, ok := uniqueMap[uniqueKey]; ok {
+						continue // already satisfied by another mutually-exclusive field
 					}
 				}
 
@@ -1401,9 +1402,6 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 						if strings.ToLower(field.Tag.Get("req")) == "true" {
 							return "", fmt.Errorf("%s is a Required Field", field.Name)
 						}
-						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-							delete(uniqueMap, strings.ToLower(tagUniqueId))
-						}
 						continue
 					}
 				}
@@ -1418,13 +1416,8 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 							if len(defVal) > 0 {
 								buf = defVal
 							} else {
-								if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-									if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-										// remove uniqueid if skip
-										delete(uniqueMap, strings.ToLower(tagUniqueId))
-										continue
-									}
-								}
+								// we never claimed uniqueKey yet, so no need to delete
+								continue
 							}
 						}
 					}
@@ -1448,18 +1441,14 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					if strings.ToLower(field.Tag.Get("req")) == "true" { // required enforcement
 						return "", fmt.Errorf("%s is a Required Field", field.Name)
 					}
-					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-						delete(uniqueMap, strings.ToLower(tagUniqueId))
-					}
+					// we never claimed uniqueKey yet, so no need to delete
 					continue
 				}
 				if skipZero && buf == "0" {
 					if strings.ToLower(field.Tag.Get("req")) == "true" { // required enforcement
 						return "", fmt.Errorf("%s is a Required Field", field.Name)
 					}
-					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-						delete(uniqueMap, strings.ToLower(tagUniqueId))
-					}
+					// we never claimed uniqueKey yet, so no need to delete
 					continue
 				}
 
@@ -1468,6 +1457,11 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 				// final required check after normalization
 				if strings.ToLower(field.Tag.Get("req")) == "true" && LenTrim(buf) == 0 {
 					return "", fmt.Errorf("%s is a Required Field", field.Name)
+				}
+
+				// claim uniqueid only when we actually emit a value
+				if uniqueKey != "" {
+					uniqueMap[uniqueKey] = field.Name
 				}
 
 				if LenTrim(output) > 0 {

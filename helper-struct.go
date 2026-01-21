@@ -1312,7 +1312,8 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					zeroblank, _ = ParseBool(vs[6])
 				}
 
-				oldVal := o
+				oldVal := reflect.ValueOf(o.Interface()) // snapshot original value to avoid aliasing mutations
+				defVal := field.Tag.Get("def")           // capture default early so it can be applied on skip
 
 				if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
 					isBase := false
@@ -1395,8 +1396,6 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 					}
 					continue
 				}
-
-				defVal := field.Tag.Get("def")
 
 				if oldVal.Kind() == reflect.Int && oldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
 					// unknown enum value will be serialized as blank
@@ -2783,7 +2782,7 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 			excludePlaceholders = false
 		}
 
-		oldVal := o
+		oldVal := reflect.ValueOf(o.Interface()) // snapshot original value to avoid aliasing mutations
 		hasGetter := len(cfg.tagGetter) > 0
 		if hasGetter {
 			o = csvApplyGetter(s, cfg, o, cfg.boolTrue, cfg.boolFalse, cfg.skipBlank, cfg.skipZero, cfg.timeFormat, cfg.zeroBlank)

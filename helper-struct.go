@@ -430,10 +430,12 @@ func csvParseUnmarshalConfig(field reflect.StructField) (cfg csvUnmarshalConfig,
 	tagPosBuf := field.Tag.Get("pos")
 	tagPos, posOK := ParseInt32(tagPosBuf)
 	if !posOK {
-		if tagPosBuf != "-" || LenTrim(field.Tag.Get("setter")) == 0 {
+		// allow pos="-" fields to participate (so required/default logic can run even without a setter)
+		if tagPosBuf == "-" {
+			cfg.pos = -1
+		} else {
 			return cfg, false
 		}
-		cfg.pos = -1
 	} else {
 		if tagPos < 0 {
 			return cfg, false
@@ -1597,14 +1599,21 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					return "", fmt.Errorf("%s reflect to string failed: %w", field.Name, err)
 				}
 
-				if err != nil || skip {
-					if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-						if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
+				// honor required/default semantics when a value was skipped
+				req := strings.ToLower(field.Tag.Get("req"))
+				if skip {
+					defVal := field.Tag.Get("def")
+					if len(defVal) > 0 {
+						buf = defVal
+					} else {
+						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
 							delete(uniqueMap, strings.ToLower(tagUniqueId))
 						}
+						if req == "true" {
+							return "", fmt.Errorf("%s is a Required Field", field.Name)
+						}
+						continue
 					}
-
-					continue
 				}
 
 				defVal := field.Tag.Get("def")
@@ -1639,6 +1648,11 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				// apply outprefix for normal values when provided.
 				if LenTrim(outPrefix) > 0 && len(buf) > 0 && !strings.HasPrefix(buf, outPrefix) {
 					buf = outPrefix + buf
+				}
+
+				// enforce required after all normalization/output-prefix logic
+				if req == "true" && LenTrim(buf) == 0 {
+					return "", fmt.Errorf("%s is a Required Field", field.Name)
 				}
 
 				jsonMap[tag] = buf // defer escaping/encoding to json.Marshal

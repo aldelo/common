@@ -18,11 +18,18 @@ package helper
 
 import (
 	"database/sql"
-	"math/rand"
+	"math"
+	mathrand "math/rand"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/oklog/ulid/v2"
+)
+
+var (
+	ulidEntropy     = ulid.Monotonic(mathrand.New(mathrand.NewSource(time.Now().UnixNano())), 0) // shared monotonic entropy
+	ulidEntropyLock sync.Mutex                                                                   // guard for concurrent use
 )
 
 // ================================================================================================================
@@ -55,17 +62,16 @@ func NewUUID() string {
 // GenerateULID will generate a ULID that is globally unique (very slim chance of collision)
 func GenerateULID() (string, error) {
 	t := time.Now()
-	entropy := ulid.Monotonic(rand.New(rand.NewSource(t.UnixNano())), 0)
 
-	id, err := ulid.New(ulid.Timestamp(t), entropy)
+	ulidEntropyLock.Lock()                              // ensure thread-safe monotonic entropy use
+	id, err := ulid.New(ulid.Timestamp(t), ulidEntropy) // reuse shared entropy for monotonicity
+	ulidEntropyLock.Unlock()
 
 	if err != nil {
-		// error
 		return "", err
-	} else {
-		// has id
-		return id.String(), nil
 	}
+
+	return id.String(), nil
 }
 
 // NewULID will generate a new ULID and ignore error if any
@@ -103,8 +109,8 @@ func GenerateRandomNumber(maxNumber int) int {
 		return 0
 	}
 
-	seed := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(seed)
+	seed := mathrand.NewSource(time.Now().UnixNano())
+	r := mathrand.New(seed)
 
 	// fast path for degenerate bound
 	if maxNumber == 1 {
@@ -173,9 +179,9 @@ func GenerateNewUniqueInt32(oldIntVal int) int {
 	val, ok := ParseInt32(buf)
 
 	if !ok {
-		return oldIntVal * -1
+		return safeNegateInt(oldIntVal) // avoid overflow
 	} else {
-		return val * -1
+		return safeNegateInt(val) // avoid overflow
 	}
 }
 
@@ -193,9 +199,9 @@ func GenerateNewUniqueNullInt32(oldIntVal sql.NullInt32) sql.NullInt32 {
 	val, ok := ParseInt32(buf)
 
 	if !ok {
-		return ToNullInt(int(oldIntVal.Int32)*-1, true)
+		return ToNullInt(int(safeNegateInt(int(oldIntVal.Int32))), true)
 	} else {
-		return ToNullInt(val*-1, true)
+		return ToNullInt(int(safeNegateInt(val)), true)
 	}
 }
 
@@ -209,10 +215,24 @@ func GenerateNewUniqueInt64(oldIntVal int64) int64 {
 	val, ok := ParseInt64(buf)
 
 	if !ok {
-		return oldIntVal * -1
+		return safeNegateInt64(oldIntVal)
 	} else {
-		return val * -1
+		return safeNegateInt64(val)
 	}
+}
+
+func safeNegateInt(v int) int { // prevent MinInt overflow
+	if v == math.MinInt {
+		return math.MaxInt
+	}
+	return -v
+}
+
+func safeNegateInt64(v int64) int64 { // prevent MinInt64 overflow
+	if v == math.MinInt64 {
+		return math.MaxInt64
+	}
+	return -v
 }
 
 // GenerateNewUniqueNullInt64 will take in old value and return new unique value with randomized seed and negated
@@ -229,9 +249,9 @@ func GenerateNewUniqueNullInt64(oldIntVal sql.NullInt64) sql.NullInt64 {
 	val, ok := ParseInt64(buf)
 
 	if !ok {
-		return ToNullInt64(oldIntVal.Int64*-1, true)
+		return ToNullInt64(safeNegateInt64(oldIntVal.Int64), true)
 	} else {
-		return ToNullInt64(val*-1, true)
+		return ToNullInt64(safeNegateInt64(val), true)
 	}
 }
 

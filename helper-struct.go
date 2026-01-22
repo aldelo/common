@@ -1601,6 +1601,7 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 			defVal := field.Tag.Get("def") // capture default regardless of getter presence
 
+			oVal := o
 			if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
 				isBase := false
 				useParam := false
@@ -1618,14 +1619,14 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					useParam = true
 
 					// guard nil pointers before stringifying getter param
-					if o.Kind() != reflect.Slice {
-						if o.Kind() == reflect.Ptr && o.IsNil() {
+					if oVal.Kind() != reflect.Slice {
+						if oVal.Kind() == reflect.Ptr && o.IsNil() {
 							paramVal = ""
 						} else {
 							paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
 						}
 					} else if o.Len() > 0 {
-						paramSlice = o.Slice(0, o.Len()).Interface()
+						paramSlice = oVal.Slice(0, o.Len()).Interface()
 					}
 
 					tagGetter = tagGetter[:len(tagGetter)-3]

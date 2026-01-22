@@ -1611,7 +1611,8 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				baseOldVal = reflect.Value{}
 			}
 
-			defVal := field.Tag.Get("def") // capture default regardless of getter presence
+			defVal := field.Tag.Get("def")          // capture default regardless of getter presence
+			hasSetter := LenTrim(cfg.tagSetter) > 0 // track setter presence for preprocessing
 
 			oVal := o
 			if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {

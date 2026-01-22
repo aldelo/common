@@ -345,51 +345,62 @@ func ParseDateFromDDMMYYYY(s string) time.Time {
 func ParseDateFromYYMMDD(s string) time.Time {
 	s = strings.TrimSpace(s)
 
-	if IsNumericIntOnly(s) == false {
+	// enforce numeric-only and length before parsing
+	if !IsNumericIntOnly(s) || LenTrim(s) != 6 {
 		return time.Time{}
 	}
 
-	if LenTrim(s) != 6 {
+	yy := Atoi(Left(s, 2))
+	mm := Atoi(Mid(s, 2, 2))
+	dd := Atoi(Mid(s, 4, 2))
+
+	// validate against actual calendar rules and force 20xx century
+	if !IsDayOfMonthValid(2000+yy, mm, dd) {
 		return time.Time{}
 	}
 
-	d := Left(s, 2) + "-" + Mid(s, 2, 2) + "-" + Mid(s, 4, 2)
-
-	return ParseDateTimeCustom(d, "06-01-02")
+	// construct time directly to avoid Go's 69-pivot two-digit year behavior
+	return time.Date(2000+yy, time.Month(mm), dd, 0, 0, 0, 0, time.UTC)
 }
 
 // ParseDateFromYYMM from string value
 func ParseDateFromYYMM(s string) time.Time {
 	s = strings.TrimSpace(s)
 
-	if IsNumericIntOnly(s) == false {
+	// strict numeric/length validation
+	if !IsNumericIntOnly(s) || LenTrim(s) != 4 {
 		return time.Time{}
 	}
 
-	if LenTrim(s) != 4 {
+	yy := Atoi(Left(s, 2))
+	mm := Atoi(Mid(s, 2, 2))
+
+	if mm < 1 || mm > 12 {
 		return time.Time{}
 	}
 
-	d := Left(s, 2) + "-" + Mid(s, 2, 2)
-
-	return ParseDateTimeCustom(d, "06-01")
+	// force 20xx century and build date directly
+	return time.Date(2000+yy, time.Month(mm), 1, 0, 0, 0, 0, time.UTC)
 }
 
 // ParseDateFromMMYY from string value
 func ParseDateFromMMYY(s string) time.Time {
 	s = strings.TrimSpace(s)
 
-	if IsNumericIntOnly(s) == false {
+	// strict numeric/length validation
+	if !IsNumericIntOnly(s) || LenTrim(s) != 4 {
 		return time.Time{}
 	}
 
-	if LenTrim(s) != 4 {
+	mm := Atoi(Left(s, 2))
+	yy := Atoi(Right(s, 2))
+
+	if mm < 1 || mm > 12 {
 		return time.Time{}
 	}
 
-	d := Left(s, 2) + "-" + Mid(s, 2, 2)
-
-	return ParseDateTimeCustom(d, "01-06")
+	// force 20xx century and build date directly
+	return time.Date(2000+yy, time.Month(mm), 1, 0, 0, 0, 0, time.UTC)
 }
 
 // ParseDateToLastDayOfMonth takes in a time.Time struct and returns the last date of month
@@ -407,6 +418,30 @@ func ParseDateToLastDayOfMonth(t time.Time) time.Time {
 	newDate = newDate.AddDate(0, 0, -1)
 
 	return newDate
+}
+
+// ParseDateTimeFromYYMMDDhhmmss from string value
+func ParseDateTimeFromYYMMDDhhmmss(s string) time.Time {
+	s = strings.TrimSpace(s)
+
+	// strict numeric/length validation
+	if !IsNumericIntOnly(s) || LenTrim(s) != 10 {
+		return time.Time{}
+	}
+
+	// reuse existing validators to guard components
+	if !IsDateValidYYMMDD(Left(s, 6)) || !IsTimeValidhhmm(Right(s, 4)) {
+		return time.Time{}
+	}
+
+	yy := Atoi(Left(s, 2))
+	mm := Atoi(Mid(s, 2, 2))
+	dd := Atoi(Mid(s, 4, 2))
+	hh := Atoi(Mid(s, 6, 2))
+	mn := Atoi(Mid(s, 8, 2))
+
+	// build time directly with 20xx century; avoids broken 2-digit parse + 4-digit layout
+	return time.Date(2000+yy, time.Month(mm), dd, hh, mn, 0, 0, time.UTC)
 }
 
 // ParseDateFromMMDD from string value

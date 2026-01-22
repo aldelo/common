@@ -179,6 +179,11 @@ func csvApplyGetter(s reflect.Value, cfg csvFieldConfig, o reflect.Value, boolTr
 		return o
 	}
 
+	// avoid method calls on nil pointers
+	if o.Kind() == reflect.Ptr && o.IsNil() && !cfg.getterBase {
+		return o
+	}
+
 	isBase := cfg.getterBase
 	useParam := cfg.getterParam
 	paramVal := ""
@@ -1558,104 +1563,101 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				tag = field.Name
 			}
 
-			if tag != "-" {
-				if LenTrim(excludeTagName) > 0 {
-					if Trim(field.Tag.Get(excludeTagName)) == "-" {
-						continue
-					}
+			if tag == "-" {
+				continue
+			}
+			if LenTrim(excludeTagName) > 0 && Trim(field.Tag.Get(excludeTagName)) == "-" {
+				continue
+			}
+
+			uniqueKey := ""
+			if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
+				uniqueKey = strings.ToLower(tagUniqueId)
+				if _, ok := uniqueMap[uniqueKey]; ok {
+					continue
+				}
+			}
+
+			var boolTrue, boolFalse, timeFormat string
+			var skipBlank, skipZero, zeroBlank bool
+
+			if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "zeroblank"); len(vs) == 6 {
+				boolTrue = vs[0]
+				boolFalse = vs[1]
+				skipBlank, _ = ParseBool(vs[2])
+				skipZero, _ = ParseBool(vs[3])
+				timeFormat = vs[4]
+				zeroBlank, _ = ParseBool(vs[5])
+			}
+
+			// safely dereference to support pointer-backed enums and avoid nil panics.
+			baseOldVal := o
+			for baseOldVal.Kind() == reflect.Ptr && !baseOldVal.IsNil() {
+				baseOldVal = baseOldVal.Elem()
+			}
+			if !baseOldVal.IsValid() || (baseOldVal.Kind() == reflect.Ptr && baseOldVal.IsNil()) {
+				baseOldVal = reflect.Value{}
+			}
+
+			if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
+				isBase := false
+				useParam := false
+				paramVal := ""
+				var paramSlice interface{}
+				lg := strings.ToLower(tagGetter)
+
+				if strings.HasPrefix(lg, "base.") {
+					isBase = true
+					tagGetter = tagGetter[5:]
+					lg = strings.ToLower(tagGetter)
 				}
 
-				uniqueKey := ""
-				if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-					uniqueKey = strings.ToLower(tagUniqueId)
-					if _, ok := uniqueMap[uniqueKey]; ok {
-						continue // already claimed by an earlier emitted field
-					}
-				}
+				if strings.HasSuffix(lg, "(x)") && len(tagGetter) >= 3 {
+					useParam = true
 
-				var boolTrue, boolFalse, timeFormat string
-				var skipBlank, skipZero, zeroBlank bool
-
-				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "zeroblank"); len(vs) == 6 {
-					boolTrue = vs[0]
-					boolFalse = vs[1]
-					skipBlank, _ = ParseBool(vs[2])
-					skipZero, _ = ParseBool(vs[3])
-					timeFormat = vs[4]
-					zeroBlank, _ = ParseBool(vs[5])
-				}
-
-				// safely dereference to support pointer-backed enums and avoid nil panics.
-				baseOldVal := o
-				for baseOldVal.Kind() == reflect.Ptr && !baseOldVal.IsNil() {
-					baseOldVal = baseOldVal.Elem()
-				}
-				if !baseOldVal.IsValid() || (baseOldVal.Kind() == reflect.Ptr && baseOldVal.IsNil()) {
-					baseOldVal = reflect.Value{}
-				}
-
-				if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
-					isBase := false
-					useParam := false
-					paramVal := ""
-					var paramSlice interface{}
-					lg := strings.ToLower(tagGetter)
-
-					if strings.HasPrefix(lg, "base.") {
-						isBase = true
-						tagGetter = tagGetter[5:]
-						lg = strings.ToLower(tagGetter)
-					}
-
-					if strings.HasSuffix(lg, "(x)") && len(tagGetter) >= 3 {
-						useParam = true
-
-						// guard nil pointers before stringifying getter param
-						if o.Kind() != reflect.Slice {
-							if o.Kind() == reflect.Ptr && o.IsNil() {
-								paramVal = ""
-							} else {
-								paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
-							}
+					// guard nil pointers before stringifying getter param
+					if o.Kind() != reflect.Slice {
+						if o.Kind() == reflect.Ptr && o.IsNil() {
+							paramVal = ""
 						} else {
-							if o.Len() > 0 {
-								paramSlice = o.Slice(0, o.Len()).Interface()
-							}
-						}
-
-						tagGetter = tagGetter[:len(tagGetter)-3]
-					}
-
-					var ov []reflect.Value
-					var notFound bool
-
-					if isBase {
-						if useParam {
-							if paramSlice == nil {
-								ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
-							} else {
-								ov, notFound = ReflectCall(s.Addr(), tagGetter, paramSlice)
-							}
-						} else {
-							ov, notFound = ReflectCall(s.Addr(), tagGetter)
+							paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
 						}
 					} else {
-						if useParam {
-							if paramSlice == nil {
-								ov, notFound = ReflectCall(o, tagGetter, paramVal)
-							} else {
-								ov, notFound = ReflectCall(o, tagGetter, paramSlice)
-							}
-						} else {
-							ov, notFound = ReflectCall(o, tagGetter)
+						if o.Len() > 0 {
+							paramSlice = o.Slice(0, o.Len()).Interface()
 						}
 					}
 
-					if !notFound {
-						if len(ov) > 0 {
-							o = ov[0]
+					tagGetter = tagGetter[:len(tagGetter)-3]
+				}
+
+				var ov []reflect.Value
+				var notFound bool
+
+				if isBase {
+					if useParam {
+						if paramSlice == nil {
+							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+						} else {
+							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramSlice)
 						}
+					} else {
+						ov, notFound = ReflectCall(s.Addr(), tagGetter)
 					}
+				} else {
+					if useParam {
+						if paramSlice == nil {
+							ov, notFound = ReflectCall(o, tagGetter, paramVal)
+						} else {
+							ov, notFound = ReflectCall(o, tagGetter, paramSlice)
+						}
+					} else {
+						ov, notFound = ReflectCall(o, tagGetter)
+					}
+				}
+
+				if !notFound && len(ov) > 0 {
+					o = ov[0]
 				}
 
 				buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
@@ -1665,22 +1667,18 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 				// honor required/default semantics when a value was skipped
 				req := strings.ToLower(field.Tag.Get("req"))
+				defVal := field.Tag.Get("def")
+
 				if skip {
-					defVal := field.Tag.Get("def")
 					if len(defVal) > 0 {
 						buf = defVal
 					} else {
-						if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-							delete(uniqueMap, strings.ToLower(tagUniqueId))
-						}
 						if req == "true" {
 							return "", fmt.Errorf("%s is a Required Field", field.Name)
 						}
 						continue
 					}
 				}
-
-				defVal := field.Tag.Get("def")
 
 				// normalize “unknown” enums even for pointer-backed numeric types.
 				if baseOldVal.IsValid() {
@@ -1691,12 +1689,10 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 							if len(defVal) > 0 {
 								buf = defVal
 							} else {
-								if tagUniqueId := Trim(field.Tag.Get("uniqueid")); len(tagUniqueId) > 0 {
-									if _, ok := uniqueMap[strings.ToLower(tagUniqueId)]; ok {
-										delete(uniqueMap, strings.ToLower(tagUniqueId))
-										continue
-									}
+								if uniqueKey != "" {
+									delete(uniqueMap, uniqueKey)
 								}
+								continue
 							}
 						}
 					}
@@ -1884,9 +1880,15 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 					return fmt.Errorf("%s is a Required Field", field.Name)
 				}
 				if LenTrim(defVal) > 0 && o.IsZero() {
-					// honor setters while applying defaults
 					hasSetter := LenTrim(cfg.tagSetter) > 0
-					if newVal, setDone, err := jsonApplySetter(s, cfg, o, defVal); err != nil {
+					newVal := defVal
+					if norm, err := jsonPreprocessValue(newVal, cfg, hasSetter, trueList); err != nil {
+						StructClearFields(inputStructPtr)
+						return fmt.Errorf("%s %s", field.Name, err.Error())
+					} else {
+						newVal = norm
+					}
+					if newVal, setDone, err := jsonApplySetter(s, cfg, o, newVal); err != nil {
 						StructClearFields(inputStructPtr)
 						return err
 					} else if setDone {
@@ -1900,12 +1902,6 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 						}
 						continue
 					} else {
-						if norm, err := jsonPreprocessValue(newVal, cfg, hasSetter, trueList); err != nil {
-							StructClearFields(inputStructPtr)
-							return fmt.Errorf("%s %s", field.Name, err.Error())
-						} else {
-							newVal = norm
-						}
 						if err := jsonValidateValue(newVal, cfg, field.Name); err != nil {
 							StructClearFields(inputStructPtr)
 							return err

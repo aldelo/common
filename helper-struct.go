@@ -1648,12 +1648,12 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				} else {
 					if useParam {
 						if paramSlice == nil {
-							ov, notFound = ReflectCall(o, tagGetter, paramVal)
+							ov, notFound = ReflectCall(oVal, tagGetter, paramVal)
 						} else {
-							ov, notFound = ReflectCall(o, tagGetter, paramSlice)
+							ov, notFound = ReflectCall(oVal, tagGetter, paramSlice)
 						}
 					} else {
-						ov, notFound = ReflectCall(o, tagGetter)
+						ov, notFound = ReflectCall(oVal, tagGetter)
 					}
 				}
 

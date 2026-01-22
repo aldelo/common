@@ -235,7 +235,7 @@ func ParseFromExcelDate(s string, format string) time.Time {
 		return ParseDateTimeCustom(s, format)
 	}
 
-	if v <= 0 {
+	if v <= 1 {
 		return time.Time{}
 	}
 

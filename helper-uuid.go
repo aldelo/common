@@ -19,7 +19,6 @@ package helper
 import (
 	"crypto/rand"
 	"database/sql"
-	"encoding/binary"
 	"math"
 	"math/big"
 	"sync"

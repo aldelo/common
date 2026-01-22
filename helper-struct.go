@@ -1670,7 +1670,7 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				}
 
 				if !notFound && len(ov) > 0 {
-					o = ov[0]
+					oVal = ov[0]
 				}
 
 				buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)

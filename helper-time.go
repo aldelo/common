@@ -907,23 +907,32 @@ func IsDateValidMMDDYY(s string) bool {
 		return false
 	}
 
-	mm := 0
-	dd := 0
-	yy := 0
+	mm := Atoi(Left(s, 2))
+	dd := Atoi(Mid(s, 2, 2))
+	yy := Atoi(Right(s, 2))
 
-	if mm = Atoi(Left(s, 2)); mm < 1 || mm > 12 {
+	if mm < 1 || mm > 12 {
 		return false
 	}
 
-	if dd = Atoi(Mid(s, 2, 2)); dd < 1 || dd > 31 {
+	if dd < 1 || dd > 31 {
 		return false
 	}
 
-	if yy = Atoi(Right(s, 2)); yy < 0 || yy > 99 {
+	if yy < 0 || yy > 99 {
 		return false
 	}
 
-	if !IsDayOfMonthValid(2000+yy, mm, dd) {
+	year := 2000 + yy
+	if yy >= 70 { // map 70–99 to 1970–1999 per doc
+		year = 1900 + yy
+	}
+
+	if year < 1970 || year > 2099 { // enforce documented bounds
+		return false
+	}
+
+	if !IsDayOfMonthValid(year, mm, dd) {
 		return false
 	}
 

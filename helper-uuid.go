@@ -1,7 +1,7 @@
 package helper
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@ package helper
 
 import (
 	"database/sql"
-	"github.com/google/uuid"
-	"github.com/oklog/ulid/v2"
 	"math/rand"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 )
 
 // ================================================================================================================
@@ -97,8 +98,18 @@ func IsULIDValid(ulidStr string) bool {
 
 // GenerateRandomNumber with unix nano as seed
 func GenerateRandomNumber(maxNumber int) int {
+	// guard to avoid panic when maxNumber <= 0
+	if maxNumber <= 0 {
+		return 0
+	}
+
 	seed := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(seed)
+
+	// fast path for degenerate bound
+	if maxNumber == 1 {
+		return 0
+	}
 
 	return r.Intn(maxNumber)
 }

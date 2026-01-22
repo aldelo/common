@@ -1173,6 +1173,11 @@ func jsonApplySetter(s reflect.Value, cfg jsonFieldConfig, o reflect.Value, json
 // implementation functions
 // =====================================================================================================================
 
+// helper to avoid panics when encountering unexported fields across packages.
+func isExportedField(field reflect.StructField) bool { // NEW
+	return field.PkgPath == "" // empty PkgPath means exported // NEW
+}
+
 // Fill copies the src struct with same tag name to dst struct tag pointer,
 // src and dst both must be struct，and dst must be pointer
 func Fill(src interface{}, dst interface{}) error {
@@ -1211,7 +1216,11 @@ func Fill(src interface{}, dst interface{}) error {
 	}
 
 	for i := 0; i < srcType.NumField(); i++ {
-		dstField := dstValue.Elem().FieldByName(srcType.Field(i).Name)
+		fieldMeta := srcType.Field(i)
+		if !isExportedField(fieldMeta) {
+			continue
+		}
+		dstField := dstValue.Elem().FieldByName(fieldMeta.Name)
 		if dstField.CanSet() {
 			srcField := srcValue.Field(i)
 
@@ -1223,7 +1232,7 @@ func Fill(src interface{}, dst interface{}) error {
 				dstField.Set(srcField.Convert(dstField.Type()))
 			default:
 				return fmt.Errorf("field %s types are not assignable or convertible (src=%s, dst=%s)",
-					srcType.Field(i).Name, srcField.Type(), dstField.Type())
+					fieldMeta.Name, srcField.Type(), dstField.Type())
 			}
 		}
 	}
@@ -1284,6 +1293,9 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
+		if !isExportedField(field) {
+			continue
+		}
 
 		if o := s.FieldByName(field.Name); o.IsValid() {
 			tagRaw := field.Tag.Get(tagName)
@@ -1551,6 +1563,9 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
+		if !isExportedField(field) {
+			continue
+		}
 
 		if o := s.FieldByName(field.Name); o.IsValid() {
 			cfg, _ := jsonParseFieldConfig(field) // reuse parsed config for validation
@@ -1848,6 +1863,9 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
+		if !isExportedField(field) {
+			continue
+		}
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
 			cfg, _ := jsonParseFieldConfig(field)
@@ -2028,6 +2046,9 @@ func StructClearFields(inputStructPtr interface{}) {
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
+		if !isExportedField(field) {
+			continue
+		}
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
 			switch o.Kind() {
@@ -2109,6 +2130,9 @@ func StructNonDefaultRequiredFieldsCount(inputStructPtr interface{}) int {
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
+		if !isExportedField(field) {
+			continue
+		}
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
 			tagDef := field.Tag.Get("def")
@@ -2144,6 +2168,9 @@ func IsStructFieldSet(inputStructPtr interface{}) bool {
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
+		if !isExportedField(field) {
+			continue
+		}
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
 			tagDef := field.Tag.Get("def")
@@ -2286,6 +2313,9 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
+		if !isExportedField(field) {
+			continue
+		}
 
 		if o := s.FieldByName(field.Name); o.IsValid() && o.CanSet() {
 			tagDef := field.Tag.Get("def")
@@ -2572,6 +2602,10 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
+		if !isExportedField(field) {
+			continue
+		}
+
 		o := s.FieldByName(field.Name)
 		if !o.IsValid() || !o.CanSet() {
 			continue
@@ -2913,6 +2947,10 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
+		if !isExportedField(field) {
+			continue
+		}
+
 		o := s.FieldByName(field.Name)
 		if !o.IsValid() || !o.CanSet() {
 			continue

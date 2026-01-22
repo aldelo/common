@@ -17,7 +17,9 @@ package helper
  */
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"math"
 	mathrand "math/rand"
 	"sync"
@@ -35,8 +37,23 @@ var (
 	randSrc  = mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
 )
 
+// crypto-seeded rand for ULID entropy to avoid cross-process collisions
+func newCryptoSeededRand() *mathrand.Rand {
+	var seed int64
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		seed = time.Now().UnixNano()
+	} else {
+		seed = int64(binary.LittleEndian.Uint64(b[:]))
+	}
+	return mathrand.New(mathrand.NewSource(seed))
+}
+
 // helper to safely get Intn with shared RNG
 func randomIntn(max int) int {
+	if max <= 0 { // defensive guard against panic
+		return 0
+	}
 	randLock.Lock()
 	defer randLock.Unlock()
 	return randSrc.Intn(max)
@@ -73,10 +90,10 @@ func NewUUID() string {
 func GenerateULID() (string, error) {
 	t := time.Now()
 
-	ulidEntropyLock.Lock()                              // ensure thread-safe monotonic entropy use
-	id, err := ulid.New(ulid.Timestamp(t), ulidEntropy) // reuse shared entropy for monotonicity
-	ulidEntropyLock.Unlock()
+	ulidEntropyLock.Lock()
+	defer ulidEntropyLock.Unlock() // ensure unlock on all paths
 
+	id, err := ulid.New(ulid.Timestamp(t), ulidEntropy)
 	if err != nil {
 		return "", err
 	}

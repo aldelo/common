@@ -293,6 +293,9 @@ func csvValidateAndNormalize(fv string, cfg csvFieldConfig, oldVal reflect.Value
 			return "", false, fmt.Errorf("Min Length is %d", cfg.sizeMin)
 		}
 		if cfg.sizeMax > 0 && len(fv) > cfg.sizeMax {
+			if cfg.tagType == "b64" {
+				return "", false, fmt.Errorf("Length exceeds %d", cfg.sizeMax)
+			}
 			fv = Left(fv, cfg.sizeMax)
 		}
 		if cfg.tagModulo > 0 && len(fv)%cfg.tagModulo != 0 {
@@ -613,6 +616,9 @@ func csvPreprocessValue(raw string, cfg csvUnmarshalConfig, hasSetter bool, true
 	// size checks (truncate only on max; min enforced in validation below)
 	if cfg.tagType == "a" || cfg.tagType == "an" || cfg.tagType == "ans" || cfg.tagType == "n" || cfg.tagType == "regex" || cfg.tagType == "h" || cfg.tagType == "b64" {
 		if cfg.sizeMax > 0 && len(csvValue) > int(cfg.sizeMax) {
+			if cfg.tagType == "b64" {
+				return "", fmt.Errorf("Length exceeds %d", cfg.sizeMax)
+			}
 			csvValue = Left(csvValue, int(cfg.sizeMax))
 		}
 		if cfg.tagModulo > 0 && len(csvValue) > 0 && len(csvValue)%int(cfg.tagModulo) != 0 {
@@ -927,7 +933,8 @@ func extractBase64Safe(src string) (string, error) {
 		case r >= 'A' && r <= 'Z',
 			r >= 'a' && r <= 'z',
 			r >= '0' && r <= '9',
-			r == '+', r == '/', r == '=':
+			r == '+', r == '/', r == '=', // standard
+			r == '-', r == '_': // allow URL-safe alphabet
 			return r
 		default:
 			return -1
@@ -937,10 +944,18 @@ func extractBase64Safe(src string) (string, error) {
 	if len(cleaned) == 0 {
 		return "", nil
 	}
-	if _, err := base64.StdEncoding.DecodeString(cleaned); err != nil {
-		return "", fmt.Errorf("invalid base64: %w", err)
+
+	// accept either standard or URL-safe encodings
+	decoders := []*base64.Encoding{base64.StdEncoding, base64.URLEncoding}
+	var lastErr error
+	for _, dec := range decoders {
+		if _, err := dec.DecodeString(cleaned); err == nil {
+			return cleaned, nil
+		} else {
+			lastErr = err
+		}
 	}
-	return cleaned, nil
+	return "", fmt.Errorf("invalid base64: %w", lastErr)
 }
 
 func jsonParseFieldConfig(field reflect.StructField) (cfg jsonFieldConfig, ok bool) {
@@ -1060,6 +1075,9 @@ func jsonPreprocessValue(raw string, cfg jsonFieldConfig, hasSetter bool, trueLi
 
 	if cfg.tagType == "a" || cfg.tagType == "an" || cfg.tagType == "ans" || cfg.tagType == "n" || cfg.tagType == "regex" || cfg.tagType == "h" || cfg.tagType == "b64" {
 		if cfg.sizeMax > 0 && len(val) > int(cfg.sizeMax) {
+			if cfg.tagType == "b64" {
+				return "", fmt.Errorf("Length exceeds %d", cfg.sizeMax)
+			}
 			val = Left(val, int(cfg.sizeMax))
 		}
 		if cfg.tagModulo > 0 && len(val) > 0 && len(val)%int(cfg.tagModulo) != 0 {

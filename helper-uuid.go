@@ -196,8 +196,11 @@ func GenerateNewUniqueInt64(oldIntVal int64) int64 {
 }
 
 func safeNegateInt(v int) int { // prevent MinInt overflow
-	if v == math.MinInt {
-		return math.MaxInt
+	minInt := ^int(^uint(0) >> 1) // compute min int without overflow
+	maxInt := int(^uint(0) >> 1)  // compute max int without overflow
+
+	if v == minInt {
+		return maxInt
 	}
 	return -v
 }

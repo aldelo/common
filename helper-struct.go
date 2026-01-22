@@ -174,6 +174,11 @@ func csvApplyGetter(s reflect.Value, cfg csvFieldConfig, o reflect.Value, boolTr
 		return o
 	}
 
+	// avoid method calls on nil interface values (panic protection) ---
+	if o.Kind() == reflect.Interface && o.IsNil() {
+		return o
+	}
+
 	isBase := cfg.getterBase
 	useParam := cfg.getterParam
 	paramVal := ""
@@ -596,7 +601,7 @@ func csvPreprocessValue(raw string, cfg csvUnmarshalConfig, hasSetter bool, true
 		if cfg.sizeMax > 0 && len(csvValue) > int(cfg.sizeMax) {
 			csvValue = Left(csvValue, int(cfg.sizeMax))
 		}
-		if cfg.tagModulo > 0 && len(csvValue)%int(cfg.tagModulo) != 0 {
+		if cfg.tagModulo > 0 && len(csvValue) > 0 && len(csvValue)%int(cfg.tagModulo) != 0 {
 			return "", fmt.Errorf("Expects Value In Blocks of %d Characters", cfg.tagModulo)
 		}
 	}
@@ -1015,7 +1020,7 @@ func jsonPreprocessValue(raw string, cfg jsonFieldConfig, hasSetter bool, trueLi
 		if cfg.sizeMax > 0 && len(val) > int(cfg.sizeMax) {
 			val = Left(val, int(cfg.sizeMax))
 		}
-		if cfg.tagModulo > 0 && len(val)%int(cfg.tagModulo) != 0 {
+		if cfg.tagModulo > 0 && len(val) > 0 && len(val)%int(cfg.tagModulo) != 0 {
 			return "", fmt.Errorf("Expects Value In Blocks of %d Characters", cfg.tagModulo)
 		}
 	}
@@ -2562,9 +2567,10 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 	// collect virtual fields (pos < 0) that rely on setters so we can execute them after positional fields are loaded.
 	type virtualSetter struct {
-		cfg   csvUnmarshalConfig
-		field reflect.StructField
-		o     reflect.Value
+		cfg    csvUnmarshalConfig
+		field  reflect.StructField
+		o      reflect.Value
+		defVal string
 	}
 	var virtualSetters []virtualSetter
 
@@ -2584,14 +2590,35 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 		// capture virtual setters immediately and skip positional parsing
 		if cfg.pos < 0 {
-			// allow default to satisfy required virtual fields without a setter
-			if LenTrim(cfg.tagSetter) == 0 && strings.ToLower(cfg.tagReq) == "true" && LenTrim(defVal) == 0 {
-				StructClearFields(inputStructPtr)
-				return fmt.Errorf("%s is a Required Field", field.Name)
+			if LenTrim(cfg.tagSetter) == 0 {
+				// no setter: apply default if present, otherwise enforce required
+				if LenTrim(defVal) > 0 {
+					norm, err := csvPreprocessValue(defVal, cfg, false, trueList)
+					if err != nil {
+						StructClearFields(inputStructPtr)
+						return fmt.Errorf("%s %s", field.Name, err.Error())
+					}
+					if err := csvValidateValue(norm, cfg, field.Name); err != nil {
+						StructClearFields(inputStructPtr)
+						return err
+					}
+					if err := csvValidateCustomUnmarshal(norm, cfg, s, field.Name); err != nil {
+						StructClearFields(inputStructPtr)
+						return err
+					}
+					if err := ReflectStringToField(o, norm, cfg.timeFormat); err != nil {
+						StructClearFields(inputStructPtr)
+						return err
+					}
+				} else if strings.ToLower(cfg.tagReq) == "true" {
+					StructClearFields(inputStructPtr)
+					return fmt.Errorf("%s is a Required Field", field.Name)
+				}
+				continue
 			}
-			if LenTrim(cfg.tagSetter) > 0 {
-				virtualSetters = append(virtualSetters, virtualSetter{cfg: cfg, field: field, o: o})
-			}
+
+			// capture setter-driven virtual fields for later execution (with default available)
+			virtualSetters = append(virtualSetters, virtualSetter{cfg: cfg, field: field, o: o, defVal: defVal})
 			continue
 		}
 
@@ -2672,10 +2699,18 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 	// execute virtual setters (pos < 0) after positional fields are populated.
 	for _, vs := range virtualSetters {
-		if newVal, setDone, err := csvApplySetter(s, vs.cfg, vs.o, ""); err != nil { // clear struct on setter error
+		// feed default value into setter and reuse it when setter returns blank
+		paramVal := vs.defVal
+		newVal, setDone, err := csvApplySetter(s, vs.cfg, vs.o, paramVal)
+		if err != nil {
 			StructClearFields(inputStructPtr)
 			return err
-		} else if setDone { // validate virtual setter output
+		}
+		if !setDone && len(newVal) == 0 && len(vs.defVal) > 0 {
+			newVal = vs.defVal
+		}
+
+		if setDone { // validate virtual setter output
 			// re-stringify the field after setter execution so validation matches the real value
 			actualVal, _, errStr := ReflectValueToString(vs.o, vs.cfg.boolTrue, vs.cfg.boolFalse, false, false, vs.cfg.timeFormat, false)
 			if errStr != nil {
@@ -2693,20 +2728,20 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 				return err
 			}
 			continue
-		} else {
-			// handle scalar-returning setters by validating and assigning to the field
-			if err := csvValidateValue(newVal, vs.cfg, vs.field.Name); err != nil {
-				StructClearFields(inputStructPtr)
-				return err
-			}
-			if err := csvValidateCustomUnmarshal(newVal, vs.cfg, s, vs.field.Name); err != nil {
-				StructClearFields(inputStructPtr)
-				return err
-			}
-			if err := ReflectStringToField(vs.o, newVal, vs.cfg.timeFormat); err != nil {
-				StructClearFields(inputStructPtr)
-				return err
-			}
+		}
+
+		// handle scalar-returning setters (or defaults) by validating and assigning to the field
+		if err := csvValidateValue(newVal, vs.cfg, vs.field.Name); err != nil {
+			StructClearFields(inputStructPtr)
+			return err
+		}
+		if err := csvValidateCustomUnmarshal(newVal, vs.cfg, s, vs.field.Name); err != nil {
+			StructClearFields(inputStructPtr)
+			return err
+		}
+		if err := ReflectStringToField(vs.o, newVal, vs.cfg.timeFormat); err != nil {
+			StructClearFields(inputStructPtr)
+			return err
 		}
 	}
 

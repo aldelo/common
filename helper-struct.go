@@ -1537,9 +1537,6 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 	if _, err := SetStructFieldDefaultValues(inputStructPtr); err != nil {
 		return "", fmt.Errorf("MarshalStructToJson default application failed: %w", err)
 	}
-	if !IsStructFieldSet(inputStructPtr) && StructNonDefaultRequiredFieldsCount(inputStructPtr) > 0 {
-		return "", fmt.Errorf("MarshalStructToJson Requires Required Fields To Be Set")
-	}
 
 	if LenTrim(tagName) == 0 {
 		return "", fmt.Errorf("MarshalStructToJson Requires TagName (Tag Name defines Json name)")
@@ -2919,11 +2916,6 @@ func MarshalStructToCSV(inputStructPtr interface{}, csvDelimiter string) (csvPay
 	// Apply defaults once so required fields that rely on def tags are honored before validation.
 	if _, err := SetStructFieldDefaultValues(inputStructPtr); err != nil {
 		return "", fmt.Errorf("MarshalStructToCSV default application failed: %w", err)
-	}
-
-	if !IsStructFieldSet(inputStructPtr) && StructNonDefaultRequiredFieldsCount(inputStructPtr) > 0 {
-		// fail fast instead of silently returning blank when required fields are missing
-		return "", fmt.Errorf("MarshalStructToCSV Requires Required Fields To Be Set")
 	}
 
 	trueList := []string{"true", "yes", "on", "1", "enabled"}

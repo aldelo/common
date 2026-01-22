@@ -484,6 +484,12 @@ func ParseDateFromMMDD(s string) time.Time {
 func ParseDateTimeFrom_ISO8601_RFC3339(s string) time.Time {
 	s = strings.TrimSpace(s)
 
+	// tolerate JSON-style quoted/null/empty input
+	if s == "" || s == "null" || s == `""` {
+		return time.Time{}
+	}
+	s = strings.Trim(s, `"`)
+
 	if t, e := time.Parse(time.RFC3339, s); e != nil {
 		return time.Time{}
 	} else {
@@ -664,7 +670,7 @@ func DateToLocal(t time.Time) (time.Time, error) {
 	}
 
 	if loc == nil {
-		return time.Time{}, fmt.Errorf("DateToLocal Location Targe is Not Retrieved")
+		return time.Time{}, fmt.Errorf("DateToLocal Location Target is Not Retrieved")
 	}
 
 	return t.In(loc), nil

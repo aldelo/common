@@ -1611,38 +1611,42 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				baseOldVal = reflect.Value{}
 			}
 
-			defVal := field.Tag.Get("def")          // capture default regardless of getter presence
-			hasSetter := LenTrim(cfg.tagSetter) > 0 // track setter presence for preprocessing
+			defVal := field.Tag.Get("def") // capture default regardless of getter presence
 
+			// parse and honor getter output throughout marshal path
+			tagGetter := Trim(field.Tag.Get("getter"))
+			hasGetter := len(tagGetter) > 0
 			oVal := o
-			if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
+
+			if hasGetter {
+				getterName := tagGetter
 				isBase := false
 				useParam := false
 				paramVal := ""
 				var paramSlice interface{}
-				lg := strings.ToLower(tagGetter)
+				lg := strings.ToLower(getterName)
 
 				if strings.HasPrefix(lg, "base.") {
 					isBase = true
-					tagGetter = tagGetter[5:]
-					lg = strings.ToLower(tagGetter)
+					getterName = getterName[5:]
+					lg = strings.ToLower(getterName)
 				}
 
-				if strings.HasSuffix(lg, "(x)") && len(tagGetter) >= 3 {
+				if strings.HasSuffix(lg, "(x)") && len(getterName) >= 3 {
 					useParam = true
 
 					// guard nil pointers before stringifying getter param
 					if oVal.Kind() != reflect.Slice {
-						if oVal.Kind() == reflect.Ptr && o.IsNil() {
+						if oVal.Kind() == reflect.Ptr && oVal.IsNil() {
 							paramVal = ""
 						} else {
-							paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+							paramVal, _, _ = ReflectValueToString(oVal, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
 						}
-					} else if o.Len() > 0 {
-						paramSlice = oVal.Slice(0, o.Len()).Interface()
+					} else if oVal.Len() > 0 {
+						paramSlice = oVal.Slice(0, oVal.Len()).Interface()
 					}
 
-					tagGetter = tagGetter[:len(tagGetter)-3]
+					getterName = getterName[:len(getterName)-3]
 				}
 
 				var ov []reflect.Value
@@ -1651,127 +1655,127 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				if isBase {
 					if useParam {
 						if paramSlice == nil {
-							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramVal)
+							ov, notFound = ReflectCall(s.Addr(), getterName, paramVal)
 						} else {
-							ov, notFound = ReflectCall(s.Addr(), tagGetter, paramSlice)
+							ov, notFound = ReflectCall(s.Addr(), getterName, paramSlice)
 						}
 					} else {
-						ov, notFound = ReflectCall(s.Addr(), tagGetter)
+						ov, notFound = ReflectCall(s.Addr(), getterName)
 					}
 				} else {
 					if useParam {
 						if paramSlice == nil {
-							ov, notFound = ReflectCall(oVal, tagGetter, paramVal)
+							ov, notFound = ReflectCall(oVal, getterName, paramVal)
 						} else {
-							ov, notFound = ReflectCall(oVal, tagGetter, paramSlice)
+							ov, notFound = ReflectCall(oVal, getterName, paramSlice)
 						}
 					} else {
-						ov, notFound = ReflectCall(oVal, tagGetter)
+						ov, notFound = ReflectCall(oVal, getterName)
 					}
 				}
 
 				if !notFound && len(ov) > 0 {
-					oVal = ov[0]
+					oVal = ov[0] // propagate getter result
 				}
+			}
 
-				buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
-				if err != nil {
-					return "", fmt.Errorf("%s reflect to string failed: %w", field.Name, err)
-				}
+			buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+			if err != nil {
+				return "", fmt.Errorf("%s reflect to string failed: %w", field.Name, err)
+			}
 
-				// honor required/default semantics when a value was skipped
-				req := strings.ToLower(field.Tag.Get("req"))
+			// honor required/default semantics when a value was skipped
+			req := strings.ToLower(field.Tag.Get("req"))
 
-				if skip {
-					if len(defVal) > 0 {
-						buf = defVal
-					} else {
-						if req == "true" {
-							return "", fmt.Errorf("%s is a Required Field", field.Name)
-						}
-						continue
-					}
-				}
-
-				// normalize “unknown” enums even for pointer-backed numeric types.
-				if baseOldVal.IsValid() {
-					switch baseOldVal.Kind() {
-					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-						if baseOldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
-							buf = ""
-							if len(defVal) > 0 {
-								buf = defVal
-							} else {
-								if uniqueKey != "" {
-									delete(uniqueMap, uniqueKey)
-								}
-								continue
-							}
-						}
-					}
-				}
-
-				// normalize & validate before prefixing to match CSV/query behavior
-				if norm, err := jsonPreprocessValue(buf, cfg, false, trueList); err != nil {
-					return "", fmt.Errorf("%s %s", field.Name, err.Error())
+			if skip {
+				if len(defVal) > 0 {
+					buf = defVal
 				} else {
-					buf = norm
-				}
-				if err := jsonValidateValue(buf, cfg, field.Name); err != nil {
-					return "", err
-				}
-				if err := jsonValidateCustom(buf, cfg, s, field.Name); err != nil {
-					return "", err
-				}
-
-				outPrefix := field.Tag.Get("outprefix")
-
-				// honor booltrue=" " + outprefix by emitting prefix token for true values
-				if boolTrue == " " && len(outPrefix) > 0 && strings.EqualFold(buf, "true") {
-					buf = outPrefix + defVal // defVal may be empty; still emit prefix
-				} else if boolFalse == " " && buf == "false" && len(outPrefix) > 0 {
-					buf = ""
-				} else if len(defVal) > 0 && len(buf) == 0 {
-					buf = outPrefix + defVal
-				}
-
-				// apply outprefix for normal values when provided.
-				if LenTrim(outPrefix) > 0 && len(buf) > 0 && !strings.HasPrefix(buf, outPrefix) {
-					buf = outPrefix + buf
-				}
-
-				// honor skipblank/skipzero for JSON marshalling (parity with CSV/query)
-				if skipBlank && LenTrim(buf) == 0 {
 					if req == "true" {
 						return "", fmt.Errorf("%s is a Required Field", field.Name)
 					}
-					if uniqueKey != "" {
-						delete(uniqueMap, uniqueKey)
-					}
 					continue
 				}
-				if skipZero && buf == "0" {
-					if req == "true" {
-						return "", fmt.Errorf("%s is a Required Field", field.Name)
-					}
-					if uniqueKey != "" {
-						delete(uniqueMap, uniqueKey)
-					}
-					continue
-				}
+			}
 
-				// enforce required after all normalization/output-prefix logic
-				if req == "true" && LenTrim(buf) == 0 {
+			// normalize “unknown” enums even for pointer-backed numeric types.
+			if baseOldVal.IsValid() {
+				switch baseOldVal.Kind() {
+				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+					if baseOldVal.Int() == 0 && strings.ToLower(buf) == "unknown" {
+						buf = ""
+						if len(defVal) > 0 {
+							buf = defVal
+						} else {
+							if uniqueKey != "" {
+								delete(uniqueMap, uniqueKey)
+							}
+							continue
+						}
+					}
+				}
+			}
+
+			// normalize & validate before prefixing to match CSV/query behavior
+			if norm, err := jsonPreprocessValue(buf, cfg, false, trueList); err != nil {
+				return "", fmt.Errorf("%s %s", field.Name, err.Error())
+			} else {
+				buf = norm
+			}
+			if err := jsonValidateValue(buf, cfg, field.Name); err != nil {
+				return "", err
+			}
+			if err := jsonValidateCustom(buf, cfg, s, field.Name); err != nil {
+				return "", err
+			}
+
+			outPrefix := field.Tag.Get("outprefix")
+
+			// honor booltrue=" " + outprefix by emitting prefix token for true values
+			if boolTrue == " " && len(outPrefix) > 0 && strings.EqualFold(buf, "true") {
+				buf = outPrefix + defVal // defVal may be empty; still emit prefix
+			} else if boolFalse == " " && buf == "false" && len(outPrefix) > 0 {
+				buf = ""
+			} else if len(defVal) > 0 && len(buf) == 0 {
+				buf = outPrefix + defVal
+			}
+
+			// apply outprefix for normal values when provided.
+			if LenTrim(outPrefix) > 0 && len(buf) > 0 && !strings.HasPrefix(buf, outPrefix) {
+				buf = outPrefix + buf
+			}
+
+			// honor skipblank/skipzero for JSON marshalling (parity with CSV/query)
+			if skipBlank && LenTrim(buf) == 0 {
+				if req == "true" {
 					return "", fmt.Errorf("%s is a Required Field", field.Name)
 				}
-
-				// claim uniqueId only when actually emitting a value
-				if len(uniqueKey) > 0 {
-					uniqueMap[uniqueKey] = field.Name
+				if uniqueKey != "" {
+					delete(uniqueMap, uniqueKey)
 				}
-
-				jsonMap[tag] = buf // defer escaping/encoding to json.Marshal
+				continue
 			}
+			if skipZero && buf == "0" {
+				if req == "true" {
+					return "", fmt.Errorf("%s is a Required Field", field.Name)
+				}
+				if uniqueKey != "" {
+					delete(uniqueMap, uniqueKey)
+				}
+				continue
+			}
+
+			// enforce required after all normalization/output-prefix logic
+			if req == "true" && LenTrim(buf) == 0 {
+				return "", fmt.Errorf("%s is a Required Field", field.Name)
+			}
+
+			// claim uniqueId only when actually emitting a value
+			if len(uniqueKey) > 0 {
+				uniqueMap[uniqueKey] = field.Name
+			}
+
+			jsonMap[tag] = buf // defer escaping/encoding to json.Marshal
 		}
 	}
 

@@ -30,8 +30,8 @@ import (
 )
 
 var (
-	ulidEntropy     = ulid.Monotonic(mathrand.New(mathrand.NewSource(time.Now().UnixNano())), 0) // shared monotonic entropy
-	ulidEntropyLock sync.Mutex                                                                   // guard for concurrent use
+	ulidEntropy     = ulid.Monotonic(newCryptoSeededRand(), 0) // shared monotonic entropy
+	ulidEntropyLock sync.Mutex                                 // guard for concurrent use
 
 	randLock sync.Mutex
 	randSrc  = mathrand.New(mathrand.NewSource(time.Now().UnixNano()))

@@ -1715,33 +1715,40 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 					getterName = getterName[:len(getterName)-3]
 				}
 
-				var ov []reflect.Value
-				var notFound bool
-
-				if isBase {
-					if useParam {
-						if paramSlice == nil {
-							ov, notFound = ReflectCall(s.Addr(), getterName, paramVal)
-						} else {
-							ov, notFound = ReflectCall(s.Addr(), getterName, paramSlice)
-						}
-					} else {
-						ov, notFound = ReflectCall(s.Addr(), getterName)
-					}
+				// avoid calling getter on nil interface or nil pointer receivers (panic guard)
+				if !isBase && oVal.Kind() == reflect.Interface && oVal.IsNil() {
+					// leave oVal as-is (nil), skip getter
+				} else if !isBase && oVal.Kind() == reflect.Ptr && oVal.IsNil() {
+					// leave oVal as-is (nil), skip getter
 				} else {
-					if useParam {
-						if paramSlice == nil {
-							ov, notFound = ReflectCall(oVal, getterName, paramVal)
+					var ov []reflect.Value
+					var notFound bool
+
+					if isBase {
+						if useParam {
+							if paramSlice == nil {
+								ov, notFound = ReflectCall(s.Addr(), getterName, paramVal)
+							} else {
+								ov, notFound = ReflectCall(s.Addr(), getterName, paramSlice)
+							}
 						} else {
-							ov, notFound = ReflectCall(oVal, getterName, paramSlice)
+							ov, notFound = ReflectCall(s.Addr(), getterName)
 						}
 					} else {
-						ov, notFound = ReflectCall(oVal, getterName)
+						if useParam {
+							if paramSlice == nil {
+								ov, notFound = ReflectCall(oVal, getterName, paramVal)
+							} else {
+								ov, notFound = ReflectCall(oVal, getterName, paramSlice)
+							}
+						} else {
+							ov, notFound = ReflectCall(oVal, getterName)
+						}
 					}
-				}
 
-				if !notFound && len(ov) > 0 {
-					oVal = ov[0] // propagate getter result
+					if !notFound && len(ov) > 0 {
+						oVal = ov[0] // propagate getter result
+					}
 				}
 			}
 
@@ -1987,11 +1994,16 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 						StructClearFields(inputStructPtr)
 						return err
 					} else if setDone {
-						if err := jsonValidateValue(newVal, cfg, field.Name); err != nil {
+						actualVal, _, errStr := ReflectValueToString(o, cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false)
+						if errStr != nil {
+							StructClearFields(inputStructPtr)
+							return errStr
+						}
+						if err := jsonValidateValue(actualVal, cfg, field.Name); err != nil {
 							StructClearFields(inputStructPtr)
 							return err
 						}
-						if err := jsonValidateCustom(newVal, cfg, s, field.Name); err != nil {
+						if err := jsonValidateCustom(actualVal, cfg, s, field.Name); err != nil {
 							StructClearFields(inputStructPtr)
 							return err
 						}
@@ -2044,11 +2056,16 @@ func UnmarshalJsonToStruct(inputStructPtr interface{}, jsonPayload string, tagNa
 				StructClearFields(inputStructPtr)
 				return err
 			} else if setDone { // setter handled assignment; still validate
-				if err := jsonValidateValue(newVal, cfg, field.Name); err != nil {
+				actualVal, _, errStr := ReflectValueToString(o, cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false)
+				if errStr != nil {
+					StructClearFields(inputStructPtr)
+					return errStr
+				}
+				if err := jsonValidateValue(actualVal, cfg, field.Name); err != nil {
 					StructClearFields(inputStructPtr)
 					return err
 				}
-				if err := jsonValidateCustom(newVal, cfg, s, field.Name); err != nil {
+				if err := jsonValidateCustom(actualVal, cfg, s, field.Name); err != nil {
 					StructClearFields(inputStructPtr)
 					return err
 				}
@@ -2778,11 +2795,16 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 				StructClearFields(inputStructPtr)
 				return err
 			} else if setDone {
-				if err := csvValidateValue(newVal, cfg, field.Name); err != nil {
+				actualVal, _, errStr := ReflectValueToString(o, cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false)
+				if errStr != nil {
+					StructClearFields(inputStructPtr)
+					return errStr
+				}
+				if err := csvValidateValue(actualVal, cfg, field.Name); err != nil {
 					StructClearFields(inputStructPtr)
 					return err
 				}
-				if err := csvValidateCustomUnmarshal(newVal, cfg, s, field.Name); err != nil {
+				if err := csvValidateCustomUnmarshal(actualVal, cfg, s, field.Name); err != nil {
 					StructClearFields(inputStructPtr)
 					return err
 				}
@@ -2839,11 +2861,16 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			StructClearFields(inputStructPtr)
 			return err
 		} else if setDone {
-			if err := csvValidateValue(newVal, cfg, field.Name); err != nil {
+			actualVal, _, errStr := ReflectValueToString(o, cfg.boolTrue, cfg.boolFalse, false, false, cfg.timeFormat, false)
+			if errStr != nil {
+				StructClearFields(inputStructPtr)
+				return errStr
+			}
+			if err := csvValidateValue(actualVal, cfg, field.Name); err != nil {
 				StructClearFields(inputStructPtr)
 				return err
 			}
-			if err := csvValidateCustomUnmarshal(newVal, cfg, s, field.Name); err != nil {
+			if err := csvValidateCustomUnmarshal(actualVal, cfg, s, field.Name); err != nil {
 				StructClearFields(inputStructPtr)
 				return err
 			}

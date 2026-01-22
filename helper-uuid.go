@@ -21,7 +21,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"math"
-	mathrand "math/rand"
+	"math/big"
 	"sync"
 	"time"
 
@@ -30,33 +30,22 @@ import (
 )
 
 var (
-	ulidEntropy     = ulid.Monotonic(newCryptoSeededRand(), 0) // shared monotonic entropy
-	ulidEntropyLock sync.Mutex                                 // guard for concurrent use
-
-	randLock sync.Mutex
-	randSrc  = mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
+	ulidEntropy     = ulid.Monotonic(rand.Reader, 0)
+	ulidEntropyLock sync.Mutex
 )
-
-// crypto-seeded rand for ULID entropy to avoid cross-process collisions
-func newCryptoSeededRand() *mathrand.Rand {
-	var seed int64
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		seed = time.Now().UnixNano()
-	} else {
-		seed = int64(binary.LittleEndian.Uint64(b[:]))
-	}
-	return mathrand.New(mathrand.NewSource(seed))
-}
 
 // helper to safely get Intn with shared RNG
 func randomIntn(max int) int {
 	if max <= 0 { // defensive guard against panic
 		return 0
 	}
-	randLock.Lock()
-	defer randLock.Unlock()
-	return randSrc.Intn(max)
+
+	// crypto-strength bounded random to reduce predictability/collisions
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0
+	}
+	return int(n.Int64())
 }
 
 // ================================================================================================================

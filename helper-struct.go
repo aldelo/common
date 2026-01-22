@@ -1547,7 +1547,7 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 	uniqueMap := make(map[string]string)
 	jsonMap := make(map[string]string)                        // build a map and let json.Marshal handle escaping
-	trueList := []string{"true", "yes", "on", "1", "enabled"} // CHANGED: used for type normalization
+	trueList := []string{"true", "yes", "on", "1", "enabled"} // used for type normalization
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)
@@ -1599,6 +1599,8 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				baseOldVal = reflect.Value{}
 			}
 
+			defVal := field.Tag.Get("def") // capture default regardless of getter presence
+
 			if tagGetter := Trim(field.Tag.Get("getter")); len(tagGetter) > 0 {
 				isBase := false
 				useParam := false
@@ -1622,10 +1624,8 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 						} else {
 							paramVal, _, _ = ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
 						}
-					} else {
-						if o.Len() > 0 {
-							paramSlice = o.Slice(0, o.Len()).Interface()
-						}
+					} else if o.Len() > 0 {
+						paramSlice = o.Slice(0, o.Len()).Interface()
 					}
 
 					tagGetter = tagGetter[:len(tagGetter)-3]
@@ -1667,7 +1667,6 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 				// honor required/default semantics when a value was skipped
 				req := strings.ToLower(field.Tag.Get("req"))
-				defVal := field.Tag.Get("def")
 
 				if skip {
 					if len(defVal) > 0 {

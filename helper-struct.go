@@ -653,6 +653,10 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 		if notFound {
 			return csvValue, false, nil
 		}
+		// honor in-place setters that return no values
+		if len(ov) == 0 {
+			return csvValue, true, nil
+		}
 		if len(ov) == 1 {
 			assigned := false
 			if ov[0].Type().AssignableTo(o.Type()) {
@@ -719,6 +723,10 @@ func csvApplySetter(s reflect.Value, cfg csvUnmarshalConfig, o reflect.Value, cs
 		ov, notFound = ReflectCall(callTarget, cfg.tagSetter, csvValue)
 	}
 	if !notFound {
+		// honor in-place setters that return no values
+		if len(ov) == 0 {
+			return csvValue, true, nil
+		}
 		if len(ov) == 1 {
 			if ov[0].Kind() == reflect.Ptr || ov[0].Kind() == reflect.Slice {
 				o.Set(ov[0])
@@ -945,14 +953,26 @@ func extractBase64Safe(src string) (string, error) {
 		return "", nil
 	}
 
-	// accept either standard or URL-safe encodings
-	decoders := []*base64.Encoding{base64.StdEncoding, base64.URLEncoding}
+	// accept raw (unpadded) encodings and padded variants
+	decoders := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.URLEncoding,
+		base64.RawStdEncoding,
+		base64.RawURLEncoding,
+	}
+	candidates := []string{cleaned}
+	if m := len(cleaned) % 4; m != 0 {
+		candidates = append(candidates, cleaned+strings.Repeat("=", 4-m))
+	}
+
 	var lastErr error
-	for _, dec := range decoders {
-		if _, err := dec.DecodeString(cleaned); err == nil {
-			return cleaned, nil
-		} else {
-			lastErr = err
+	for _, cand := range candidates {
+		for _, dec := range decoders {
+			if _, err := dec.DecodeString(cand); err == nil {
+				return cand, nil
+			} else {
+				lastErr = err
+			}
 		}
 	}
 	return "", fmt.Errorf("invalid base64: %w", lastErr)
@@ -2432,6 +2452,10 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 				}
 				if notFound {
 					return false, updatedDef, nil
+				}
+				// treat in-place, zero-return setters as handled
+				if len(ov) == 0 {
+					return true, updatedDef, nil
 				}
 
 				if len(ov) == 1 {

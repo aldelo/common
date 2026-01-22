@@ -1602,15 +1602,6 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				zeroBlank, _ = ParseBool(vs[5])
 			}
 
-			// safely dereference to support pointer-backed enums and avoid nil panics.
-			baseOldVal := o
-			for baseOldVal.Kind() == reflect.Ptr && !baseOldVal.IsNil() {
-				baseOldVal = baseOldVal.Elem()
-			}
-			if !baseOldVal.IsValid() || (baseOldVal.Kind() == reflect.Ptr && baseOldVal.IsNil()) {
-				baseOldVal = reflect.Value{}
-			}
-
 			defVal := field.Tag.Get("def") // capture default regardless of getter presence
 
 			// parse and honor getter output throughout marshal path
@@ -1679,7 +1670,16 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 				}
 			}
 
-			buf, skip, err := ReflectValueToString(o, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
+			// safely dereference to support pointer-backed enums and avoid nil panics, using getter result
+			baseOldVal := oVal
+			for baseOldVal.Kind() == reflect.Ptr && !baseOldVal.IsNil() {
+				baseOldVal = baseOldVal.Elem()
+			}
+			if !baseOldVal.IsValid() || (baseOldVal.Kind() == reflect.Ptr && baseOldVal.IsNil()) {
+				baseOldVal = reflect.Value{}
+			}
+
+			buf, skip, err := ReflectValueToString(oVal, boolTrue, boolFalse, skipBlank, skipZero, timeFormat, zeroBlank)
 			if err != nil {
 				return "", fmt.Errorf("%s reflect to string failed: %w", field.Name, err)
 			}

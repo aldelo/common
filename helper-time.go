@@ -171,11 +171,9 @@ func DateTimeFormatString() string {
 // check time.IsZero() to verify if a zero time is returned indicating parser failure
 func ParseDate(s string) time.Time {
 	t, err := time.Parse("2006-01-02", strings.TrimSpace(s))
-
 	if err != nil {
 		return time.Time{}
 	}
-
 	return t
 }
 
@@ -183,11 +181,9 @@ func ParseDate(s string) time.Time {
 // check time.IsZero() to verify if a zero time is returned indicating parser failure
 func ParseTime(s string) time.Time {
 	t, err := time.Parse("03:04:05 PM", strings.TrimSpace(s))
-
 	if err != nil {
 		return time.Time{}
 	}
-
 	return t
 }
 

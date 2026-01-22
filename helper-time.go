@@ -246,8 +246,7 @@ func ParseFromExcelDate(s string, format string) time.Time {
 	// Excel treats 1900 as a leap year; serial 60 maps to the nonexistent 1900-02-29.
 	base := time.Date(1899, 12, 31, 0, 0, 0, 0, time.UTC) // serial 1 => 1900-01-01
 	if serial == 60 {
-		// Cannot represent 1900-02-29; return zero time to signal invalid Excel serial.
-		return time.Time{}
+		serial = 59
 	}
 	if serial > 60 {
 		serial-- // skip the bogus 1900-02-29
@@ -527,29 +526,25 @@ func CurrentTime() string {
 // DaysDiff gets the days difference between from and to date
 func DaysDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
-	dv := d.Hours() / 24.0
-	return int(math.Round(dv))
+	return int(d / (24 * time.Hour))
 }
 
 // HoursDiff gets the hours difference between from and to date
 func HoursDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
-	dv := d.Hours()
-	return int(math.Round(dv))
+	return int(d / time.Hour)
 }
 
 // MinutesDiff gets the minutes difference between from and to date
 func MinutesDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
-	dv := d.Minutes()
-	return int(math.Round(dv))
+	return int(d / time.Minute)
 }
 
 // SecondsDiff gets the seconds difference between from and to date
 func SecondsDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
-	dv := d.Seconds()
-	return int(math.Round(dv))
+	return int(d / time.Second)
 }
 
 // DateBefore checks if testDate is before the beforeDate

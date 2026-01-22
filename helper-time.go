@@ -39,6 +39,12 @@ func (jt *JsonTime) MarshalJSON() ([]byte, error) {
 	}
 
 	t := time.Time(*jt)
+
+	// emit JSON null for zero time to mirror UnmarshalJSON’s handling of null/empty
+	if t.IsZero() {
+		return []byte("null"), nil
+	}
+
 	buf := fmt.Sprintf(`"%s"`, t.Format(time.RFC3339))
 	return []byte(buf), nil
 }
@@ -457,17 +463,21 @@ func ParseDateTimeFromYYMMDDhhmmss(s string) time.Time {
 func ParseDateFromMMDD(s string) time.Time {
 	s = strings.TrimSpace(s)
 
-	if IsNumericIntOnly(s) == false {
+	// strict numeric/length validation
+	if !IsNumericIntOnly(s) || LenTrim(s) != 4 {
 		return time.Time{}
 	}
 
-	if LenTrim(s) != 4 {
+	mm := Atoi(Left(s, 2))
+	dd := Atoi(Mid(s, 2, 2))
+
+	// anchor to current year and validate actual calendar day
+	year := time.Now().Year()
+	if !IsDayOfMonthValid(year, mm, dd) {
 		return time.Time{}
 	}
 
-	d := Left(s, 2) + "-" + Mid(s, 2, 2)
-
-	return ParseDateTimeCustom(d, "01-02")
+	return time.Date(year, time.Month(mm), dd, 0, 0, 0, 0, time.UTC)
 }
 
 // ParseDateTimeFrom_ISO8601_RFC3339 from string value of RFC3339 date time format

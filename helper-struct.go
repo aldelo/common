@@ -2381,6 +2381,11 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 				continue
 			}
 
+			// do not apply defaults (or call setters) when the field already has a non-zero value
+			if !o.IsZero() {
+				continue
+			}
+
 			// normalize setter info (support base. prefix) and allocate pointer/interface targets before calling setters.
 			tagSetter := Trim(field.Tag.Get("setter"))
 			setterBase := false
@@ -2842,8 +2847,28 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 
 	// execute virtual setters (pos < 0) after positional fields are populated.
 	for _, vs := range virtualSetters {
-		// feed default value into setter and reuse it when setter returns blank
+		// normalize/validate defaults before passing into setter (parity with positional path)
 		paramVal := vs.defVal
+
+		// apply bool literal / outprefix overrides before preprocess
+		if vs.cfg.boolTrue == " " && len(vs.cfg.outPrefix) > 0 && paramVal == vs.cfg.outPrefix {
+			paramVal = "true"
+		} else {
+			if LenTrim(vs.cfg.boolTrue) > 0 && paramVal == vs.cfg.boolTrue {
+				paramVal = "true"
+			} else if LenTrim(vs.cfg.boolFalse) > 0 && paramVal == vs.cfg.boolFalse {
+				paramVal = "false"
+			}
+		}
+
+		hasSetter := LenTrim(vs.cfg.tagSetter) > 0
+		if norm, err := csvPreprocessValue(paramVal, vs.cfg, hasSetter, trueList); err != nil {
+			StructClearFields(inputStructPtr)
+			return fmt.Errorf("%s %s", vs.field.Name, err.Error())
+		} else {
+			paramVal = norm
+		}
+
 		newVal, setDone, err := csvApplySetter(s, vs.cfg, vs.o, paramVal)
 		if err != nil {
 			StructClearFields(inputStructPtr)
@@ -2854,7 +2879,6 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		}
 
 		if setDone { // validate virtual setter output
-			// re-stringify the field after setter execution so validation matches the real value
 			actualVal, _, errStr := ReflectValueToString(vs.o, vs.cfg.boolTrue, vs.cfg.boolFalse, false, false, vs.cfg.timeFormat, false)
 			if errStr != nil {
 				StructClearFields(inputStructPtr)
@@ -2862,7 +2886,7 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 			}
 			newVal = actualVal
 
-			if err := csvValidateValue(newVal, vs.cfg, vs.field.Name); err != nil { // ensure validation runs even when setter handled assignment
+			if err := csvValidateValue(newVal, vs.cfg, vs.field.Name); err != nil {
 				StructClearFields(inputStructPtr)
 				return err
 			}

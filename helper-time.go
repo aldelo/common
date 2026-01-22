@@ -220,14 +220,27 @@ func ParseDateTime(s string) time.Time {
 
 // ParseFromExcelDate will handle integer value of excel date to convert to time.Time
 func ParseFromExcelDate(s string, format string) time.Time {
-	i, _ := ParseInt32(s)
-
-	if i > 0 {
-		v := GetDate(1970, 1, 1)
-		return v.AddDate(0, 0, i-70*365-19)
-	} else {
+	i, ok := ParseInt32(s)
+	if !ok { // respect parse errors and fall back cleanly
 		return ParseDateTimeCustom(s, format)
 	}
+
+	if i <= 0 {
+		return time.Time{}
+	}
+
+	// Correct Excel 1900 date-system handling and leap-year bug
+	// Excel treats 1900 as a leap year; serial 60 maps to the nonexistent 1900-02-29.
+	base := time.Date(1899, 12, 31, 0, 0, 0, 0, time.UTC) // serial 1 => 1900-01-01
+	day := int(i)
+	if day == 60 {
+		// Cannot represent 1900-02-29; return zero time to signal invalid Excel serial.
+		return time.Time{}
+	}
+	if day > 60 {
+		day-- // skip the bogus 1900-02-29
+	}
+	return base.AddDate(0, 0, day)
 }
 
 // ParseDateTime24Hr will parse a date time value in yyyy-mm-dd HH:mm:ss format into time.Time object,
@@ -431,7 +444,8 @@ func CurrentDate() string {
 
 // CurrentDateStruct returns current date in yyyy-mm-dd format via time.Time struct
 func CurrentDateStruct() time.Time {
-	return ParseDate(CurrentDate())
+	now := time.Now() // preserve local timezone and avoid UTC shift
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 }
 
 // CurrentDateTime returns current date and time in yyyy-mm-dd hh:mm:ss tt format
@@ -441,7 +455,8 @@ func CurrentDateTime() string {
 
 // CurrentDateTimeStruct returns current date and time in yyyy-mm-dd hh:mm:ss tt format via time.Time struct
 func CurrentDateTimeStruct() time.Time {
-	return ParseDateTime(CurrentDateTime())
+	now := time.Now() // avoid re-parsing to UTC and keep local location
+	return time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), 0, now.Location())
 }
 
 // CurrentTime returns current time in hh:mm:ss tt format

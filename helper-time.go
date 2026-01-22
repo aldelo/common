@@ -235,7 +235,7 @@ func ParseFromExcelDate(s string, format string) time.Time {
 		return ParseDateTimeCustom(s, format)
 	}
 
-	if v <= 1 {
+	if v < 1 {
 		return time.Time{}
 	}
 
@@ -522,32 +522,28 @@ func CurrentTime() string {
 func DaysDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
 	dv := d.Hours() / 24.0
-	days := int(dv)
-	return days
+	return int(math.Round(dv))
 }
 
 // HoursDiff gets the hours difference between from and to date
 func HoursDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
 	dv := d.Hours()
-	hr := int(dv)
-	return hr
+	return int(math.Round(dv))
 }
 
 // MinutesDiff gets the minutes difference between from and to date
 func MinutesDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
 	dv := d.Minutes()
-	mn := int(dv)
-	return mn
+	return int(math.Round(dv))
 }
 
 // SecondsDiff gets the seconds difference between from and to date
 func SecondsDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
 	dv := d.Seconds()
-	s := int(dv)
-	return s
+	return int(math.Round(dv))
 }
 
 // DateBefore checks if testDate is before the beforeDate

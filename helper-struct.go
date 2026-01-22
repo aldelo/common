@@ -2,6 +2,7 @@ package helper
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -267,7 +268,11 @@ func csvValidateAndNormalize(fv string, cfg csvFieldConfig, oldVal reflect.Value
 	case "h":
 		fv, _ = ExtractHex(fv)
 	case "b64":
-		fv, _ = ExtractAlphaNumericPrintableSymbols(fv)
+		if cleaned, err := extractBase64Safe(fv); err != nil { // preserve +/=/ and validate
+			return "", false, err
+		} else {
+			fv = cleaned
+		}
 	}
 
 	if cfg.boolFalse == " " && origFv == "false" && len(cfg.outPrefix) > 0 {
@@ -598,7 +603,11 @@ func csvPreprocessValue(raw string, cfg csvUnmarshalConfig, hasSetter bool, true
 	case "h":
 		csvValue, _ = ExtractHex(csvValue)
 	case "b64":
-		csvValue, _ = ExtractAlphaNumericPrintableSymbols(csvValue)
+		if cleaned, err := extractBase64Safe(csvValue); err != nil { // preserve/validate base64
+			return "", err
+		} else {
+			csvValue = cleaned
+		}
 	}
 
 	// size checks (truncate only on max; min enforced in validation below)
@@ -910,6 +919,30 @@ type jsonFieldConfig struct {
 	validate    string
 }
 
+// new helper to safely normalize and validate base64 payloads
+func extractBase64Safe(src string) (string, error) {
+	// strip whitespace-only; allow standard base64 alphabet + padding
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'A' && r <= 'Z',
+			r >= 'a' && r <= 'z',
+			r >= '0' && r <= '9',
+			r == '+', r == '/', r == '=':
+			return r
+		default:
+			return -1
+		}
+	}, Trim(src))
+
+	if len(cleaned) == 0 {
+		return "", nil
+	}
+	if _, err := base64.StdEncoding.DecodeString(cleaned); err != nil {
+		return "", fmt.Errorf("invalid base64: %w", err)
+	}
+	return cleaned, nil
+}
+
 func jsonParseFieldConfig(field reflect.StructField) (cfg jsonFieldConfig, ok bool) {
 	cfg.tagType = Trim(strings.ToLower(field.Tag.Get("type")))
 	switch cfg.tagType {
@@ -1018,7 +1051,11 @@ func jsonPreprocessValue(raw string, cfg jsonFieldConfig, hasSetter bool, trueLi
 	case "h":
 		val, _ = ExtractHex(val)
 	case "b64":
-		val, _ = ExtractAlphaNumericPrintableSymbols(val)
+		if cleaned, err := extractBase64Safe(val); err != nil { // preserve/validate base64
+			return "", err
+		} else {
+			val = cleaned
+		}
 	}
 
 	if cfg.tagType == "a" || cfg.tagType == "an" || cfg.tagType == "ans" || cfg.tagType == "n" || cfg.tagType == "regex" || cfg.tagType == "h" || cfg.tagType == "b64" {

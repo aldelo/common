@@ -409,28 +409,24 @@ func ParseDateToLastDayOfMonth(t time.Time) time.Time {
 		return t
 	}
 
-	newDate := t.AddDate(0, 1, 0)
+	loc := t.Location()
+	firstOfNext := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, loc).AddDate(0, 1, 0)
+	lastOfMonth := time.Date(firstOfNext.Year(), firstOfNext.Month(), 1, 0, 0, 0, 0, loc).AddDate(0, 0, -1)
 
-	y, m, _ := newDate.Date()
-
-	newDate = ParseDateFromYYYYMMDD(Padding(Itoa(y), 4, false, "0") + Padding(Itoa(int(m)), 2, false, "0") + "01")
-
-	newDate = newDate.AddDate(0, 0, -1)
-
-	return newDate
+	return lastOfMonth
 }
 
 // ParseDateTimeFromYYMMDDhhmmss from string value
 func ParseDateTimeFromYYMMDDhhmmss(s string) time.Time {
 	s = strings.TrimSpace(s)
 
-	// strict numeric/length validation
-	if !IsNumericIntOnly(s) || LenTrim(s) != 10 {
+	// strict numeric/length validation for YYMMDDhhmmss (12 chars)
+	if !IsNumericIntOnly(s) || LenTrim(s) != 12 {
 		return time.Time{}
 	}
 
 	// reuse existing validators to guard components
-	if !IsDateValidYYMMDD(Left(s, 6)) || !IsTimeValidhhmm(Right(s, 4)) {
+	if !IsDateValidYYMMDD(Left(s, 6)) || !IsTimeValidhhmmss(Right(s, 6)) {
 		return time.Time{}
 	}
 
@@ -439,9 +435,10 @@ func ParseDateTimeFromYYMMDDhhmmss(s string) time.Time {
 	dd := Atoi(Mid(s, 4, 2))
 	hh := Atoi(Mid(s, 6, 2))
 	mn := Atoi(Mid(s, 8, 2))
+	ss := Atoi(Right(s, 2))
 
-	// build time directly with 20xx century; avoids broken 2-digit parse + 4-digit layout
-	return time.Date(2000+yy, time.Month(mm), dd, hh, mn, 0, 0, time.UTC)
+	// build time directly with 20xx century; keep UTC to match other compact parsers
+	return time.Date(2000+yy, time.Month(mm), dd, hh, mn, ss, 0, time.UTC)
 }
 
 // ParseDateFromMMDD from string value
@@ -1176,12 +1173,13 @@ func GetDate(year int, month int, day int) time.Time {
 // GetFirstDateOfMonth returns the given date's first date of month,
 // for example, 8/21/2020 => 8/1/2020
 func GetFirstDateOfMonth(t time.Time) time.Time {
-	return GetDate(t.Year(), int(t.Month()), 1)
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location())
 }
 
 // GetLastDateOfMonth returns the given date's last day of the month,
 // for example, 8/21/2020 => 8/31/2020
 func GetLastDateOfMonth(t time.Time) time.Time {
-	x := GetFirstDateOfMonth(t).AddDate(0, 1, 0)
-	return GetFirstDateOfMonth(x).AddDate(0, 0, -1)
+	loc := t.Location()
+	firstOfNext := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, loc).AddDate(0, 1, 0)
+	return time.Date(firstOfNext.Year(), firstOfNext.Month(), 1, 0, 0, 0, 0, loc).AddDate(0, 0, -1)
 }

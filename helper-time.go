@@ -18,6 +18,8 @@ package helper
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,13 +34,13 @@ type JsonTime time.Time
 
 // MarshalJSON marshals time value to format of RFC3339
 func (jt *JsonTime) MarshalJSON() ([]byte, error) {
-	if jt != nil {
-		t := time.Time(*jt)
-		buf := fmt.Sprintf(`"%s"`, t.Format(time.RFC3339))
-		return []byte(buf), nil
-	} else {
-		return []byte{}, fmt.Errorf("JsonTime Nil")
+	if jt == nil { // marshal nil pointer as JSON null instead of erroring
+		return []byte("null"), nil
 	}
+
+	t := time.Time(*jt)
+	buf := fmt.Sprintf(`"%s"`, t.Format(time.RFC3339))
+	return []byte(buf), nil
 }
 
 // UnmarshalJSON unmarshal time value in format of RFC3339 to JsonTime
@@ -47,7 +49,13 @@ func (jt *JsonTime) UnmarshalJSON(b []byte) error {
 		return fmt.Errorf("JsonTime Nil")
 	}
 
-	buf := strings.Trim(string(b), `"`)
+	buf := strings.TrimSpace(string(b))            // trim surrounding whitespace
+	if buf == "" || buf == "null" || buf == `""` { // allow JSON null/empty strings
+		*jt = JsonTime(time.Time{})
+		return nil
+	}
+
+	buf = strings.Trim(buf, `"`)
 	if t, e := time.Parse(time.RFC3339, buf); e != nil {
 		return e
 	} else {
@@ -220,27 +228,35 @@ func ParseDateTime(s string) time.Time {
 
 // ParseFromExcelDate will handle integer value of excel date to convert to time.Time
 func ParseFromExcelDate(s string, format string) time.Time {
-	i, ok := ParseInt32(s)
-	if !ok { // respect parse errors and fall back cleanly
+	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64) // support fractional Excel serials
+	if err != nil {                                        // preserve old fallback on non-numeric strings
 		return ParseDateTimeCustom(s, format)
 	}
 
-	if i <= 0 {
+	if v <= 0 {
 		return time.Time{}
 	}
+
+	days, frac := math.Modf(v) // split whole days and fractional day
+	serial := int(days)
 
 	// Correct Excel 1900 date-system handling and leap-year bug
 	// Excel treats 1900 as a leap year; serial 60 maps to the nonexistent 1900-02-29.
 	base := time.Date(1899, 12, 31, 0, 0, 0, 0, time.UTC) // serial 1 => 1900-01-01
-	day := int(i)
-	if day == 60 {
+	if serial == 60 {
 		// Cannot represent 1900-02-29; return zero time to signal invalid Excel serial.
 		return time.Time{}
 	}
-	if day > 60 {
-		day-- // skip the bogus 1900-02-29
+	if serial > 60 {
+		serial-- // skip the bogus 1900-02-29
 	}
-	return base.AddDate(0, 0, day)
+
+	t := base.AddDate(0, 0, serial)
+	if frac > 0 {
+		t = t.Add(time.Duration(frac * float64(24*time.Hour))) // retain time-of-day portion
+	}
+
+	return t
 }
 
 // ParseDateTime24Hr will parse a date time value in yyyy-mm-dd HH:mm:ss format into time.Time object,
@@ -493,10 +509,7 @@ func CurrentDateTimeStruct() time.Time {
 
 // CurrentTime returns current time in hh:mm:ss tt format
 func CurrentTime() string {
-	s := time.Now().Format("2006-01-02 03:04:05 PM")
-	s = s[11:]
-
-	return s
+	return time.Now().Format("03:04:05 PM")
 }
 
 // DaysDiff gets the days difference between from and to date

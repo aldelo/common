@@ -1,7 +1,7 @@
 package helper
 
 /*
- * Copyright 2020-2023 Aldelo, LP
+ * Copyright 2020-2026 Aldelo, LP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -531,25 +531,19 @@ func DateAfterOrEqual(testDate time.Time, afterEqualDate time.Time) bool {
 // DateBetween checks if testDate is within the fromDate and toDate,
 // if doNotIncludeEqual = true, then testDate equals fromDate and toDate are skipped
 func DateBetween(testDate time.Time, fromDate time.Time, toDate time.Time, doNotIncludeEqual bool) bool {
-	if doNotIncludeEqual == false {
-		if testDate.Equal(fromDate) {
-			return true
-		}
-
-		if testDate.Equal(toDate) {
-			return true
-		}
+	// normalize range if caller passed dates in reverse order
+	if toDate.Before(fromDate) {
+		fromDate, toDate = toDate, fromDate
 	}
 
-	if testDate.After(fromDate) {
-		return true
+	if doNotIncludeEqual {
+		// strict bounds (exclude endpoints)
+		return testDate.After(fromDate) && testDate.Before(toDate)
 	}
 
-	if testDate.Before(toDate) {
-		return true
-	}
-
-	return false
+	// inclusive bounds (include endpoints)
+	return (testDate.Equal(fromDate) || testDate.After(fromDate)) &&
+		(testDate.Equal(toDate) || testDate.Before(toDate))
 }
 
 // DateOutside checks if the testDate is outside of the fromDate and toDate

@@ -30,7 +30,17 @@ import (
 var (
 	ulidEntropy     = ulid.Monotonic(mathrand.New(mathrand.NewSource(time.Now().UnixNano())), 0) // shared monotonic entropy
 	ulidEntropyLock sync.Mutex                                                                   // guard for concurrent use
+
+	randLock sync.Mutex
+	randSrc  = mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
 )
+
+// helper to safely get Intn with shared RNG
+func randomIntn(max int) int {
+	randLock.Lock()
+	defer randLock.Unlock()
+	return randSrc.Intn(max)
+}
 
 // ================================================================================================================
 // UUID HELPERS
@@ -109,63 +119,22 @@ func GenerateRandomNumber(maxNumber int) int {
 		return 0
 	}
 
-	seed := mathrand.NewSource(time.Now().UnixNano())
-	r := mathrand.New(seed)
-
 	// fast path for degenerate bound
 	if maxNumber == 1 {
 		return 0
 	}
 
-	return r.Intn(maxNumber)
+	return randomIntn(maxNumber)
 }
 
 // GenerateRandomChar will create a random character, using unix nano as seed
 func GenerateRandomChar() string {
-	r := GenerateRandomNumber(3)
+	const (
+		printableStart = 33
+		printableRange = 94 // 126 - 33 + 1
+	)
 
-	// valid range of ascii
-	// 		33 - 126
-
-	// half the r until within range
-	// if not within min, double it until within range
-	if r <= 0 {
-		attempts := 0
-
-		for {
-			if r = GenerateRandomNumber(3); r > 0 {
-				break
-			} else {
-				if attempts > 25 {
-					return "~"
-				}
-			}
-
-			attempts++
-		}
-	}
-
-	if r < 33 {
-		for {
-			if r < 33 {
-				r *= 2
-			} else {
-				break
-			}
-		}
-	}
-
-	if r > 126 {
-		for {
-			if r > 126 {
-				r /= 2
-			} else {
-				break
-			}
-		}
-	}
-
-	// convert decimal ascii to char
+	r := randomIntn(printableRange) + printableStart
 	return string(r)
 }
 

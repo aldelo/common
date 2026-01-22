@@ -2625,11 +2625,67 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		// get raw CSV value
 		rawVal, found := csvExtractValue(csvElements, cfg, prefixProcessedMap)
 
-		// enforce required fields when missing entirely
+		// Apply defaults for missing positional fields instead of skipping them outright.
 		if !found {
-			if cfg.tagReq == "true" && LenTrim(defVal) == 0 {
+			if LenTrim(defVal) == 0 {
+				if cfg.tagReq == "true" {
+					StructClearFields(inputStructPtr)
+					return fmt.Errorf("%s is a Required Field", field.Name)
+				}
+				continue
+			}
+
+			csvValue := defVal
+			if strings.EqualFold(Trim(csvValue), "null") { // treat literal null as empty
+				csvValue = ""
+			}
+			// bool literal overrides for defaults (parity with found path)
+			if cfg.boolTrue == " " && len(cfg.outPrefix) > 0 && csvValue == cfg.outPrefix {
+				csvValue = "true"
+			} else {
+				if LenTrim(cfg.boolTrue) > 0 && csvValue == cfg.boolTrue {
+					csvValue = "true"
+				} else if LenTrim(cfg.boolFalse) > 0 && csvValue == cfg.boolFalse {
+					csvValue = "false"
+				}
+			}
+
+			hasSetter := LenTrim(cfg.tagSetter) > 0
+			valPrep, err := csvPreprocessValue(csvValue, cfg, hasSetter, trueList)
+			if err != nil {
 				StructClearFields(inputStructPtr)
-				return fmt.Errorf("%s is a Required Field", field.Name)
+				return fmt.Errorf("%s %s", field.Name, err.Error())
+			}
+			csvValue = valPrep
+
+			if newVal, setDone, err := csvApplySetter(s, cfg, o, csvValue); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			} else if setDone {
+				if err := csvValidateValue(newVal, cfg, field.Name); err != nil {
+					StructClearFields(inputStructPtr)
+					return err
+				}
+				if err := csvValidateCustomUnmarshal(newVal, cfg, s, field.Name); err != nil {
+					StructClearFields(inputStructPtr)
+					return err
+				}
+				continue
+			} else {
+				csvValue = newVal
+			}
+
+			if err := csvValidateValue(csvValue, cfg, field.Name); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			}
+			if err := csvValidateCustomUnmarshal(csvValue, cfg, s, field.Name); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
+			}
+			if err := ReflectStringToField(o, csvValue, cfg.timeFormat); err != nil {
+				StructClearFields(inputStructPtr)
+				return err
 			}
 			continue
 		}

@@ -563,6 +563,10 @@ func DateBetween(testDate time.Time, fromDate time.Time, toDate time.Time, doNot
 
 // DateOutside checks if the testDate is outside of the fromDate and toDate
 func DateOutside(testDate time.Time, fromDate time.Time, toDate time.Time) bool {
+	if toDate.Before(fromDate) {
+		fromDate, toDate = toDate, fromDate
+	}
+
 	if testDate.Before(fromDate) {
 		return true
 	}
@@ -702,6 +706,11 @@ func IsDayOfMonthValid(year int, month int, day int) bool {
 func IsDateValidYYYYMMDD(s string) bool {
 	s = Trim(s)
 
+	// enforce numeric-only input before parsing
+	if len(s) != 8 || !IsNumericIntOnly(s) {
+		return false
+	}
+
 	if len(s) != 8 {
 		return false
 	}
@@ -734,7 +743,8 @@ func IsDateValidYYYYMMDD(s string) bool {
 func IsDateValidYYMMDD(s string) bool {
 	s = Trim(s)
 
-	if len(s) != 6 {
+	// enforce numeric-only input before parsing
+	if len(s) != 6 || !IsNumericIntOnly(s) {
 		return false
 	}
 
@@ -766,7 +776,8 @@ func IsDateValidYYMMDD(s string) bool {
 func IsDateValidYYYYMM(s string) bool {
 	s = Trim(s)
 
-	if len(s) != 6 {
+	// enforce numeric-only input before parsing
+	if len(s) != 6 || !IsNumericIntOnly(s) {
 		return false
 	}
 
@@ -786,7 +797,8 @@ func IsDateValidYYYYMM(s string) bool {
 func IsDateValidYYMM(s string) bool {
 	s = Trim(s)
 
-	if len(s) != 4 {
+	// enforce numeric-only input before parsing
+	if len(s) != 4 || !IsNumericIntOnly(s) {
 		return false
 	}
 
@@ -806,7 +818,8 @@ func IsDateValidYYMM(s string) bool {
 func IsDateValidMMDDYYYY(s string) bool {
 	s = Trim(s)
 
-	if len(s) != 8 {
+	// enforce numeric-only input before parsing
+	if len(s) != 8 || !IsNumericIntOnly(s) {
 		return false
 	}
 
@@ -838,7 +851,8 @@ func IsDateValidMMDDYYYY(s string) bool {
 func IsDateValidMMDDYY(s string) bool {
 	s = Trim(s)
 
-	if len(s) != 6 {
+	// enforce numeric-only input before parsing
+	if len(s) != 6 || !IsNumericIntOnly(s) {
 		return false
 	}
 
@@ -870,7 +884,8 @@ func IsDateValidMMDDYY(s string) bool {
 func IsDateValidMMYYYY(s string) bool {
 	s = Trim(s)
 
-	if len(s) != 6 {
+	// enforce numeric-only input before parsing
+	if len(s) != 6 || !IsNumericIntOnly(s) {
 		return false
 	}
 
@@ -890,7 +905,8 @@ func IsDateValidMMYYYY(s string) bool {
 func IsDateValidMMYY(s string) bool {
 	s = Trim(s)
 
-	if len(s) != 4 {
+	// enforce numeric-only input before parsing
+	if len(s) != 4 || !IsNumericIntOnly(s) {
 		return false
 	}
 
@@ -909,7 +925,8 @@ func IsDateValidMMYY(s string) bool {
 func IsTimeValidhhmmss(s string) bool {
 	s = Trim(s)
 
-	if len(s) != 6 {
+	// enforce numeric-only input before parsing
+	if len(s) != 6 || !IsNumericIntOnly(s) {
 		return false
 	}
 
@@ -932,7 +949,8 @@ func IsTimeValidhhmmss(s string) bool {
 func IsTimeValidhhmm(s string) bool {
 	s = Trim(s)
 
-	if len(s) != 4 {
+	// enforce numeric-only input before parsing
+	if len(s) != 4 || !IsNumericIntOnly(s) {
 		return false
 	}
 

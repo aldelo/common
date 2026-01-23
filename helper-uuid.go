@@ -149,12 +149,22 @@ func GenerateULID() (string, error) {
 	ulidEntropyLock.Lock()
 	defer ulidEntropyLock.Unlock() // ensure unlock on all paths
 
-	id, err := ulid.New(ulid.Timestamp(t), ulidEntropy)
-	if err != nil {
-		return "", err
+	// retry once on any error by refreshing entropy
+	for attempt := 0; attempt < 2; attempt++ {
+		id, err := ulid.New(ulid.Timestamp(t), ulidEntropy)
+		if err == nil {
+			return id.String(), nil
+		}
+
+		// refresh entropy and retry once
+		ulidEntropy = ulid.Monotonic(rand.Reader, 0)
+		if attempt == 1 {
+			return "", err
+		}
 	}
 
-	return id.String(), nil
+	// unreachable: loop exits via return
+	return "", nil
 }
 
 // NewULID will generate a new ULID and ignore error if any

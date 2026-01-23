@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"math"
 	"math/big"
+	mrand "math/rand"
 	"sync"
 	"time"
 
@@ -31,6 +32,9 @@ import (
 var (
 	ulidEntropy     = ulid.Monotonic(rand.Reader, 0)
 	ulidEntropyLock sync.Mutex
+
+	fallbackRand     = mrand.New(mrand.NewSource(time.Now().UnixNano())) // CHANGED: fallback RNG instance
+	fallbackRandLock sync.Mutex
 )
 
 // helper to safely get Intn with shared RNG
@@ -42,9 +46,14 @@ func randomIntn(max int) int {
 	// crypto-strength bounded random to reduce predictability/collisions
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
 	if err != nil {
-		return 0
+		return int(n.Int64())
 	}
-	return int(n.Int64())
+
+	// fallback to non-crypto RNG to avoid deterministic zeros on entropy failure
+	fallbackRandLock.Lock()
+	v := fallbackRand.Intn(max)
+	fallbackRandLock.Unlock()
+	return v
 }
 
 // ================================================================================================================

@@ -40,6 +40,15 @@ var (
 	fallbackLastSeed time.Time
 )
 
+// thread-safe wrapper so fallbackRand can act as an io.Reader for ULID/UUID fallback paths.
+type lockedFallbackReader struct{}
+
+func (lockedFallbackReader) Read(p []byte) (int, error) {
+	fallbackRandLock.Lock()
+	defer fallbackRandLock.Unlock()
+	return fallbackRand.Read(p)
+}
+
 // fetch a fresh seed without holding fallbackRandLock to avoid blocking the RNG lock if crypto/rand stalls.
 func fallbackSeed() int64 {
 	var seedBytes [8]byte

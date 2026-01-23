@@ -279,18 +279,18 @@ func GenerateNewUniqueInt32(oldIntVal int) int {
 		oldIntVal = safeNegateInt(oldIntVal)
 	}
 
-	seed1 := GenerateRandomNumber(999)
-	seed2 := GenerateRandomNumber(99)
+	seed1 := int(randomInt32n(1000)) // 0-999
+	seed2 := int(randomInt32n(100))  // 0-99
 
-	buf := Right(Itoa(oldIntVal), 5) + Padding(Itoa(seed2), 2, false, "0") + Padding(Itoa(seed1), 3, false, "0")
+	const baseMod = 100000 // keep 5 digits from the base
+	const scale = 10000    // 5 digits shifted by 4 => max 999,990,000 (< MaxInt32)
+	candidate := (oldIntVal%baseMod)*scale + seed2*100 + seed1%100
 
-	val, ok := ParseInt32(buf)
-
-	if !ok {
-		return safeNegateInt(int(randomInt32n(math.MaxInt32)))
-	} else {
-		return safeNegateInt(val) // avoid overflow
+	if candidate > math.MaxInt32 {
+		candidate = candidate % math.MaxInt32
 	}
+
+	return safeNegateInt(candidate)
 }
 
 // GenerateNewUniqueNullInt32 will take in old value and return new unique value with randomized seed and negated
@@ -305,19 +305,18 @@ func GenerateNewUniqueNullInt32(oldIntVal sql.NullInt32) sql.NullInt32 {
 		base = int(safeNegateInt(base))
 	}
 
-	seed1 := GenerateRandomNumber(999)
-	seed2 := GenerateRandomNumber(99)
+	seed1 := int(randomInt32n(1000))
+	seed2 := int(randomInt32n(100))
 
-	// use normalized base when composing buffer
-	buf := Right(Itoa(base), 5) + Padding(Itoa(seed2), 2, false, "0") + Padding(Itoa(seed1), 3, false, "0")
+	const baseMod = 100000
+	const scale = 10000
+	candidate := (base%baseMod)*scale + seed2*100 + seed1%100
 
-	val, ok := ParseInt32(buf)
-
-	if !ok {
-		return ToNullInt(int(randomInt32n(math.MaxInt32))*-1, true)
-	} else {
-		return ToNullInt(int(safeNegateInt(val)), true)
+	if candidate > math.MaxInt32 {
+		candidate = candidate % math.MaxInt32
 	}
+
+	return ToNullInt(safeNegateInt(candidate), true)
 }
 
 // GenerateNewUniqueInt64 will take in old value and return new unique value with randomized seed and negated
@@ -327,18 +326,18 @@ func GenerateNewUniqueInt64(oldIntVal int64) int64 {
 		oldIntVal = safeNegateInt64(oldIntVal)
 	}
 
-	seed1 := GenerateRandomNumber(999)
-	seed2 := GenerateRandomNumber(999)
+	seed1 := randomInt64n(1000)
+	seed2 := randomInt64n(1000)
 
-	buf := Right(Int64ToString(oldIntVal), 13) + Padding(Itoa(seed2), 3, false, "0") + Padding(Itoa(seed1), 3, false, "0")
+	const baseMod int64 = 1_000_000_000_000 // keep last 12 digits
+	const scale int64 = 1_000_000           // shift seeds by 6 digits
+	candidate := (oldIntVal%baseMod)*scale + seed2*1000 + seed1
 
-	val, ok := ParseInt64(buf)
-
-	if !ok {
-		return safeNegateInt64(randomInt64n(math.MaxInt64))
-	} else {
-		return safeNegateInt64(val)
+	if candidate > math.MaxInt64 {
+		candidate = candidate % math.MaxInt64
 	}
+
+	return safeNegateInt64(candidate)
 }
 
 func safeNegateInt(v int) int { // prevent MinInt overflow
@@ -370,19 +369,18 @@ func GenerateNewUniqueNullInt64(oldIntVal sql.NullInt64) sql.NullInt64 {
 		base = safeNegateInt64(base)
 	}
 
-	seed1 := GenerateRandomNumber(999)
-	seed2 := GenerateRandomNumber(999)
+	seed1 := randomInt64n(1000)
+	seed2 := randomInt64n(1000)
 
-	// use normalized base when composing buffer
-	buf := Right(Int64ToString(base), 13) + Padding(Itoa(seed2), 3, false, "0") + Padding(Itoa(seed1), 3, false, "0")
+	const baseMod int64 = 1_000_000_000_000
+	const scale int64 = 1_000_000
+	candidate := (base%baseMod)*scale + seed2*1000 + seed1
 
-	val, ok := ParseInt64(buf)
-
-	if !ok {
-		return ToNullInt64(safeNegateInt64(randomInt64n(math.MaxInt64)), true)
-	} else {
-		return ToNullInt64(safeNegateInt64(val), true)
+	if candidate > math.MaxInt64 {
+		candidate = candidate % math.MaxInt64
 	}
+
+	return ToNullInt64(safeNegateInt64(candidate), true)
 }
 
 // ================================================================================================================

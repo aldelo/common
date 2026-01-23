@@ -19,6 +19,7 @@ package helper
 import (
 	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"math"
 	"math/big"
 	mrand "math/rand"
@@ -37,6 +38,15 @@ var (
 	fallbackRandLock sync.Mutex
 )
 
+// ensure fallback RNG gets a fresh, high-entropy seed when crypto/rand is unavailable
+func reseedFallbackRandLocked() {
+	var seed int64
+	if err := binary.Read(rand.Reader, binary.LittleEndian, &seed); err != nil {
+		seed = time.Now().UnixNano()
+	}
+	fallbackRand.Seed(seed)
+}
+
 // helper to safely get Intn with shared RNG
 func randomIntn(max int) int {
 	if max <= 0 { // defensive guard against panic
@@ -51,6 +61,7 @@ func randomIntn(max int) int {
 
 	// fallback to non-crypto RNG to avoid deterministic zeros on entropy failure
 	fallbackRandLock.Lock()
+	reseedFallbackRandLocked()
 	v := fallbackRand.Intn(max)
 	fallbackRandLock.Unlock()
 	return v
@@ -69,6 +80,7 @@ func randomInt32n(max int32) int32 {
 
 	// fallback to non-crypto RNG
 	fallbackRandLock.Lock()
+	reseedFallbackRandLocked()
 	v := int32(fallbackRand.Int31n(max))
 	fallbackRandLock.Unlock()
 	return v
@@ -87,6 +99,7 @@ func randomInt64n(max int64) int64 {
 
 	// fallback to non-crypto RNG
 	fallbackRandLock.Lock()
+	reseedFallbackRandLocked()
 	v := fallbackRand.Int63n(max)
 	fallbackRandLock.Unlock()
 	return v

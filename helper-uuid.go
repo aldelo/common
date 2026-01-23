@@ -56,6 +56,42 @@ func randomIntn(max int) int {
 	return v
 }
 
+// crypto-friendly, bounded int32 generator with fallback
+func randomInt32n(max int32) int32 {
+	if max <= 0 {
+		return 0
+	}
+
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err == nil {
+		return int32(n.Int64())
+	}
+
+	// fallback to non-crypto RNG
+	fallbackRandLock.Lock()
+	v := int32(fallbackRand.Int31n(max))
+	fallbackRandLock.Unlock()
+	return v
+}
+
+// crypto-friendly, bounded int64 generator with fallback
+func randomInt64n(max int64) int64 {
+	if max <= 0 {
+		return 0
+	}
+
+	n, err := rand.Int(rand.Reader, big.NewInt(max))
+	if err == nil {
+		return n.Int64()
+	}
+
+	// fallback to non-crypto RNG
+	fallbackRandLock.Lock()
+	v := fallbackRand.Int63n(max)
+	fallbackRandLock.Unlock()
+	return v
+}
+
 // ================================================================================================================
 // UUID HELPERS
 // ================================================================================================================
@@ -162,7 +198,7 @@ func GenerateNewUniqueInt32(oldIntVal int) int {
 	val, ok := ParseInt32(buf)
 
 	if !ok {
-		return safeNegateInt(oldIntVal) // avoid overflow
+		return safeNegateInt(int(randomInt32n(math.MaxInt32)))
 	} else {
 		return safeNegateInt(val) // avoid overflow
 	}
@@ -182,7 +218,7 @@ func GenerateNewUniqueNullInt32(oldIntVal sql.NullInt32) sql.NullInt32 {
 	val, ok := ParseInt32(buf)
 
 	if !ok {
-		return ToNullInt(int(safeNegateInt(int(oldIntVal.Int32))), true)
+		return ToNullInt(int(randomInt32n(math.MaxInt32))*-1, true)
 	} else {
 		return ToNullInt(int(safeNegateInt(val)), true)
 	}
@@ -198,7 +234,7 @@ func GenerateNewUniqueInt64(oldIntVal int64) int64 {
 	val, ok := ParseInt64(buf)
 
 	if !ok {
-		return safeNegateInt64(oldIntVal)
+		return safeNegateInt64(randomInt64n(math.MaxInt64))
 	} else {
 		return safeNegateInt64(val)
 	}
@@ -235,7 +271,7 @@ func GenerateNewUniqueNullInt64(oldIntVal sql.NullInt64) sql.NullInt64 {
 	val, ok := ParseInt64(buf)
 
 	if !ok {
-		return ToNullInt64(safeNegateInt64(oldIntVal.Int64), true)
+		return ToNullInt64(safeNegateInt64(randomInt64n(math.MaxInt64)), true)
 	} else {
 		return ToNullInt64(safeNegateInt64(val), true)
 	}

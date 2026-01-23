@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/binary"
+	"io"
 	"math"
 	"math/big"
 	mrand "math/rand"
@@ -39,27 +40,24 @@ var (
 	fallbackLastSeed time.Time
 )
 
-// thread-safe wrapper so fallbackRand can act as an io.Reader for ULID/UUID fallback paths.
-type lockedFallbackReader struct{}
-
-func (lockedFallbackReader) Read(p []byte) (int, error) {
-	fallbackRandLock.Lock()
-	defer fallbackRandLock.Unlock()
-	return fallbackRand.Read(p)
+// fetch a fresh seed without holding fallbackRandLock to avoid blocking the RNG lock if crypto/rand stalls.
+func fallbackSeed() int64 {
+	var seedBytes [8]byte
+	if _, err := rand.Read(seedBytes[:]); err == nil {
+		return int64(binary.LittleEndian.Uint64(seedBytes[:]))
+	}
+	return time.Now().UnixNano()
 }
 
 const fallbackReseedMinGap = 5 * time.Millisecond
 
 // ensure fallback RNG gets a fresh, high-entropy seed when crypto/rand is unavailable
-func reseedFallbackRandLocked() {
-	now := time.Now()
+func reseedFallbackRandLocked(seed int64, now time.Time) {
+	fallbackRandLock.Lock()
+	defer fallbackRandLock.Unlock()
+
 	if !fallbackLastSeed.IsZero() && now.Sub(fallbackLastSeed) < fallbackReseedMinGap {
 		return
-	}
-
-	var seed int64
-	if err := binary.Read(rand.Reader, binary.LittleEndian, &seed); err != nil {
-		seed = now.UnixNano() // use current time when crypto/rand unavailable
 	}
 
 	fallbackRand.Seed(seed)
@@ -72,15 +70,18 @@ func randomIntn(max int) int {
 		return 0
 	}
 
-	// CHANGED: use crypto-strength result when available
+	// use crypto-strength result when available
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
 	if err == nil {
 		return int(n.Int64())
 	}
 
-	// fallback to non-crypto RNG to avoid deterministic zeros on entropy failure
+	// reseed without holding the RNG lock during crypto read
+	seed := fallbackSeed()
+	now := time.Now()
+	reseedFallbackRandLocked(seed, now)
+
 	fallbackRandLock.Lock()
-	reseedFallbackRandLocked()
 	v := fallbackRand.Intn(max)
 	fallbackRandLock.Unlock()
 	return v
@@ -97,9 +98,12 @@ func randomInt32n(max int32) int32 {
 		return int32(n.Int64())
 	}
 
-	// fallback to non-crypto RNG
+	// reseed without holding the RNG lock during crypto read
+	seed := fallbackSeed()
+	now := time.Now()
+	reseedFallbackRandLocked(seed, now)
+
 	fallbackRandLock.Lock()
-	reseedFallbackRandLocked()
 	v := int32(fallbackRand.Int31n(max))
 	fallbackRandLock.Unlock()
 	return v
@@ -116,9 +120,12 @@ func randomInt64n(max int64) int64 {
 		return n.Int64()
 	}
 
-	// fallback to non-crypto RNG
+	// reseed without holding the RNG lock during crypto read
+	seed := fallbackSeed()
+	now := time.Now()
+	reseedFallbackRandLocked(seed, now)
+
 	fallbackRandLock.Lock()
-	reseedFallbackRandLocked()
 	v := fallbackRand.Int63n(max)
 	fallbackRandLock.Unlock()
 	return v
@@ -135,23 +142,29 @@ func GenerateUUIDv4() (string, error) {
 		return id.String(), nil
 	}
 
-	// crypto/rand unavailable – fall back to locked math/rand to avoid empty UUIDs.
+	// reseed without holding RNG lock during crypto read; surface real fallback errors.
+	seed := fallbackSeed() // ensure fresh seed even if crypto/rand stalled
+	now := time.Now()
+	reseedFallbackRandLocked(seed, now)
+
 	fallbackRandLock.Lock()
-	reseedFallbackRandLocked()
 	var b [16]byte
-	if _, rErr := fallbackRand.Read(b[:]); rErr != nil {
-		fallbackRandLock.Unlock()
-		return "", err // return the original crypto error for context
-	}
+	n, rErr := fallbackRand.Read(b[:]) //  capture count and error
 	fallbackRandLock.Unlock()
+	if rErr != nil { // return actual fallback read error
+		return "", rErr
+	}
+	if n != len(b) { // guard against short reads
+		return "", io.ErrUnexpectedEOF
+	}
 
 	// set RFC 4122 version/variant bits
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 
 	id, convErr := uuid.FromBytes(b[:])
-	if convErr != nil {
-		return "", err
+	if convErr != nil { // surface conversion error instead of crypto error
+		return "", convErr
 	}
 	return id.String(), nil
 }

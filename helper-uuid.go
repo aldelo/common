@@ -39,6 +39,15 @@ var (
 	fallbackLastSeed time.Time
 )
 
+// thread-safe wrapper so fallbackRand can act as an io.Reader for ULID/UUID fallback paths.
+type lockedFallbackReader struct{}
+
+func (lockedFallbackReader) Read(p []byte) (int, error) {
+	fallbackRandLock.Lock()
+	defer fallbackRandLock.Unlock()
+	return fallbackRand.Read(p)
+}
+
 const fallbackReseedMinGap = 5 * time.Millisecond
 
 // ensure fallback RNG gets a fresh, high-entropy seed when crypto/rand is unavailable
@@ -122,14 +131,29 @@ func randomInt64n(max int64) int64 {
 // GenerateUUIDv4 will generate a UUID Version 4 (Random) to represent a globally unique identifier (extremely rare chance of collision)
 func GenerateUUIDv4() (string, error) {
 	id, err := uuid.NewRandom()
-
-	if err != nil {
-		// error
-		return "", err
-	} else {
-		// has id
+	if err == nil {
 		return id.String(), nil
 	}
+
+	// crypto/rand unavailable – fall back to locked math/rand to avoid empty UUIDs.
+	fallbackRandLock.Lock()
+	reseedFallbackRandLocked()
+	var b [16]byte
+	if _, rErr := fallbackRand.Read(b[:]); rErr != nil {
+		fallbackRandLock.Unlock()
+		return "", err // return the original crypto error for context
+	}
+	fallbackRandLock.Unlock()
+
+	// set RFC 4122 version/variant bits
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+
+	id, convErr := uuid.FromBytes(b[:])
+	if convErr != nil {
+		return "", err
+	}
+	return id.String(), nil
 }
 
 // NewUUID will generate a UUID Version 4 (Random) and ignore error if any
@@ -149,22 +173,24 @@ func GenerateULID() (string, error) {
 	ulidEntropyLock.Lock()
 	defer ulidEntropyLock.Unlock() // ensure unlock on all paths
 
-	// retry once on any error by refreshing entropy
-	for attempt := 0; attempt < 2; attempt++ {
-		id, err := ulid.New(ulid.Timestamp(t), ulidEntropy)
-		if err == nil {
-			return id.String(), nil
-		}
-
-		// refresh entropy and retry once
+	// first attempt (crypto)
+	if id, err := ulid.New(ulid.Timestamp(t), ulidEntropy); err == nil {
+		return id.String(), nil
+	} else {
+		// refresh crypto entropy and retry once
 		ulidEntropy = ulid.Monotonic(rand.Reader, 0)
-		if attempt == 1 {
-			return "", err
+		if id2, err2 := ulid.New(ulid.Timestamp(time.Now()), ulidEntropy); err2 == nil {
+			return id2.String(), nil
 		}
 	}
 
-	// unreachable: loop exits via return
-	return "", nil
+	// crypto failed twice – use thread-safe fallback entropy so callers never get empty ULIDs
+	fallbackEntropy := ulid.Monotonic(lockedFallbackReader{}, 0)
+	if id3, err3 := ulid.New(ulid.Timestamp(time.Now()), fallbackEntropy); err3 == nil {
+		return id3.String(), nil
+	} else {
+		return "", err3
+	}
 }
 
 // NewULID will generate a new ULID and ignore error if any

@@ -206,6 +206,9 @@ func GenerateULID() (string, error) {
 		}
 	}
 
+	// reseed fallback RNG to avoid deterministic entropy during crypto/rand outages
+	reseedFallbackRandLocked(fallbackSeed(), time.Now())
+
 	// crypto failed twice – use thread-safe fallback entropy so callers never get empty ULIDs
 	fallbackEntropy := ulid.Monotonic(lockedFallbackReader{}, 0)
 	if id3, err3 := ulid.New(ulid.Timestamp(time.Now()), fallbackEntropy); err3 == nil {
@@ -271,6 +274,11 @@ func GenerateRandomChar() string {
 
 // GenerateNewUniqueInt32 will take in old value and return new unique value with randomized seed and negated
 func GenerateNewUniqueInt32(oldIntVal int) int {
+	// normalize to positive to avoid '-' in buffer causing parse failure
+	if oldIntVal < 0 {
+		oldIntVal = safeNegateInt(oldIntVal)
+	}
+
 	seed1 := GenerateRandomNumber(999)
 	seed2 := GenerateRandomNumber(99)
 
@@ -291,6 +299,12 @@ func GenerateNewUniqueNullInt32(oldIntVal sql.NullInt32) sql.NullInt32 {
 		return oldIntVal
 	}
 
+	// normalize to positive to avoid '-' in buffer causing parse failure
+	base := FromNullInt(oldIntVal)
+	if base < 0 {
+		base = int(safeNegateInt(base))
+	}
+
 	seed1 := GenerateRandomNumber(999)
 	seed2 := GenerateRandomNumber(99)
 
@@ -307,6 +321,11 @@ func GenerateNewUniqueNullInt32(oldIntVal sql.NullInt32) sql.NullInt32 {
 
 // GenerateNewUniqueInt64 will take in old value and return new unique value with randomized seed and negated
 func GenerateNewUniqueInt64(oldIntVal int64) int64 {
+	// normalize to positive to avoid '-' in buffer causing parse failure
+	if oldIntVal < 0 {
+		oldIntVal = safeNegateInt64(oldIntVal)
+	}
+
 	seed1 := GenerateRandomNumber(999)
 	seed2 := GenerateRandomNumber(999)
 

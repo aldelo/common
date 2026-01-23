@@ -45,7 +45,7 @@ func randomIntn(max int) int {
 
 	// crypto-strength bounded random to reduce predictability/collisions
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
-	if err != nil {
+	if err != nil && n != nil {
 		return int(n.Int64())
 	}
 

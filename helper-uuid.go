@@ -308,7 +308,8 @@ func GenerateNewUniqueNullInt32(oldIntVal sql.NullInt32) sql.NullInt32 {
 	seed1 := GenerateRandomNumber(999)
 	seed2 := GenerateRandomNumber(99)
 
-	buf := Right(Itoa(FromNullInt(oldIntVal)), 5) + Padding(Itoa(seed2), 2, false, "0") + Padding(Itoa(seed1), 3, false, "0")
+	// use normalized base when composing buffer
+	buf := Right(Itoa(base), 5) + Padding(Itoa(seed2), 2, false, "0") + Padding(Itoa(seed1), 3, false, "0")
 
 	val, ok := ParseInt32(buf)
 
@@ -363,10 +364,17 @@ func GenerateNewUniqueNullInt64(oldIntVal sql.NullInt64) sql.NullInt64 {
 		return oldIntVal
 	}
 
+	// normalize to positive to avoid '-' in buffer causing parse failure
+	base := FromNullInt64(oldIntVal)
+	if base < 0 {
+		base = safeNegateInt64(base)
+	}
+
 	seed1 := GenerateRandomNumber(999)
 	seed2 := GenerateRandomNumber(999)
 
-	buf := Right(Int64ToString(FromNullInt64(oldIntVal)), 13) + Padding(Itoa(seed2), 3, false, "0") + Padding(Itoa(seed1), 3, false, "0")
+	// use normalized base when composing buffer
+	buf := Right(Int64ToString(base), 13) + Padding(Itoa(seed2), 3, false, "0") + Padding(Itoa(seed1), 3, false, "0")
 
 	val, ok := ParseInt64(buf)
 

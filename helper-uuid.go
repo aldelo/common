@@ -34,17 +34,27 @@ var (
 	ulidEntropy     = ulid.Monotonic(rand.Reader, 0)
 	ulidEntropyLock sync.Mutex
 
-	fallbackRand     = mrand.New(mrand.NewSource(time.Now().UnixNano())) // CHANGED: fallback RNG instance
+	fallbackRand     = mrand.New(mrand.NewSource(time.Now().UnixNano())) // fallback RNG instance
 	fallbackRandLock sync.Mutex
+	fallbackLastSeed time.Time
 )
+
+const fallbackReseedMinGap = 5 * time.Millisecond
 
 // ensure fallback RNG gets a fresh, high-entropy seed when crypto/rand is unavailable
 func reseedFallbackRandLocked() {
+	now := time.Now()
+	if !fallbackLastSeed.IsZero() && now.Sub(fallbackLastSeed) < fallbackReseedMinGap {
+		return
+	}
+
 	var seed int64
 	if err := binary.Read(rand.Reader, binary.LittleEndian, &seed); err != nil {
-		seed = time.Now().UnixNano()
+		seed = now.UnixNano() // use current time when crypto/rand unavailable
 	}
+
 	fallbackRand.Seed(seed)
+	fallbackLastSeed = now
 }
 
 // helper to safely get Intn with shared RNG

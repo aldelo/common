@@ -960,9 +960,7 @@ func extractBase64Safe(src string) (string, error) {
 		base64.RawStdEncoding,
 		base64.RawURLEncoding,
 	}
-	// Preallocate slice with capacity 2 (original + optionally padded)
-	candidates := make([]string, 1, 2)
-	candidates[0] = cleaned
+	candidates := []string{cleaned}
 	if m := len(cleaned) % 4; m != 0 {
 		candidates = append(candidates, cleaned+strings.Repeat("=", 4-m))
 	}

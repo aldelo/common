@@ -42,6 +42,8 @@ const (
 
 	maxHostLength  = 255 // RFC-compliant max hostname length
 	maxLabelLength = 63  // RFC-compliant max label length
+
+	estimatedIPsPerSRVRecord = 2 // Estimated average number of IPs per SRV record for capacity preallocation
 )
 
 // GetNetListener triggers the specified port to listen via tcp
@@ -268,8 +270,8 @@ func DnsLookupSrvs(host string) (ipList []string) {
 	}
 
 	deadline, hasDeadline := ctx.Deadline() // track remaining time for A/AAAA lookups
-	// Preallocate with estimated capacity (assuming ~2 IPs per SRV record on average)
-	ipList = make([]string, 0, len(addrs)*2)
+	// Preallocate with estimated capacity based on expected IPs per SRV record
+	ipList = make([]string, 0, len(addrs)*estimatedIPsPerSRVRecord)
 	seen := make(map[string]struct{})
 
 	for _, v := range addrs {

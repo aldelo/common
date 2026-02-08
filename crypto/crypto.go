@@ -629,8 +629,10 @@ func rsaPrivateKeyFromHex(privateKeyHex string) (*rsa.PrivateKey, error) {
 		return nil, errors.New("RSA Private Key From Hex Fail: " + "Pem Block Nil")
 	}
 
-	// Remove deprecated x509.IsEncryptedPEMBlock and x509.DecryptPEMBlock usage
-	// Simply use block.Bytes directly - encrypted PEM handling should be done separately if needed
+	// Remove deprecated x509.IsEncryptedPEMBlock and x509.DecryptPEMBlock usage.
+	// This function no longer supports encrypted PEM blocks. If you need to handle
+	// encrypted PEMs, decrypt them first using golang.org/x/crypto/pkcs12 or similar
+	// modern crypto libraries before calling this function.
 	b := block.Bytes
 
 	// parse key
@@ -647,7 +649,7 @@ func rsaPrivateKeyFromHex(privateKeyHex string) (*rsa.PrivateKey, error) {
 		}
 		rsaKey, ok := key.(*rsa.PrivateKey)
 		if !ok {
-			return nil, errors.New("parsed key is not an RSA private key")
+			return nil, errors.New("RSA Private Key From Hex Fail: parsed key is not an RSA private key")
 		}
 		return rsaKey, nil
 
@@ -677,7 +679,7 @@ func rsaPrivateKeyFromPem(privateKeyPem string) (*rsa.PrivateKey, error) {
 		}
 		rsaKey, ok := key.(*rsa.PrivateKey)
 		if !ok {
-			return nil, errors.New("parsed key is not an RSA private key")
+			return nil, errors.New("RSA Private Key From Pem Fail: parsed key is not an RSA private key")
 		}
 		return rsaKey, nil
 

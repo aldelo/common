@@ -154,13 +154,19 @@ func (s *TCPServer) Close() {
 		return
 	}
 
+	// store listener reference before acquiring lock
+	s._mux.Lock()
+	listener := s._tcpListener
+	s._tcpListener = nil
+	s._mux.Unlock()
+
+	// close listener outside mutex to avoid blocking
+	if listener != nil {
+		_ = listener.Close()
+	}
+
 	s._mux.Lock()
 	defer s._mux.Unlock()
-
-	if s._tcpListener != nil {
-		_ = s._tcpListener.Close()
-		s._tcpListener = nil
-	}
 
 	// signal all client goroutines to stop
 	for _, ch := range s._clientEnd {

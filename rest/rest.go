@@ -98,6 +98,26 @@ func newClientTlsCAsConfig() error {
 	}
 }
 
+// newHttpClient creates an HTTP client with proper transport configuration.
+// Note: For high-throughput scenarios, consider using a shared http.Client at the application level.
+func newHttpClient(timeout int, tlsCfg *tls.Config) *http.Client {
+	// Configure transport with connection pooling limits to prevent socket exhaustion
+	tr := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	}
+
+	if tlsCfg != nil {
+		tr.TLSClientConfig = tlsCfg
+	}
+
+	return &http.Client{
+		Transport: tr,
+		Timeout:   time.Duration(timeout) * time.Second,
+	}
+}
+
 // HeaderKeyValue is struct used for containing http header element key value pair
 type HeaderKeyValue struct {
 	Key   string
@@ -118,22 +138,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	}
 
 	// create http client
-	var client *http.Client
-
-	if tlsCfg == nil {
-		client = &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		}
-	} else {
-		tr := &http.Transport{
-			TLSClientConfig: tlsCfg,
-		}
-
-		client = &http.Client{
-			Transport: tr,
-			Timeout:   time.Duration(timeout) * time.Second,
-		}
-	}
+	client := newHttpClient(timeout, tlsCfg)
 
 	// create http request from client
 	var req *http.Request
@@ -201,22 +206,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	}
 
 	// create http client
-	var client *http.Client
-
-	if tlsCfg == nil {
-		client = &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		}
-	} else {
-		tr := &http.Transport{
-			TLSClientConfig: tlsCfg,
-		}
-
-		client = &http.Client{
-			Transport: tr,
-			Timeout:   time.Duration(timeout) * time.Second,
-		}
-	}
+	client := newHttpClient(timeout, tlsCfg)
 
 	// create http request from client
 	var req *http.Request
@@ -293,22 +283,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	}
 
 	// create http client
-	var client *http.Client
-
-	if tlsCfg == nil {
-		client = &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		}
-	} else {
-		tr := &http.Transport{
-			TLSClientConfig: tlsCfg,
-		}
-
-		client = &http.Client{
-			Transport: tr,
-			Timeout:   time.Duration(timeout) * time.Second,
-		}
-	}
+	client := newHttpClient(timeout, tlsCfg)
 
 	// create http request from client
 	var req *http.Request
@@ -385,23 +360,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	}
 
 	// create http client
-	var client *http.Client
-
-	if tlsCfg == nil {
-		client = &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		}
-	} else {
-		tr := &http.Transport{
-			TLSClientConfig: tlsCfg,
-		}
-
-		client = &http.Client{
-			Transport: tr,
-			Timeout:   time.Duration(timeout) * time.Second,
-		}
-	}
-
+	client := newHttpClient(timeout, tlsCfg)
 	// create http request from client
 	var req *http.Request
 
@@ -466,23 +425,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	}
 
 	// create http client
-	var client *http.Client
-
-	if tlsCfg == nil {
-		client = &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		}
-	} else {
-		tr := &http.Transport{
-			TLSClientConfig: tlsCfg,
-		}
-
-		client = &http.Client{
-			Transport: tr,
-			Timeout:   time.Duration(timeout) * time.Second,
-		}
-	}
-
+	client := newHttpClient(timeout, tlsCfg)
 	// create http request from client
 	var req *http.Request
 
@@ -574,23 +517,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	}
 
 	// create http client
-	var client *http.Client
-
-	if tlsCfg == nil {
-		client = &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		}
-	} else {
-		tr := &http.Transport{
-			TLSClientConfig: tlsCfg,
-		}
-
-		client = &http.Client{
-			Transport: tr,
-			Timeout:   time.Duration(timeout) * time.Second,
-		}
-	}
-
+	client := newHttpClient(timeout, tlsCfg)
 	// marshal proto message to bytes
 	if requestProtoBufObjectPtr == nil {
 		outResponseProtoBufObjectPtr = nil
@@ -694,23 +621,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	}
 
 	// create http client
-	var client *http.Client
-
-	if tlsCfg == nil {
-		client = &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		}
-	} else {
-		tr := &http.Transport{
-			TLSClientConfig: tlsCfg,
-		}
-
-		client = &http.Client{
-			Transport: tr,
-			Timeout:   time.Duration(timeout) * time.Second,
-		}
-	}
-
+	client := newHttpClient(timeout, tlsCfg)
 	// marshal proto message to bytes
 	if requestProtoBufObjectPtr == nil {
 		outResponseProtoBufObjectPtr = nil
@@ -813,23 +724,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	}
 
 	// create http client
-	var client *http.Client
-
-	if tlsCfg == nil {
-		client = &http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		}
-	} else {
-		tr := &http.Transport{
-			TLSClientConfig: tlsCfg,
-		}
-
-		client = &http.Client{
-			Transport: tr,
-			Timeout:   time.Duration(timeout) * time.Second,
-		}
-	}
-
+	client := newHttpClient(timeout, tlsCfg)
 	// create http request from client
 	var req *http.Request
 

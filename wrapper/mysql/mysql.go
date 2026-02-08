@@ -581,6 +581,7 @@ func (svr *MySql) openNormal() error {
 
 	// test mysql server state object
 	if err = newDB.Ping(); err != nil {
+		_ = newDB.Close() // Ensure cleanup on ping failure
 		return err
 	}
 
@@ -696,6 +697,7 @@ func (svr *MySql) openWithXRay() (err error) {
 	})
 
 	if err != nil {
+		_ = newDB.Close() // Ensure cleanup on ping failure
 		return err
 	}
 

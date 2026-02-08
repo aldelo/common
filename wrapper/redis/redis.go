@@ -295,7 +295,7 @@ func (r *Redis) connectInternal() error {
 	// Apply configurable pool settings with sensible defaults
 	poolSize := r.PoolSize
 	if poolSize <= 0 {
-		poolSize = 10 // default: 10 connections per every cpu
+		poolSize = 10 // default: 10 total connections
 	}
 	minIdleConns := r.MinIdleConns
 	if minIdleConns <= 0 {

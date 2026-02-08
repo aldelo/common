@@ -544,7 +544,7 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 
 	var resp recaptchaResponse
 	if err = json.Unmarshal(bodyBytes, &resp); err != nil {
-		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Failed: (Parse Json Response Error) %s", err)
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Failed: (Parse Json Response Error) %w", err)
 	}
 
 	// populate outputs from typed fields

@@ -704,16 +704,16 @@ func rsaPublicKeyFromHex(publicKeyHex string) (*rsa.PublicKey, error) {
 		return nil, errors.New("RSA Public Key From Hex Fail: " + "Pem Block Nil")
 	}
 
-	enc := x509.IsEncryptedPEMBlock(block)
-	b := block.Bytes
-
-	if enc {
-		b, err = x509.DecryptPEMBlock(block, nil)
-
-		if err != nil {
-			return nil, err
-		}
+	// Check for encrypted PEM blocks and return explicit error
+	// Encrypted blocks have DEK-Info header or Proc-Type: 4,ENCRYPTED
+	if _, encrypted := block.Headers["DEK-Info"]; encrypted {
+		return nil, errors.New("RSA Public Key From Hex Fail: Encrypted PEM blocks are no longer supported. Use golang.org/x/crypto/pkcs12 or similar to decrypt before calling this function")
 	}
+	if procType, ok := block.Headers["Proc-Type"]; ok && strings.Contains(procType, "ENCRYPTED") {
+		return nil, errors.New("RSA Public Key From Hex Fail: Encrypted PEM blocks are no longer supported. Use golang.org/x/crypto/pkcs12 or similar to decrypt before calling this function")
+	}
+
+	b := block.Bytes
 
 	// parse key
 	key, err1 := x509.ParsePKCS1PublicKey(b)

@@ -83,7 +83,8 @@ func (t *TlsConfig) GetServerTlsConfig(serverCertPemPath string,
 			tls.CurveP384,
 			tls.CurveP256,
 		},
-		PreferServerCipherSuites: true,
+		// Note: PreferServerCipherSuites is deprecated as of Go 1.18+
+		// The server's preference is now always used when the client supports it
 		CipherSuites: []uint16{
 			// Modern TLS 1.2 suites (PFS + AEAD)
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,

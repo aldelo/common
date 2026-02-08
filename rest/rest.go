@@ -42,6 +42,10 @@ const (
 
 var mu sync.RWMutex
 
+// maxResponseBytes defines the maximum response body size to prevent memory exhaustion
+// from malicious or oversized responses (10MB limit)
+const maxResponseBytes = 10 << 20 // 10MB
+
 // server ca pems stores list of self-signed CAs for client tls config
 var serverCaPems []string
 
@@ -175,7 +179,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 
 	var respBytes []byte
 
-	respBytes, err = io.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	_ = resp.Body.Close()
 	resp.Close = true
 
@@ -253,7 +257,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 
 	var respBytes []byte
 
-	respBytes, err = io.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	_ = resp.Body.Close()
 	resp.Close = true
 
@@ -330,7 +334,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 
 	var respBytes []byte
 
-	respBytes, err = io.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	_ = resp.Body.Close()
 	resp.Close = true
 
@@ -396,7 +400,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 
 	var respBytes []byte
 
-	respBytes, err = io.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	_ = resp.Body.Close()
 	resp.Close = true
 
@@ -473,7 +477,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 
 	var respBytes []byte
 
-	respBytes, err = io.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	_ = resp.Body.Close()
 	resp.Close = true
 
@@ -578,7 +582,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 
 	var respBytes []byte
 
-	respBytes, err = io.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	_ = resp.Body.Close()
 	resp.Close = true
 
@@ -682,7 +686,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 
 	var respBytes []byte
 
-	respBytes, err = io.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	_ = resp.Body.Close()
 	resp.Close = true
 
@@ -772,7 +776,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 
 	var respBytes []byte
 
-	respBytes, err = io.ReadAll(resp.Body)
+	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	_ = resp.Body.Close()
 	resp.Close = true
 

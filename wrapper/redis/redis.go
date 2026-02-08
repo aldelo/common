@@ -86,6 +86,16 @@ type Redis struct {
 	// TLS is supported by Redis starting with version 6 as an optional feature
 	EnableTLS bool
 
+	// Connection pool configuration (optional, defaults will be used if not set)
+	// PoolSize: maximum number of socket connections (default: 10 per CPU)
+	// MinIdleConns: minimum number of idle connections (default: 3)
+	// ReadTimeout: timeout for read operations (default: 3 seconds)
+	// WriteTimeout: timeout for write operations (default: 3 seconds)
+	PoolSize     int
+	MinIdleConns int
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
+
 	// client connection fields
 	cnWriter   *redis.Client
 	cnReader   *redis.Client
@@ -282,14 +292,32 @@ func (r *Redis) connectInternal() error {
 	}
 
 	// establish new writer redis client
+	// Apply configurable pool settings with sensible defaults
+	poolSize := r.PoolSize
+	if poolSize <= 0 {
+		poolSize = 10 // default: 10 connections per every cpu
+	}
+	minIdleConns := r.MinIdleConns
+	if minIdleConns <= 0 {
+		minIdleConns = 3 // default: minimum 3 idle connections
+	}
+	readTimeout := r.ReadTimeout
+	if readTimeout <= 0 {
+		readTimeout = 3 * time.Second // default: 3 second read timeout
+	}
+	writeTimeout := r.WriteTimeout
+	if writeTimeout <= 0 {
+		writeTimeout = 3 * time.Second // default: 3 second write timeout
+	}
+
 	optWriter := &redis.Options{
 		Addr:         r.AwsRedisWriterEndpoint, // redis endpoint url and port
 		Password:     "",                       // no password set
 		DB:           0,                        // use default DB
-		ReadTimeout:  3 * time.Second,          // time after read operation timeout
-		WriteTimeout: 3 * time.Second,          // time after write operation timeout
-		PoolSize:     10,                       // 10 connections per every cpu
-		MinIdleConns: 3,                        // minimum number of idle connections to keep
+		ReadTimeout:  readTimeout,              // time after read operation timeout
+		WriteTimeout: writeTimeout,             // time after write operation timeout
+		PoolSize:     poolSize,                 // maximum socket connections
+		MinIdleConns: minIdleConns,             // minimum number of idle connections to keep
 	}
 	if r.EnableTLS {
 		optWriter.TLSConfig = &tls.Config{InsecureSkipVerify: false}
@@ -305,10 +333,10 @@ func (r *Redis) connectInternal() error {
 		Addr:         r.AwsRedisReaderEndpoint, // redis endpoint url and port
 		Password:     "",                       // no password set
 		DB:           0,                        // use default DB
-		ReadTimeout:  3 * time.Second,          // time after read operation timeout
-		WriteTimeout: 3 * time.Second,          // time after write operation timeout
-		PoolSize:     10,                       // 10 connections per every cpu
-		MinIdleConns: 3,                        // minimum number of idle connections to keep
+		ReadTimeout:  readTimeout,              // time after read operation timeout
+		WriteTimeout: writeTimeout,             // time after write operation timeout
+		PoolSize:     poolSize,                 // maximum socket connections
+		MinIdleConns: minIdleConns,             // minimum number of idle connections to keep
 	}
 	if r.EnableTLS {
 		optReader.TLSConfig = &tls.Config{InsecureSkipVerify: false}

@@ -27,6 +27,17 @@ import (
 	util "github.com/aldelo/common"
 )
 
+// TCP client configuration constants
+const (
+	maxPortNumber                = 65535 // Maximum TCP port number (valid range: 1-65535)
+	defaultReadBufferSize        = 1024  // Default read buffer size in bytes
+	defaultReaderYieldDuration   = 25    // Default reader loop yield time in milliseconds
+	maxReaderYieldDuration       = 1000  // Maximum reader yield time in milliseconds
+	defaultReadDeadlineDuration  = 1000  // Default read timeout in milliseconds
+	minReadDeadlineDuration      = 250   // Minimum read timeout in milliseconds
+	maxReadDeadlineDuration      = 5000  // Maximum read timeout in milliseconds
+)
+
 // TCPClient defines tcp client connection struct
 //
 // ServerIP = tcp server ip address
@@ -75,8 +86,8 @@ func (c *TCPClient) resolveTcpAddr() (*net.TCPAddr, error) {
 		return nil, fmt.Errorf("TCP Server IP is Required")
 	}
 
-	if serverPort == 0 || serverPort > 65535 {
-		return nil, fmt.Errorf("TCP Server Port Must Be 1 - 65535")
+	if serverPort == 0 || serverPort > maxPortNumber {
+		return nil, fmt.Errorf("TCP Server Port Must Be 1 - %d", maxPortNumber)
 	}
 
 	return net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", serverIP, serverPort))
@@ -178,15 +189,15 @@ func (c *TCPClient) Read() (data []byte, timeout bool, err error) {
 		return nil, false, fmt.Errorf("TCP Server Not Yet Connected")
 	}
 
-	readDeadLine := 1000 * time.Millisecond
-	if readDeadlineDuration >= 250*time.Millisecond && readDeadlineDuration <= 5000*time.Millisecond {
+	readDeadLine := defaultReadDeadlineDuration * time.Millisecond
+	if readDeadlineDuration >= minReadDeadlineDuration*time.Millisecond && readDeadlineDuration <= maxReadDeadlineDuration*time.Millisecond {
 		readDeadLine = readDeadlineDuration
 	}
 	_ = _tcpConn.SetReadDeadline(time.Now().Add(readDeadLine))
 	defer _tcpConn.SetReadDeadline(time.Time{})
 
-	if readBufferSize == 0 || readBufferSize > 65535 {
-		readBufferSize = 1024
+	if readBufferSize == 0 || readBufferSize > maxPortNumber {
+		readBufferSize = defaultReadBufferSize
 	}
 
 	data = make([]byte, readBufferSize)
@@ -230,8 +241,8 @@ func (c *TCPClient) StartReader() error {
 	readerEnd := c._readerEnd
 	c.mu.Unlock()
 
-	yield := 25 * time.Millisecond
-	if readerYieldDuration > 0 && readerYieldDuration <= 1000*time.Millisecond {
+	yield := defaultReaderYieldDuration * time.Millisecond
+	if readerYieldDuration > 0 && readerYieldDuration <= maxReaderYieldDuration*time.Millisecond {
 		yield = readerYieldDuration
 	}
 

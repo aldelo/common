@@ -28,6 +28,11 @@ import (
 	util "github.com/aldelo/common"
 )
 
+// TCP server specific configuration constants
+const (
+	maxListenerYieldDuration = 250 // Maximum listener yield time in milliseconds
+)
+
 // TCPServer defines a concurrent tcp server for handling inbound client requests, and sending back responses
 //
 // Port = this tcp server port number to listen on
@@ -76,8 +81,8 @@ func (s *TCPServer) Serve() (err error) {
 	}
 	s._mux.Unlock()
 
-	if s.Port == 0 || s.Port > 65535 {
-		return fmt.Errorf("TCP Server Listening Port Must Be 1 - 65535")
+	if s.Port == 0 || s.Port > maxPortNumber {
+		return fmt.Errorf("TCP Server Listening Port Must Be 1 - %d", maxPortNumber)
 	}
 
 	if s._tcpListener, err = net.Listen("tcp4", fmt.Sprintf(":%d", s.Port)); err != nil {
@@ -137,7 +142,7 @@ func (s *TCPServer) Serve() (err error) {
 					}
 				}
 
-				if s.ListenerYieldDuration > 0 && s.ListenerYieldDuration <= 250*time.Millisecond {
+				if s.ListenerYieldDuration > 0 && s.ListenerYieldDuration <= maxListenerYieldDuration*time.Millisecond {
 					time.Sleep(s.ListenerYieldDuration)
 				}
 			}
@@ -284,18 +289,18 @@ func (s *TCPServer) handleClientConnection(conn net.Conn, clientIP string) {
 	// clean up upon exit method
 	defer conn.Close()
 
-	readBufferSize := uint(1024)
-	if s.ReadBufferSize > 0 && s.ReadBufferSize < 65535 {
+	readBufferSize := uint(defaultReadBufferSize)
+	if s.ReadBufferSize > 0 && s.ReadBufferSize < maxPortNumber {
 		readBufferSize = s.ReadBufferSize
 	}
 
-	readYield := 25 * time.Millisecond
-	if s.ReaderYieldDuration > 0 && s.ReaderYieldDuration < 1000*time.Millisecond {
+	readYield := defaultReaderYieldDuration * time.Millisecond
+	if s.ReaderYieldDuration > 0 && s.ReaderYieldDuration < maxReaderYieldDuration*time.Millisecond {
 		readYield = s.ReaderYieldDuration
 	}
 
-	readDeadline := 1000 * time.Millisecond
-	if s.ReadDeadlineDuration > 250*time.Millisecond && s.ReadDeadlineDuration <= 5000*time.Millisecond {
+	readDeadline := defaultReadDeadlineDuration * time.Millisecond
+	if s.ReadDeadlineDuration > minReadDeadlineDuration*time.Millisecond && s.ReadDeadlineDuration <= maxReadDeadlineDuration*time.Millisecond {
 		readDeadline = s.ReadDeadlineDuration
 	}
 

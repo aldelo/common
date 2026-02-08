@@ -960,7 +960,9 @@ func extractBase64Safe(src string) (string, error) {
 		base64.RawStdEncoding,
 		base64.RawURLEncoding,
 	}
-	candidates := []string{cleaned}
+	// Preallocate slice with capacity 2 (original + optionally padded)
+	candidates := make([]string, 1, 2)
+	candidates[0] = cleaned
 	if m := len(cleaned) % 4; m != 0 {
 		candidates = append(candidates, cleaned+strings.Repeat("=", 4-m))
 	}
@@ -2701,7 +2703,8 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		o      reflect.Value
 		defVal string
 	}
-	var virtualSetters []virtualSetter
+	// Preallocate slice with estimated capacity based on number of struct fields
+	virtualSetters := make([]virtualSetter, 0, s.NumField())
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)

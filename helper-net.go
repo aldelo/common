@@ -156,6 +156,8 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 		return []net.IP{}
 	}
 
+	// Preallocate with estimated capacity (actual size after deduplication may be smaller)
+	ipList = make([]net.IP, 0, len(ipAddrs))
 	seen := make(map[string]struct{}) // dedupe results
 	for _, addr := range ipAddrs {    // work with net.IPAddr results
 		if addr.IP == nil {
@@ -266,6 +268,8 @@ func DnsLookupSrvs(host string) (ipList []string) {
 	}
 
 	deadline, hasDeadline := ctx.Deadline() // track remaining time for A/AAAA lookups
+	// Preallocate with estimated capacity (assuming ~2 IPs per SRV record on average)
+	ipList = make([]string, 0, len(addrs)*2)
 	seen := make(map[string]struct{})
 
 	for _, v := range addrs {

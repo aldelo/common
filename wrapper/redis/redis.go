@@ -87,7 +87,7 @@ type Redis struct {
 	EnableTLS bool
 
 	// Connection pool configuration (optional, defaults will be used if not set)
-	// PoolSize: maximum number of socket connections (default: 10 per CPU)
+	// PoolSize: maximum number of socket connections (default: 10 total connections)
 	// MinIdleConns: minimum number of idle connections (default: 3)
 	// ReadTimeout: timeout for read operations (default: 3 seconds)
 	// WriteTimeout: timeout for write operations (default: 3 seconds)

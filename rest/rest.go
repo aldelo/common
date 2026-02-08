@@ -31,6 +31,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// HTTP client configuration constants
+const (
+	defaultHTTPClientTimeout = 30  // Default HTTP client timeout in seconds
+	maxHTTPClientTimeout     = 300 // Maximum HTTP client timeout in seconds (5 minutes)
+	httpSuccessStatusMin     = 200 // Minimum HTTP success status code
+	httpErrorStatusMin       = 300 // Minimum HTTP error status code
+	httpInternalErrorStatus  = 500 // HTTP internal server error status code
+)
+
 var mu sync.RWMutex
 
 // server ca pems stores list of self-signed CAs for client tls config
@@ -112,9 +121,9 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	mu.RUnlock()
 
 	if timeout <= 0 {
-		timeout = 30 // default timeout 30 seconds
-	} else if timeout > 300 {
-		timeout = 300 // max timeout 5 minutes
+		timeout = defaultHTTPClientTimeout // default timeout 30 seconds
+	} else if timeout > maxHTTPClientTimeout {
+		timeout = maxHTTPClientTimeout // max timeout 5 minutes
 	}
 
 	// create http client
@@ -153,7 +162,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		return 500, "", errors.New("[500 - Http Get Error] " + err.Error())
+		return httpInternalErrorStatus, "", errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get Error] " + err.Error())
 	}
 
 	// evaluate response
@@ -173,7 +182,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 		return statusCode, "", err
 	}
 
-	if statusCode < 200 || statusCode >= 300 {
+	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
 		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Get Resp] " + string(respBytes))
 	}
 
@@ -195,9 +204,9 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	mu.RUnlock()
 
 	if timeout <= 0 {
-		timeout = 30 // default timeout 30 seconds
-	} else if timeout > 300 {
-		timeout = 300 // max timeout 5 minutes
+		timeout = defaultHTTPClientTimeout // default timeout 30 seconds
+	} else if timeout > maxHTTPClientTimeout {
+		timeout = maxHTTPClientTimeout // max timeout 5 minutes
 	}
 
 	// create http client
@@ -246,7 +255,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		return 500, "", errors.New("[500 - Http Post Error] " + err.Error())
+		return httpInternalErrorStatus, "", errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post Error] " + err.Error())
 	}
 
 	// evaluate response
@@ -266,7 +275,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 		return statusCode, "", err
 	}
 
-	if statusCode < 200 || statusCode >= 300 {
+	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
 		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Post Resp] " + string(respBytes))
 	}
 
@@ -287,9 +296,9 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	mu.RUnlock()
 
 	if timeout <= 0 {
-		timeout = 30 // default timeout 30 seconds
-	} else if timeout > 300 {
-		timeout = 300 // max timeout 5 minutes
+		timeout = defaultHTTPClientTimeout // default timeout 30 seconds
+	} else if timeout > maxHTTPClientTimeout {
+		timeout = maxHTTPClientTimeout // max timeout 5 minutes
 	}
 
 	// create http client
@@ -338,7 +347,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		return 500, "", errors.New("[500 - Http Put Error] " + err.Error())
+		return httpInternalErrorStatus, "", errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put Error] " + err.Error())
 	}
 
 	// evaluate response
@@ -358,7 +367,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 		return statusCode, "", err
 	}
 
-	if statusCode < 200 || statusCode >= 300 {
+	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
 		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Put Resp] " + string(respBytes))
 	}
 
@@ -379,9 +388,9 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	mu.RUnlock()
 
 	if timeout <= 0 {
-		timeout = 30 // default timeout 30 seconds
-	} else if timeout > 300 {
-		timeout = 300 // max timeout 5 minutes
+		timeout = defaultHTTPClientTimeout // default timeout 30 seconds
+	} else if timeout > maxHTTPClientTimeout {
+		timeout = maxHTTPClientTimeout // max timeout 5 minutes
 	}
 
 	// create http client
@@ -420,7 +429,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		return 500, "", errors.New("[500 - Http Delete Error] " + err.Error())
+		return httpInternalErrorStatus, "", errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete Error] " + err.Error())
 	}
 
 	// evaluate response
@@ -440,7 +449,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 		return statusCode, "", err
 	}
 
-	if statusCode < 200 || statusCode >= 300 {
+	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
 		return statusCode, "", errors.New("[" + strconv.Itoa(statusCode) + " - Delete Resp] " + string(respBytes))
 	}
 
@@ -460,9 +469,9 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	mu.RUnlock()
 
 	if timeout <= 0 {
-		timeout = 30 // default timeout 30 seconds
-	} else if timeout > 300 {
-		timeout = 300 // max timeout 5 minutes
+		timeout = defaultHTTPClientTimeout // default timeout 30 seconds
+	} else if timeout > maxHTTPClientTimeout {
+		timeout = maxHTTPClientTimeout // max timeout 5 minutes
 	}
 
 	// create http client
@@ -513,7 +522,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 
 	if resp, err = client.Do(req); err != nil {
 		outResponseProtoBufObjectPtr = nil
-		return 500, errors.New("[500 - Http Get ProtoBuf Error] " + err.Error())
+		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get ProtoBuf Error] " + err.Error())
 	}
 
 	// evaluate response
@@ -534,7 +543,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 		return statusCode, err
 	}
 
-	if statusCode < 200 || statusCode >= 300 {
+	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
 		outResponseProtoBufObjectPtr = nil
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Get ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
@@ -543,7 +552,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
 			outResponseProtoBufObjectPtr = nil
-			return 500, errors.New("[500 - Http Get ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
+			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
 
@@ -551,7 +560,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	if outResponseProtoBufObjectPtr != nil {
 		return statusCode, nil
 	} else {
-		return 500, errors.New("[500 - Http Get ProtoBuf Error] Expected ProtoBuf Response Object Nil")
+		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get ProtoBuf Error] Expected ProtoBuf Response Object Nil")
 	}
 }
 
@@ -568,9 +577,9 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	mu.RUnlock()
 
 	if timeout <= 0 {
-		timeout = 30 // default timeout 30 seconds
-	} else if timeout > 300 {
-		timeout = 300 // max timeout 5 minutes
+		timeout = defaultHTTPClientTimeout // default timeout 30 seconds
+	} else if timeout > maxHTTPClientTimeout {
+		timeout = maxHTTPClientTimeout // max timeout 5 minutes
 	}
 
 	// create http client
@@ -634,7 +643,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 
 	if resp, err = client.Do(req); err != nil {
 		outResponseProtoBufObjectPtr = nil
-		return 500, errors.New("[500 - Http Post ProtoBuf Error] " + err.Error())
+		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post ProtoBuf Error] " + err.Error())
 	}
 
 	// evaluate response
@@ -655,7 +664,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 		return statusCode, err
 	}
 
-	if statusCode < 200 || statusCode >= 300 {
+	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Post ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
 
@@ -663,7 +672,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
 			outResponseProtoBufObjectPtr = nil
-			return 500, errors.New("[500 - Http Post ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
+			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
 
@@ -671,7 +680,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	if outResponseProtoBufObjectPtr != nil {
 		return statusCode, nil
 	} else {
-		return 500, errors.New("[500 - Http Post ProtoBuf Error] Expected ProtoBuf Response Object Nil")
+		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post ProtoBuf Error] Expected ProtoBuf Response Object Nil")
 	}
 }
 
@@ -688,9 +697,9 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	mu.RUnlock()
 
 	if timeout <= 0 {
-		timeout = 30 // default timeout 30 seconds
-	} else if timeout > 300 {
-		timeout = 300 // max timeout 5 minutes
+		timeout = defaultHTTPClientTimeout // default timeout 30 seconds
+	} else if timeout > maxHTTPClientTimeout {
+		timeout = maxHTTPClientTimeout // max timeout 5 minutes
 	}
 
 	// create http client
@@ -754,7 +763,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 
 	if resp, err = client.Do(req); err != nil {
 		outResponseProtoBufObjectPtr = nil
-		return 500, errors.New("[500 - Http Put ProtoBuf Error] " + err.Error())
+		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put ProtoBuf Error] " + err.Error())
 	}
 
 	// evaluate response
@@ -775,7 +784,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 		return statusCode, err
 	}
 
-	if statusCode < 200 || statusCode >= 300 {
+	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Put ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
 
@@ -783,7 +792,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
 			outResponseProtoBufObjectPtr = nil
-			return 500, errors.New("[500 - Http Put ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
+			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
 
@@ -791,7 +800,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	if outResponseProtoBufObjectPtr != nil {
 		return statusCode, nil
 	} else {
-		return 500, errors.New("[500 - Http Put ProtoBuf Error] Expected ProtoBuf Response Object Nil")
+		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put ProtoBuf Error] Expected ProtoBuf Response Object Nil")
 	}
 }
 
@@ -807,9 +816,9 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	mu.RUnlock()
 
 	if timeout <= 0 {
-		timeout = 30 // default timeout 30 seconds
-	} else if timeout > 300 {
-		timeout = 300 // max timeout 5 minutes
+		timeout = defaultHTTPClientTimeout // default timeout 30 seconds
+	} else if timeout > maxHTTPClientTimeout {
+		timeout = maxHTTPClientTimeout // max timeout 5 minutes
 	}
 
 	// create http client
@@ -860,7 +869,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 
 	if resp, err = client.Do(req); err != nil {
 		outResponseProtoBufObjectPtr = nil
-		return 500, errors.New("[500 - Http Delete ProtoBuf Error] " + err.Error())
+		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete ProtoBuf Error] " + err.Error())
 	}
 
 	// evaluate response
@@ -881,7 +890,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 		return statusCode, err
 	}
 
-	if statusCode < 200 || statusCode >= 300 {
+	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
 		outResponseProtoBufObjectPtr = nil
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Delete ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
@@ -890,7 +899,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
 			outResponseProtoBufObjectPtr = nil
-			return 500, errors.New("[500 - Http Delete ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
+			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
 
@@ -898,6 +907,6 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	if outResponseProtoBufObjectPtr != nil {
 		return statusCode, nil
 	} else {
-		return 500, errors.New("[500 - Http Delete ProtoBuf Error] Expected ProtoBuf Response Object Nil")
+		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete ProtoBuf Error] Expected ProtoBuf Response Object Nil")
 	}
 }

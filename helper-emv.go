@@ -208,6 +208,11 @@ func ParseEmvTlvTags(emvTlvTagsPayload string) (foundList []*EmvTlvTag, err erro
 
 				emvTlvTagsPayload = Right(emvTlvTagsPayload, len(emvTlvTagsPayload)-tagLenRemove)
 
+				// Protect against integer overflow when calculating hex string length
+				if tagValLen > maxTLVBytes/2 {
+					return nil, fmt.Errorf("EMV tag %s value length %d would cause overflow", t, tagValLen)
+				}
+
 				need := tagValLen * 2
 				if need > len(emvTlvTagsPayload) {
 					return nil, fmt.Errorf("EMV tag %s value length %d exceeds remaining payload", t, tagValLen)

@@ -163,30 +163,21 @@ func (t *TlsConfig) GetClientTlsConfig(serverCaCertPemPath []string,
 // private functions to avoid using common namespace (which causes conflict with rest namespace - circular reference)
 // ---------------------------------------------------------------------------------------------------------------------
 
-// _stringSliceContains checks if value is contained within the strSlice
-func _stringSliceContains(strSlice *[]string, value string) bool {
-	if strSlice == nil {
-		return false
-	} else {
-		for _, v := range *strSlice {
-			if strings.ToLower(v) == strings.ToLower(value) {
-				return true
-			}
-		}
-
-		return false
-	}
-}
-
-// _stringSliceExtractUnique returns unique string slice elements
+// _stringSliceExtractUnique returns unique string slice elements (case-insensitive)
 func _stringSliceExtractUnique(strSlice []string) (result []string) {
 	if strSlice == nil {
 		return []string{}
 	} else if len(strSlice) <= 1 {
 		return strSlice
 	} else {
+		// Use map for O(n) deduplication instead of O(n²)
+		seen := make(map[string]struct{}, len(strSlice))
+		result = make([]string, 0, len(strSlice))
+		
 		for _, v := range strSlice {
-			if !_stringSliceContains(&result, v) {
+			lowerV := strings.ToLower(v)
+			if _, exists := seen[lowerV]; !exists {
+				seen[lowerV] = struct{}{}
 				result = append(result, v)
 			}
 		}

@@ -183,7 +183,7 @@ func FileWrite(path string, data string) error {
 
 			_ = os.Chmod(path, 0o666) // best-effort; ignore error
 			if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
-				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
+				return fmt.Errorf("rename failed: %w; cleanup failed: %w", err, remErr)
 			}
 			if err2 := os.Rename(tmp, path); err2 != nil {
 				return err2
@@ -309,7 +309,7 @@ func FileWriteBytes(path string, data []byte) error {
 
 			_ = os.Chmod(path, 0o666) // best-effort; ignore error
 			if remErr := os.Remove(path); remErr != nil && !os.IsNotExist(remErr) {
-				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
+				return fmt.Errorf("rename failed: %w; cleanup failed: %w", err, remErr)
 			}
 			if err2 := os.Rename(tmp, path); err2 != nil {
 				return err2
@@ -537,7 +537,7 @@ func CopyFile(src string, dst string) (err error) { // named return for close er
 
 			_ = os.Chmod(dstAbs, 0o666) // best-effort; ignore error
 			if remErr := os.Remove(dstAbs); remErr != nil && !os.IsNotExist(remErr) {
-				return fmt.Errorf("rename failed: %v; cleanup failed: %v", err, remErr)
+				return fmt.Errorf("rename failed: %w; cleanup failed: %w", err, remErr)
 			}
 			if err2 := os.Rename(tmp, dstAbs); err2 != nil {
 				return err2

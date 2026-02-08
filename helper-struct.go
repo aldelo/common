@@ -2701,7 +2701,8 @@ func UnmarshalCSVToStruct(inputStructPtr interface{}, csvPayload string, csvDeli
 		o      reflect.Value
 		defVal string
 	}
-	var virtualSetters []virtualSetter
+	// Preallocate slice with estimated capacity based on number of struct fields
+	virtualSetters := make([]virtualSetter, 0, s.NumField())
 
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Type().Field(i)

@@ -42,6 +42,8 @@ const (
 
 	maxHostLength  = 255 // RFC-compliant max hostname length
 	maxLabelLength = 63  // RFC-compliant max label length
+
+	estimatedIPsPerSRVRecord = 2 // Estimated average number of IPs per SRV record for capacity preallocation
 )
 
 // GetNetListener triggers the specified port to listen via tcp
@@ -156,6 +158,8 @@ func DnsLookupIps(host string) (ipList []net.IP) {
 		return []net.IP{}
 	}
 
+	// Preallocate with estimated capacity (actual size after deduplication may be smaller)
+	ipList = make([]net.IP, 0, len(ipAddrs))
 	seen := make(map[string]struct{}) // dedupe results
 	for _, addr := range ipAddrs {    // work with net.IPAddr results
 		if addr.IP == nil {
@@ -266,6 +270,8 @@ func DnsLookupSrvs(host string) (ipList []string) {
 	}
 
 	deadline, hasDeadline := ctx.Deadline() // track remaining time for A/AAAA lookups
+	// Preallocate with estimated capacity based on expected IPs per SRV record
+	ipList = make([]string, 0, len(addrs)*estimatedIPsPerSRVRecord)
 	seen := make(map[string]struct{})
 
 	for _, v := range addrs {
@@ -540,7 +546,7 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 
 	var resp recaptchaResponse
 	if err = json.Unmarshal(bodyBytes, &resp); err != nil {
-		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Failed: (Parse Json Response Error) %s", err)
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Failed: (Parse Json Response Error) %w", err)
 	}
 
 	// populate outputs from typed fields

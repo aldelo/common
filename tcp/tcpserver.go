@@ -85,13 +85,21 @@ func (s *TCPServer) Serve() (err error) {
 		return fmt.Errorf("TCP Server Listening Port Must Be 1 - %d", maxPortNumber)
 	}
 
+	// Initialize maps if nil (defensive programming)
+	s._mux.Lock()
+	if s._clients == nil {
+		s._clients = make(map[string]net.Conn)
+	}
+	if s._clientEnd == nil {
+		s._clientEnd = make(map[string]chan struct{})
+	}
+	s._mux.Unlock()
+
 	if s._tcpListener, err = net.Listen("tcp4", fmt.Sprintf(":%d", s.Port)); err != nil {
 		return err
 	} else {
 		s._mux.Lock()
 		s._serving = true
-		s._clients = make(map[string]net.Conn)
-		s._clientEnd = make(map[string]chan struct{})
 		s._mux.Unlock()
 
 		// start continuous loop to accept incoming tcp client,
@@ -174,19 +182,23 @@ func (s *TCPServer) Close() {
 	defer s._mux.Unlock()
 
 	// signal all client goroutines to stop
-	for _, ch := range s._clientEnd {
-		if ch != nil {
-			select {
-			case ch <- struct{}{}:
-			default:
+	if s._clientEnd != nil {
+		for _, ch := range s._clientEnd {
+			if ch != nil {
+				select {
+				case ch <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}
 
 	// clean up clients
-	for _, v := range s._clients {
-		if v != nil {
-			_ = v.Close()
+	if s._clients != nil {
+		for _, v := range s._clients {
+			if v != nil {
+				_ = v.Close()
+			}
 		}
 	}
 
@@ -223,6 +235,10 @@ func (s *TCPServer) DisconnectClient(clientIP string) {
 	}
 
 	s._mux.Lock()
+	if s._clientEnd == nil {
+		s._mux.Unlock()
+		return
+	}
 	ch, ok := s._clientEnd[clientIP]
 	s._mux.Unlock()
 
@@ -256,6 +272,10 @@ func (s *TCPServer) WriteToClient(writeData []byte, clientIP string) error {
 	}
 
 	s._mux.Lock()
+	if s._clients == nil {
+		s._mux.Unlock()
+		return fmt.Errorf("Write To Client Failed: TCP Server Not Initialized")
+	}
 	c, ok := s._clients[clientIP]
 	s._mux.Unlock()
 

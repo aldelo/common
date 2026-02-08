@@ -154,12 +154,31 @@ func (s *TCPServer) Close() {
 		return
 	}
 
-	if s._tcpListener != nil {
-		_ = s._tcpListener.Close()
+	// store listener reference before acquiring lock
+	s._mux.Lock()
+	listener := s._tcpListener
+	s._tcpListener = nil
+	s._mux.Unlock()
+
+	// close listener outside mutex to avoid blocking
+	if listener != nil {
+		_ = listener.Close()
+	}
+
+	s._mux.Lock()
+	defer s._mux.Unlock()
+
+	// signal all client goroutines to stop
+	for _, ch := range s._clientEnd {
+		if ch != nil {
+			select {
+			case ch <- struct{}{}:
+			default:
+			}
+		}
 	}
 
 	// clean up clients
-	s._mux.Lock()
 	for _, v := range s._clients {
 		if v != nil {
 			_ = v.Close()
@@ -170,7 +189,6 @@ func (s *TCPServer) Close() {
 	s._clients = nil
 	s._clientEnd = nil
 	s._serving = false
-	s._mux.Unlock()
 }
 
 // GetConnectedClients returns list of connected tcp clients
@@ -179,8 +197,8 @@ func (s *TCPServer) GetConnectedClients() (clientsList []string) {
 		return []string{}
 	}
 
-	s._mux.Lock()
-	defer s._mux.Unlock()
+	s._mux.RLock()
+	defer s._mux.RUnlock()
 
 	if s._clients == nil || len(s._clients) == 0 {
 		return []string{}
@@ -284,6 +302,10 @@ func (s *TCPServer) handleClientConnection(conn net.Conn, clientIP string) {
 	// get the stop channel once (under lock) to avoid map races
 	s._mux.Lock()
 	stopCh := s._clientEnd[clientIP]
+	if stopCh == nil {
+		s._mux.Unlock()
+		return
+	}
 	s._mux.Unlock()
 
 	for {

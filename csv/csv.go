@@ -63,6 +63,8 @@ func (c *Csv) Open(path string) error {
 	c.r = bufio.NewReader(c.f)
 
 	if c.r == nil {
+		c.f.Close() // Close file handle on error to prevent leak
+		c.f = nil
 		return errors.New("Open Reader Failed: " + "Reader Nil")
 	}
 

@@ -82,48 +82,72 @@ type SQS struct {
 }
 
 func (s *SQS) setClient(cli *awssqs.SQS) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	s.sqsClient = cli
 	s.mu.Unlock()
 }
 
 func (s *SQS) getClient() *awssqs.SQS {
+	if s == nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sqsClient
 }
 
 func (s *SQS) clearClient() {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	s.sqsClient = nil
 	s.mu.Unlock()
 }
 
 func (s *SQS) setParentSegment(p *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	s._parentSegment = p
 	s.mu.Unlock()
 }
 
 func (s *SQS) getParentSegment() *xray.XRayParentSegment {
+	if s == nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s._parentSegment
 }
 
 func (s *SQS) getHttpOptions() *awshttp2.HttpClientSettings {
+	if s == nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.HttpOptions
 }
 
 func (s *SQS) setHttpOptions(opts *awshttp2.HttpClientSettings) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	s.HttpOptions = opts
 	s.mu.Unlock()
 }
 
 func (s *SQS) getAwsRegion() awsregion.AWSRegion {
+	if s == nil {
+		return awsregion.UNKNOWN
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.AwsRegion
@@ -220,6 +244,9 @@ type SQSDeleteMessageRequest struct {
 
 // Connect will establish a connection to the SQS service
 func (s *SQS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if s == nil {
+		return errors.New("SQS Connect Failed: SQS receiver is nil")
+	}
 	if len(parentSegment) > 0 {
 		s.setParentSegment(parentSegment[0])
 	}
@@ -299,11 +326,17 @@ func (s *SQS) connectInternal() error {
 
 // Disconnect will clear sqs client
 func (s *SQS) Disconnect() {
+	if s == nil {
+		return
+	}
 	s.clearClient()
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *SQS) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
 	s.setParentSegment(parentSegment)
 }
 

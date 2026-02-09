@@ -130,6 +130,11 @@ func TestHttpServerLifecycle(t *testing.T) {
 		t.Error("streamHandler should be set after StartStreamHttpServer")
 	}
 
+	// Give the server a moment to start listening
+	// Note: We don't test actual HTTP connectivity here as that would require
+	// additional complexity and could be flaky. The important part is that
+	// the server is properly initialized and can be shut down gracefully.
+
 	// Stop the server
 	cb.StopStreamHttpServer()
 

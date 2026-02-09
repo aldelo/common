@@ -17,6 +17,7 @@ package aws
  */
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -148,6 +149,9 @@ func (h2 *AwsHttp2Client) setDefaults() {
 // SetDialContextKeepAlive sets Dialer.KeepAlive: negative value disables keep-alive; 0 enables keep-alive
 // default = keep-alive enabled = 0
 func (h2 *AwsHttp2Client) SetDialContextKeepAlive(v time.Duration) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -157,6 +161,9 @@ func (h2 *AwsHttp2Client) SetDialContextKeepAlive(v time.Duration) {
 // SetDialContextConnectTimeout sets Dialer.Timeout: maximum amount of time a dial will wait for a connection to be created
 // default = 10 seconds
 func (h2 *AwsHttp2Client) SetDialContextConnectTimeout(v time.Duration) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -171,6 +178,9 @@ func (h2 *AwsHttp2Client) SetDialContextConnectTimeout(v time.Duration) {
 //
 // default = 1 second; set to 0 for no timeout and send request payload without waiting
 func (h2 *AwsHttp2Client) SetExpectContinueTimeout(v time.Duration) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -180,6 +190,9 @@ func (h2 *AwsHttp2Client) SetExpectContinueTimeout(v time.Duration) {
 // SetOverallTimeout sets Client.Timeout: overall timeout for http client including connection, request, response
 // default = 60 seconds
 func (h2 *AwsHttp2Client) SetOverallTimeout(v time.Duration) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -192,6 +205,9 @@ func (h2 *AwsHttp2Client) SetOverallTimeout(v time.Duration) {
 //
 // default = 0 means no limit
 func (h2 *AwsHttp2Client) SetMaxIdleConns(v int) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -206,6 +222,9 @@ func (h2 *AwsHttp2Client) SetMaxIdleConns(v int) {
 // suggest setting to 250 or higher for aws sdk usage
 // use 500 as default here
 func (h2 *AwsHttp2Client) SetMaxIdleConnsPerHost(v int) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -215,6 +234,9 @@ func (h2 *AwsHttp2Client) SetMaxIdleConnsPerHost(v int) {
 // SetMaxConnsPerHost sets Transport.MaxConnsPerHost: limits the total number of connections per host, including connections in the dialing, active, and idle states
 // default = 0 means no limit
 func (h2 *AwsHttp2Client) SetMaxConnsPerHost(v int) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -224,6 +246,9 @@ func (h2 *AwsHttp2Client) SetMaxConnsPerHost(v int) {
 // SetIdleConnTimeout sets Transport.IdleConnTimeout: maximum amount of time to keep an idle network connection alive between http requests
 // default = 0 for no limit
 func (h2 *AwsHttp2Client) SetIdleConnTimeout(v time.Duration) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -233,6 +258,9 @@ func (h2 *AwsHttp2Client) SetIdleConnTimeout(v time.Duration) {
 // SetDisableKeepAlives sets Transport.DisableKeepAlives: if true, prevents re-use of TCP connections between different HTTP requests
 // default = false
 func (h2 *AwsHttp2Client) SetDisableKeepAlives(v bool) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -242,6 +270,9 @@ func (h2 *AwsHttp2Client) SetDisableKeepAlives(v bool) {
 // SetDisableCompressions sets Transport.DisableCompression: if true, prevents the Transport from requesting compression with an "Accept-Encoding: gzip" request header when the Request contains no existing Accept-Encoding value.
 // default = false
 func (h2 *AwsHttp2Client) SetDisableCompressions(v bool) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -251,6 +282,9 @@ func (h2 *AwsHttp2Client) SetDisableCompressions(v bool) {
 // SetTlsHandshakeTimeout sets Transport.TLSHandshakeTimeout: maximum amount of time waiting for a TLS handshake to be completed
 // default = 10 seconds; 0 means no timeout
 func (h2 *AwsHttp2Client) SetTlsHandshakeTimeout(v time.Duration) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -265,6 +299,9 @@ func (h2 *AwsHttp2Client) SetTlsHandshakeTimeout(v time.Duration) {
 // default = no timeout, waits forever
 // use 30 seconds as default here
 func (h2 *AwsHttp2Client) SetResponseHeaderTimeout(v time.Duration) {
+	if h2 == nil {
+		return
+	}
 	if h2.Options == nil {
 		h2.Options = new(HttpClientSettings)
 	}
@@ -273,6 +310,9 @@ func (h2 *AwsHttp2Client) SetResponseHeaderTimeout(v time.Duration) {
 
 // NewHttp2Client returns custom http2 client for aws connection
 func (h2 *AwsHttp2Client) NewHttp2Client() (*http.Client, error) {
+	if h2 == nil {
+		return nil, errors.New("AwsHttp2Client receiver is nil")
+	}
 	h2.setDefaults()
 
 	var client http.Client

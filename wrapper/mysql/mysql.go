@@ -237,6 +237,10 @@ type MySqlTransaction struct {
 // Commit will commit the current mysql transaction and close off from further uses (if commit was successful).
 // on commit error, transaction will not close off
 func (t *MySqlTransaction) Commit() (err error) {
+	if t == nil {
+		return errors.New("MySqlTransaction Commit Failed: MySqlTransaction receiver is nil")
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -324,6 +328,10 @@ func (t *MySqlTransaction) Commit() (err error) {
 
 // Rollback will rollback the current mysql transaction and close off from further uses (whether rollback succeeds or failures)
 func (t *MySqlTransaction) Rollback() (err error) {
+	if t == nil {
+		return errors.New("MySqlTransaction Rollback Failed: MySqlTransaction receiver is nil")
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -429,6 +437,10 @@ type MySqlResult struct {
 
 // GetDsn serializes MySql server dsn to connection string, for use in database connectivity
 func (svr *MySql) GetDsn() (string, error) {
+	if svr == nil {
+		return "", errors.New("MySql GetDsn Failed: MySql receiver is nil")
+	}
+
 	//
 	// first validate input
 	//
@@ -533,6 +545,10 @@ func (svr *MySql) cleanUpAllSqlTransactions() {
 // Open will open a database either as normal or with xray tracing,
 // Open uses the dsn properties defined in the struct fields
 func (svr *MySql) Open(parentSegment ...*xray.XRayParentSegment) error {
+	if svr == nil {
+		return errors.New("MySql Open Failed: MySql receiver is nil")
+	}
+
 	if !xray.XRayServiceOn() {
 		return svr.openNormal()
 	} else {
@@ -731,6 +747,10 @@ func (svr *MySql) openWithXRay() (err error) {
 
 // Close will close the database connection and set db to nil
 func (svr *MySql) Close() error {
+	if svr == nil {
+		return nil
+	}
+
 	svr.cleanUpAllSqlTransactions()
 
 	svr.mux.Lock()
@@ -751,6 +771,10 @@ func (svr *MySql) Close() error {
 
 // Ping tests if current database connection is still active and ready
 func (svr *MySql) Ping() (err error) {
+	if svr == nil {
+		return errors.New("MySql Ping Failed: MySql receiver is nil")
+	}
+
 	svr.mux.RLock()
 	db := svr.db
 	lastPing := svr.lastPing
@@ -795,6 +819,10 @@ func (svr *MySql) Ping() (err error) {
 // Begin starts a mysql transaction, and stores the transaction object into txMap until commit or rollback.
 // ensure that transaction related actions are executed from the MySqlTransaction object.
 func (svr *MySql) Begin() (*MySqlTransaction, error) {
+	if svr == nil {
+		return nil, errors.New("MySql Begin Failed: MySql receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		// begin failed
@@ -882,6 +910,10 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 // [ Notes ]
 //  1. if error == nil, and len(dest struct slice) == 0 then zero struct slice result
 func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if svr == nil {
+		return false, errors.New("MySql GetStructSlice Failed: MySql receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return false, err
@@ -943,6 +975,10 @@ func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interfa
 // [ Notes ]
 //  1. if error == nil, and len(dest struct slice) == 0 then zero struct slice result
 func (t *MySqlTransaction) GetStructSlice(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if t == nil {
+		return false, errors.New("MySqlTransaction GetStructSlice Failed: MySqlTransaction receiver is nil")
+	}
+
 	if retErr = t.ready(); retErr != nil {
 		return false, retErr
 	}
@@ -999,6 +1035,10 @@ func (t *MySqlTransaction) GetStructSlice(dest interface{}, query string, args .
 //  1. notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
 func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if svr == nil {
+		return false, errors.New("MySql GetStruct Failed: MySql receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return false, err
@@ -1056,6 +1096,10 @@ func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{})
 //  1. notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
 func (t *MySqlTransaction) GetStruct(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if t == nil {
+		return false, errors.New("MySqlTransaction GetStruct Failed: MySqlTransaction receiver is nil")
+	}
+
 	if retErr = t.ready(); retErr != nil {
 		return false, retErr
 	}
@@ -1127,6 +1171,10 @@ func (t *MySqlTransaction) GetStruct(dest interface{}, query string, args ...int
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sqlx.Rows, error) {
+	if svr == nil {
+		return nil, errors.New("MySql GetRowsByOrdinalParams Failed: MySql receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -1193,6 +1241,10 @@ func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sq
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (t *MySqlTransaction) GetRowsByOrdinalParams(query string, args ...interface{}) (*sqlx.Rows, error) {
+	if t == nil {
+		return nil, errors.New("MySqlTransaction GetRowsByOrdinalParams Failed: MySqlTransaction receiver is nil")
+	}
+
 	if err := t.ready(); err != nil {
 		return nil, err
 	}
@@ -1268,6 +1320,10 @@ func (t *MySqlTransaction) GetRowsByOrdinalParams(query string, args ...interfac
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface{}) (*sqlx.Rows, error) {
+	if svr == nil {
+		return nil, errors.New("MySql GetRowsByNamedMapParam Failed: MySql receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -1344,6 +1400,10 @@ func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (t *MySqlTransaction) GetRowsByNamedMapParam(query string, args map[string]interface{}) (*sqlx.Rows, error) {
+	if t == nil {
+		return nil, errors.New("MySqlTransaction GetRowsByNamedMapParam Failed: MySqlTransaction receiver is nil")
+	}
+
 	if err := t.ready(); err != nil {
 		return nil, err
 	}
@@ -1415,6 +1475,10 @@ func (t *MySqlTransaction) GetRowsByNamedMapParam(query string, args map[string]
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Rows, error) {
+	if svr == nil {
+		return nil, errors.New("MySql GetRowsByStructParam Failed: MySql receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -1487,6 +1551,10 @@ func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Ro
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (t *MySqlTransaction) GetRowsByStructParam(query string, args interface{}) (*sqlx.Rows, error) {
+	if t == nil {
+		return nil, errors.New("MySqlTransaction GetRowsByStructParam Failed: MySqlTransaction receiver is nil")
+	}
+
 	if err := t.ready(); err != nil {
 		return nil, err
 	}
@@ -1546,6 +1614,10 @@ func (t *MySqlTransaction) GetRowsByStructParam(query string, args interface{}) 
 //  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop (rows will be closed automatically)
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows bool, err error) {
+	if svr == nil {
+		return true, errors.New("MySql ScanSlice Failed: MySql receiver is nil")
+	}
+
 	// ensure rows pointer is set
 	if rows == nil {
 		return true, nil
@@ -1676,6 +1748,10 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows boo
 //  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop (rows will be closed automatically)
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool, err error) {
+	if svr == nil {
+		return true, errors.New("MySql ScanStruct Failed: MySql receiver is nil")
+	}
+
 	// ensure rows pointer is set
 	if rows == nil {
 		return true, nil
@@ -1786,6 +1862,10 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 //	WHEN USING Scan(), MUST CHECK Scan Result Error for sql.ErrNoRow status
 //	SUGGESTED TO USE ScanColumnsByRow() Instead of Scan()
 func (svr *MySql) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, error) {
+	if svr == nil {
+		return nil, errors.New("MySql GetSingleRow Failed: MySql receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -1858,6 +1938,10 @@ func (svr *MySql) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, er
 //	WHEN USING Scan(), MUST CHECK Scan Result Error for sql.ErrNoRow status
 //	SUGGESTED TO USE ScanColumnsByRow() Instead of Scan()
 func (t *MySqlTransaction) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, error) {
+	if t == nil {
+		return nil, errors.New("MySqlTransaction GetSingleRow Failed: MySqlTransaction receiver is nil")
+	}
+
 	if err := t.ready(); err != nil {
 		return nil, err
 	}
@@ -1926,6 +2010,10 @@ func (t *MySqlTransaction) GetSingleRow(query string, args ...interface{}) (*sql
 //  1. notFound = true if no row is found in current scan
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
 func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFound bool, err error) {
+	if svr == nil {
+		return false, errors.New("MySql ScanSliceByRow Failed: MySql receiver is nil")
+	}
+
 	// if row is nil, treat as no row and not an error
 	if row == nil {
 		if dest != nil {
@@ -2029,6 +2117,10 @@ func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFound b
 //  1. notFound = true if no row is found in current scan
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
 func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound bool, err error) {
+	if svr == nil {
+		return false, errors.New("MySql ScanStructByRow Failed: MySql receiver is nil")
+	}
+
 	// if row is nil, treat as no row and not an error
 	if row == nil {
 		return true, nil
@@ -2114,6 +2206,10 @@ func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound boo
 //     var Address string
 //  4. notFound, err := svr.ScanColumnsByRow(row, &CustomerID, &CustomerName, &Address)
 func (svr *MySql) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound bool, err error) {
+	if svr == nil {
+		return false, errors.New("MySql ScanColumnsByRow Failed: MySql receiver is nil")
+	}
+
 	// if row is nil, treat as no row and not an error
 	if row == nil {
 		return true, nil
@@ -2194,6 +2290,10 @@ func (svr *MySql) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound
 //  2. retNotFound = now row found
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
 func (svr *MySql) GetScalarString(query string, args ...interface{}) (retVal string, retNotFound bool, retErr error) {
+	if svr == nil {
+		return "", false, errors.New("MySql GetScalarString Failed: MySql receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return "", false, err
@@ -2267,6 +2367,10 @@ func (svr *MySql) GetScalarString(query string, args ...interface{}) (retVal str
 //  2. retNotFound = now row found
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
 func (t *MySqlTransaction) GetScalarString(query string, args ...interface{}) (retVal string, retNotFound bool, retErr error) {
+	if t == nil {
+		return "", false, errors.New("MySqlTransaction GetScalarString Failed: MySqlTransaction receiver is nil")
+	}
+
 	if err := t.ready(); err != nil {
 		return "", false, err
 	}
@@ -2339,6 +2443,10 @@ func (t *MySqlTransaction) GetScalarString(query string, args ...interface{}) (r
 //  2. retNotFound = now row found
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
 func (svr *MySql) GetScalarNullString(query string, args ...interface{}) (retVal sql.NullString, retNotFound bool, retErr error) {
+	if svr == nil {
+		return sql.NullString{}, false, errors.New("MySql GetScalarNullString Failed: MySql receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return sql.NullString{}, false, err
@@ -2413,6 +2521,10 @@ func (svr *MySql) GetScalarNullString(query string, args ...interface{}) (retVal
 //  2. retNotFound = now row found
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
 func (t *MySqlTransaction) GetScalarNullString(query string, args ...interface{}) (retVal sql.NullString, retNotFound bool, retErr error) {
+	if t == nil {
+		return sql.NullString{}, false, errors.New("MySqlTransaction GetScalarNullString Failed: MySqlTransaction receiver is nil")
+	}
+
 	if err := t.ready(); err != nil {
 		return sql.NullString{}, false, err
 	}
@@ -2488,6 +2600,10 @@ func (t *MySqlTransaction) GetScalarNullString(query string, args ...interface{}
 // [ Return Values ]
 //  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) MySqlResult {
+	if svr == nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("MySql ExecByOrdinalParams Failed: MySql receiver is nil")}
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -2574,6 +2690,10 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 // [ Return Values ]
 //  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...interface{}) MySqlResult {
+	if t == nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("MySqlTransaction ExecByOrdinalParams Failed: MySqlTransaction receiver is nil")}
+	}
+
 	if err := t.ready(); err != nil {
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
@@ -2669,6 +2789,10 @@ func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...inter
 // [ Return Values ]
 //  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interface{}) MySqlResult {
+	if svr == nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("MySql ExecByNamedMapParam Failed: MySql receiver is nil")}
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -2765,6 +2889,10 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 // [ Return Values ]
 //  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[string]interface{}) MySqlResult {
+	if t == nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("MySqlTransaction ExecByNamedMapParam Failed: MySqlTransaction receiver is nil")}
+	}
+
 	if err := t.ready(); err != nil {
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
@@ -2856,6 +2984,10 @@ func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[stri
 // [ Return Values ]
 //  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlResult {
+	if svr == nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("MySql ExecByStructParam Failed: MySql receiver is nil")}
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -2947,6 +3079,10 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 // [ Return Values ]
 //  1. MySqlResult = represents the sql action result received (including error info if applicable)
 func (t *MySqlTransaction) ExecByStructParam(actionQuery string, args interface{}) MySqlResult {
+	if t == nil {
+		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("MySqlTransaction ExecByStructParam Failed: MySqlTransaction receiver is nil")}
+	}
+
 	if err := t.ready(); err != nil {
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}

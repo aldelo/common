@@ -207,6 +207,10 @@ func isOptimisticLock(err error) bool {
 
 // helper to snapshot client and region under lock
 func (w *WAF2) getClientAndRegion() (*wafv2.WAFV2, awsregion.AWSRegion, error) {
+	if w == nil {
+		return nil, awsregion.UNKNOWN, fmt.Errorf("WAF2 getClientAndRegion Failed: WAF2 receiver is nil")
+	}
+
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -221,6 +225,10 @@ func (w *WAF2) getClientAndRegion() (*wafv2.WAFV2, awsregion.AWSRegion, error) {
 
 // Connect will establish a connection to the WAF2 service
 func (w *WAF2) Connect() error {
+	if w == nil {
+		return fmt.Errorf("WAF2 Connect Failed: WAF2 receiver is nil")
+	}
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -280,6 +288,10 @@ func (w *WAF2) Connect() error {
 //
 // note: aws limit is 10000 ip per ip set
 func (w *WAF2) UpdateIPSet(ipsetName string, ipsetId string, scope string, newAddr []string) error {
+	if w == nil {
+		return fmt.Errorf("UpdateIPSet Failed: WAF2 receiver is nil")
+	}
+
 	if util.LenTrim(ipsetName) == 0 {
 		return fmt.Errorf("UpdateIPSet Failed: ipsetName is Required")
 	}
@@ -474,6 +486,10 @@ LockRetry:
 //
 // this method will take the newest regex pattern to replace the older patterns
 func (w *WAF2) UpdateRegexPatternSet(regexPatternSetName string, regexPatternSetId string, scope string, newRegexPatterns []string) error {
+	if w == nil {
+		return fmt.Errorf("UpdateRegexPatternSet Failed: WAF2 receiver is nil")
+	}
+
 	if util.LenTrim(regexPatternSetName) == 0 {
 		return fmt.Errorf("UpdateRegexPatternSet Failed: regexPatternSetName is Required")
 	}

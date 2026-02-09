@@ -625,6 +625,11 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 		return nil, err
 	}
 
+	if encryptedOutput == nil || encryptedOutput.KeyMetadata == nil || encryptedOutput.KeyMetadata.KeyId == nil {
+		err = errors.New("GenerateEncryptionDecryptionKeyRsa2048 with KMS CMK Failed: CreateKeyOutput or KeyMetadata is nil")
+		return nil, err
+	}
+
 	aliasName := "alias/" + keyName // Change to your desired alias name
 
 	aliasInput := &kms.CreateAliasInput{
@@ -697,6 +702,11 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 		return nil, err
 	}
 
+	if encryptedOutput == nil || encryptedOutput.KeyMetadata == nil || encryptedOutput.KeyMetadata.KeyId == nil {
+		err = errors.New("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: CreateKeyOutput or KeyMetadata is nil")
+		return nil, err
+	}
+
 	aliasName := "alias/" + keyName // Change to your desired alias name
 
 	aliasInput := &kms.CreateAliasInput{
@@ -755,6 +765,9 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 	})
 	if e1 != nil {
 		return nil, fmt.Errorf("KeyDeleteWithAlias with KMS CMK Failed: describe key: %w", e1)
+	}
+	if descOut == nil || descOut.KeyMetadata == nil {
+		return nil, errors.New("KeyDeleteWithAlias with KMS CMK Failed: DescribeKey output or KeyMetadata is nil")
 	}
 	keyId := descOut.KeyMetadata.KeyId
 	if keyId == nil || *keyId == "" {
@@ -1399,6 +1412,10 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 	}
 
 	// return verify result
+	if verifyOutput == nil || verifyOutput.SignatureValid == nil {
+		err = errors.New("VerifyViaCmkRsa2048 with KMS Failed: VerifyOutput or SignatureValid is nil")
+		return false, err
+	}
 	signatureValid = *verifyOutput.SignatureValid
 	return signatureValid, nil
 }
@@ -1782,6 +1799,9 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 	descOut, e := cli.DescribeKey(&kms.DescribeKeyInput{KeyId: aws.String(keyArn)})
 	if e != nil {
 		return nil, fmt.Errorf("ECDH with KMS Failed: describe key: %w", e)
+	}
+	if descOut == nil {
+		return nil, errors.New("ECDH with KMS Failed: DescribeKey returned nil")
 	}
 	km := descOut.KeyMetadata
 	if km == nil || km.KeySpec == nil || km.KeyUsage == nil || km.KeyState == nil {

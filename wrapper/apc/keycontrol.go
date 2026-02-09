@@ -109,7 +109,7 @@ func (k *PaymentCryptography) Connect(parentSegment ...*xray.XRayParentSegment) 
 			k.mu.Unlock()
 		}
 
-		seg := xray.NewSegment("PaymentCryptography-Connect", k._parentSegment)
+		seg := xray.NewSegment("PaymentCryptography-Connect", k.getParentSegment())
 		defer seg.Close()
 		defer func() {
 			_ = seg.Seg.AddMetadata("KDS-AWS-Region", k.AwsRegion)
@@ -223,7 +223,7 @@ func (k *PaymentCryptography) generateRSAKey(KeyAlgorithm string) (keyArn string
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("PaymentCryptography-generateRSAKey", k._parentSegment)
+	seg := xray.NewSegmentNullable("PaymentCryptography-generateRSAKey", k.getParentSegment())
 	if seg != nil {
 		segCtx = seg.Ctx
 
@@ -281,6 +281,10 @@ func (k *PaymentCryptography) generateRSAKey(KeyAlgorithm string) (keyArn string
 		return "", err
 	}
 
+	if dataKeyOutput == nil {
+		err = errors.New("generateRSAKey with PaymentCryptography Failed: CreateKeyOutput is nil")
+		return "", err
+	}
 	if dataKeyOutput.Key != nil {
 		keyArn = aws.StringValue(dataKeyOutput.Key.KeyArn)
 	}
@@ -846,7 +850,7 @@ func (k *PaymentCryptography) GetKey(keyArn string) (output *pycrypto.GetKeyOutp
 		KeyIdentifier: aws.String(keyArn),
 	}
 
-	aliasOutput, e = k.pycClient.GetKey(aliasInput)
+	aliasOutput, e = client.GetKey(aliasInput)
 
 	if e != nil {
 		err = errors.New("GetKey with PaymentCryptography Failed: (GetKey) " + e.Error())
@@ -871,7 +875,7 @@ func (k *PaymentCryptography) GetKeyByAlias(keyAlias string) (output *pycrypto.G
 		AliasName: aws.String(keyAlias),
 	}
 
-	aliasOutput, e = k.pycClient.GetAlias(aliasInput)
+	aliasOutput, e = client.GetAlias(aliasInput)
 
 	if e != nil {
 		err = errors.New("GetKeyByAlias with PaymentCryptography Failed: (GetKeyByAlias) " + e.Error())

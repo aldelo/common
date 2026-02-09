@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/afex/hystrix-go/hystrix"
 	metricCollector "github.com/afex/hystrix-go/hystrix/metric_collector"
@@ -60,6 +61,7 @@ type CircuitBreaker struct {
 	// local state variables
 	//
 	streamHandler *hystrix.StreamHandler
+	httpServer    *http.Server
 }
 
 // RunLogic declares func alias for internal Run logic handler
@@ -71,6 +73,10 @@ type FallbackLogic func(dataIn interface{}, errIn error, ctx ...context.Context)
 // Init will initialize the circuit break with the given command name,
 // a command name represents a specific service or api method that has circuit breaker being applied
 func (c *CircuitBreaker) Init() error {
+	if c == nil {
+		return errors.New("CircuitBreaker Init Failed: CircuitBreaker receiver is nil")
+	}
+
 	// validate
 	if util.LenTrim(c.CommandName) <= 0 {
 		return errors.New("CircuitBreaker Init Failed: " + "Command Name is Required")
@@ -119,11 +125,19 @@ func (c *CircuitBreaker) Init() error {
 
 // FlushAll will purge all circuits and metrics from memory
 func (c *CircuitBreaker) FlushAll() {
+	if c == nil {
+		return
+	}
+
 	hystrix.Flush()
 }
 
 // UpdateConfig will update the hystrixgo command config data to the current value in struct for a given command name
 func (c *CircuitBreaker) UpdateConfig() {
+	if c == nil {
+		return
+	}
+
 	// command name must exist
 	if util.LenTrim(c.CommandName) <= 0 {
 		return
@@ -163,6 +177,10 @@ func (c *CircuitBreaker) UpdateConfig() {
 // UpdateLogger will udpate the hystrixgo package wide logger,
 // based on the Logger set in the struct field
 func (c *CircuitBreaker) UpdateLogger() {
+	if c == nil {
+		return
+	}
+
 	if c.Logger != nil {
 		hystrix.SetLogger(c.Logger)
 	} else {
@@ -182,6 +200,10 @@ func (c *CircuitBreaker) UpdateLogger() {
 func (c *CircuitBreaker) Go(run RunLogic,
 	fallback FallbackLogic,
 	dataIn interface{}) (interface{}, error) {
+	if c == nil {
+		return nil, errors.New("CircuitBreaker Go Failed: CircuitBreaker receiver is nil")
+	}
+
 	// validate
 	if util.LenTrim(c.CommandName) <= 0 {
 		return nil, errors.New("Exec Async Failed: " + "CircuitBreaker Command Name is Required")
@@ -287,6 +309,10 @@ func (c *CircuitBreaker) GoC(ctx context.Context,
 	run RunLogic,
 	fallback FallbackLogic,
 	dataIn interface{}) (interface{}, error) {
+	if c == nil {
+		return nil, errors.New("CircuitBreaker GoC Failed: CircuitBreaker receiver is nil")
+	}
+
 	// validate
 	if util.LenTrim(c.CommandName) <= 0 {
 		return nil, errors.New("Exec with Context Async Failed: " + "CircuitBreaker Command Name is Required")
@@ -392,6 +418,10 @@ func (c *CircuitBreaker) GoC(ctx context.Context,
 //     set to nil if fallback is not specified
 //  3. dataIn = optional, input parameter to run and fallback func, may be nil if not needed
 func (c *CircuitBreaker) Do(run RunLogic, fallback FallbackLogic, dataIn interface{}) (interface{}, error) {
+	if c == nil {
+		return nil, errors.New("CircuitBreaker Do Failed: CircuitBreaker receiver is nil")
+	}
+
 	// validate
 	if util.LenTrim(c.CommandName) <= 0 {
 		return nil, errors.New("Exec Synchronous Failed: " + "CircuitBreaker Command Name is Required")
@@ -474,6 +504,10 @@ func (c *CircuitBreaker) Do(run RunLogic, fallback FallbackLogic, dataIn interfa
 //     set to nil if fallback is not specified
 //  4. dataIn = optional, input parameter to run and fallback func, may be nil if not needed
 func (c *CircuitBreaker) DoC(ctx context.Context, run RunLogic, fallback FallbackLogic, dataIn interface{}) (interface{}, error) {
+	if c == nil {
+		return nil, errors.New("CircuitBreaker DoC Failed: CircuitBreaker receiver is nil")
+	}
+
 	// validate
 	if util.LenTrim(c.CommandName) <= 0 {
 		return nil, errors.New("Exec with Context Synchronous Failed: " + "CircuitBreaker Command Name is Required")
@@ -557,7 +591,11 @@ func (c *CircuitBreaker) DoC(ctx context.Context, run RunLogic, fallback Fallbac
 // To view stream data, launch browser, point to http://localhost:port
 //
 // default port = 81
-func (c *CircuitBreaker) StartStreamHttpServer(port ...int) {
+func (c *CircuitBreaker) StartStreamHttpServer(port ...int) error {
+	if c == nil {
+		return errors.New("CircuitBreaker StartStreamHttpServer Failed: CircuitBreaker receiver is nil")
+	}
+
 	if c.streamHandler == nil {
 		c.streamHandler = hystrix.NewStreamHandler()
 		c.streamHandler.Start()
@@ -568,15 +606,33 @@ func (c *CircuitBreaker) StartStreamHttpServer(port ...int) {
 			p = port[0]
 		}
 
-		go http.ListenAndServe(net.JoinHostPort("", strconv.Itoa(p)), c.streamHandler)
+		c.httpServer = &http.Server{
+			Addr:    net.JoinHostPort("", strconv.Itoa(p)),
+			Handler: c.streamHandler,
+		}
+
+		go c.httpServer.ListenAndServe()
 	}
+
+	return nil
 }
 
 // StopStreamHttpServer will stop the currently running stream server if already started
 func (c *CircuitBreaker) StopStreamHttpServer() {
+	if c == nil {
+		return
+	}
+
 	if c.streamHandler != nil {
 		c.streamHandler.Stop()
 		c.streamHandler = nil
+	}
+
+	if c.httpServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c.httpServer.Shutdown(ctx)
+		c.httpServer = nil
 	}
 }
 
@@ -601,6 +657,10 @@ func (c *CircuitBreaker) StopStreamHttpServer() {
 //
 //	http://localhost/dashboard
 func (c *CircuitBreaker) StartStatsdCollector(appName string, statsdIp string, statsdPort ...int) error {
+	if c == nil {
+		return errors.New("CircuitBreaker StartStatsdCollector Failed: CircuitBreaker receiver is nil")
+	}
+
 	// validate
 	if util.LenTrim(appName) <= 0 {
 		return errors.New("Start Statsd Collector Failed: " + "App Name is Required")

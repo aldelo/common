@@ -100,6 +100,9 @@ func (s *BedrockRuntime) getOptions() (*awshttp2.HttpClientSettings, awsregion.A
 
 // Connect will establish a connection to the BedrockRuntime service
 func (s *BedrockRuntime) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if s == nil {
+		return errors.New("BedrockRuntime receiver is nil")
+	}
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
 			s.mu.Lock()
@@ -175,6 +178,9 @@ func (s *BedrockRuntime) connectInternal(ctx context.Context) error {
 
 // Disconnect will clear bedrockruntime client
 func (s *BedrockRuntime) Disconnect() {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.bedrockruntimeClient = nil
@@ -182,6 +188,9 @@ func (s *BedrockRuntime) Disconnect() {
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *BedrockRuntime) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s._parentSegment = parentSegment
@@ -197,6 +206,9 @@ func (s *BedrockRuntime) UpdateParentSegment(parentSegment *xray.XRayParentSegme
 // code examples in the Amazon Bedrock User Guide. This operation requires
 // permission for the bedrock:InvokeModel action.
 func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (responseBody []byte, err error) {
+	if s == nil {
+		return nil, errors.New("BedrockRuntime receiver is nil")
+	}
 	segCtx := context.Background()
 	segCtxSet := false
 

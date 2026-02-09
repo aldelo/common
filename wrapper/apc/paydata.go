@@ -110,6 +110,9 @@ func (k *PaymentCryptoData) getKeyArn() string {
 
 // Connect will establish a connection to the PaymentCryptography Data service
 func (k *PaymentCryptoData) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if k == nil {
+		return errors.New("PaymentCryptoData receiver is nil")
+	}
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
 			k.mu.Lock()
@@ -197,6 +200,9 @@ func (k *PaymentCryptoData) connectInternal() error {
 
 // Disconnect will disjoin from aws session by clearing it
 func (k *PaymentCryptoData) Disconnect() {
+	if k == nil {
+		return
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.pyDataClient = nil
@@ -205,6 +211,9 @@ func (k *PaymentCryptoData) Disconnect() {
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (k *PaymentCryptoData) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if k == nil {
+		return
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k._parentSegment = parentSegment

@@ -766,11 +766,11 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 	if e1 != nil {
 		return nil, fmt.Errorf("KeyDeleteWithAlias with KMS CMK Failed: describe key: %w", e1)
 	}
-	if descOut == nil || descOut.KeyMetadata == nil {
+	if descOut == nil || descOut.KeyMetadata == nil || descOut.KeyMetadata.KeyId == nil {
 		return nil, errors.New("KeyDeleteWithAlias with KMS CMK Failed: DescribeKey output or KeyMetadata is nil")
 	}
 	keyId := descOut.KeyMetadata.KeyId
-	if keyId == nil || *keyId == "" {
+	if *keyId == "" {
 		return nil, errors.New("KeyDeleteWithAlias with KMS CMK Failed: key id is empty after DescribeKey")
 	}
 

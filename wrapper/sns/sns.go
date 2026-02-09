@@ -105,42 +105,63 @@ type SubscribedTopic struct {
 // --- internal helpers (thread-safe accessors) ---
 
 func (s *SNS) getAwsRegion() awsregion.AWSRegion {
+	if s == nil {
+		return awsregion.UNKNOWN
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.AwsRegion
 }
 
 func (s *SNS) getSMSSenderName() string {
+	if s == nil {
+		return ""
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.SMSSenderName
 }
 
 func (s *SNS) getSMSTransactional() bool {
+	if s == nil {
+		return false
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.SMSTransactional
 }
 
 func (s *SNS) getClient() *sns.SNS {
+	if s == nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.snsClient
 }
 
 func (s *SNS) setClient(cli *sns.SNS) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.snsClient = cli
 }
 
 func (s *SNS) clearClient() {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.snsClient = nil
 }
 
 func (s *SNS) ensureHttpOptions() *awshttp2.HttpClientSettings {
+	if s == nil {
+		return nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.HttpOptions == nil {
@@ -150,12 +171,18 @@ func (s *SNS) ensureHttpOptions() *awshttp2.HttpClientSettings {
 }
 
 func (s *SNS) setParentSegment(seg *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s._parentSegment = seg
 }
 
 func (s *SNS) getParentSegment() *xray.XRayParentSegment {
+	if s == nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s._parentSegment
@@ -255,6 +282,9 @@ func smsLength(message string) (limit int, used int, encoding string) {
 
 // Connect will establish a connection to the SNS service
 func (s *SNS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if s == nil {
+		return errors.New("cannot connect: SNS instance is nil")
+	}
 	if len(parentSegment) > 0 {
 		s.setParentSegment(parentSegment[0])
 	}
@@ -325,11 +355,17 @@ func (s *SNS) connectInternal() error {
 
 // Disconnect will disjoin from aws session by clearing it
 func (s *SNS) Disconnect() {
+	if s == nil {
+		return
+	}
 	s.clearClient()
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *SNS) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
 	s.setParentSegment(parentSegment)
 }
 

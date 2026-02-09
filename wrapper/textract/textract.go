@@ -74,48 +74,80 @@ type Textract struct {
 }
 
 func (s *Textract) getAwsRegion() awsregion.AWSRegion {
+	if s == nil {
+		return awsregion.UNKNOWN
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.AwsRegion
 }
 
 func (s *Textract) setAwsRegion(r awsregion.AWSRegion) {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.AwsRegion = r
 }
 
 func (s *Textract) getHttpOptions() *awshttp2.HttpClientSettings {
+	if s == nil {
+		return nil
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.HttpOptions
 }
 
 func (s *Textract) setHttpOptions(o *awshttp2.HttpClientSettings) {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.HttpOptions = o
 }
 
 func (s *Textract) setClient(cli *textract.Client) {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.textractClient = cli
 }
 
 func (s *Textract) getClient() *textract.Client {
+	if s == nil {
+		return nil
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.textractClient
 }
 
 func (s *Textract) setParentSegment(p *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s._parentSegment = p
 }
 
 func (s *Textract) getParentSegment() *xray.XRayParentSegment {
+	if s == nil {
+		return nil
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s._parentSegment
@@ -131,6 +163,10 @@ func (s *Textract) getParentSegment() *xray.XRayParentSegment {
 
 // Connect will establish a connection to the Textract service
 func (s *Textract) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if s == nil {
+		return errors.New("Textract Connect Failed: Textract receiver is nil")
+	}
+
 	if len(parentSegment) > 0 {
 		s.setParentSegment(parentSegment[0])
 	}
@@ -155,6 +191,10 @@ func (s *Textract) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 
 // Connect will establish a connection to the Textract service
 func (s *Textract) connectInternal(ctx context.Context) error {
+	if s == nil {
+		return errors.New("Textract connectInternal Failed: Textract receiver is nil")
+	}
+
 	// clean up prior textract client reference
 	s.setClient(nil)
 
@@ -200,11 +240,19 @@ func (s *Textract) connectInternal(ctx context.Context) error {
 
 // Disconnect will clear textract client
 func (s *Textract) Disconnect() {
+	if s == nil {
+		return
+	}
+
 	s.setClient(nil)
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *Textract) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
+
 	s.setParentSegment(parentSegment)
 }
 
@@ -217,6 +265,10 @@ func (s *Textract) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 // normalized field and value of the extracted text. Unlike other Amazon Textract
 // operations, AnalyzeID doesn't return any Geometry data.
 func (s *Textract) AnalyzeID(data []byte) (doc *types.IdentityDocument, err error) {
+	if s == nil {
+		return nil, errors.New("Textract AnalyzeID Failed: Textract receiver is nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -289,6 +341,10 @@ func (s *Textract) AnalyzeID(data []byte) (doc *types.IdentityDocument, err erro
 // For more information, see Document Text Detection (https://docs.aws.amazon.com/textract/latest/dg/how-it-works-detecting.html)
 // .
 func (s *Textract) DetectDocumentText(data []byte) (blocks []types.Block, err error) {
+	if s == nil {
+		return nil, errors.New("Textract DetectDocumentText Failed: Textract receiver is nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 

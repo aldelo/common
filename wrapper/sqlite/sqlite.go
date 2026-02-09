@@ -1072,7 +1072,7 @@ func (svr *SQLite) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFoun
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
 func (svr *SQLite) GetScalarString(query string, args ...interface{}) (retVal string, retNotFound bool, retErr error) {
 	if svr == nil {
-		return "", false, errors.New("SQLite GetScalarString Failed: SQLite receiver is nil")
+		return "", true, errors.New("SQLite GetScalarString Failed: SQLite receiver is nil")
 	}
 
 	// verify if the database connection is good
@@ -1140,7 +1140,7 @@ func (svr *SQLite) GetScalarString(query string, args ...interface{}) (retVal st
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
 func (svr *SQLite) GetScalarNullString(query string, args ...interface{}) (retVal sql.NullString, retNotFound bool, retErr error) {
 	if svr == nil {
-		return sql.NullString{}, false, errors.New("SQLite GetScalarNullString Failed: SQLite receiver is nil")
+		return sql.NullString{}, true, errors.New("SQLite GetScalarNullString Failed: SQLite receiver is nil")
 	}
 
 	// verify if the database connection is good

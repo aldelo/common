@@ -734,11 +734,16 @@ func rsaPublicKeyFromPem(publicKeyPem string) (*rsa.PublicKey, error) {
 		return nil, errors.New("RSA Public Key From Pem Fail: " + "Pem Block Nil")
 	}
 
-	if key, err := x509.ParsePKIXPublicKey(block.Bytes); err != nil {
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
 		return nil, err
-	} else {
-		return key.(*rsa.PublicKey), nil
 	}
+
+	rsaKey, ok := key.(*rsa.PublicKey)
+	if !ok {
+		return nil, errors.New("RSA Public Key From Pem Fail: parsed key is not an RSA public key")
+	}
+	return rsaKey, nil
 }
 
 // RsaPublicKeyEncrypt will encrypt given data using rsa public key,

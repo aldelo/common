@@ -93,6 +93,9 @@ func (s *Cognito) getParentSegment() *xray.XRayParentSegment {
 
 // Connect will establish a connection to the Cognito service
 func (s *Cognito) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if s == nil {
+		return errors.New("Cognito receiver is nil")
+	}
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
 			s.mu.Lock()
@@ -171,6 +174,9 @@ func (s *Cognito) connectInternal(ctx context.Context) error {
 
 // Disconnect will clear cognito client
 func (s *Cognito) Disconnect() {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cognitoClient = nil
@@ -178,6 +184,9 @@ func (s *Cognito) Disconnect() {
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *Cognito) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s._parentSegment = parentSegment
@@ -201,6 +210,9 @@ func (s *Cognito) RefreshOpenIdTokenForDeveloperIdentity(identityPoolId, develop
 }
 
 func (s *Cognito) getOpenIdTokenForDeveloperIdentity(identityPoolId, developerProviderID, developerProviderName string, existingIdentityId *string) (identityId, token string, err error) {
+	if s == nil {
+		return "", "", errors.New("Cognito receiver is nil")
+	}
 	segCtx := context.Background()
 	segCtxSet := false
 

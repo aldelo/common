@@ -265,9 +265,9 @@ func (s *Cognito) getOpenIdTokenForDeveloperIdentity(identityPoolId, developerPr
 	var output *awscognito.GetOpenIdTokenForDeveloperIdentityOutput
 
 	if segCtxSet {
-		output, err = s.cognitoClient.GetOpenIdTokenForDeveloperIdentity(segCtx, input)
+		output, err = client.GetOpenIdTokenForDeveloperIdentity(segCtx, input)
 	} else {
-		output, err = s.cognitoClient.GetOpenIdTokenForDeveloperIdentity(context.Background(), input)
+		output, err = client.GetOpenIdTokenForDeveloperIdentity(context.Background(), input)
 	}
 
 	// evaluate result

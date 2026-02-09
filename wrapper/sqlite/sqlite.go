@@ -228,6 +228,10 @@ func resetDest(dest interface{}) {
 
 // GetDsn serializes SQLite database dsn to connection string, for use in database connectivity
 func (svr *SQLite) GetDsn() (string, error) {
+	if svr == nil {
+		return "", errors.New("SQLite GetDsn Failed: SQLite receiver is nil")
+	}
+
 	//
 	// first validate input
 	//
@@ -272,6 +276,10 @@ func (svr *SQLite) GetDsn() (string, error) {
 
 // Open a database by connecting to it, using the dsn properties defined in the struct fields
 func (svr *SQLite) Open() error {
+	if svr == nil {
+		return errors.New("SQLite Open Failed: SQLite receiver is nil")
+	}
+
 	// declare
 	var str string
 	var err error
@@ -318,6 +326,10 @@ func (svr *SQLite) Open() error {
 
 // Close will close the database connection and set db to nil
 func (svr *SQLite) Close() error {
+	if svr == nil {
+		return nil
+	}
+
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 
@@ -340,6 +352,10 @@ func (svr *SQLite) Close() error {
 
 // Ping tests if current database connection is still active and ready
 func (svr *SQLite) Ping() error {
+	if svr == nil {
+		return errors.New("SQLite Ping Failed: SQLite receiver is nil")
+	}
+
 	svr.mu.RLock()
 	db := svr.db
 	svr.mu.RUnlock()
@@ -353,6 +369,10 @@ func (svr *SQLite) Ping() error {
 
 // Begin starts a database transaction, and stores the transaction object until commit or rollback
 func (svr *SQLite) Begin() error {
+	if svr == nil {
+		return errors.New("SQLite Begin Failed: SQLite receiver is nil")
+	}
+
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 
@@ -380,6 +400,10 @@ func (svr *SQLite) Begin() error {
 
 // Commit finalizes a database transaction, and commits changes to database
 func (svr *SQLite) Commit() error {
+	if svr == nil {
+		return errors.New("SQLite Commit Failed: SQLite receiver is nil")
+	}
+
 	// verify if the database connection is good
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
@@ -405,6 +429,10 @@ func (svr *SQLite) Commit() error {
 
 // Rollback cancels pending database changes for the current transaction and clears out transaction object
 func (svr *SQLite) Rollback() error {
+	if svr == nil {
+		return errors.New("SQLite Rollback Failed: SQLite receiver is nil")
+	}
+
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 
@@ -448,6 +476,10 @@ func (svr *SQLite) Rollback() error {
 // [ Notes ]
 //  1. if error == nil, and len(dest struct slice) == 0 then zero struct slice result
 func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if svr == nil {
+		return false, errors.New("SQLite GetStructSlice Failed: SQLite receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return false, err
@@ -495,6 +527,10 @@ func (svr *SQLite) GetStructSlice(dest interface{}, query string, args ...interf
 //  1. notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
 func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if svr == nil {
+		return false, errors.New("SQLite GetStruct Failed: SQLite receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return false, err
@@ -553,6 +589,10 @@ func (svr *SQLite) GetStruct(dest interface{}, query string, args ...interface{}
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *SQLite) GetRowsByOrdinalParams(query string, args ...interface{}) (*sqlx.Rows, error) {
+	if svr == nil {
+		return nil, errors.New("SQLite GetRowsByOrdinalParams Failed: SQLite receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -618,6 +658,10 @@ func (svr *SQLite) GetRowsByOrdinalParams(query string, args ...interface{}) (*s
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *SQLite) GetRowsByNamedMapParam(query string, args map[string]interface{}) (*sqlx.Rows, error) {
+	if svr == nil {
+		return nil, errors.New("SQLite GetRowsByNamedMapParam Failed: SQLite receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -679,6 +723,10 @@ func (svr *SQLite) GetRowsByNamedMapParam(query string, args map[string]interfac
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *SQLite) GetRowsByStructParam(query string, args interface{}) (*sqlx.Rows, error) {
+	if svr == nil {
+		return nil, errors.New("SQLite GetRowsByStructParam Failed: SQLite receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -732,6 +780,10 @@ func (svr *SQLite) GetRowsByStructParam(query string, args interface{}) (*sqlx.R
 //  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *SQLite) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows bool, err error) {
+	if svr == nil {
+		return false, errors.New("SQLite ScanSlice Failed: SQLite receiver is nil")
+	}
+
 	// ensure rows pointer is set
 	if rows == nil {
 		return true, nil
@@ -769,6 +821,10 @@ func (svr *SQLite) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows bo
 //  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *SQLite) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool, err error) {
+	if svr == nil {
+		return false, errors.New("SQLite ScanStruct Failed: SQLite receiver is nil")
+	}
+
 	// ensure rows pointer is set
 	if rows == nil {
 		return true, nil
@@ -824,6 +880,10 @@ func (svr *SQLite) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool
 //	WHEN USING Scan(), MUST CHECK Scan Result Error for sql.ErrNoRow status
 //	SUGGESTED TO USE ScanColumnsByRow() Instead of Scan()
 func (svr *SQLite) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, error) {
+	if svr == nil {
+		return nil, errors.New("SQLite GetSingleRow Failed: SQLite receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -886,6 +946,10 @@ func (svr *SQLite) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, e
 //  1. notFound = true if no row is found in current scan
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
 func (svr *SQLite) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFound bool, err error) {
+	if svr == nil {
+		return false, errors.New("SQLite ScanSliceByRow Failed: SQLite receiver is nil")
+	}
+
 	// if row is nil, treat as no row and not an error
 	if row == nil {
 		return true, nil
@@ -917,6 +981,10 @@ func (svr *SQLite) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFound 
 //  1. notFound = true if no row is found in current scan
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
 func (svr *SQLite) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound bool, err error) {
+	if svr == nil {
+		return false, errors.New("SQLite ScanStructByRow Failed: SQLite receiver is nil")
+	}
+
 	// if row is nil, treat as no row and not an error
 	if row == nil {
 		dest = nil
@@ -962,6 +1030,10 @@ func (svr *SQLite) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound bo
 //     var Address string
 //  4. notFound, err := svr.ScanColumnsByRow(row, &CustomerID, &CustomerName, &Address)
 func (svr *SQLite) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound bool, err error) {
+	if svr == nil {
+		return false, errors.New("SQLite ScanColumnsByRow Failed: SQLite receiver is nil")
+	}
+
 	// if row is nil, treat as no row and not an error
 	if row == nil {
 		return true, nil
@@ -999,6 +1071,10 @@ func (svr *SQLite) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFoun
 //  2. retNotFound = now row found
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
 func (svr *SQLite) GetScalarString(query string, args ...interface{}) (retVal string, retNotFound bool, retErr error) {
+	if svr == nil {
+		return "", true, errors.New("SQLite GetScalarString Failed: SQLite receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return "", false, err
@@ -1063,6 +1139,10 @@ func (svr *SQLite) GetScalarString(query string, args ...interface{}) (retVal st
 //  2. retNotFound = now row found
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
 func (svr *SQLite) GetScalarNullString(query string, args ...interface{}) (retVal sql.NullString, retNotFound bool, retErr error) {
+	if svr == nil {
+		return sql.NullString{}, true, errors.New("SQLite GetScalarNullString Failed: SQLite receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return sql.NullString{}, false, err
@@ -1129,6 +1209,10 @@ func (svr *SQLite) GetScalarNullString(query string, args ...interface{}) (retVa
 // [ Return Values ]
 //  1. SQLiteResult = represents the sql action result received (including error info if applicable)
 func (svr *SQLite) ExecByOrdinalParams(actionQuery string, args ...interface{}) SQLiteResult {
+	if svr == nil {
+		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("SQLite ExecByOrdinalParams Failed: SQLite receiver is nil")}
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -1207,6 +1291,10 @@ func (svr *SQLite) ExecByOrdinalParams(actionQuery string, args ...interface{}) 
 // [ Return Values ]
 //  1. SQLiteResult = represents the sql action result received (including error info if applicable)
 func (svr *SQLite) ExecByNamedMapParam(actionQuery string, args map[string]interface{}) SQLiteResult {
+	if svr == nil {
+		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("SQLite ExecByNamedMapParam Failed: SQLite receiver is nil")}
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -1284,6 +1372,10 @@ func (svr *SQLite) ExecByNamedMapParam(actionQuery string, args map[string]inter
 // [ Return Values ]
 //  1. SQLiteResult = represents the sql action result received (including error info if applicable)
 func (svr *SQLite) ExecByStructParam(actionQuery string, args interface{}) SQLiteResult {
+	if svr == nil {
+		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("SQLite ExecByStructParam Failed: SQLite receiver is nil")}
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}

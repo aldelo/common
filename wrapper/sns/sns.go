@@ -283,7 +283,7 @@ func smsLength(message string) (limit int, used int, encoding string) {
 // Connect will establish a connection to the SNS service
 func (s *SNS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 	if s == nil {
-		return errors.New("SNS Connect Failed: SNS receiver is nil")
+		return errors.New("Cannot connect: SNS instance is nil")
 	}
 	if len(parentSegment) > 0 {
 		s.setParentSegment(parentSegment[0])

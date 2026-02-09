@@ -184,6 +184,9 @@ type UTILS struct {
 
 // Connect will establish connection to aws elasticCache redis writer and reader endpoint connections.
 func (r *Redis) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if r == nil {
+		return errors.New("Redis Connect Failed: Redis receiver is nil")
+	}
 	r.connectMU.Lock()
 	defer r.connectMU.Unlock()
 
@@ -401,6 +404,9 @@ func (r *Redis) connectInternal() error {
 
 // Disconnect will close aws redis writer and reader endpoints
 func (r *Redis) Disconnect() {
+	if r == nil {
+		return
+	}
 	r.connectMU.Lock()
 	defer r.connectMU.Unlock()
 
@@ -475,6 +481,9 @@ func (r *Redis) Disconnect() {
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (r *Redis) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if r == nil {
+		return
+	}
 	r._parentSegment = parentSegment
 }
 
@@ -1387,6 +1396,9 @@ func (r *Redis) handleStringStructMapCmd(stringStructMapCmd *redis.StringStructM
 //
 //	setCondition = support for SetNX and SetXX
 func (r *Redis) SetBase(key string, val interface{}, setCondition redissetcondition.RedisSetCondition, expires ...time.Duration) (err error) {
+	if r == nil {
+		return errors.New("Redis SetBase Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Set", r._parentSegment)
 
@@ -1477,36 +1489,57 @@ func (r *Redis) setBaseInternal(key string, val interface{}, setCondition rediss
 
 // Set sets string value into redis by key
 func (r *Redis) Set(key string, val string, expires ...time.Duration) error {
+	if r == nil {
+		return errors.New("Redis Set Failed: Redis receiver is nil")
+	}
 	return r.SetBase(key, val, redissetcondition.Normal, expires...)
 }
 
 // SetBool sets boolean value into redis by key
 func (r *Redis) SetBool(key string, val bool, expires ...time.Duration) error {
+	if r == nil {
+		return errors.New("Redis SetBool Failed: Redis receiver is nil")
+	}
 	return r.SetBase(key, val, redissetcondition.Normal, expires...)
 }
 
 // SetInt sets int value into redis by key
 func (r *Redis) SetInt(key string, val int, expires ...time.Duration) error {
+	if r == nil {
+		return errors.New("Redis SetInt Failed: Redis receiver is nil")
+	}
 	return r.SetBase(key, val, redissetcondition.Normal, expires...)
 }
 
 // SetInt64 sets int64 value into redis by key
 func (r *Redis) SetInt64(key string, val int64, expires ...time.Duration) error {
+	if r == nil {
+		return errors.New("Redis SetInt64 Failed: Redis receiver is nil")
+	}
 	return r.SetBase(key, val, redissetcondition.Normal, expires...)
 }
 
 // SetFloat64 sets float64 value into redis by key
 func (r *Redis) SetFloat64(key string, val float64, expires ...time.Duration) error {
+	if r == nil {
+		return errors.New("Redis SetFloat64 Failed: Redis receiver is nil")
+	}
 	return r.SetBase(key, val, redissetcondition.Normal, expires...)
 }
 
 // SetBytes sets []byte value into redis by key
 func (r *Redis) SetBytes(key string, val []byte, expires ...time.Duration) error {
+	if r == nil {
+		return errors.New("Redis SetBytes Failed: Redis receiver is nil")
+	}
 	return r.SetBase(key, val, redissetcondition.Normal, expires...)
 }
 
 // SetJson sets Json object into redis by key (Json object is marshaled into string and then saved to redis)
 func (r *Redis) SetJson(key string, jsonObject interface{}, expires ...time.Duration) error {
+	if r == nil {
+		return errors.New("Redis SetJson Failed: Redis receiver is nil")
+	}
 	if val, err := util.MarshalJSONCompact(jsonObject); err != nil {
 		return errors.New("Redis Set Failed: (Marshal Json) " + err.Error())
 	} else {
@@ -1516,11 +1549,17 @@ func (r *Redis) SetJson(key string, jsonObject interface{}, expires ...time.Dura
 
 // SetTime sets time.Time value into redis by key
 func (r *Redis) SetTime(key string, val time.Time, expires ...time.Duration) error {
+	if r == nil {
+		return errors.New("Redis SetTime Failed: Redis receiver is nil")
+	}
 	return r.SetBase(key, val, redissetcondition.Normal, expires...)
 }
 
 // GetBase is internal helper to get value from redis.
 func (r *Redis) GetBase(key string) (cmd *redis.StringCmd, notFound bool, err error) {
+	if r == nil {
+		return nil, false, errors.New("Redis GetBase Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Get", r._parentSegment)
 
@@ -1573,6 +1612,9 @@ func (r *Redis) getBaseInternal(key string) (cmd *redis.StringCmd, notFound bool
 
 // Get gets string value from redis by key
 func (r *Redis) Get(key string) (val string, notFound bool, err error) {
+	if r == nil {
+		return "", false, errors.New("Redis Get Failed: Redis receiver is nil")
+	}
 	var cmd *redis.StringCmd
 
 	if cmd, notFound, err = r.GetBase(key); err != nil {
@@ -1593,6 +1635,9 @@ func (r *Redis) Get(key string) (val string, notFound bool, err error) {
 
 // GetBool gets bool value from redis by key
 func (r *Redis) GetBool(key string) (val bool, notFound bool, err error) {
+	if r == nil {
+		return false, false, errors.New("Redis GetBool Failed: Redis receiver is nil")
+	}
 	var cmd *redis.StringCmd
 
 	if cmd, notFound, err = r.GetBase(key); err != nil {
@@ -1622,6 +1667,9 @@ func (r *Redis) GetBool(key string) (val bool, notFound bool, err error) {
 
 // GetInt gets int value from redis by key
 func (r *Redis) GetInt(key string) (val int, notFound bool, err error) {
+	if r == nil {
+		return 0, false, errors.New("Redis GetInt Failed: Redis receiver is nil")
+	}
 	var cmd *redis.StringCmd
 
 	if cmd, notFound, err = r.GetBase(key); err != nil {
@@ -1642,6 +1690,9 @@ func (r *Redis) GetInt(key string) (val int, notFound bool, err error) {
 
 // GetInt64 gets int64 value from redis by key
 func (r *Redis) GetInt64(key string) (val int64, notFound bool, err error) {
+	if r == nil {
+		return 0, false, errors.New("Redis GetInt64 Failed: Redis receiver is nil")
+	}
 	var cmd *redis.StringCmd
 
 	if cmd, notFound, err = r.GetBase(key); err != nil {
@@ -1662,6 +1713,9 @@ func (r *Redis) GetInt64(key string) (val int64, notFound bool, err error) {
 
 // GetFloat64 gets float64 value from redis by key
 func (r *Redis) GetFloat64(key string) (val float64, notFound bool, err error) {
+	if r == nil {
+		return 0.0, false, errors.New("Redis GetFloat64 Failed: Redis receiver is nil")
+	}
 	var cmd *redis.StringCmd
 
 	if cmd, notFound, err = r.GetBase(key); err != nil {
@@ -1682,6 +1736,9 @@ func (r *Redis) GetFloat64(key string) (val float64, notFound bool, err error) {
 
 // GetBytes gets []byte value from redis by key
 func (r *Redis) GetBytes(key string) (val []byte, notFound bool, err error) {
+	if r == nil {
+		return nil, false, errors.New("Redis GetBytes Failed: Redis receiver is nil")
+	}
 	var cmd *redis.StringCmd
 
 	if cmd, notFound, err = r.GetBase(key); err != nil {
@@ -1702,6 +1759,9 @@ func (r *Redis) GetBytes(key string) (val []byte, notFound bool, err error) {
 
 // GetJson gets Json object from redis by key (Json is stored as string in redis, unmarshaled to target object via get)
 func (r *Redis) GetJson(key string, resultObjectPtr interface{}) (notFound bool, err error) {
+	if r == nil {
+		return false, errors.New("Redis GetJson Failed: Redis receiver is nil")
+	}
 	if resultObjectPtr == nil {
 		return false, errors.New("Redis Get Failed: (GetJson) " + "JSON Result Pointer Object is Required")
 	}
@@ -1739,6 +1799,9 @@ func (r *Redis) GetJson(key string, resultObjectPtr interface{}) (notFound bool,
 
 // GetTime gets time.Time value from redis by key
 func (r *Redis) GetTime(key string) (val time.Time, notFound bool, err error) {
+	if r == nil {
+		return time.Time{}, false, errors.New("Redis GetTime Failed: Redis receiver is nil")
+	}
 	var cmd *redis.StringCmd
 
 	if cmd, notFound, err = r.GetBase(key); err != nil {
@@ -1764,6 +1827,9 @@ func (r *Redis) GetTime(key string) (val time.Time, notFound bool, err error) {
 // GetSet will get old string value from redis by key,
 // and then set new string value into redis by the same key.
 func (r *Redis) GetSet(key string, val string) (oldValue string, notFound bool, err error) {
+	if r == nil {
+		return "", false, errors.New("Redis GetSet Failed: Redis receiver is nil")
+	}
 	// reg new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GetSet", r._parentSegment)
 
@@ -1818,6 +1884,9 @@ func (r *Redis) getSetInternal(key string, val string) (oldValue string, notFoun
 //
 //	kvMap = map of key string, and interface{} value
 func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err error) {
+	if r == nil {
+		return errors.New("Redis MSet Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-MSet", r._parentSegment)
 
@@ -1884,6 +1953,9 @@ func (r *Redis) msetInternal(kvMap map[string]interface{}, setIfNotExists ...boo
 
 // MGet is a helper to get values from redis based on one or more keys specified
 func (r *Redis) MGet(key ...string) (results []interface{}, notFound bool, err error) {
+	if r == nil {
+		return nil, false, errors.New("Redis MGet Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-MGet", r._parentSegment)
 
@@ -1933,6 +2005,9 @@ func (r *Redis) mgetInternal(key ...string) (results []interface{}, notFound boo
 //  3. Val "Xyz" replaces string from Offset Position 6
 //  4. End Result String = "Hello Xyzld"
 func (r *Redis) SetRange(key string, offset int64, val string) (err error) {
+	if r == nil {
+		return errors.New("Redis SetRange Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SetRange", r._parentSegment)
 
@@ -1987,6 +2062,9 @@ func (r *Redis) setRangeInternal(key string, offset int64, val string) error {
 
 // GetRange gets val between start and end positions from string value stored by key in redis
 func (r *Redis) GetRange(key string, start int64, end int64) (val string, notFound bool, err error) {
+	if r == nil {
+		return "", false, errors.New("Redis GetRange Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GetRange", r._parentSegment)
 
@@ -2045,6 +2123,9 @@ func (r *Redis) getRangeInternal(key string, start int64, end int64) (val string
 // Int64AddOrReduce will add or reduce int64 value against a key in redis,
 // and return the new value if found and performed
 func (r *Redis) Int64AddOrReduce(key string, val int64, isReduce ...bool) (newVal int64, notFound bool, err error) {
+	if r == nil {
+		return 0, false, errors.New("Redis Int64AddOrReduce Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Int64AddOrReduce", r._parentSegment)
 
@@ -2131,6 +2212,9 @@ func (r *Redis) int64AddOrReduceInternal(key string, val int64, isReduce ...bool
 // Float64AddOrReduce will add or reduce float64 value against a key in redis,
 // and return the new value if found and performed
 func (r *Redis) Float64AddOrReduce(key string, val float64) (newVal float64, notFound bool, err error) {
+	if r == nil {
+		return 0.0, false, errors.New("Redis Float64AddOrReduce Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Float64AddOrReduce", r._parentSegment)
 
@@ -2177,6 +2261,9 @@ func (r *Redis) float64AddOrReduceInternal(key string, val float64) (newVal floa
 // PFAdd is a HyperLogLog function to uniquely accumulate the count of a specific value to redis,
 // such as email hit count, user hit count, ip address hit count etc, that is based on the unique occurences of such value
 func (r *Redis) PFAdd(key string, elements ...interface{}) (err error) {
+	if r == nil {
+		return errors.New("Redis PFAdd Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-PFAdd", r._parentSegment)
 
@@ -2222,6 +2309,9 @@ func (r *Redis) pfAddInternal(key string, elements ...interface{}) error {
 // PFCount is a HyperLogLog function to retrieve the current count associated with the given unique value in redis,
 // Specify one or more keys, if multiple keys used, the result count is the union of all keys' unique value counts
 func (r *Redis) PFCount(key ...string) (val int64, notFound bool, err error) {
+	if r == nil {
+		return 0, false, errors.New("Redis PFCount Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-PFCount", r._parentSegment)
 
@@ -2262,6 +2352,9 @@ func (r *Redis) pfCountInternal(key ...string) (val int64, notFound bool, err er
 
 // PFMerge is a HyperLogLog function to merge two or more HyperLogLog as defined by keys together
 func (r *Redis) PFMerge(destKey string, sourceKey ...string) (err error) {
+	if r == nil {
+		return errors.New("Redis PFMerge Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-PFMerge", r._parentSegment)
 
@@ -2310,6 +2403,9 @@ func (r *Redis) pfMergeInternal(destKey string, sourceKey ...string) error {
 //
 // foundCount = 0 indicates not found; > 0 indicates found count
 func (r *Redis) Exists(key ...string) (foundCount int64, err error) {
+	if r == nil {
+		return 0, errors.New("Redis Exists Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Exists", r._parentSegment)
 
@@ -2352,6 +2448,9 @@ func (r *Redis) existsInternal(key ...string) (foundCount int64, err error) {
 
 // StrLen gets the string length of the value stored by the key in redis
 func (r *Redis) StrLen(key string) (length int64, notFound bool, err error) {
+	if r == nil {
+		return 0, false, errors.New("Redis StrLen Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-StrLen", r._parentSegment)
 
@@ -2405,6 +2504,9 @@ func (r *Redis) strLenInternal(key string) (length int64, notFound bool, err err
 // Append will append a value to the existing value under the given key in redis,
 // if key does not exist, a new key based on the given key is created
 func (r *Redis) Append(key string, valToAppend string) (err error) {
+	if r == nil {
+		return errors.New("Redis Append Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Append", r._parentSegment)
 
@@ -2445,6 +2547,9 @@ func (r *Redis) appendInternal(key string, valToAppend string) error {
 
 // Del will delete one or more keys specified from redis
 func (r *Redis) Del(key ...string) (deletedCount int64, err error) {
+	if r == nil {
+		return 0, errors.New("Redis Del Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Del", r._parentSegment)
 
@@ -2485,6 +2590,9 @@ func (r *Redis) delInternal(key ...string) (deletedCount int64, err error) {
 // Unlink is similar to Del where it removes one or more keys specified from redis,
 // however, unlink performs the delete asynchronously and is faster than Del
 func (r *Redis) Unlink(key ...string) (unlinkedCount int64, err error) {
+	if r == nil {
+		return 0, errors.New("Redis Unlink Failed: Redis receiver is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Unlink", r._parentSegment)
 
@@ -2533,6 +2641,12 @@ func (r *Redis) unlinkInternal(key ...string) (unlinkedCount int64, err error) {
 //
 // bit range = left 0 -> right 8 = byte
 func (b *BIT) SetBit(key string, offset int64, bitValue bool) (err error) {
+	if b == nil {
+		return errors.New("Redis BIT SetBit Failed: BIT receiver is nil")
+	}
+	if b.core == nil {
+		return errors.New("Redis BIT SetBit Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SetBit", b.core._parentSegment)
 
@@ -2592,6 +2706,12 @@ func (b *BIT) setBitInternal(key string, offset int64, bitValue bool) error {
 // GetBit will return the bit value (1 or 0) at offset position of the value for the key in redis
 // If key is not found or offset is greater than key's value, then blank string is assumed and bit 0 is returned
 func (b *BIT) GetBit(key string, offset int64) (val int, err error) {
+	if b == nil {
+		return 0, errors.New("Redis BIT GetBit Failed: BIT receiver is nil")
+	}
+	if b.core == nil {
+		return 0, errors.New("Redis BIT GetBit Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GetBit", b.core._parentSegment)
 
@@ -2645,6 +2765,12 @@ func (b *BIT) getBitInternal(key string, offset int64) (val int, err error) {
 // offsetFrom = evaluate bitcount begin at offsetFrom position
 // offsetTo = evaluate bitcount until offsetTo position
 func (b *BIT) BitCount(key string, offsetFrom int64, offsetTo int64) (valCount int64, err error) {
+	if b == nil {
+		return 0, errors.New("Redis BIT BitCount Failed: BIT receiver is nil")
+	}
+	if b.core == nil {
+		return 0, errors.New("Redis BIT BitCount Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-BitCount", b.core._parentSegment)
 
@@ -2707,6 +2833,12 @@ func (b *BIT) bitCountInternal(key string, offsetFrom int64, offsetTo int64) (va
 //	u = if integer type, u can be preceeded to indicate unsigned integer, such as u5 = unsigned integer 5
 //	# = if offset is preceeded with #, the specified offset is multiplied by the type width, such as #0 = 0, #1 = 8 when type if 8-bit byte
 func (b *BIT) BitField(key string, args ...interface{}) (valBits []int64, err error) {
+	if b == nil {
+		return nil, errors.New("Redis BIT BitField Failed: BIT receiver is nil")
+	}
+	if b.core == nil {
+		return nil, errors.New("Redis BIT BitField Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-BitField", b.core._parentSegment)
 
@@ -2774,6 +2906,12 @@ func (b *BIT) bitFieldInternal(key string, args ...interface{}) (valBits []int64
 //
 //	And, Or, XOr, Not
 func (b *BIT) BitOp(keyDest string, bitOpType redisbitop.RedisBitop, keySource ...string) (err error) {
+	if b == nil {
+		return errors.New("Redis BIT BitOp Failed: BIT receiver is nil")
+	}
+	if b.core == nil {
+		return errors.New("Redis BIT BitOp Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-BitOp", b.core._parentSegment)
 
@@ -2858,6 +2996,12 @@ func (b *BIT) bitOpInternal(keyDest string, bitOpType redisbitop.RedisBitop, key
 // bitValue = 1 or 0
 // startPosition = bit pos start from this bit offset position
 func (b *BIT) BitPos(key string, bitValue int64, startPosition ...int64) (valPosition int64, err error) {
+	if b == nil {
+		return 0, errors.New("Redis BIT BitPos Failed: BIT receiver is nil")
+	}
+	if b.core == nil {
+		return 0, errors.New("Redis BIT BitPos Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-BitPos", b.core._parentSegment)
 
@@ -2917,6 +3061,12 @@ func (b *BIT) bitPosInternal(key string, bitValue int64, startPosition ...int64)
 
 // LSet will set element to the list index
 func (l *LIST) LSet(key string, index int64, value interface{}) (err error) {
+	if l == nil {
+		return errors.New("Redis LIST LSet Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return errors.New("Redis LIST LSet Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LSet", l.core._parentSegment)
 
@@ -2964,6 +3114,12 @@ func (l *LIST) lsetInternal(key string, index int64, value interface{}) error {
 
 // LInsert will insert a value either before or after the pivot element
 func (l *LIST) LInsert(key string, bBefore bool, pivot interface{}, value interface{}) (err error) {
+	if l == nil {
+		return errors.New("Redis LIST LInsert Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return errors.New("Redis LIST LInsert Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LInsert", l.core._parentSegment)
 
@@ -3030,6 +3186,12 @@ func (l *LIST) linsertInternal(key string, bBefore bool, pivot interface{}, valu
 //
 // error is returned if the key is not holding a value of type list
 func (l *LIST) LPush(key string, keyMustExist bool, value ...interface{}) (err error) {
+	if l == nil {
+		return errors.New("Redis LIST LPush Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return errors.New("Redis LIST LPush Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LPush", l.core._parentSegment)
 
@@ -3096,6 +3258,12 @@ func (l *LIST) lpushInternal(key string, keyMustExist bool, value ...interface{}
 //
 // error is returned if the key is not holding a value of type list
 func (l *LIST) RPush(key string, keyMustExist bool, value ...interface{}) (err error) {
+	if l == nil {
+		return errors.New("Redis LIST RPush Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return errors.New("Redis LIST RPush Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-RPush", l.core._parentSegment)
 
@@ -3156,6 +3324,12 @@ func (l *LIST) rpushInternal(key string, keyMustExist bool, value ...interface{}
 
 // LPop will remove and return the first element from the list stored at key
 func (l *LIST) LPop(key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+	if l == nil {
+		return false, errors.New("Redis LIST LPop Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return false, errors.New("Redis LIST LPop Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LPop", l.core._parentSegment)
 
@@ -3208,6 +3382,12 @@ func (l *LIST) lpopInternal(key string, outputDataType redisdatatype.RedisDataTy
 
 // RPop removes and returns the last element of the list stored at key
 func (l *LIST) RPop(key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+	if l == nil {
+		return false, errors.New("Redis LIST RPop Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return false, errors.New("Redis LIST RPop Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-RPop", l.core._parentSegment)
 
@@ -3261,6 +3441,12 @@ func (l *LIST) rpopInternal(key string, outputDataType redisdatatype.RedisDataTy
 // RPopLPush will atomically remove and return last element of the list stored at keySource,
 // and then push the returned element at first element position (head) of the list stored at keyDest
 func (l *LIST) RPopLPush(keySource string, keyDest string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+	if l == nil {
+		return false, errors.New("Redis LIST RPopLPush Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return false, errors.New("Redis LIST RPopLPush Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-RPopLPush", l.core._parentSegment)
 
@@ -3326,6 +3512,12 @@ func (l *LIST) rpopLPushInternal(keySource string, keyDest string, outputDataTyp
 //
 // Error is returned if value at key is not a list
 func (l *LIST) LIndex(key string, index int64, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+	if l == nil {
+		return false, errors.New("Redis LIST LIndex Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return false, errors.New("Redis LIST LIndex Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LIndex", l.core._parentSegment)
 
@@ -3381,6 +3573,12 @@ func (l *LIST) lindexInternal(key string, index int64, outputDataType redisdatat
 //
 // Error is returned if value at key is not a list
 func (l *LIST) LLen(key string) (val int64, notFound bool, err error) {
+	if l == nil {
+		return 0, false, errors.New("Redis LIST LLen Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return 0, false, errors.New("Redis LIST LLen Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LLen", l.core._parentSegment)
 
@@ -3436,6 +3634,12 @@ func (l *LIST) llenInternal(key string) (val int64, notFound bool, err error) {
 //
 //	start top = 0 - 10 = returns 11 elements (0 to 10 = 11)
 func (l *LIST) LRange(key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
+	if l == nil {
+		return nil, false, errors.New("Redis LIST LRange Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return nil, false, errors.New("Redis LIST LRange Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LRange", l.core._parentSegment)
 
@@ -3499,6 +3703,12 @@ func (l *LIST) lrangeInternal(key string, start int64, stop int64) (outputSlice 
 //
 //	LREM list 02 "hello" = removes the last two occurrences of "hello" in the list stored at key named 'list'
 func (l *LIST) LRem(key string, count int64, value interface{}) (err error) {
+	if l == nil {
+		return errors.New("Redis LIST LRem Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return errors.New("Redis LIST LRem Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LRem", l.core._parentSegment)
 
@@ -3561,6 +3771,12 @@ func (l *LIST) lremInternal(key string, count int64, value interface{}) error {
 //
 //	LTRIM foobar 0 2 = modifies the list store at key named 'foobar' so that only the first 3 elements of the list will remain
 func (l *LIST) LTrim(key string, start int64, stop int64) (err error) {
+	if l == nil {
+		return errors.New("Redis LIST LTrim Failed: LIST receiver is nil")
+	}
+	if l.core == nil {
+		return errors.New("Redis LIST LTrim Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LTrim", l.core._parentSegment)
 
@@ -3616,6 +3832,12 @@ func (l *LIST) ltrimInternal(key string, start int64, stop int64) error {
 //
 // 1 = exists; 0 = not exist or key not exist
 func (h *HASH) HExists(key string, field string) (valExists bool, err error) {
+	if h == nil {
+		return false, errors.New("Redis HASH HExists Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return false, errors.New("Redis HASH HExists Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HExists", h.core._parentSegment)
 
@@ -3665,6 +3887,12 @@ func (h *HASH) hexistsInternal(key string, field string) (valExists bool, err er
 
 // HLen returns the number of fields contained in the hash stored at key
 func (h *HASH) HLen(key string) (valLen int64, notFound bool, err error) {
+	if h == nil {
+		return 0, false, errors.New("Redis HASH HLen Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return 0, false, errors.New("Redis HASH HLen Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HLen", h.core._parentSegment)
 
@@ -3712,6 +3940,12 @@ func (h *HASH) hlenInternal(key string) (valLen int64, notFound bool, err error)
 // if 'field' already exists in the hash, it will be overridden
 // if 'field' does not exist, it will be added
 func (h *HASH) HSet(key string, value ...interface{}) (err error) {
+	if h == nil {
+		return errors.New("Redis HASH HSet Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return errors.New("Redis HASH HSet Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HSet", h.core._parentSegment)
 
@@ -3767,6 +4001,12 @@ func (h *HASH) hsetInternal(key string, value ...interface{}) error {
 //
 //	'field' must not yet exist in hash, otherwise will not add
 func (h *HASH) HSetNX(key string, field string, value interface{}) (err error) {
+	if h == nil {
+		return errors.New("Redis HASH HSetNX Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return errors.New("Redis HASH HSetNX Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HSetNX", h.core._parentSegment)
 
@@ -3834,6 +4074,12 @@ func (h *HASH) hsetNXInternal(key string, field string, value interface{}) error
 
 // HGet returns the value associated with 'field' in the hash stored at key
 func (h *HASH) HGet(key string, field string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+	if h == nil {
+		return false, errors.New("Redis HASH HGet Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return false, errors.New("Redis HASH HGet Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HGet", h.core._parentSegment)
 
@@ -3892,6 +4138,12 @@ func (h *HASH) hgetInternal(key string, field string, outputDataType redisdataty
 // HGetAll returns all fields and values of the hash store at key,
 // in the returned value, every field name is followed by its value, so the length of the reply is twice the size of the hash
 func (h *HASH) HGetAll(key string) (outputMap map[string]string, notFound bool, err error) {
+	if h == nil {
+		return nil, false, errors.New("Redis HASH HGetAll Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return nil, false, errors.New("Redis HASH HGetAll Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HGetAll", h.core._parentSegment)
 
@@ -3938,6 +4190,12 @@ func (h *HASH) hgetAllInternal(key string) (outputMap map[string]string, notFoun
 // This command overrides any specified 'fields' already existing in the hash,
 // If key does not exist, a new key holding a hash is created
 func (h *HASH) HMSet(key string, value ...interface{}) (err error) {
+	if h == nil {
+		return errors.New("Redis HASH HMSet Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return errors.New("Redis HASH HMSet Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HMSet", h.core._parentSegment)
 
@@ -3999,6 +4257,12 @@ func (h *HASH) hmsetInternal(key string, value ...interface{}) error {
 // For every 'field' that does not exist in the hash, a nil value is returned,
 // If key is not existent, then nil is returned for all values
 func (h *HASH) HMGet(key string, field ...string) (outputSlice []interface{}, notFound bool, err error) {
+	if h == nil {
+		return nil, false, errors.New("Redis HASH HMGet Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return nil, false, errors.New("Redis HASH HMGet Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HMGet", h.core._parentSegment)
 
@@ -4051,6 +4315,12 @@ func (h *HASH) hmgetInternal(key string, field ...string) (outputSlice []interfa
 // any specified 'fields' that do not exist in the hash are ignored,
 // if key does not exist, it is treated as an empty hash, and 0 is returned
 func (h *HASH) HDel(key string, field ...string) (deletedCount int64, err error) {
+	if h == nil {
+		return 0, errors.New("Redis HASH HDel Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return 0, errors.New("Redis HASH HDel Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HDel", h.core._parentSegment)
 
@@ -4102,6 +4372,12 @@ func (h *HASH) hdelInternal(key string, field ...string) (deletedCount int64, er
 // HKeys returns all field names in the hash stored at key,
 // field names are the element keys
 func (h *HASH) HKeys(key string) (outputSlice []string, notFound bool, err error) {
+	if h == nil {
+		return nil, false, errors.New("Redis HASH HKeys Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return nil, false, errors.New("Redis HASH HKeys Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HKeys", h.core._parentSegment)
 
@@ -4146,6 +4422,12 @@ func (h *HASH) hkeysInternal(key string) (outputSlice []string, notFound bool, e
 
 // HVals returns all values in the hash stored at key
 func (h *HASH) HVals(key string) (outputSlice []string, notFound bool, err error) {
+	if h == nil {
+		return nil, false, errors.New("Redis HASH HVals Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return nil, false, errors.New("Redis HASH HVals Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HVals", h.core._parentSegment)
 
@@ -4206,6 +4488,12 @@ func (h *HASH) hvalsInternal(key string) (outputSlice []string, notFound bool, e
 //
 // count = hint to redis count of elements to retrieve in the call
 func (h *HASH) HScan(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
+	if h == nil {
+		return nil, 0, errors.New("Redis HASH HScan Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return nil, 0, errors.New("Redis HASH HScan Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HScan", h.core._parentSegment)
 
@@ -4277,6 +4565,12 @@ func (h *HASH) hscanInternal(key string, cursor uint64, match string, count int6
 //
 // this function supports both increment and decrement (although name of function is increment)
 func (h *HASH) HIncrBy(key string, field string, incrValue int64) (err error) {
+	if h == nil {
+		return errors.New("Redis HASH HIncrBy Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return errors.New("Redis HASH HIncrBy Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HIncrBy", h.core._parentSegment)
 
@@ -4341,6 +4635,12 @@ func (h *HASH) hincrByInternal(key string, field string, incrValue int64) error 
 //
 // this function supports both increment and decrement (although name of function is increment)
 func (h *HASH) HIncrByFloat(key string, field string, incrValue float64) (err error) {
+	if h == nil {
+		return errors.New("Redis HASH HIncrByFloat Failed: HASH receiver is nil")
+	}
+	if h.core == nil {
+		return errors.New("Redis HASH HIncrByFloat Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-HIncrByFloat", h.core._parentSegment)
 
@@ -4409,6 +4709,12 @@ func (h *HASH) hincrByFloatInternal(key string, field string, incrValue float64)
 //
 // Error is returned when the value stored at key is not a set
 func (s *SET) SAdd(key string, member ...interface{}) (err error) {
+	if s == nil {
+		return errors.New("Redis SET SAdd Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return errors.New("Redis SET SAdd Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SAdd", s.core._parentSegment)
 
@@ -4459,6 +4765,12 @@ func (s *SET) saddInternal(key string, member ...interface{}) error {
 
 // SCard returns the set cardinality (number of elements) of the set stored at key
 func (s *SET) SCard(key string) (val int64, notFound bool, err error) {
+	if s == nil {
+		return 0, false, errors.New("Redis SET SCard Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return 0, false, errors.New("Redis SET SCard Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SCard", s.core._parentSegment)
 
@@ -4510,6 +4822,12 @@ func (s *SET) scardInternal(key string) (val int64, notFound bool, err error) {
 //	SDIFF key1, key2, key3 = { b, d }
 //		{ b, d } is returned because this is the difference delta
 func (s *SET) SDiff(key ...string) (outputSlice []string, notFound bool, err error) {
+	if s == nil {
+		return nil, false, errors.New("Redis SET SDiff Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return nil, false, errors.New("Redis SET SDiff Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SDiff", s.core._parentSegment)
 
@@ -4570,6 +4888,12 @@ func (s *SET) sdiffInternal(key ...string) (outputSlice []string, notFound bool,
 //	SDIFF key1, key2, key3 = { b, d }
 //		{ b, d } is stored because this is the difference delta
 func (s *SET) SDiffStore(keyDest string, keySource ...string) (err error) {
+	if s == nil {
+		return errors.New("Redis SET SDiffStore Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return errors.New("Redis SET SDiffStore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SDiffStore", s.core._parentSegment)
 
@@ -4633,6 +4957,12 @@ func (s *SET) sdiffStoreInternal(keyDest string, keySource ...string) error {
 //	SINTER key1 key2 key3 = { c }
 //		{ c } is returned because this is the intersection on all keys (appearing in all keys)
 func (s *SET) SInter(key ...string) (outputSlice []string, notFound bool, err error) {
+	if s == nil {
+		return nil, false, errors.New("Redis SET SInter Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return nil, false, errors.New("Redis SET SInter Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SInter", s.core._parentSegment)
 
@@ -4693,6 +5023,12 @@ func (s *SET) sinterInternal(key ...string) (outputSlice []string, notFound bool
 //	SINTER key1 key2 key3 = { c }
 //		{ c } is stored because this is the intersection on all keys (appearing in all keys)
 func (s *SET) SInterStore(keyDest string, keySource ...string) (err error) {
+	if s == nil {
+		return errors.New("Redis SET SInterStore Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return errors.New("Redis SET SInterStore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SInterStore", s.core._parentSegment)
 
@@ -4748,6 +5084,12 @@ func (s *SET) sinterStoreInternal(keyDest string, keySource ...string) error {
 
 // SIsMember returns status if 'member' is a member of the set stored at key
 func (s *SET) SIsMember(key string, member interface{}) (val bool, err error) {
+	if s == nil {
+		return false, errors.New("Redis SET SIsMember Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return false, errors.New("Redis SET SIsMember Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SIsMember", s.core._parentSegment)
 
@@ -4795,6 +5137,12 @@ func (s *SET) sisMemberInternal(key string, member interface{}) (val bool, err e
 
 // SMembers returns all the members of the set value stored at key
 func (s *SET) SMembers(key string) (outputSlice []string, notFound bool, err error) {
+	if s == nil {
+		return nil, false, errors.New("Redis SET SMembers Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return nil, false, errors.New("Redis SET SMembers Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SMembers", s.core._parentSegment)
 
@@ -4838,6 +5186,12 @@ func (s *SET) smembersInternal(key string) (outputSlice []string, notFound bool,
 
 // SMembersMap returns all the members of the set value stored at key, via map
 func (s *SET) SMembersMap(key string) (outputMap map[string]struct{}, notFound bool, err error) {
+	if s == nil {
+		return nil, false, errors.New("Redis SET SMembersMap Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return nil, false, errors.New("Redis SET SMembersMap Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SMembersMap", s.core._parentSegment)
 
@@ -4898,6 +5252,12 @@ func (s *SET) smembersMapInternal(key string) (outputMap map[string]struct{}, no
 //
 // count = hint to redis count of elements to retrieve in the call
 func (s *SET) SScan(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
+	if s == nil {
+		return nil, 0, errors.New("Redis SET SScan Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return nil, 0, errors.New("Redis SET SScan Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SScan", s.core._parentSegment)
 
@@ -4965,6 +5325,12 @@ func (s *SET) sscanInternal(key string, cursor uint64, match string, count int64
 
 // SRandMember returns a random element from the set value stored at key
 func (s *SET) SRandMember(key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+	if s == nil {
+		return false, errors.New("Redis SET SRandMember Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return false, errors.New("Redis SET SRandMember Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SRandMember", s.core._parentSegment)
 
@@ -5020,6 +5386,12 @@ func (s *SET) srandMemberInternal(key string, outputDataType redisdatatype.Redis
 // count > 0 = returns an array of count distinct elements (non-repeating), up to the set elements size
 // count < 0 = returns an array of count elements (may be repeating), and up to the count size (selected members may still be part of the subsequent selection process)
 func (s *SET) SRandMemberN(key string, count int64) (outputSlice []string, notFound bool, err error) {
+	if s == nil {
+		return nil, false, errors.New("Redis SET SRandMemberN Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return nil, false, errors.New("Redis SET SRandMemberN Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SRandMemberN", s.core._parentSegment)
 
@@ -5075,6 +5447,12 @@ func (s *SET) srandMemberNInternal(key string, count int64) (outputSlice []strin
 //
 // Error is returned if the value stored at key is not a set
 func (s *SET) SRem(key string, member ...interface{}) (err error) {
+	if s == nil {
+		return errors.New("Redis SET SRem Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return errors.New("Redis SET SRem Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SRem", s.core._parentSegment)
 
@@ -5133,6 +5511,12 @@ func (s *SET) sremInternal(key string, member ...interface{}) error {
 //
 // Error is returned if the source or destination does not hold a set value
 func (s *SET) SMove(keySource string, keyDest string, member interface{}) (err error) {
+	if s == nil {
+		return errors.New("Redis SET SMove Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return errors.New("Redis SET SMove Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SMove", s.core._parentSegment)
 
@@ -5203,6 +5587,12 @@ func (s *SET) smoveInternal(keySource string, keyDest string, member interface{}
 
 // SPop removes and returns one random element from the set value stored at key
 func (s *SET) SPop(key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+	if s == nil {
+		return false, errors.New("Redis SET SPop Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return false, errors.New("Redis SET SPop Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SPop", s.core._parentSegment)
 
@@ -5258,6 +5648,12 @@ func (s *SET) spopInternal(key string, outputDataType redisdatatype.RedisDataTyp
 // count > 0 = returns an array of count distinct elements (non-repeating), up to the set elements size
 // count < 0 = returns an array of count elements (may be repeating), and up to the count size (selected members may still be part of the subsequent selection process)
 func (s *SET) SPopN(key string, count int64) (outputSlice []string, notFound bool, err error) {
+	if s == nil {
+		return nil, false, errors.New("Redis SET SPopN Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return nil, false, errors.New("Redis SET SPopN Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SPopN", s.core._parentSegment)
 
@@ -5317,6 +5713,12 @@ func (s *SET) spopNInternal(key string, count int64) (outputSlice []string, notF
 //	key3 = { a, c, e }
 //	SUNION key1 key2 key3 = { a, b, c, d, e }
 func (s *SET) SUnion(key ...string) (outputSlice []string, notFound bool, err error) {
+	if s == nil {
+		return nil, false, errors.New("Redis SET SUnion Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return nil, false, errors.New("Redis SET SUnion Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SUnion", s.core._parentSegment)
 
@@ -5377,6 +5779,12 @@ func (s *SET) sunionInternal(key ...string) (outputSlice []string, notFound bool
 //	key3 = { a, c, e }
 //	SUNION key1 key2 key3 = { a, b, c, d, e }
 func (s *SET) SUnionStore(keyDest string, keySource ...string) (err error) {
+	if s == nil {
+		return errors.New("Redis SET SUnionStore Failed: SET receiver is nil")
+	}
+	if s.core == nil {
+		return errors.New("Redis SET SUnionStore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SUnionStore", s.core._parentSegment)
 
@@ -5449,6 +5857,12 @@ func (s *SET) sunionStoreInternal(keyDest string, keySource ...string) error {
 //  2. ZAdd NX / NXCH = don't update already existing elements, always add new elements
 //  3. ZAdd CH = modify the return value from the number of new or updated elements added, CH = Changed
 func (z *SORTED_SET) ZAdd(key string, setCondition redissetcondition.RedisSetCondition, getChanged bool, member ...*redis.Z) (err error) {
+	if z == nil {
+		return errors.New("Redis SORTED_SET ZAdd Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return errors.New("Redis SORTED_SET ZAdd Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZAdd", z.core._parentSegment)
 
@@ -5538,6 +5952,12 @@ func (z *SORTED_SET) zaddInternal(key string, setCondition redissetcondition.Red
 
 // ZCard returns the sorted set cardinality (number of elements) of the sorted set stored at key
 func (z *SORTED_SET) ZCard(key string) (val int64, notFound bool, err error) {
+	if z == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZCard Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZCard Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZCard", z.core._parentSegment)
 
@@ -5581,6 +6001,12 @@ func (z *SORTED_SET) zcardInternal(key string) (val int64, notFound bool, err er
 
 // ZCount returns the number of elements in the sorted set at key with a score between min and max
 func (z *SORTED_SET) ZCount(key string, min string, max string) (val int64, notFound bool, err error) {
+	if z == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZCount Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZCount Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZCount", z.core._parentSegment)
 
@@ -5636,6 +6062,12 @@ func (z *SORTED_SET) zcountInternal(key string, min string, max string) (val int
 //
 // Also support for ZIncrXX (member must exist), ZIncrNX (member must not exist)
 func (z *SORTED_SET) ZIncr(key string, setCondition redissetcondition.RedisSetCondition, member *redis.Z) (err error) {
+	if z == nil {
+		return errors.New("Redis SORTED_SET ZIncr Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return errors.New("Redis SORTED_SET ZIncr Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZIncr", z.core._parentSegment)
 
@@ -5712,6 +6144,12 @@ func (z *SORTED_SET) zincrInternal(key string, setCondition redissetcondition.Re
 // Score should be string representation of a numeric value, and accepts double precision floating point numbers
 // To decrement, use negative value
 func (z *SORTED_SET) ZIncrBy(key string, increment float64, member string) (err error) {
+	if z == nil {
+		return errors.New("Redis SORTED_SET ZIncrBy Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return errors.New("Redis SORTED_SET ZIncrBy Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZIncrBy", z.core._parentSegment)
 
@@ -5783,6 +6221,12 @@ func (z *SORTED_SET) zincrByInternal(key string, increment float64, member strin
 //
 //	Resulting score of an element is the sum of its scores in the sorted set where it exists
 func (z *SORTED_SET) ZInterStore(keyDest string, store *redis.ZStore) (err error) {
+	if z == nil {
+		return errors.New("Redis SORTED_SET ZInterStore Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return errors.New("Redis SORTED_SET ZInterStore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZInterStore", z.core._parentSegment)
 
@@ -5838,6 +6282,12 @@ func (z *SORTED_SET) zinterStoreInternal(keyDest string, store *redis.ZStore) er
 
 // ZLexCount returns the number of elements in the sorted set at key, with a value between min and max
 func (z *SORTED_SET) ZLexCount(key string, min string, max string) (val int64, notFound bool, err error) {
+	if z == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZLexCount Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZLexCount Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZLexCount", z.core._parentSegment)
 
@@ -5893,6 +6343,12 @@ func (z *SORTED_SET) zlexCountInternal(key string, min string, max string) (val 
 // Specifying more count than members will not cause error, rather given back smaller result set,
 // Returning elements ordered with highest score first, then subsequent and so on
 func (z *SORTED_SET) ZPopMax(key string, count ...int64) (outputSlice []redis.Z, notFound bool, err error) {
+	if z == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZPopMax Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZPopMax Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZPopMax", z.core._parentSegment)
 
@@ -5948,6 +6404,12 @@ func (z *SORTED_SET) zpopMaxInternal(key string, count ...int64) (outputSlice []
 // Specifying more count than members will not cause error, rather given back smaller result set,
 // Returning elements ordered with lowest score first, then subsequently higher score, and so on
 func (z *SORTED_SET) ZPopMin(key string, count ...int64) (outputSlice []redis.Z, notFound bool, err error) {
+	if z == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZPopMin Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZPopMin Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZPopMin", z.core._parentSegment)
 
@@ -6007,6 +6469,12 @@ func (z *SORTED_SET) zpopMinInternal(key string, count ...int64) (outputSlice []
 // start and stop may be negative, where -1 is the last index, and -2 is the second to the last index,
 // start and stop are inclusive range
 func (z *SORTED_SET) ZRange(key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
+	if z == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRange Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRange Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRange", z.core._parentSegment)
 
@@ -6058,6 +6526,12 @@ func (z *SORTED_SET) zrangeInternal(key string, start int64, stop int64) (output
 
 // ZRangeByLex returns all the elements in the sorted set at key with a value between min and max
 func (z *SORTED_SET) ZRangeByLex(key string, opt *redis.ZRangeBy) (outputSlice []string, notFound bool, err error) {
+	if z == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRangeByLex Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRangeByLex Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRangeByLex", z.core._parentSegment)
 
@@ -6107,6 +6581,12 @@ func (z *SORTED_SET) zrangeByLexInternal(key string, opt *redis.ZRangeBy) (outpu
 // ZRangeByScore returns all the elements in the sorted set at key with a score between min and max,
 // Elements are considered to be ordered from low to high scores
 func (z *SORTED_SET) ZRangeByScore(key string, opt *redis.ZRangeBy) (outputSlice []string, notFound bool, err error) {
+	if z == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRangeByScore Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRangeByScore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRangeByScore", z.core._parentSegment)
 
@@ -6157,6 +6637,12 @@ func (z *SORTED_SET) zrangeByScoreInternal(key string, opt *redis.ZRangeBy) (out
 // ZRangeByScoreWithScores returns all the elements in the sorted set at key with a score between min and max,
 // Elements are considered to be ordered from low to high scores
 func (z *SORTED_SET) ZRangeByScoreWithScores(key string, opt *redis.ZRangeBy) (outputSlice []redis.Z, notFound bool, err error) {
+	if z == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRangeByScoreWithScores Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRangeByScoreWithScores Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRangeByScoreWithScores", z.core._parentSegment)
 
@@ -6207,6 +6693,12 @@ func (z *SORTED_SET) zrangeByScoreWithScoresInternal(key string, opt *redis.ZRan
 // ZRank returns the rank of member in the sorted set stored at key, with the scores ordered from low to high,
 // The rank (or index) is zero-based, where lowest member is index 0 (or rank 0)
 func (z *SORTED_SET) ZRank(key string, member string) (val int64, notFound bool, err error) {
+	if z == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZRank Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZRank Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRank", z.core._parentSegment)
 
@@ -6259,6 +6751,12 @@ func (z *SORTED_SET) zrankInternal(key string, member string) (val int64, notFou
 //
 // Error is returned if the value at key is not a sorted set
 func (z *SORTED_SET) ZRem(key string, member ...interface{}) (err error) {
+	if z == nil {
+		return errors.New("Redis SORTED_SET ZRem Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return errors.New("Redis SORTED_SET ZRem Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRem", z.core._parentSegment)
 
@@ -6308,6 +6806,12 @@ func (z *SORTED_SET) zremInternal(key string, member ...interface{}) error {
 
 // ZRemRangeByLex removes all elements in the sorted set stored at key, between the lexicographical range specified by min and max
 func (z *SORTED_SET) ZRemRangeByLex(key string, min string, max string) (err error) {
+	if z == nil {
+		return errors.New("Redis SORTED_SET ZRemRangeByLex Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return errors.New("Redis SORTED_SET ZRemRangeByLex Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRemRangeByLex", z.core._parentSegment)
 
@@ -6359,6 +6863,12 @@ func (z *SORTED_SET) zremRangeByLexInternal(key string, min string, max string) 
 
 // ZRemRangeByScore removes all elements in the sorted set stored at key, with a score between min and max (inclusive)
 func (z *SORTED_SET) ZRemRangeByScore(key string, min string, max string) (err error) {
+	if z == nil {
+		return errors.New("Redis SORTED_SET ZRemRangeByScore Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return errors.New("Redis SORTED_SET ZRemRangeByScore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRemRangeByScore", z.core._parentSegment)
 
@@ -6413,6 +6923,12 @@ func (z *SORTED_SET) zremRangeByScoreInternal(key string, min string, max string
 // Both start and stop are zero-based,
 // Both start and stop can be negative, where -1 is the element with highest score, -2 is the element with next to highest score, and so on
 func (z *SORTED_SET) ZRemRangeByRank(key string, start int64, stop int64) (err error) {
+	if z == nil {
+		return errors.New("Redis SORTED_SET ZRemRangeByRank Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return errors.New("Redis SORTED_SET ZRemRangeByRank Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRemRangeByRank", z.core._parentSegment)
 
@@ -6461,6 +6977,12 @@ func (z *SORTED_SET) zremRangeByRankInternal(key string, start int64, stop int64
 // With elements ordered from highest to the lowest score,
 // Descending lexicographical order is used for elements with equal score
 func (z *SORTED_SET) ZRevRange(key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
+	if z == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRevRange Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRevRange Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRevRange", z.core._parentSegment)
 
@@ -6510,6 +7032,12 @@ func (z *SORTED_SET) zrevRangeInternal(key string, start int64, stop int64) (out
 // With elements ordered from highest to the lowest score,
 // Descending lexicographical order is used for elements with equal score
 func (z *SORTED_SET) ZRevRangeWithScores(key string, start int64, stop int64) (outputSlice []redis.Z, notFound bool, err error) {
+	if z == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRevRangeWithScores Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRevRangeWithScores Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRevRangeWithScores", z.core._parentSegment)
 
@@ -6559,6 +7087,12 @@ func (z *SORTED_SET) zrevRangeWithScoresInternal(key string, start int64, stop i
 // With elements ordered from highest to lowest scores,
 // Descending lexicographical order is used for elements with equal score
 func (z *SORTED_SET) ZRevRangeByScoreWithScores(key string, opt *redis.ZRangeBy) (outputSlice []redis.Z, notFound bool, err error) {
+	if z == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRevRangeByScoreWithScores Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, false, errors.New("Redis SORTED_SET ZRevRangeByScoreWithScores Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRevRangeByScoreWithScores", z.core._parentSegment)
 
@@ -6611,6 +7145,12 @@ func (z *SORTED_SET) zrevRangeByScoreWithScoresInternal(key string, opt *redis.Z
 // Rank (index) is ordered from high to low, and is zero-based, where 0 is the highest rank (index)
 // ZRevRank is opposite of ZRank
 func (z *SORTED_SET) ZRevRank(key string, member string) (val int64, notFound bool, err error) {
+	if z == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZRevRank Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return 0, false, errors.New("Redis SORTED_SET ZRevRank Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZRevRank", z.core._parentSegment)
 
@@ -6678,6 +7218,12 @@ func (z *SORTED_SET) zrevRankInternal(key string, member string) (val int64, not
 //
 // count = hint to redis count of elements to retrieve in the call
 func (z *SORTED_SET) ZScan(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
+	if z == nil {
+		return nil, 0, errors.New("Redis SORTED_SET ZScan Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return nil, 0, errors.New("Redis SORTED_SET ZScan Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZScan", z.core._parentSegment)
 
@@ -6746,6 +7292,12 @@ func (z *SORTED_SET) zscanInternal(key string, cursor uint64, match string, coun
 // ZScore returns the score of member in the sorted set at key,
 // if member is not existent in the sorted set, or key does not exist, nil is returned
 func (z *SORTED_SET) ZScore(key string, member string) (val float64, notFound bool, err error) {
+	if z == nil {
+		return 0.0, false, errors.New("Redis SORTED_SET ZScore Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return 0.0, false, errors.New("Redis SORTED_SET ZScore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZScore", z.core._parentSegment)
 
@@ -6798,6 +7350,12 @@ func (z *SORTED_SET) zscoreInternal(key string, member string) (val float64, not
 //
 // numKeys (input keys) are required
 func (z *SORTED_SET) ZUnionStore(keyDest string, store *redis.ZStore) (err error) {
+	if z == nil {
+		return errors.New("Redis SORTED_SET ZUnionStore Failed: SORTED_SET receiver is nil")
+	}
+	if z.core == nil {
+		return errors.New("Redis SORTED_SET ZUnionStore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ZUnionStore", z.core._parentSegment)
 
@@ -6858,6 +7416,12 @@ func (z *SORTED_SET) zunionStoreInternal(keyDest string, store *redis.ZStore) er
 //
 // Use ZREM to remove Geo Key (since there is no GEODEL Command)
 func (g *GEO) GeoAdd(key string, geoLocation *redis.GeoLocation) (err error) {
+	if g == nil {
+		return errors.New("Redis GEO GeoAdd Failed: GEO receiver is nil")
+	}
+	if g.core == nil {
+		return errors.New("Redis GEO GeoAdd Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GeoAdd", g.core._parentSegment)
 
@@ -6914,6 +7478,12 @@ func (g *GEO) geoAddInternal(key string, geoLocation *redis.GeoLocation) error {
 //
 // unit = m (meters), km (kilometers), mi (miles), ft (feet)
 func (g *GEO) GeoDist(key string, member1 string, member2 string, unit redisradiusunit.RedisRadiusUnit) (valDist float64, notFound bool, err error) {
+	if g == nil {
+		return 0.0, false, errors.New("Redis GEO GeoDist Failed: GEO receiver is nil")
+	}
+	if g.core == nil {
+		return 0.0, false, errors.New("Redis GEO GeoDist Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GeoDist", g.core._parentSegment)
 
@@ -6975,6 +7545,12 @@ func (g *GEO) geoDistInternal(key string, member1 string, member2 string, unit r
 // GeoHash returns valid GeoHash string representing the position of one or more elements in a sorted set (added by GeoAdd)
 // This function returns a STANDARD GEOHASH as described on geohash.org site
 func (g *GEO) GeoHash(key string, member ...string) (geoHashSlice []string, notFound bool, err error) {
+	if g == nil {
+		return nil, false, errors.New("Redis GEO GeoHash Failed: GEO receiver is nil")
+	}
+	if g.core == nil {
+		return nil, false, errors.New("Redis GEO GeoHash Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GeoHash", g.core._parentSegment)
 
@@ -7024,6 +7600,12 @@ func (g *GEO) geoHashInternal(key string, member ...string) (geoHashSlice []stri
 
 // GeoPos returns the position (longitude and latitude) of all the specified members of the geospatial index represented by the sorted set at key
 func (g *GEO) GeoPos(key string, member ...string) (cmd *redis.GeoPosCmd, err error) {
+	if g == nil {
+		return nil, errors.New("Redis GEO GeoPos Failed: GEO receiver is nil")
+	}
+	if g.core == nil {
+		return nil, errors.New("Redis GEO GeoPos Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GeoPos", g.core._parentSegment)
 
@@ -7083,6 +7665,12 @@ func (g *GEO) geoPosInternal(key string, member ...string) (*redis.GeoPosCmd, er
 // store = store the items in a sorted set populated with their geospatial information
 // storeDist = store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius
 func (g *GEO) GeoRadius(key string, longitude float64, latitude float64, query *redis.GeoRadiusQuery) (cmd *redis.GeoLocationCmd, err error) {
+	if g == nil {
+		return nil, errors.New("Redis GEO GeoRadius Failed: GEO receiver is nil")
+	}
+	if g.core == nil {
+		return nil, errors.New("Redis GEO GeoRadius Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GeoRadius", g.core._parentSegment)
 
@@ -7206,6 +7794,12 @@ func (g *GEO) geoRadiusInternal(key string, longitude float64, latitude float64,
 // store = store the items in a sorted set populated with their geospatial information
 // storeDist = store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius
 func (g *GEO) GeoRadiusStore(key string, longitude float64, latitude float64, query *redis.GeoRadiusQuery) (err error) {
+	if g == nil {
+		return errors.New("Redis GEO GeoRadiusStore Failed: GEO receiver is nil")
+	}
+	if g.core == nil {
+		return errors.New("Redis GEO GeoRadiusStore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GeoRadiusStore", g.core._parentSegment)
 
@@ -7284,6 +7878,12 @@ func (g *GEO) geoRadiusStoreInternal(key string, longitude float64, latitude flo
 // store = store the items in a sorted set populated with their geospatial information
 // storeDist = store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius
 func (g *GEO) GeoRadiusByMember(key string, member string, query *redis.GeoRadiusQuery) (cmd *redis.GeoLocationCmd, err error) {
+	if g == nil {
+		return nil, errors.New("Redis GEO GeoRadiusByMember Failed: GEO receiver is nil")
+	}
+	if g.core == nil {
+		return nil, errors.New("Redis GEO GeoRadiusByMember Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GeoRadiusByMember", g.core._parentSegment)
 
@@ -7366,6 +7966,12 @@ func (g *GEO) geoRadiusByMemberInternal(key string, member string, query *redis.
 // store = store the items in a sorted set populated with their geospatial information
 // storeDist = store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius
 func (g *GEO) GeoRadiusByMemberStore(key string, member string, query *redis.GeoRadiusQuery) (err error) {
+	if g == nil {
+		return errors.New("Redis GEO GeoRadiusByMemberStore Failed: GEO receiver is nil")
+	}
+	if g.core == nil {
+		return errors.New("Redis GEO GeoRadiusByMemberStore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-GeoRadiusByMemberStore", g.core._parentSegment)
 
@@ -7446,6 +8052,12 @@ func (g *GEO) geoRadiusByMemberStoreInternal(key string, member string, query *r
 //
 // Once a consumer successfully processes a message, it should call XAck to remove the message so it does not get processed again (and releases message from memory in redis)
 func (x *STREAM) XAck(stream string, group string, id ...string) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XAck Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XAck Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XAck", x.core._parentSegment)
 
@@ -7502,6 +8114,12 @@ func (x *STREAM) xackInternal(stream string, group string, id ...string) error {
 // XAdd appends the specified stream entry to the stream at the specified key,
 // If the key does not exist, as a side effect of running this command the key is created with a stream value
 func (x *STREAM) XAdd(addArgs *redis.XAddArgs) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XAdd Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XAdd Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XAdd", x.core._parentSegment)
 
@@ -7550,6 +8168,12 @@ func (x *STREAM) xaddInternal(addArgs *redis.XAddArgs) error {
 // XClaim in the context of stream consumer group, this function changes the ownership of a pending message,
 // so that the new owner is the consumer specified as the command argument
 func (x *STREAM) XClaim(claimArgs *redis.XClaimArgs) (valMessages []redis.XMessage, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XClaim Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XClaim Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XClaim", x.core._parentSegment)
 
@@ -7595,6 +8219,12 @@ func (x *STREAM) xclaimInternal(claimArgs *redis.XClaimArgs) (valMessages []redi
 // XClaimJustID in the context of stream consumer group, this function changes the ownership of a pending message,
 // so that the new owner is the consumer specified as the command argument
 func (x *STREAM) XClaimJustID(claimArgs *redis.XClaimArgs) (outputSlice []string, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XClaimJustID Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XClaimJustID Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XClaimJustID", x.core._parentSegment)
 
@@ -7639,6 +8269,12 @@ func (x *STREAM) xclaimJustIDInternal(claimArgs *redis.XClaimArgs) (outputSlice 
 
 // XDel removes the specified entries from a stream
 func (x *STREAM) XDel(stream string, id ...string) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XDel Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XDel Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XDel", x.core._parentSegment)
 
@@ -7685,6 +8321,12 @@ func (x *STREAM) xdelInternal(stream string, id ...string) error {
 
 // XGroupCreate will create a new consumer group associated with a stream
 func (x *STREAM) XGroupCreate(stream string, group string, start string) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XGroupCreate Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XGroupCreate Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XGroupCreate", x.core._parentSegment)
 
@@ -7736,6 +8378,12 @@ func (x *STREAM) xgroupCreateInternal(stream string, group string, start string)
 
 // XGroupCreateMkStream will create a new consumer group, and create a stream if stream doesn't exist
 func (x *STREAM) XGroupCreateMkStream(stream string, group string, start string) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XGroupCreateMkStream Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XGroupCreateMkStream Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XGroupCreateMkStream", x.core._parentSegment)
 
@@ -7787,6 +8435,12 @@ func (x *STREAM) xgroupCreateMkStreamInternal(stream string, group string, start
 
 // XGroupDelConsumer removes a given consumer from a consumer group
 func (x *STREAM) XGroupDelConsumer(stream string, group string, consumer string) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XGroupDelConsumer Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XGroupDelConsumer Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XGroupDelConsumer", x.core._parentSegment)
 
@@ -7838,6 +8492,12 @@ func (x *STREAM) xgroupDelConsumerInternal(stream string, group string, consumer
 
 // XGroupDestroy will destroy a consumer group even if there are active consumers and pending messages
 func (x *STREAM) XGroupDestroy(stream string, group string) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XGroupDestroy Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XGroupDestroy Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XGroupDestroy", x.core._parentSegment)
 
@@ -7886,6 +8546,12 @@ func (x *STREAM) xgroupDestroyInternal(stream string, group string) error {
 // Normally the next ID is set when the consumer is created, as the last argument to XGroupCreate,
 // However, using XGroupSetID resets the next message ID in case prior message needs to be reprocessed
 func (x *STREAM) XGroupSetID(stream string, group string, start string) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XGroupSetID Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XGroupSetID Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XGroupSetID", x.core._parentSegment)
 
@@ -7939,6 +8605,12 @@ func (x *STREAM) xgroupSetIDInternal(stream string, group string, start string) 
 
 // XInfoGroups retrieves different information about the streams, and associated consumer groups
 func (x *STREAM) XInfoGroups(key string) (outputSlice []redis.XInfoGroup, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XInfoGroups Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XInfoGroups Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XInfoGroups", x.core._parentSegment)
 
@@ -7982,6 +8654,12 @@ func (x *STREAM) xinfoGroupsInternal(key string) (outputSlice []redis.XInfoGroup
 
 // XLen returns the number of entries inside a stream
 func (x *STREAM) XLen(stream string) (val int64, notFound bool, err error) {
+	if x == nil {
+		return 0, false, errors.New("Redis STREAM XLen Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return 0, false, errors.New("Redis STREAM XLen Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XLen", x.core._parentSegment)
 
@@ -8025,6 +8703,12 @@ func (x *STREAM) xlenInternal(stream string) (val int64, notFound bool, err erro
 
 // XPending fetches data from a stream via a consumer group, and not acknowledging such data, its like creating pending entries
 func (x *STREAM) XPending(stream string, group string) (val *redis.XPending, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XPending Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XPending Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XPending", x.core._parentSegment)
 
@@ -8073,6 +8757,12 @@ func (x *STREAM) xpendingInternal(stream string, group string) (val *redis.XPend
 
 // XPendingExt fetches data from a stream via a consumer group, and not acknowledging such data, its like creating pending entries
 func (x *STREAM) XPendingExt(pendingArgs *redis.XPendingExtArgs) (outputSlice []redis.XPendingExt, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XPendingExt Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XPendingExt Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XPendingExt", x.core._parentSegment)
 
@@ -8118,6 +8808,12 @@ func (x *STREAM) xpendingExtInternal(pendingArgs *redis.XPendingExtArgs) (output
 // Range is specified by a minimum and maximum ID,
 // Ordering is lowest to highest
 func (x *STREAM) XRange(stream string, start string, stop string, count ...int64) (outputSlice []redis.XMessage, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XRange Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XRange Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XRange", x.core._parentSegment)
 
@@ -8189,6 +8885,12 @@ func (x *STREAM) xrangeInternal(stream string, start string, stop string, count 
 // Range is specified by a maximum and minimum ID,
 // Ordering is highest to lowest
 func (x *STREAM) XRevRange(stream string, start string, stop string, count ...int64) (outputSlice []redis.XMessage, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XRevRange Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XRevRange Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XRevRange", x.core._parentSegment)
 
@@ -8259,6 +8961,12 @@ func (x *STREAM) xrevRangeInternal(stream string, start string, stop string, cou
 // XRead will read data from one or multiple streams,
 // only returning entries with an ID greater than the last received ID reported by the caller
 func (x *STREAM) XRead(readArgs *redis.XReadArgs) (outputSlice []redis.XStream, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XRead Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XRead Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XRead", x.core._parentSegment)
 
@@ -8303,6 +9011,12 @@ func (x *STREAM) xreadInternal(readArgs *redis.XReadArgs) (outputSlice []redis.X
 
 // XReadStreams is a special version of XRead command for streams
 func (x *STREAM) XReadStreams(stream ...string) (outputSlice []redis.XStream, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XReadStreams Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XReadStreams Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XReadStreams", x.core._parentSegment)
 
@@ -8346,6 +9060,12 @@ func (x *STREAM) xreadStreamsInternal(stream ...string) (outputSlice []redis.XSt
 
 // XReadGroup is a special version of XRead command with support for consumer groups
 func (x *STREAM) XReadGroup(readGroupArgs *redis.XReadGroupArgs) (outputSlice []redis.XStream, notFound bool, err error) {
+	if x == nil {
+		return nil, false, errors.New("Redis STREAM XReadGroup Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return nil, false, errors.New("Redis STREAM XReadGroup Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XReadGroup", x.core._parentSegment)
 
@@ -8389,6 +9109,12 @@ func (x *STREAM) xreadGroupInternal(readGroupArgs *redis.XReadGroupArgs) (output
 
 // XTrim trims the stream to a given number of items, evicting older items (items with lower IDs) if needed
 func (x *STREAM) XTrim(key string, maxLen int64) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XTrim Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XTrim Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XTrim", x.core._parentSegment)
 
@@ -8436,6 +9162,12 @@ func (x *STREAM) xtrimInternal(key string, maxLen int64) error {
 
 // XTrimApprox trims the stream to a given number of items, evicting older items (items with lower IDs) if needed
 func (x *STREAM) XTrimApprox(key string, maxLen int64) (err error) {
+	if x == nil {
+		return errors.New("Redis STREAM XTrimApprox Failed: STREAM receiver is nil")
+	}
+	if x.core == nil {
+		return errors.New("Redis STREAM XTrimApprox Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-XTrimApprox", x.core._parentSegment)
 
@@ -8503,6 +9235,12 @@ func (x *STREAM) xtrimApproxInternal(key string, maxLen int64) error {
 //  6. h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
 //  7. Use \ to escape special characters if needing to match verbatim
 func (ps *PUBSUB) PSubscribe(channel ...string) (psObj *redis.PubSub, err error) {
+	if ps == nil {
+		return nil, errors.New("Redis PUBSUB PSubscribe Failed: PUBSUB receiver is nil")
+	}
+	if ps.core == nil {
+		return nil, errors.New("Redis PUBSUB PSubscribe Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-PSubscribe", ps.core._parentSegment)
 
@@ -8558,6 +9296,12 @@ func (ps *PUBSUB) psubscribeInternal(channel ...string) (*redis.PubSub, error) {
 //
 // Once client is subscribed, do not call other redis actions, other than Subscribe, PSubscribe, Ping, Unsubscribe, PUnsubscribe, and Quit (Per Redis Doc)
 func (ps *PUBSUB) Subscribe(channel ...string) (psObj *redis.PubSub, err error) {
+	if ps == nil {
+		return nil, errors.New("Redis PUBSUB Subscribe Failed: PUBSUB receiver is nil")
+	}
+	if ps.core == nil {
+		return nil, errors.New("Redis PUBSUB Subscribe Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Subscribe", ps.core._parentSegment)
 
@@ -8602,6 +9346,12 @@ func (ps *PUBSUB) subscribeInternal(channel ...string) (*redis.PubSub, error) {
 // Publish will post a message to a given channel,
 // returns number of clients that received the message
 func (ps *PUBSUB) Publish(channel string, message interface{}) (valReceived int64, err error) {
+	if ps == nil {
+		return 0, errors.New("Redis PUBSUB Publish Failed: PUBSUB receiver is nil")
+	}
+	if ps.core == nil {
+		return 0, errors.New("Redis PUBSUB Publish Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Publish", ps.core._parentSegment)
 
@@ -8654,6 +9404,12 @@ func (ps *PUBSUB) publishInternal(channel string, message interface{}) (valRecei
 //  6. h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
 //  7. Use \ to escape special characters if needing to match verbatim
 func (ps *PUBSUB) PubSubChannels(pattern string) (valChannels []string, err error) {
+	if ps == nil {
+		return nil, errors.New("Redis PUBSUB PubSubChannels Failed: PUBSUB receiver is nil")
+	}
+	if ps.core == nil {
+		return nil, errors.New("Redis PUBSUB PubSubChannels Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-PubSubChannels", ps.core._parentSegment)
 
@@ -8705,6 +9461,12 @@ func (ps *PUBSUB) pubSubChannelsInternal(pattern string) (valChannels []string, 
 // PubSubNumPat (Pub/Sub Number of Patterns) returns the number of subscriptions to patterns (that were using PSubscribe Command),
 // This counts both clients subscribed to patterns, and also total number of patterns all the clients are subscribed to
 func (ps *PUBSUB) PubSubNumPat() (valPatterns int64, err error) {
+	if ps == nil {
+		return 0, errors.New("Redis PUBSUB PubSubNumPat Failed: PUBSUB receiver is nil")
+	}
+	if ps.core == nil {
+		return 0, errors.New("Redis PUBSUB PubSubNumPat Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-PubSubNumPat", ps.core._parentSegment)
 
@@ -8744,6 +9506,12 @@ func (ps *PUBSUB) pubSubNumPatInternal() (valPatterns int64, err error) {
 
 // PubSubNumSub (Pub/Sub Number of Subscribers) returns number of subscribers (not counting clients subscribed to patterns) for the specific channels
 func (ps *PUBSUB) PubSubNumSub(channel ...string) (val map[string]int64, err error) {
+	if ps == nil {
+		return nil, errors.New("Redis PUBSUB PubSubNumSub Failed: PUBSUB receiver is nil")
+	}
+	if ps.core == nil {
+		return nil, errors.New("Redis PUBSUB PubSubNumSub Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-PubSubNumSub", ps.core._parentSegment)
 
@@ -8791,6 +9559,12 @@ func (ps *PUBSUB) pubSubNumSubInternal(channel ...string) (val map[string]int64,
 
 // Pipeline allows actions against redis to be handled in a batched fashion
 func (p *PIPELINE) Pipeline() (result redis.Pipeliner, err error) {
+	if p == nil {
+		return nil, errors.New("Redis PIPELINE Pipeline Failed: PIPELINE receiver is nil")
+	}
+	if p.core == nil {
+		return nil, errors.New("Redis PIPELINE Pipeline Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Pipeline", p.core._parentSegment)
 
@@ -8827,6 +9601,12 @@ func (p *PIPELINE) pipelineInternal() (redis.Pipeliner, error) {
 
 // Pipelined allows actions against redis to be handled in a batched fashion
 func (p *PIPELINE) Pipelined(fn func(redis.Pipeliner) error) (result []redis.Cmder, err error) {
+	if p == nil {
+		return nil, errors.New("Redis PIPELINE Pipelined Failed: PIPELINE receiver is nil")
+	}
+	if p.core == nil {
+		return nil, errors.New("Redis PIPELINE Pipelined Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Pipelined", p.core._parentSegment)
 
@@ -8863,6 +9643,12 @@ func (p *PIPELINE) pipelinedInternal(fn func(redis.Pipeliner) error) ([]redis.Cm
 
 // TxPipeline allows actions against redis to be handled in a batched fashion
 func (p *PIPELINE) TxPipeline() (result redis.Pipeliner, err error) {
+	if p == nil {
+		return nil, errors.New("Redis PIPELINE TxPipeline Failed: PIPELINE receiver is nil")
+	}
+	if p.core == nil {
+		return nil, errors.New("Redis PIPELINE TxPipeline Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-TxPipeline", p.core._parentSegment)
 
@@ -8899,6 +9685,12 @@ func (p *PIPELINE) txPipelineInternal() (redis.Pipeliner, error) {
 
 // TxPipelined allows actions against redis to be handled in a batched fashion
 func (p *PIPELINE) TxPipelined(fn func(redis.Pipeliner) error) (result []redis.Cmder, err error) {
+	if p == nil {
+		return nil, errors.New("Redis PIPELINE TxPipelined Failed: PIPELINE receiver is nil")
+	}
+	if p.core == nil {
+		return nil, errors.New("Redis PIPELINE TxPipelined Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-TxPipelined", p.core._parentSegment)
 
@@ -8940,6 +9732,12 @@ func (p *PIPELINE) txPipelinedInternal(fn func(redis.Pipeliner) error) ([]redis.
 // TTL returns the remainder time to live in seconds or milliseconds, for key that has a TTL set,
 // returns -1 if no TTL applicable (forever living)
 func (t *TTL) TTL(key string, bGetMilliseconds bool) (valTTL int64, notFound bool, err error) {
+	if t == nil {
+		return 0, false, errors.New("Redis TTL TTL Failed: TTL receiver is nil")
+	}
+	if t.core == nil {
+		return 0, false, errors.New("Redis TTL TTL Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-TTL", t.core._parentSegment)
 
@@ -9021,6 +9819,12 @@ func (t *TTL) ttlInternal(key string, bGetMilliseconds bool) (valTTL int64, notF
 //
 // expireValue = in seconds or milliseconds
 func (t *TTL) Expire(key string, bSetMilliseconds bool, expireValue time.Duration) (err error) {
+	if t == nil {
+		return errors.New("Redis TTL Expire Failed: TTL receiver is nil")
+	}
+	if t.core == nil {
+		return errors.New("Redis TTL Expire Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Expire", t.core._parentSegment)
 
@@ -9093,6 +9897,12 @@ func (t *TTL) expireInternal(key string, bSetMilliseconds bool, expireValue time
 //
 // Setting expireTime to the past immediately deletes the key
 func (t *TTL) ExpireAt(key string, expireTime time.Time) (err error) {
+	if t == nil {
+		return errors.New("Redis TTL ExpireAt Failed: TTL receiver is nil")
+	}
+	if t.core == nil {
+		return errors.New("Redis TTL ExpireAt Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ExpireAt", t.core._parentSegment)
 
@@ -9153,6 +9963,12 @@ func (t *TTL) expireAtInternal(key string, expireTime time.Time) error {
 // Touch alters the last access time of a key or keys,
 // if key doesn't exist, it is ignored
 func (t *TTL) Touch(key ...string) (err error) {
+	if t == nil {
+		return errors.New("Redis TTL Touch Failed: TTL receiver is nil")
+	}
+	if t.core == nil {
+		return errors.New("Redis TTL Touch Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Touch", t.core._parentSegment)
 
@@ -9206,6 +10022,12 @@ func (t *TTL) touchInternal(key ...string) error {
 
 // Persist removes existing timeout TTL of a key so it lives forever
 func (t *TTL) Persist(key string) (err error) {
+	if t == nil {
+		return errors.New("Redis TTL Persist Failed: TTL receiver is nil")
+	}
+	if t.core == nil {
+		return errors.New("Redis TTL Persist Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Persist", t.core._parentSegment)
 
@@ -9264,6 +10086,12 @@ func (t *TTL) persistInternal(key string) error {
 //
 // result nil = success; otherwise error info is returned via error object
 func (u *UTILS) Ping() (err error) {
+	if u == nil {
+		return errors.New("Redis UTILS Ping Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return errors.New("Redis UTILS Ping Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Ping", u.core._parentSegment)
 
@@ -9301,6 +10129,12 @@ func (u *UTILS) pingInternal() error {
 
 // DBSize returns number of keys in the redis database
 func (u *UTILS) DBSize() (val int64, err error) {
+	if u == nil {
+		return 0, errors.New("Redis UTILS DBSize Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return 0, errors.New("Redis UTILS DBSize Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-DBSize", u.core._parentSegment)
 
@@ -9339,6 +10173,12 @@ func (u *UTILS) dbSizeInternal() (val int64, err error) {
 
 // Time returns the redis server time
 func (u *UTILS) Time() (val time.Time, err error) {
+	if u == nil {
+		return time.Time{}, errors.New("Redis UTILS Time Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return time.Time{}, errors.New("Redis UTILS Time Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Time", u.core._parentSegment)
 
@@ -9377,6 +10217,12 @@ func (u *UTILS) timeInternal() (val time.Time, err error) {
 
 // LastSave checks if last db save action was successful
 func (u *UTILS) LastSave() (val time.Time, err error) {
+	if u == nil {
+		return time.Time{}, errors.New("Redis UTILS LastSave Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return time.Time{}, errors.New("Redis UTILS LastSave Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-LastSave", u.core._parentSegment)
 
@@ -9421,6 +10267,12 @@ func (u *UTILS) lastSaveInternal() (val time.Time, err error) {
 // Type returns the redis key's value type stored
 // expected result in string = list, set, zset, hash, and stream
 func (u *UTILS) Type(key string) (val rediskeytype.RedisKeyType, err error) {
+	if u == nil {
+		return rediskeytype.UNKNOWN, errors.New("Redis UTILS Type Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return rediskeytype.UNKNOWN, errors.New("Redis UTILS Type Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Type", u.core._parentSegment)
 
@@ -9486,6 +10338,12 @@ func (u *UTILS) typeInternal(key string) (val rediskeytype.RedisKeyType, err err
 
 // ObjectEncoding returns the internal representation used in order to store the value associated with a key
 func (u *UTILS) ObjectEncoding(key string) (val string, notFound bool, err error) {
+	if u == nil {
+		return "", false, errors.New("Redis UTILS ObjectEncoding Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return "", false, errors.New("Redis UTILS ObjectEncoding Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ObjectEncoding", u.core._parentSegment)
 
@@ -9529,6 +10387,12 @@ func (u *UTILS) objectEncodingInternal(key string) (val string, notFound bool, e
 
 // ObjectIdleTime returns the number of seconds since the object stored at the specified key is idle (not requested by read or write operations)
 func (u *UTILS) ObjectIdleTime(key string) (val time.Duration, notFound bool, err error) {
+	if u == nil {
+		return 0, false, errors.New("Redis UTILS ObjectIdleTime Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return 0, false, errors.New("Redis UTILS ObjectIdleTime Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ObjectIdleTime", u.core._parentSegment)
 
@@ -9572,6 +10436,12 @@ func (u *UTILS) objectIdleTimeInternal(key string) (val time.Duration, notFound 
 
 // ObjectRefCount returns the number of references of the value associated with the specified key
 func (u *UTILS) ObjectRefCount(key string) (val int64, notFound bool, err error) {
+	if u == nil {
+		return 0, false, errors.New("Redis UTILS ObjectRefCount Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return 0, false, errors.New("Redis UTILS ObjectRefCount Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-ObjectRefCount", u.core._parentSegment)
 
@@ -9632,6 +10502,12 @@ func (u *UTILS) objectRefCountInternal(key string) (val int64, notFound bool, er
 //
 // count = hint to redis count of elements to retrieve in the call
 func (u *UTILS) Scan(cursor uint64, match string, count int64) (keys []string, resultCursor uint64, err error) {
+	if u == nil {
+		return nil, 0, errors.New("Redis UTILS Scan Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return nil, 0, errors.New("Redis UTILS Scan Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Scan", u.core._parentSegment)
 
@@ -9704,6 +10580,12 @@ func (u *UTILS) scanInternal(cursor uint64, match string, count int64) (keys []s
 //		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
 //		7) Use \ to escape special characters if needing to match verbatim
 func (u *UTILS) Keys(match string) (valKeys []string, notFound bool, err error) {
+	if u == nil {
+		return nil, false, errors.New("Redis UTILS Keys Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return nil, false, errors.New("Redis UTILS Keys Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Keys", u.core._parentSegment)
 
@@ -9761,6 +10643,12 @@ func (u *UTILS) keysInternal(match string) (valKeys []string, notFound bool, err
 
 // RandomKey returns a random key from redis
 func (u *UTILS) RandomKey() (val string, err error) {
+	if u == nil {
+		return "", errors.New("Redis UTILS RandomKey Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return "", errors.New("Redis UTILS RandomKey Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-RandomKey", u.core._parentSegment)
 
@@ -9801,6 +10689,12 @@ func (u *UTILS) randomKeyInternal() (val string, err error) {
 // if keyNew already exist in redis, then Rename will override existing keyNew with keyOriginal
 // if keyOriginal is not in redis, error is returned
 func (u *UTILS) Rename(keyOriginal string, keyNew string) (err error) {
+	if u == nil {
+		return errors.New("Redis UTILS Rename Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return errors.New("Redis UTILS Rename Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Rename", u.core._parentSegment)
 
@@ -9850,6 +10744,12 @@ func (u *UTILS) renameInternal(keyOriginal string, keyNew string) error {
 // RenameNX will rename the keyOriginal to be keyNew IF keyNew does not yet exist in redis
 // if RenameNX fails due to keyNew already exist, or other errors, the error is returned
 func (u *UTILS) RenameNX(keyOriginal string, keyNew string) (err error) {
+	if u == nil {
+		return errors.New("Redis UTILS RenameNX Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return errors.New("Redis UTILS RenameNX Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-RenameNX", u.core._parentSegment)
 
@@ -9910,6 +10810,12 @@ func (u *UTILS) renameNXInternal(keyOriginal string, keyNew string) error {
 //
 // sortPattern = defines the sort conditions (see redis sort documentation for details)
 func (u *UTILS) Sort(key string, sortPattern *redis.Sort) (val []string, notFound bool, err error) {
+	if u == nil {
+		return nil, false, errors.New("Redis UTILS Sort Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return nil, false, errors.New("Redis UTILS Sort Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-Sort", u.core._parentSegment)
 
@@ -9960,6 +10866,12 @@ func (u *UTILS) sortInternal(key string, sortPattern *redis.Sort) (val []string,
 //
 // sortPattern = defines the sort conditions (see redis sort documentation for details)
 func (u *UTILS) SortInterfaces(keyToSort string, sortPattern *redis.Sort) (val []interface{}, notFound bool, err error) {
+	if u == nil {
+		return nil, false, errors.New("Redis UTILS SortInterfaces Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return nil, false, errors.New("Redis UTILS SortInterfaces Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SortInterfaces", u.core._parentSegment)
 
@@ -10010,6 +10922,12 @@ func (u *UTILS) sortInterfacesInternal(keyToSort string, sortPattern *redis.Sort
 //
 // sortPattern = defines the sort conditions (see redis sort documentation for details)
 func (u *UTILS) SortStore(keyToSort string, keyToStore string, sortPattern *redis.Sort) (err error) {
+	if u == nil {
+		return errors.New("Redis UTILS SortStore Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return errors.New("Redis UTILS SortStore Failed: Redis core is nil")
+	}
 	// get new xray segment for tracing
 	seg := xray.NewSegmentNullable("Redis-SortStore", u.core._parentSegment)
 

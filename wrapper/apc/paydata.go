@@ -270,7 +270,7 @@ func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycr
 		return "", err
 	}
 	if encryptedOutput == nil {
-		err = errors.New("encrypt with PaymentCryptoData key Failed: encryptDataOutput is nil")
+		err = errors.New("encrypt with PaymentCryptoData key Failed: encryptedOutput is nil")
 		return "", err
 	}
 	cipherText = aws.StringValue(encryptedOutput.CipherText)
@@ -333,7 +333,7 @@ func (k *PaymentCryptoData) decrypt(cipherText string, decryptionAttributes *pyc
 	}
 
 	if decryptedOutput == nil {
-		err = errors.New("decrypt with PaymentCryptoData Key Failed: decryptDataOutput is nil")
+		err = errors.New("decrypt with PaymentCryptoData Key Failed: decryptedOutput is nil")
 		return "", err
 	}
 	plainText = aws.StringValue(decryptedOutput.PlainText)

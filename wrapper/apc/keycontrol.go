@@ -282,7 +282,7 @@ func (k *PaymentCryptography) generateRSAKey(KeyAlgorithm string) (keyArn string
 	}
 
 	if dataKeyOutput == nil {
-		err = errors.New("generateRSAKey with PaymentCryptography Failed: CreateKeyOutput is nil")
+		err = errors.New("generateRSAKey with PaymentCryptography Failed: dataKeyOutput is nil")
 		return "", err
 	}
 	if dataKeyOutput.Key != nil {

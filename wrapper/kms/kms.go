@@ -159,6 +159,9 @@ func (k *KMS) getSigKeyName() string {
 
 // Connect will establish a connection to the KMS service
 func (k *KMS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if k == nil {
+		return errors.New("KMS receiver is nil")
+	}
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
 			k.UpdateParentSegment(parentSegment[0])
@@ -237,11 +240,17 @@ func (k *KMS) connectInternal() error {
 
 // Disconnect will disjoin from aws session by clearing it
 func (k *KMS) Disconnect() {
+	if k == nil {
+		return
+	}
 	k.setSessionAndClient(nil, nil)
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (k *KMS) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if k == nil {
+		return
+	}
 	k.mu.Lock()
 	k._parentSegment = parentSegment
 	k.mu.Unlock()
@@ -254,6 +263,9 @@ func (k *KMS) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 // EncryptViaCmkAes256 will use kms cmk to encrypt plainText using aes 256 symmetric kms cmk key, and return cipherText string,
 // the cipherText can only be decrypted with aes 256 symmetric kms cmk key
 func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -327,6 +339,9 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 // ReEncryptViaCmkAes256 will re-encrypt sourceCipherText using the new targetKmsKeyName via kms, (must be targeting aes 256 key)
 // the re-encrypted cipherText is then returned
 func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName string) (targetCipherText string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -418,6 +433,9 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 // DecryptViaCmkAes256 will use kms cmk to decrypt cipherText using symmetric aes 256 kms cmk key, and return plainText string,
 // the cipherText can only be decrypted with the symmetric aes 256 kms cmk key
 func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -574,6 +592,9 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 //		},
 //	}
 func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJSON string) (encryptedOutput *kms.CreateKeyOutput, err error) {
+	if k == nil {
+		return nil, errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -642,6 +663,9 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 }
 
 func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}) (encryptedOutput *kms.CreateKeyOutput, err error) {
+	if k == nil {
+		return nil, errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -714,6 +738,9 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 }
 
 func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (output *kms.ScheduleKeyDeletionOutput, err error) {
+	if k == nil {
+		return nil, errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -791,6 +818,9 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 }
 
 func (k *KMS) KeyDeleteWithArnID(arn string, PendingWindowInDays int64) (output *kms.ScheduleKeyDeletionOutput, err error) {
+	if k == nil {
+		return nil, errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -854,6 +884,9 @@ func (k *KMS) KeyDeleteWithArnID(arn string, PendingWindowInDays int64) (output 
 //  1. Copy Public Key from AWS KMS for the given RSA CMK
 //  2. Using External RSA Public Key Crypto Encrypt Function with the given Public Key to Encrypt
 func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -930,6 +963,9 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 }
 
 func (k *KMS) GetRSAPublicKey(alias string) (output *kms.GetPublicKeyOutput, err error) {
+	if k == nil {
+		return nil, errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -981,6 +1017,9 @@ func (k *KMS) GetRSAPublicKey(alias string) (output *kms.GetPublicKeyOutput, err
 // ReEncryptViaCmkRsa2048 will re-encrypt sourceCipherText using the new targetKmsKeyName via kms, (must be targeting rsa 2048 key)
 // the re-encrypted cipherText is then returned
 func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName string) (targetCipherText string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -1072,6 +1111,9 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 // DecryptViaCmkRsa2048 will use kms cmk to decrypt cipherText using asymmetric rsa 2048 kms cmk private key, and return plainText string,
 // the cipherText can only be decrypted with the asymmetric rsa 2048 kms cmk private key
 func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -1151,6 +1193,9 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 // DecryptViaCmkRsa2048PKCS1 will use kms cmk to decrypt cipherText using asymmetric rsa 2048 kms cmk private key, and return plainText string,
 // the cipherText can only be decrypted with the asymmetric rsa 2048 kms cmk private key
 func (k *KMS) DecryptViaCmkRsa2048PKCS1(cipherText string) (plainText string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	return k.decryptViaCmkRsa2048Base(cipherText, kms.AlgorithmSpecRsaesPkcs1V15)
 }
 
@@ -1237,6 +1282,9 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 
 // SignViaCmkRsa2048 will sign dataToSign using KMS CMK RSA Sign/Verify Key (Private Key on KMS will be used to securely sign)
 func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -1317,6 +1365,9 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 //  1. Copy Public Key from AWS KMS for the given RSA CMK
 //  2. Using External RSA Public Key Crypto Verify Function with the given Public Key to Verify
 func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string) (signatureValid bool, err error) {
+	if k == nil {
+		return false, errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -1412,6 +1463,9 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 //
 // cipherKey = encrypted data key in hex (must use KMS CMK to decrypt such key)
 func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -1476,6 +1530,9 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 //
 // cipherKey = encrypted data key in hex (must use KMS CMK to decrypt such key)
 func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (cipherText string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -1576,6 +1633,9 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 //
 // cipherKey = encrypted data key in hex (must use KMS CMK to decrypt such key)
 func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (plainText string, err error) {
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
 	var segCtx context.Context
 	segCtx = nil
 
@@ -1673,7 +1733,21 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 }
 
 func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk *ecdsa.PrivateKey) (keyArn string, err error) {
-	// validate
+	if k == nil {
+		return "", errors.New("KMS receiver is nil")
+	}
+	// validate inputs
+	if strings.TrimSpace(keyAlias) == "" {
+		return "", errors.New("ImportECCP256SignVerifyKey with KMS Failed: keyAlias is required")
+	}
+	if strings.TrimSpace(keyPolicyJson) == "" {
+		return "", errors.New("ImportECCP256SignVerifyKey with KMS Failed: keyPolicyJson is required")
+	}
+	if eccPvk == nil {
+		return "", errors.New("ImportECCP256SignVerifyKey with KMS Failed: eccPvk is required")
+	}
+
+	// validate client
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
 		err = errors.New("ImportECCP256SignVerifyKey with KMS Failed: " + cliErr.Error())
@@ -1766,6 +1840,9 @@ func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk 
 }
 
 func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, err error) {
+	if k == nil {
+		return nil, errors.New("KMS receiver is nil")
+	}
 	if keyArn == "" {
 		return nil, errors.New("ECDH with KMS Failed: keyArn is required")
 	}
@@ -1828,18 +1905,4 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 	}
 
 	return outputResp.SharedSecret, nil
-}
-
-func parseECCPublicKey(eccPub []byte) (*ecdsa.PublicKey, error) {
-	tempPubKey, err := x509.ParsePKIXPublicKey(eccPub)
-	if err != nil {
-		return nil, err
-	}
-
-	tpubK, ok := tempPubKey.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("input key is not a ecc public key")
-	}
-
-	return tpubK, nil
 }

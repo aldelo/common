@@ -50,6 +50,7 @@ import (
 	"net/textproto"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -82,6 +83,8 @@ type SES struct {
 	sesClient *ses.SES
 
 	_parentSegment *xray.XRayParentSegment
+
+	mu sync.RWMutex
 }
 
 // Email struct encapsulates the email message definition to send via AWS SES
@@ -148,17 +151,56 @@ type BulkEmailMessageResult struct {
 // ================================================================================================================
 
 // ----------------------------------------------------------------------------------------------------------------
+// internal helpers (thread-safe accessors)
+// ----------------------------------------------------------------------------------------------------------------
+
+// getClient returns the SES client in a thread-safe manner
+func (s *SES) getClient() *ses.SES {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sesClient
+}
+
+// setClient sets the SES client in a thread-safe manner
+func (s *SES) setClient(client *ses.SES) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sesClient = client
+}
+
+// clearClient clears the SES client in a thread-safe manner
+func (s *SES) clearClient() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sesClient = nil
+}
+
+// setParentSegment sets the parent segment in a thread-safe manner
+func (s *SES) setParentSegment(seg *xray.XRayParentSegment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s._parentSegment = seg
+}
+
+// getParentSegment gets the parent segment in a thread-safe manner
+func (s *SES) getParentSegment() *xray.XRayParentSegment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s._parentSegment
+}
+
+// ----------------------------------------------------------------------------------------------------------------
 // utility functions
 // ----------------------------------------------------------------------------------------------------------------
 
 // Connect will establish a connection to the SES service
 func (s *SES) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
-	if xray.XRayServiceOn() {
-		if len(parentSegment) > 0 {
-			s._parentSegment = parentSegment[0]
-		}
+	if len(parentSegment) > 0 {
+		s.setParentSegment(parentSegment[0])
+	}
 
-		seg := xray.NewSegment("SES-Connect", s._parentSegment)
+	if xray.XRayServiceOn() {
+		seg := xray.NewSegment("SES-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
 			_ = seg.Seg.AddMetadata("SES-AWS-Region", s.AwsRegion)
@@ -171,20 +213,19 @@ func (s *SES) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		err = s.connectInternal()
 
 		if err == nil {
-			awsxray.AWS(s.sesClient.Client)
+			if cli := s.getClient(); cli != nil {
+				awsxray.AWS(cli.Client)
+			}
 		}
 
 		return err
-	} else {
-		return s.connectInternal()
 	}
+
+	return s.connectInternal()
 }
 
 // connectInternal will establish a connection to the SES service
 func (s *SES) connectInternal() error {
-	// clean up prior object
-	s.sesClient = nil
-
 	if !s.AwsRegion.Valid() || s.AwsRegion == awsregion.UNKNOWN {
 		return errors.New("Connect To SES Failed: (AWS Session Error) " + "Region is Required")
 	}
@@ -207,34 +248,35 @@ func (s *SES) connectInternal() error {
 	}
 
 	// establish aws session connection and keep session object in struct
-	if sess, err := session.NewSession(
+	sess, err := session.NewSession(
 		&aws.Config{
 			Region:     aws.String(s.AwsRegion.Key()),
 			HTTPClient: httpCli,
-		}); err != nil {
+		})
+	if err != nil {
 		// aws session error
 		return errors.New("Connect To SES Failed: (AWS Session Error) " + err.Error())
-	} else {
-		// create cached objects for shared use
-		s.sesClient = ses.New(sess)
-
-		if s.sesClient == nil {
-			return errors.New("Connect To SES Client Failed: (New SES Client Connection) " + "Connection Object Nil")
-		}
-
-		// session stored to struct
-		return nil
 	}
+
+	// create cached objects for shared use
+	cli := ses.New(sess)
+
+	if cli == nil {
+		return errors.New("Connect To SES Client Failed: (New SES Client Connection) " + "Connection Object Nil")
+	}
+
+	s.setClient(cli)
+	return nil
 }
 
 // Disconnect will disjoin from aws session by clearing it
 func (s *SES) Disconnect() {
-	s.sesClient = nil
+	s.clearClient()
 }
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *SES) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
-	s._parentSegment = parentSegment
+	s.setParentSegment(parentSegment)
 }
 
 // ----------------------------------------------------------------------------------------------------------------
@@ -622,7 +664,7 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-GetSendQuota", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-GetSendQuota", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -639,7 +681,8 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("GetSendQuota Failed: " + "SES Client is Required")
 		return nil, err
 	}
@@ -654,12 +697,12 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.sesClient.GetSendQuotaWithContext(ctx, input)
+		output, err = client.GetSendQuotaWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.sesClient.GetSendQuotaWithContext(segCtx, input)
+			output, err = client.GetSendQuotaWithContext(segCtx, input)
 		} else {
-			output, err = s.sesClient.GetSendQuota(input)
+			output, err = client.GetSendQuota(input)
 		}
 	}
 
@@ -687,7 +730,7 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-SendEmail", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-SendEmail", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -711,7 +754,8 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SendEmail Failed: " + "SES Client is Required")
 		return "", err
 	}
@@ -747,12 +791,12 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.sesClient.SendEmailWithContext(ctx, input)
+		output, err = client.SendEmailWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.sesClient.SendEmailWithContext(segCtx, input)
+			output, err = client.SendEmailWithContext(segCtx, input)
 		} else {
-			output, err = s.sesClient.SendEmail(input)
+			output, err = client.SendEmail(input)
 		}
 	}
 
@@ -781,7 +825,7 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-SendRawEmail", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-SendRawEmail", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -807,7 +851,8 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SendRawEmail Failed: " + "SES Client is Required")
 		return "", err
 	}
@@ -866,12 +911,12 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.sesClient.SendRawEmailWithContext(ctx, input)
+		output, err = client.SendRawEmailWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.sesClient.SendRawEmailWithContext(segCtx, input)
+			output, err = client.SendRawEmailWithContext(segCtx, input)
 		} else {
-			output, err = s.sesClient.SendRawEmail(input)
+			output, err = client.SendRawEmail(input)
 		}
 	}
 
@@ -917,7 +962,7 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-CreateTemplate", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-CreateTemplate", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -937,7 +982,8 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("CreateTemplate Failed: " + "SES Client is Required")
 		return err
 	}
@@ -978,12 +1024,12 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.sesClient.CreateTemplateWithContext(ctx, input)
+		_, err = client.CreateTemplateWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.sesClient.CreateTemplateWithContext(segCtx, input)
+			_, err = client.CreateTemplateWithContext(segCtx, input)
 		} else {
-			_, err = s.sesClient.CreateTemplate(input)
+			_, err = client.CreateTemplate(input)
 		}
 	}
 
@@ -1020,7 +1066,7 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-UpdateTemplate", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-UpdateTemplate", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1040,7 +1086,8 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("UpdateTemplate Failed: " + "SES Client is Required")
 		return err
 	}
@@ -1081,12 +1128,12 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.sesClient.UpdateTemplateWithContext(ctx, input)
+		_, err = client.UpdateTemplateWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.sesClient.UpdateTemplateWithContext(segCtx, input)
+			_, err = client.UpdateTemplateWithContext(segCtx, input)
 		} else {
-			_, err = s.sesClient.UpdateTemplate(input)
+			_, err = client.UpdateTemplate(input)
 		}
 	}
 
@@ -1110,7 +1157,7 @@ func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Durati
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-DeleteTemplate", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-DeleteTemplate", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1127,7 +1174,8 @@ func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Durati
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("DeleteTemplate Failed: " + "SES Client is Required")
 		return err
 	}
@@ -1147,12 +1195,12 @@ func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Durati
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.sesClient.DeleteTemplateWithContext(ctx, input)
+		_, err = client.DeleteTemplateWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.sesClient.DeleteTemplateWithContext(segCtx, input)
+			_, err = client.DeleteTemplateWithContext(segCtx, input)
 		} else {
-			_, err = s.sesClient.DeleteTemplate(input)
+			_, err = client.DeleteTemplate(input)
 		}
 	}
 
@@ -1205,7 +1253,7 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-SendTemplateEmail", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-SendTemplateEmail", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1232,7 +1280,8 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SendTemplateEmail Failed: " + "SES Client is Required")
 		return "", err
 	}
@@ -1307,12 +1356,12 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.sesClient.SendTemplatedEmailWithContext(ctx, input)
+		output, err = client.SendTemplatedEmailWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.sesClient.SendTemplatedEmailWithContext(segCtx, input)
+			output, err = client.SendTemplatedEmailWithContext(segCtx, input)
 		} else {
-			output, err = s.sesClient.SendTemplatedEmail(input)
+			output, err = client.SendTemplatedEmail(input)
 		}
 	}
 
@@ -1374,7 +1423,7 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-SendBulkTemplateEmail", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-SendBulkTemplateEmail", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1397,7 +1446,8 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SendBulkTemplateEmail Failed: " + "SES Client is Required")
 		return nil, 0, err
 	}
@@ -1494,12 +1544,12 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.sesClient.SendBulkTemplatedEmailWithContext(ctx, input)
+		output, err = client.SendBulkTemplatedEmailWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.sesClient.SendBulkTemplatedEmailWithContext(segCtx, input)
+			output, err = client.SendBulkTemplatedEmailWithContext(segCtx, input)
 		} else {
-			output, err = s.sesClient.SendBulkTemplatedEmail(input)
+			output, err = client.SendBulkTemplatedEmail(input)
 		}
 	}
 
@@ -1557,7 +1607,7 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-CreateCustomVerificationEmailTemplate", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-CreateCustomVerificationEmailTemplate", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1579,7 +1629,8 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("CreateCustomVerificationEmailTemplate Failed: " + "SES Client is Required")
 		return err
 	}
@@ -1629,12 +1680,12 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.sesClient.CreateCustomVerificationEmailTemplateWithContext(ctx, input)
+		_, err = client.CreateCustomVerificationEmailTemplateWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.sesClient.CreateCustomVerificationEmailTemplateWithContext(segCtx, input)
+			_, err = client.CreateCustomVerificationEmailTemplateWithContext(segCtx, input)
 		} else {
-			_, err = s.sesClient.CreateCustomVerificationEmailTemplate(input)
+			_, err = client.CreateCustomVerificationEmailTemplate(input)
 		}
 	}
 
@@ -1669,7 +1720,7 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-UpdateCustomVerificationEmailTemplate", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-UpdateCustomVerificationEmailTemplate", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1691,7 +1742,8 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("UpdateCustomVerificationEmailTemplate Failed: " + "SES Client is Required")
 		return err
 	}
@@ -1741,12 +1793,12 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.sesClient.UpdateCustomVerificationEmailTemplateWithContext(ctx, input)
+		_, err = client.UpdateCustomVerificationEmailTemplateWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.sesClient.UpdateCustomVerificationEmailTemplateWithContext(segCtx, input)
+			_, err = client.UpdateCustomVerificationEmailTemplateWithContext(segCtx, input)
 		} else {
-			_, err = s.sesClient.UpdateCustomVerificationEmailTemplate(input)
+			_, err = client.UpdateCustomVerificationEmailTemplate(input)
 		}
 	}
 
@@ -1770,7 +1822,7 @@ func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOut
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-DeleteCustomVerificationEmailTemplate", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-DeleteCustomVerificationEmailTemplate", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1787,7 +1839,8 @@ func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOut
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("DeleteCustomVerificationEmailTemplate Failed: " + "SES Client is Required")
 		return err
 	}
@@ -1807,12 +1860,12 @@ func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOut
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		_, err = s.sesClient.DeleteCustomVerificationEmailTemplateWithContext(ctx, input)
+		_, err = client.DeleteCustomVerificationEmailTemplateWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			_, err = s.sesClient.DeleteCustomVerificationEmailTemplateWithContext(segCtx, input)
+			_, err = client.DeleteCustomVerificationEmailTemplateWithContext(segCtx, input)
 		} else {
-			_, err = s.sesClient.DeleteCustomVerificationEmailTemplate(input)
+			_, err = client.DeleteCustomVerificationEmailTemplate(input)
 		}
 	}
 
@@ -1835,7 +1888,7 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("SES-SendCustomVerificationEmail", s._parentSegment)
+	seg := xray.NewSegmentNullable("SES-SendCustomVerificationEmail", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1854,7 +1907,8 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 	}
 
 	// validate
-	if s.sesClient == nil {
+	client := s.getClient()
+	if client == nil {
 		err = errors.New("SendCustomVerificationEmail Failed: " + "SES Client is Required")
 		return "", err
 	}
@@ -1886,12 +1940,12 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
 		defer cancel()
 
-		output, err = s.sesClient.SendCustomVerificationEmailWithContext(ctx, input)
+		output, err = client.SendCustomVerificationEmailWithContext(ctx, input)
 	} else {
 		if segCtxSet {
-			output, err = s.sesClient.SendCustomVerificationEmailWithContext(segCtx, input)
+			output, err = client.SendCustomVerificationEmailWithContext(segCtx, input)
 		} else {
-			output, err = s.sesClient.SendCustomVerificationEmail(input)
+			output, err = client.SendCustomVerificationEmail(input)
 		}
 	}
 

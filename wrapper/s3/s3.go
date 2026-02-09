@@ -269,6 +269,10 @@ func (s *S3) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 //	location = value indicating the location where upload was persisted to on s3 bucket
 //	err = error encountered while attempting to upload
 func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, targetKey string, targetFolder ...string) (location string, err error) {
+	if s == nil {
+		return "", errors.New("S3 UploadFile Failed: S3 receiver is nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -398,6 +402,10 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 //	location = value indicating the location where upload was persisted to on s3 bucket
 //	err = error encountered while attempting to upload
 func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey string, targetFolder ...string) (location string, err error) {
+	if s == nil {
+		return "", errors.New("S3 Upload Failed: S3 receiver is nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -520,6 +528,10 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 //	notFound = key was not found in s3 bucket
 //	err = error encountered while attempting to download
 func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string, targetKey string, targetFolder ...string) (location string, notFound bool, err error) {
+	if s == nil {
+		return "", false, errors.New("S3 DownloadFile Failed: S3 receiver is nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -652,6 +664,10 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 //	notFound = key was not found in s3 bucket
 //	err = error encountered while attempting to download
 func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFolder ...string) (data []byte, notFound bool, err error) {
+	if s == nil {
+		return nil, false, errors.New("S3 Download Failed: S3 receiver is nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -762,6 +778,10 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 //	deleteSuccess = true if delete was successfully completed; false if delete failed to perform, check error if any
 //	err = error encountered while attempting to download
 func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFolder ...string) (deleteSuccess bool, err error) {
+	if s == nil {
+		return false, errors.New("S3 Delete Failed: S3 receiver is nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -863,6 +883,10 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 //	errorList = describes the object that Amazon S3 attempted to delete and the error it encountered
 //	err = error encountered while attempting to download
 func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (deletedKeysList []string, errorList []*S3ErrorResult, err error) {
+	if s == nil {
+		return nil, nil, errors.New("S3 DeleteBatch Failed: S3 receiver is nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 
@@ -990,6 +1014,10 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 //	moreObjectsNextToken = if more objects expected, use this token in the next method call by passing into nextToken parameter
 //	err = error encountered while attempting to download
 func (s *S3) ListFileKeys(timeOutDuration *time.Duration, nextToken string, maxResults int64, folder ...string) (fileKeys []string, moreFileKeysNextToken string, err error) {
+	if s == nil {
+		return nil, "", errors.New("S3 ListFileKeys Failed: S3 receiver is nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 

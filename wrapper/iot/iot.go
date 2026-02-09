@@ -101,7 +101,7 @@ func (s *IoT) getParentSegment() *xray.XRayParentSegment {
 // Connect will establish a connection to the IoT service
 func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 	if s == nil {
-		return errors.New("IoT Connect Failed: " + "IoT receiver is nil")
+		return errors.New("IoT Connect Failed: (Struct Pointer Nil) " + "IoT Struct Pointer is Nil")
 	}
 
 	s.mu.RLock()
@@ -136,7 +136,7 @@ func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 // Connect will establish a connection to the IoT service
 func (s *IoT) connectInternal(ctx context.Context) error {
 	if s == nil {
-		return errors.New("IoT connectInternal Failed: " + "IoT receiver is nil")
+		return errors.New("IoT connectInternal Failed: (Struct Pointer Nil) " + "IoT Struct Pointer is Nil")
 	}
 
 	// clean up prior sqs client reference
@@ -212,7 +212,7 @@ func (s *IoT) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 
 func (s *IoT) AttachPolicy(policyName, target string) (err error) {
 	if s == nil {
-		return errors.New("IoT AttachPolicy Failed: " + "IoT receiver is nil")
+		return errors.New("IoT AttachPolicy Failed: (Struct Pointer Nil) " + "IoT Struct Pointer is Nil")
 	}
 
 	segCtx := context.Background()

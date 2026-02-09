@@ -77,12 +77,18 @@ type IoT struct {
 // ================================================================================================================
 
 func (s *IoT) getClient() *awsiot.Client {
+	if s == nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.iotClient
 }
 
 func (s *IoT) getParentSegment() *xray.XRayParentSegment {
+	if s == nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s._parentSegment
@@ -94,6 +100,10 @@ func (s *IoT) getParentSegment() *xray.XRayParentSegment {
 
 // Connect will establish a connection to the IoT service
 func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if s == nil {
+		return errors.New("IoT Connect Failed: (Struct Pointer Nil) " + "IoT Struct Pointer is Nil")
+	}
+
 	s.mu.RLock()
 	region := s.AwsRegion
 	s.mu.RUnlock()
@@ -125,6 +135,10 @@ func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 
 // Connect will establish a connection to the IoT service
 func (s *IoT) connectInternal(ctx context.Context) error {
+	if s == nil {
+		return errors.New("IoT connectInternal Failed: (Struct Pointer Nil) " + "IoT Struct Pointer is Nil")
+	}
+
 	// clean up prior sqs client reference
 	s.mu.Lock()
 	s.iotClient = nil
@@ -172,6 +186,10 @@ func (s *IoT) connectInternal(ctx context.Context) error {
 
 // Disconnect will clear iot client
 func (s *IoT) Disconnect() {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.iotClient = nil
@@ -179,6 +197,10 @@ func (s *IoT) Disconnect() {
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *IoT) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s._parentSegment = parentSegment
@@ -189,6 +211,10 @@ func (s *IoT) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 // ----------------------------------------------------------------------------------------------------------------
 
 func (s *IoT) AttachPolicy(policyName, target string) (err error) {
+	if s == nil {
+		return errors.New("IoT AttachPolicy Failed: (Struct Pointer Nil) " + "IoT Struct Pointer is Nil")
+	}
+
 	segCtx := context.Background()
 	segCtxSet := false
 

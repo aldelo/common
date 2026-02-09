@@ -39,8 +39,8 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.17 h1:WWLqlh79iO48yLkj1v
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.17/go.mod h1:EhG22vHRrvF8oXSTYStZhJc1aUgKtnJe+aOiFEV90cM=
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 h1:WKuaxf++XKWlHWu9ECbMlha8WOEGm0OUEZqm4K/Gcfk=
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4/go.mod h1:ZWy7j6v1vWGmPReu0iSGvRiise4YI5SkR3OHKTZ6Wuc=
-github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.48.0 h1:ejQUybB1DcOsIqlQVPCNQVQ1FHQEIRuVEzoPBOTo1Ns=
-github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.48.0/go.mod h1:siKVmJdui4dwPPtsKr3F5BAeJxW1MANWaLJnTDfgu7c=
+github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.49.0 h1:osqN479arsxXAIHmBbiAn+0nj7jCkuXtzgtZPSwt0sc=
+github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.49.0/go.mod h1:siKVmJdui4dwPPtsKr3F5BAeJxW1MANWaLJnTDfgu7c=
 github.com/aws/aws-sdk-go-v2/service/cognitoidentity v1.33.18 h1:JyhYT6WNHQHgX9lIKh6FSsh/KNJGNk73wlTwAL3CZVU=
 github.com/aws/aws-sdk-go-v2/service/cognitoidentity v1.33.18/go.mod h1:D8mmxQnWQZL6pskpLJmq/91xku1o8PfWTUCQHxe0cTs=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.4 h1:0ryTNEdJbzUCEWkVXEXoqlXV72J5keC1GvILMOuD00E=
@@ -57,8 +57,8 @@ github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.13 h1:gd84Omyu9JLriJVCbGApcLz
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.13/go.mod h1:sTGThjphYE4Ohw8vJiRStAcu3rbjtXRsdNB0TvZ5wwo=
 github.com/aws/aws-sdk-go-v2/service/sts v1.41.6 h1:5fFjR/ToSOzB2OQ/XqWpZBmNvmP/pJ1jOWYlFDJTjRQ=
 github.com/aws/aws-sdk-go-v2/service/sts v1.41.6/go.mod h1:qgFDZQSD/Kys7nJnVqYlWKnh0SSdMjAi0uSwON4wgYQ=
-github.com/aws/aws-sdk-go-v2/service/textract v1.40.13 h1:umpDjWKrzG16wWMmJMqPbFkwUrpyKaXYUDx7si1DL8E=
-github.com/aws/aws-sdk-go-v2/service/textract v1.40.13/go.mod h1:DBdFOY1Y9dUOf/z8PRxpSpPqMWEWBO1LZVo5t8/Txa0=
+github.com/aws/aws-sdk-go-v2/service/textract v1.40.16 h1:JbvV3rRYlnHH8Ztj9h/SjPBWtLhKmPVrsTihLWhMY+8=
+github.com/aws/aws-sdk-go-v2/service/textract v1.40.16/go.mod h1:dYFajO9mXY0D8k9XY/0PR0S9uX8DZzX/5vTq/HRjx04=
 github.com/aws/aws-xray-sdk-go v1.8.5 h1:A/Gc733PHvARkjcAk+fw+0k2RT3O4VSZ+x/3YvAREfc=
 github.com/aws/aws-xray-sdk-go v1.8.5/go.mod h1:tDkyLXjXQ+9j49uUrFXhO9cPnpH7qp7PWkEON+KbbKs=
 github.com/aws/smithy-go v1.24.0 h1:LpilSUItNPFr1eY85RYgTIg5eIEPtvFbskaFcmmIUnk=

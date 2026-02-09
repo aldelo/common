@@ -8,10 +8,10 @@ require (
 	github.com/aws/aws-dax-go v1.2.15
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
-	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.48.0
+	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.49.0
 	github.com/aws/aws-sdk-go-v2/service/cognitoidentity v1.33.18
 	github.com/aws/aws-sdk-go-v2/service/iot v1.72.1
-	github.com/aws/aws-sdk-go-v2/service/textract v1.40.13
+	github.com/aws/aws-sdk-go-v2/service/textract v1.40.16
 	github.com/aws/aws-xray-sdk-go v1.8.5
 	github.com/denisenkom/go-mssqldb v0.12.4-0.20230430112654-103f0369fa02
 	github.com/gin-contrib/cors v1.7.6

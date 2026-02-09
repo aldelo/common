@@ -220,6 +220,10 @@ type SQLResult struct {
 
 // GetDsnADO serialize SQLServer dsn to ado style connection string, for use in database connectivity (dsn.Port is ignored)
 func (svr *SQLServer) GetDsnADO() (string, error) {
+	if svr == nil {
+		return "", errors.New("SQLServer GetDsnADO Failed: SQLServer receiver is nil")
+	}
+
 	//
 	// first validate input
 	//
@@ -279,6 +283,10 @@ func (svr *SQLServer) GetDsnADO() (string, error) {
 
 // GetDsnURL serialize sql server dsn to url style connection string, for use in database connectivity
 func (svr *SQLServer) GetDsnURL() (string, error) {
+	if svr == nil {
+		return "", errors.New("SQLServer GetDsnURL Failed: SQLServer receiver is nil")
+	}
+
 	//
 	// first validate input
 	//
@@ -338,6 +346,10 @@ func (svr *SQLServer) GetDsnURL() (string, error) {
 //
 //	useADOConnectString = if ignored, default is true, to use URL connect string format, set parameter value to false explicitly
 func (svr *SQLServer) Open(useADOConnectString ...bool) error {
+	if svr == nil {
+		return errors.New("SQLServer Open Failed: SQLServer receiver is nil")
+	}
+
 	//
 	// get parameter value,
 	// default is expected
@@ -411,6 +423,10 @@ func (svr *SQLServer) Open(useADOConnectString ...bool) error {
 
 // Close will close the database connection and set db to nil
 func (svr *SQLServer) Close() error {
+	if svr == nil {
+		return nil
+	}
+
 	svr.txMu.Lock()
 	defer svr.txMu.Unlock()
 
@@ -431,6 +447,10 @@ func (svr *SQLServer) Close() error {
 
 // Ping tests if current database connection is still active and ready
 func (svr *SQLServer) Ping() error {
+	if svr == nil {
+		return errors.New("SQLServer Ping Failed: SQLServer receiver is nil")
+	}
+
 	svr.mu.Lock()
 	db := svr.db
 	svr.mu.Unlock()
@@ -449,6 +469,10 @@ func (svr *SQLServer) Ping() error {
 
 // Begin starts a database transaction, and stores the transaction object until commit or rollback
 func (svr *SQLServer) Begin() error {
+	if svr == nil {
+		return errors.New("SQLServer Begin Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return err
@@ -484,6 +508,10 @@ func (svr *SQLServer) Begin() error {
 
 // Commit finalizes a database transaction, and commits changes to database
 func (svr *SQLServer) Commit() error {
+	if svr == nil {
+		return errors.New("SQLServer Commit Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return err
@@ -515,6 +543,10 @@ func (svr *SQLServer) Commit() error {
 
 // Rollback cancels pending database changes for the current transaction and clears out transaction object
 func (svr *SQLServer) Rollback() error {
+	if svr == nil {
+		return errors.New("SQLServer Rollback Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return err
@@ -564,6 +596,10 @@ func (svr *SQLServer) Rollback() error {
 // [ Notes ]
 //  1. if error == nil, and len(dest struct slice) == 0 then zero struct slice result
 func (svr *SQLServer) GetStructSlice(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if svr == nil {
+		return false, errors.New("SQLServer GetStructSlice Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return false, err
@@ -616,6 +652,10 @@ func (svr *SQLServer) GetStructSlice(dest interface{}, query string, args ...int
 //  1. notFound = indicates no rows found in query (aka sql.ErrNoRows), if error is detected, notFound is always false
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is nil)
 func (svr *SQLServer) GetStruct(dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if svr == nil {
+		return false, errors.New("SQLServer GetStruct Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return false, err
@@ -679,6 +719,10 @@ func (svr *SQLServer) GetStruct(dest interface{}, query string, args ...interfac
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *SQLServer) GetRowsByOrdinalParams(query string, args ...interface{}) (*sqlx.Rows, error) {
+	if svr == nil {
+		return nil, errors.New("SQLServer GetRowsByOrdinalParams Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -732,6 +776,10 @@ func (svr *SQLServer) GetRowsByOrdinalParams(query string, args ...interface{}) 
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *SQLServer) GetRowsByNamedMapParam(query string, args map[string]interface{}) (*sqlx.Rows, error) {
+	if svr == nil {
+		return nil, errors.New("SQLServer GetRowsByNamedMapParam Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -797,6 +845,10 @@ func (svr *SQLServer) GetRowsByNamedMapParam(query string, args map[string]inter
 //  2. ScanSlice(): accepts *sqlx.Rows, scans rows result into target pointer slice (if no error, endOfRows = true is returned)
 //  3. ScanStruct(): accepts *sqlx.Rows, scans current single row result into target pointer struct, returns endOfRows as true of false; if endOfRows = true, loop should stop
 func (svr *SQLServer) GetRowsByStructParam(query string, args interface{}) (*sqlx.Rows, error) {
+	if svr == nil {
+		return nil, errors.New("SQLServer GetRowsByStructParam Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -854,6 +906,10 @@ func (svr *SQLServer) GetRowsByStructParam(query string, args interface{}) (*sql
 //  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *SQLServer) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows bool, err error) {
+	if svr == nil {
+		return true, errors.New("SQLServer ScanSlice Failed: SQLServer receiver is nil")
+	}
+
 	// ensure rows pointer is set
 	if rows == nil {
 		return true, nil
@@ -896,6 +952,10 @@ func (svr *SQLServer) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows
 //  1. endOfRows = true if this action call yielded end of rows, meaning stop further processing of current loop
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil)
 func (svr *SQLServer) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool, err error) {
+	if svr == nil {
+		return true, errors.New("SQLServer ScanStruct Failed: SQLServer receiver is nil")
+	}
+
 	// ensure rows pointer is set
 	if rows == nil {
 		return true, nil
@@ -951,6 +1011,10 @@ func (svr *SQLServer) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows b
 //	WHEN USING Scan(), MUST CHECK Scan Result Error for sql.ErrNoRow status
 //	SUGGESTED TO USE ScanColumnsByRow() Instead of Scan()
 func (svr *SQLServer) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, error) {
+	if svr == nil {
+		return nil, errors.New("SQLServer GetSingleRow Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return nil, err
@@ -1010,6 +1074,10 @@ func (svr *SQLServer) GetSingleRow(query string, args ...interface{}) (*sqlx.Row
 //  1. notFound = true if no row is found in current scan
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
 func (svr *SQLServer) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFound bool, err error) {
+	if svr == nil {
+		return false, errors.New("SQLServer ScanSliceByRow Failed: SQLServer receiver is nil")
+	}
+
 	// if row is nil, treat as no row and not an error
 	if row == nil {
 		if dest != nil {
@@ -1058,6 +1126,10 @@ func (svr *SQLServer) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFou
 //  1. notFound = true if no row is found in current scan
 //  2. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and dest is set as nil and notFound is true)
 func (svr *SQLServer) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound bool, err error) {
+	if svr == nil {
+		return false, errors.New("SQLServer ScanStructByRow Failed: SQLServer receiver is nil")
+	}
+
 	// if row is nil, treat as no row and not an error
 	if row == nil {
 		dest = nil
@@ -1103,6 +1175,10 @@ func (svr *SQLServer) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound
 //     var Address string
 //  4. notFound, err := svr.ScanColumnsByRow(row, &CustomerID, &CustomerName, &Address)
 func (svr *SQLServer) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound bool, err error) {
+	if svr == nil {
+		return false, errors.New("SQLServer ScanColumnsByRow Failed: SQLServer receiver is nil")
+	}
+
 	// if row is nil, treat as no row and not an error
 	if row == nil {
 		return true, nil
@@ -1140,6 +1216,10 @@ func (svr *SQLServer) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notF
 //  2. retNotFound = now row found
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as blank)
 func (svr *SQLServer) GetScalarString(query string, args ...interface{}) (retVal string, retNotFound bool, retErr error) {
+	if svr == nil {
+		return "", false, errors.New("SQLServer GetScalarString Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return "", false, err
@@ -1201,6 +1281,10 @@ func (svr *SQLServer) GetScalarString(query string, args ...interface{}) (retVal
 //  2. retNotFound = now row found
 //  3. if error != nil, then error is encountered (if error == sql.ErrNoRows, then error is treated as nil, and retVal is returned as sql.NullString{})
 func (svr *SQLServer) GetScalarNullString(query string, args ...interface{}) (retVal sql.NullString, retNotFound bool, retErr error) {
+	if svr == nil {
+		return sql.NullString{}, false, errors.New("SQLServer GetScalarNullString Failed: SQLServer receiver is nil")
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return sql.NullString{}, false, err
@@ -1263,6 +1347,10 @@ func (svr *SQLServer) GetScalarNullString(query string, args ...interface{}) (re
 // [ Return Values ]
 //  1. SQLResult = represents the sql action result received (including error info if applicable)
 func (svr *SQLServer) ExecByOrdinalParams(query string, args ...interface{}) SQLResult {
+	if svr == nil {
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("SQLServer ExecByOrdinalParams Failed: SQLServer receiver is nil")}
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -1372,6 +1460,10 @@ func (svr *SQLServer) ExecByOrdinalParams(query string, args ...interface{}) SQL
 // [ Return Values ]
 //  1. SQLResult = represents the sql action result received (including error info if applicable)
 func (svr *SQLServer) ExecByNamedMapParam(query string, args map[string]interface{}) SQLResult {
+	if svr == nil {
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("SQLServer ExecByNamedMapParam Failed: SQLServer receiver is nil")}
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
@@ -1476,6 +1568,10 @@ func (svr *SQLServer) ExecByNamedMapParam(query string, args map[string]interfac
 // [ Return Values ]
 //  1. SQLResult = represents the sql action result received (including error info if applicable)
 func (svr *SQLServer) ExecByStructParam(query string, args interface{}) SQLResult {
+	if svr == nil {
+		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("SQLServer ExecByStructParam Failed: SQLServer receiver is nil")}
+	}
+
 	// verify if the database connection is good
 	if err := svr.Ping(); err != nil {
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}

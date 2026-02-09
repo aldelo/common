@@ -102,6 +102,9 @@ func (k *PaymentCryptography) getParentSegment() *xray.XRayParentSegment {
 
 // Connect will establish a connection to the PaymentCryptography service
 func (k *PaymentCryptography) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if k == nil {
+		return errors.New("PaymentCryptography receiver is nil")
+	}
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
 			k.mu.Lock()
@@ -191,6 +194,9 @@ func (k *PaymentCryptography) connectInternal() error {
 
 // Disconnect will disjoin from aws session by clearing it
 func (k *PaymentCryptography) Disconnect() {
+	if k == nil {
+		return
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.pycClient = nil
@@ -199,6 +205,9 @@ func (k *PaymentCryptography) Disconnect() {
 
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (k *PaymentCryptography) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if k == nil {
+		return
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k._parentSegment = parentSegment
@@ -841,6 +850,11 @@ func (k *PaymentCryptography) GetKey(keyArn string) (output *pycrypto.GetKeyOutp
 		return nil, err
 	}
 
+	if keyArn == "" {
+		err = errors.New("GetKey with PaymentCryptography Failed: " + "keyArn is Required")
+		return nil, err
+	}
+
 	// generate alias
 	var aliasInput *pycrypto.GetKeyInput
 	var aliasOutput *pycrypto.GetKeyOutput
@@ -863,6 +877,11 @@ func (k *PaymentCryptography) GetKeyByAlias(keyAlias string) (output *pycrypto.G
 	client := k.getClient()
 	if client == nil {
 		err = errors.New("GetKeyByAlias with PaymentCryptography Failed: " + "PaymentCryptography Client is Required")
+		return nil, err
+	}
+
+	if keyAlias == "" {
+		err = errors.New("GetKeyByAlias with PaymentCryptography Failed: " + "keyAlias is Required")
 		return nil, err
 	}
 

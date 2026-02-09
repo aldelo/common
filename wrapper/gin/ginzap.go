@@ -62,6 +62,10 @@ type GinZap struct {
 
 // Init will initialize zap logger and prep ginzap struct object for middleware use
 func (z *GinZap) Init() error {
+	if z == nil {
+		return fmt.Errorf("GinZap Init Failed: GinZap receiver is nil")
+	}
+
 	if util.LenTrim(z.LogName) == 0 {
 		return fmt.Errorf("Log Name is Required")
 	}
@@ -88,6 +92,12 @@ func (z *GinZap) Init() error {
 // Requests with errors are logged using zap.Error().
 // Requests without errors are logged using zap.Info().
 func (z *GinZap) NormalLogger() gin.HandlerFunc {
+	if z == nil {
+		return func(c *gin.Context) {
+			c.Next()
+		}
+	}
+
 	return func(c *gin.Context) {
 		if z._zapLog == nil {
 			c.Next()
@@ -157,6 +167,12 @@ func (z *GinZap) NormalLogger() gin.HandlerFunc {
 //
 // All errors are logged using zap.Error()
 func (z *GinZap) PanicLogger() gin.HandlerFunc {
+	if z == nil {
+		return func(c *gin.Context) {
+			c.Next()
+		}
+	}
+
 	return func(c *gin.Context) {
 		defer func() {
 			if z._zapLog == nil {

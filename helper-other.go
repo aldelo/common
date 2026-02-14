@@ -1,0 +1,443 @@
+package helper
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"runtime"
+	"strings"
+	"time"
+)
+
+/*
+ * Copyright 2020-2026 Aldelo, LP
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// ================================================================================================================
+// Variadic Optional Value Helpers
+// ================================================================================================================
+
+// GetFirstOrDefault will select the first variadic value from paramValue,
+// if no paramValue variadic, then defaultValue is used as return value
+func GetFirstOrDefault(defaultValue interface{}, paramValue ...interface{}) interface{} {
+	if len(paramValue) > 0 {
+		return paramValue[0]
+	} else {
+		// returning default
+		return defaultValue
+	}
+}
+
+// GetFirstIntOrDefault will select the first variadic value from paramValue,
+// if no paramValue variadic, then defaultValue is used as return value
+func GetFirstIntOrDefault(defaultValue int, paramValue ...int) int {
+	if len(paramValue) > 0 {
+		return paramValue[0]
+	} else {
+		// returning default
+		return defaultValue
+	}
+}
+
+// GetFirstInt64OrDefault will select the first variadic value from paramValue,
+// if no paramValue variadic, then defaultValue is used as return value
+func GetFirstInt64OrDefault(defaultValue int64, paramValue ...int64) int64 {
+	if len(paramValue) > 0 {
+		return paramValue[0]
+	} else {
+		// returning default
+		return defaultValue
+	}
+}
+
+// GetFirstStringOrDefault will select the first variadic value from paramValue,
+// if no paramValue variadic, then defaultValue is used as return value
+func GetFirstStringOrDefault(defaultValue string, paramValue ...string) string {
+	if len(paramValue) > 0 {
+		return paramValue[0]
+	} else {
+		// returning default
+		return defaultValue
+	}
+}
+
+// GetFirstBoolOrDefault will select the first variadic value from paramValue,
+// if no paramValue variadic, then defaultValue is used as return value
+func GetFirstBoolOrDefault(defaultValue bool, paramValue ...bool) bool {
+	if len(paramValue) > 0 {
+		return paramValue[0]
+	} else {
+		// returning default
+		return defaultValue
+	}
+}
+
+// GetFirstFloat32OrDefault will select the first variadic value from paramValue,
+// if no paramValue variadic, then defaultValue is used as return value
+func GetFirstFloat32OrDefault(defaultValue float32, paramValue ...float32) float32 {
+	if len(paramValue) > 0 {
+		return paramValue[0]
+	} else {
+		// returning default
+		return defaultValue
+	}
+}
+
+// GetFirstFloat64OrDefault will select the first variadic value from paramValue,
+// if no paramValue variadic, then defaultValue is used as return value
+func GetFirstFloat64OrDefault(defaultValue float64, paramValue ...float64) float64 {
+	if len(paramValue) > 0 {
+		return paramValue[0]
+	} else {
+		// returning default
+		return defaultValue
+	}
+}
+
+// GetFirstTimeOrDefault will select the first variadic value from paramValue,
+// if no paramValue variadic, then defaultValue is used as return value
+func GetFirstTimeOrDefault(defaultValue time.Time, paramValue ...time.Time) time.Time {
+	if len(paramValue) > 0 {
+		return paramValue[0]
+	} else {
+		// returning default
+		return defaultValue
+	}
+}
+
+// GetFirstByteOrDefault will select the first variadic value from paramValue,
+// if no paramValue variadic, then defaultValue is used as return value
+func GetFirstByteOrDefault(defaultValue byte, paramValue ...byte) byte {
+	if len(paramValue) > 0 {
+		return paramValue[0]
+	} else {
+		// returning default
+		return defaultValue
+	}
+}
+
+// ================================================================================================================
+// slice helpers
+// ================================================================================================================
+
+// IntSliceContains checks if value is contained within the intSlice
+func IntSliceContains(intSlice *[]int, value int) bool {
+	if intSlice == nil {
+		return false
+	} else {
+		for _, v := range *intSlice {
+			if v == value {
+				return true
+			}
+		}
+
+		return false
+	}
+}
+
+// StringSliceContains checks if value is contained within the strSlice
+func StringSliceContains(strSlice *[]string, value string) bool {
+	if strSlice == nil {
+		return false
+	}
+
+	for _, v := range *strSlice {
+		if strings.EqualFold(v, value) { // CHANGED: use Unicode-safe, allocation-free compare
+			return true
+		}
+	}
+
+	return false
+}
+
+// StringSliceExtractUnique returns unique string slice elements
+func StringSliceExtractUnique(strSlice []string) (result []string) {
+	if strSlice == nil {
+		return []string{}
+	} else if len(strSlice) <= 1 {
+		return strSlice
+	} else {
+		for _, v := range strSlice {
+			if !StringSliceContains(&result, v) {
+				result = append(result, v)
+			}
+		}
+
+		return result
+	}
+}
+
+// SliceSeekElement returns the first filterFunc input object's true response
+// note: use SliceObjectToSliceInterface to convert slice of objects to slice of interface before passing to slice parameter
+func SliceSeekElement(slice []interface{}, filterFunc func(input interface{}, filter ...interface{}) bool, filterParam ...interface{}) interface{} {
+	if len(slice) == 0 {
+		return nil
+	}
+
+	if filterFunc == nil {
+		return nil
+	}
+
+	for _, v := range slice {
+		if filterFunc(v, filterParam...) {
+			// found
+			return v
+		}
+	}
+
+	// not found
+	return nil
+}
+
+// SliceDeleteElement accepts slice (value type or pointer type, primitive or complex struct),
+// removes element by index position removalIndex,
+// and returns the reassembled result slice without the removed element
+//
+// note: this method does not preserve element ordering, this is in order to achieve faster call performance
+//
+// removalIndex = positive number indicates element removal index position (0-based index)
+//
+//	  negative number indicates element removal index from right,
+//		-1 = last element to remove; -2 = second to the last to remove, and so on
+//	  positive / negative number out of bound = returns original slice unchanged
+//
+// if resultSlice is nil, then no slice remain
+func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interface{}) {
+	// protect against nil / invalid inputs before reflection
+	if slice == nil {
+		return nil
+	}
+
+	v := reflect.ValueOf(slice)
+	wasPtr := false // track whether caller provided a pointer
+
+	if !v.IsValid() {
+		return nil
+	}
+
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil
+		}
+
+		wasPtr = true
+		v = v.Elem()
+
+		if !v.IsValid() {
+			return nil
+		}
+
+		// protect against unsettable pointee to avoid panic
+		if !v.CanSet() {
+			return slice
+		}
+	}
+
+	if v.Kind() != reflect.Slice {
+		return slice // return original input instead of nil to avoid silent unexpected nil
+	}
+
+	// for non-addressable slice values, work on a settable copy to avoid reflect.Set panic
+	if !v.CanSet() {
+		tmp := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		reflect.Copy(tmp, v)
+		v = tmp
+	}
+
+	length := v.Len()
+	if length == 0 {
+		// honor doc by returning a nil slice shape
+		zero := reflect.Zero(v.Type())
+		v.Set(zero)
+		if wasPtr {
+			return slice
+		}
+		return zero.Interface()
+	}
+
+	// normalize index (supports negative indices)
+	idx := removalIndex
+	if idx < 0 {
+		idx = length + idx
+	}
+	if idx < 0 || idx >= length {
+		return slice // out of bounds, leave unchanged
+	}
+
+	last := length - 1
+	if idx != last {
+		swap := reflect.Swapper(v.Interface())
+		swap(idx, last)
+	}
+
+	// set to nil when last element removed; otherwise trim
+	if last == 0 {
+		v.Set(reflect.Zero(v.Type()))
+	} else {
+		v.Set(v.Slice(0, last))
+	}
+
+	if wasPtr {
+		return slice // pointer already updated
+	}
+	return v.Interface()
+}
+
+// ================================================================================================================
+// console helpers
+// ================================================================================================================
+
+// normalizeConsoleLine trims only trailing CR/LF so we keep intentional spaces in string prompts.
+func normalizeConsoleLine(s string) string {
+	return strings.TrimRight(s, "\r\n")
+}
+
+// normalizeConsoleInput trims trailing CR/LF and surrounding spaces for parsed inputs.
+func normalizeConsoleInput(s string) string {
+	return strings.TrimSpace(normalizeConsoleLine(s))
+}
+
+// ConsolePromptAndAnswer is a helper to prompt a message and then scan a response in console
+func ConsolePromptAndAnswer(prompt string, replyLowercase bool, autoTrim ...bool) string {
+	fmt.Print(prompt)
+
+	// use buffered line read to capture full input including spaces
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil && len(answer) == 0 {
+		fmt.Println()
+		return ""
+	}
+
+	answer = normalizeConsoleLine(answer)
+
+	if replyLowercase {
+		answer = strings.ToLower(answer)
+	}
+
+	if len(autoTrim) > 0 && autoTrim[0] {
+		answer = Trim(answer)
+	}
+
+	fmt.Println()
+	return answer
+}
+
+// ConsolePromptAndAnswerBool is a helper to prompt a message and then scan a response in console
+func ConsolePromptAndAnswerBool(prompt string, defaultTrue ...bool) bool {
+	fmt.Print(prompt)
+
+	defVal := false
+	if len(defaultTrue) > 0 && defaultTrue[0] {
+		defVal = true
+	}
+
+	// use buffered line read to capture full input including spaces
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println()
+		return defVal
+	}
+
+	answer = normalizeConsoleInput(answer)
+
+	result := defVal
+	if LenTrim(answer) > 0 {
+		if parsed, ok := ParseBool(answer); ok {
+			result = parsed
+		}
+	}
+
+	fmt.Println()
+	return result
+}
+
+// ConsolePromptAndAnswerInt is a helper to prompt a message and then scan a response in console
+func ConsolePromptAndAnswerInt(prompt string, preventNegative ...bool) int {
+	fmt.Print(prompt)
+
+	// use buffered line read to capture full input including spaces
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil && len(answer) == 0 {
+		fmt.Println()
+		return 0
+	}
+
+	answer = normalizeConsoleInput(answer)
+	result, _ := ParseInt32(answer)
+
+	if result < 0 && len(preventNegative) > 0 && preventNegative[0] {
+		result = 0
+	}
+
+	fmt.Println()
+	return result
+}
+
+// ConsolePromptAndAnswerFloat64 is a helper to prompt a message and then scan a response in console
+func ConsolePromptAndAnswerFloat64(prompt string, preventNegative ...bool) float64 {
+	fmt.Print(prompt)
+
+	// use buffered line read to capture full input including spaces
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil && len(answer) == 0 {
+		fmt.Println()
+		return 0
+	}
+
+	answer = normalizeConsoleInput(answer)
+	result, _ := ParseFloat64(answer)
+
+	if result < 0 && len(preventNegative) > 0 && preventNegative[0] {
+		result = 0
+	}
+
+	fmt.Println()
+	return result
+}
+
+// ErrorMessage find the error cause time, file, code line number and error message
+func ErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	// skip 1 frame to report the caller of ErrorMessage
+	_, file, line, ok := runtime.Caller(1)
+	if !ok {
+		file = "unknown"
+	}
+
+	// cross-platform last-two-segment path handling and normalized separator
+	dir := filepath.Base(filepath.Dir(file))
+	base := filepath.Base(file)
+	location := base
+	if dir != "" && dir != "." && dir != string(os.PathSeparator) {
+		location = filepath.ToSlash(filepath.Join(dir, base))
+	}
+
+	logmessage := fmt.Sprintf("%v %v:%v:%v",
+		time.Now().UTC().Format("2006-01-02 15:04:05.000"),
+		location,
+		line,
+		err.Error())
+
+	return logmessage
+}

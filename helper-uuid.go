@@ -1,0 +1,444 @@
+package helper
+
+/*
+ * Copyright 2020-2026 Aldelo, LP
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import (
+	"crypto/rand"
+	"database/sql"
+	"encoding/binary"
+	"io"
+	"math"
+	"math/big"
+	mrand "math/rand"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
+)
+
+var (
+	ulidEntropy     = ulid.Monotonic(rand.Reader, 0)
+	ulidEntropyLock sync.Mutex
+
+	fallbackRand     = mrand.New(mrand.NewSource(time.Now().UnixNano())) // fallback RNG instance
+	fallbackRandLock sync.Mutex
+	fallbackLastSeed time.Time
+)
+
+// thread-safe wrapper so fallbackRand can act as an io.Reader for ULID/UUID fallback paths.
+type lockedFallbackReader struct{}
+
+func (lockedFallbackReader) Read(p []byte) (int, error) {
+	fallbackRandLock.Lock()
+	defer fallbackRandLock.Unlock()
+	return fallbackRand.Read(p)
+}
+
+// fetch a fresh seed without holding fallbackRandLock to avoid blocking the RNG lock if crypto/rand stalls.
+func fallbackSeed() int64 {
+	var seedBytes [8]byte
+	if _, err := rand.Read(seedBytes[:]); err == nil {
+		return int64(binary.LittleEndian.Uint64(seedBytes[:]))
+	}
+	return time.Now().UnixNano()
+}
+
+const fallbackReseedMinGap = 5 * time.Millisecond
+
+// ensure fallback RNG gets a fresh, high-entropy seed when crypto/rand is unavailable
+func reseedFallbackRandLocked(seed int64, now time.Time) {
+	fallbackRandLock.Lock()
+	defer fallbackRandLock.Unlock()
+
+	if !fallbackLastSeed.IsZero() && now.Sub(fallbackLastSeed) < fallbackReseedMinGap {
+		return
+	}
+
+	fallbackRand.Seed(seed)
+	fallbackLastSeed = now
+}
+
+// helper to safely get Intn with shared RNG
+func randomIntn(max int) int {
+	if max <= 0 { // defensive guard against panic
+		return 0
+	}
+
+	// use crypto-strength result when available
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err == nil {
+		return int(n.Int64())
+	}
+
+	// reseed without holding the RNG lock during crypto read
+	seed := fallbackSeed()
+	now := time.Now()
+	reseedFallbackRandLocked(seed, now)
+
+	fallbackRandLock.Lock()
+	v := fallbackRand.Intn(max)
+	fallbackRandLock.Unlock()
+	return v
+}
+
+// crypto-friendly, bounded int32 generator with fallback
+func randomInt32n(max int32) int32 {
+	if max <= 0 {
+		return 0
+	}
+
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err == nil {
+		return int32(n.Int64())
+	}
+
+	// reseed without holding the RNG lock during crypto read
+	seed := fallbackSeed()
+	now := time.Now()
+	reseedFallbackRandLocked(seed, now)
+
+	fallbackRandLock.Lock()
+	v := int32(fallbackRand.Int31n(max))
+	fallbackRandLock.Unlock()
+	return v
+}
+
+// crypto-friendly, bounded int64 generator with fallback
+func randomInt64n(max int64) int64 {
+	if max <= 0 {
+		return 0
+	}
+
+	n, err := rand.Int(rand.Reader, big.NewInt(max))
+	if err == nil {
+		return n.Int64()
+	}
+
+	// reseed without holding the RNG lock during crypto read
+	seed := fallbackSeed()
+	now := time.Now()
+	reseedFallbackRandLocked(seed, now)
+
+	fallbackRandLock.Lock()
+	v := fallbackRand.Int63n(max)
+	fallbackRandLock.Unlock()
+	return v
+}
+
+// ================================================================================================================
+// UUID HELPERS
+// ================================================================================================================
+
+// GenerateUUIDv4 will generate a UUID Version 4 (Random) to represent a globally unique identifier (extremely rare chance of collision)
+func GenerateUUIDv4() (string, error) {
+	id, err := uuid.NewRandom()
+	if err == nil {
+		return id.String(), nil
+	}
+
+	// reseed without holding RNG lock during crypto read; surface real fallback errors.
+	seed := fallbackSeed() // ensure fresh seed even if crypto/rand stalled
+	now := time.Now()
+	reseedFallbackRandLocked(seed, now)
+
+	fallbackRandLock.Lock()
+	var b [16]byte
+	n, rErr := fallbackRand.Read(b[:]) //  capture count and error
+	fallbackRandLock.Unlock()
+	if rErr != nil { // return actual fallback read error
+		return "", rErr
+	}
+	if n != len(b) { // guard against short reads
+		return "", io.ErrUnexpectedEOF
+	}
+
+	// set RFC 4122 version/variant bits
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+
+	id, convErr := uuid.FromBytes(b[:])
+	if convErr != nil { // surface conversion error instead of crypto error
+		return "", convErr
+	}
+	return id.String(), nil
+}
+
+// NewUUID will generate a UUID Version 4 (Random) and ignore error if any
+func NewUUID() string {
+	id, _ := GenerateUUIDv4()
+	return id
+}
+
+// ================================================================================================================
+// ULID HELPERS
+// ================================================================================================================
+
+// GenerateULID will generate a ULID that is globally unique (very slim chance of collision)
+func GenerateULID() (string, error) {
+	t := time.Now()
+
+	ulidEntropyLock.Lock()
+	defer ulidEntropyLock.Unlock() // ensure unlock on all paths
+
+	// first attempt (crypto)
+	if id, err := ulid.New(ulid.Timestamp(t), ulidEntropy); err == nil {
+		return id.String(), nil
+	} else {
+		// refresh crypto entropy and retry once
+		ulidEntropy = ulid.Monotonic(rand.Reader, 0)
+		if id2, err2 := ulid.New(ulid.Timestamp(time.Now()), ulidEntropy); err2 == nil {
+			return id2.String(), nil
+		}
+	}
+
+	// reseed fallback RNG to avoid deterministic entropy during crypto/rand outages
+	reseedFallbackRandLocked(fallbackSeed(), time.Now())
+
+	// crypto failed twice – use thread-safe fallback entropy so callers never get empty ULIDs
+	fallbackEntropy := ulid.Monotonic(lockedFallbackReader{}, 0)
+	if id3, err3 := ulid.New(ulid.Timestamp(time.Now()), fallbackEntropy); err3 == nil {
+		return id3.String(), nil
+	} else {
+		return "", err3
+	}
+}
+
+// NewULID will generate a new ULID and ignore error if any
+func NewULID() string {
+	id, _ := GenerateULID()
+	return id
+}
+
+// GetULIDTimestamp will return the timestamp of the ulid string
+func GetULIDTimestamp(ulidStr string) (time.Time, error) {
+	if id, err := ulid.Parse(ulidStr); err != nil {
+		return time.Time{}, err
+	} else {
+		return time.UnixMilli(int64(id.Time())), nil
+	}
+}
+
+// IsULIDValid will check if the ulid string is valid
+func IsULIDValid(ulidStr string) bool {
+	if _, err := ulid.Parse(ulidStr); err != nil {
+		return false
+	} else {
+		return true
+	}
+}
+
+// ================================================================================================================
+// Random Number Generator
+// ================================================================================================================
+
+// GenerateRandomNumber with unix nano as seed
+func GenerateRandomNumber(maxNumber int) int {
+	// guard to avoid panic when maxNumber <= 0
+	if maxNumber <= 0 {
+		return 0
+	}
+
+	// fast path for degenerate bound
+	if maxNumber == 1 {
+		return 0
+	}
+
+	return randomIntn(maxNumber)
+}
+
+// GenerateRandomChar will create a random character, using unix nano as seed
+func GenerateRandomChar() string {
+	const (
+		printableStart = 33
+		printableRange = 94 // 126 - 33 + 1
+	)
+
+	r := randomIntn(printableRange) + printableStart
+	return string(r)
+}
+
+// GenerateNewUniqueInt32 will take in old value and return new unique value with randomized seed and negated
+func GenerateNewUniqueInt32(oldIntVal int) int {
+	// normalize to positive to avoid '-' in buffer causing parse failure
+	if oldIntVal < 0 {
+		oldIntVal = safeNegateInt(oldIntVal)
+	}
+
+	seed1 := int(randomInt32n(1000)) // 0-999
+	seed2 := int(randomInt32n(100))  // 0-99
+
+	const baseMod = 100000 // keep 5 digits from the base
+	const scale = 10000    // 5 digits shifted by 4 => max 999,990,000 (< MaxInt32)
+	candidate := (oldIntVal%baseMod)*scale + seed2*100 + seed1%100
+
+	if candidate > math.MaxInt32 {
+		candidate = candidate % math.MaxInt32
+	}
+
+	return safeNegateInt(candidate)
+}
+
+// GenerateNewUniqueNullInt32 will take in old value and return new unique value with randomized seed and negated
+func GenerateNewUniqueNullInt32(oldIntVal sql.NullInt32) sql.NullInt32 {
+	if !oldIntVal.Valid {
+		return oldIntVal
+	}
+
+	// normalize to positive to avoid '-' in buffer causing parse failure
+	base := FromNullInt(oldIntVal)
+	if base < 0 {
+		base = int(safeNegateInt(base))
+	}
+
+	seed1 := int(randomInt32n(1000))
+	seed2 := int(randomInt32n(100))
+
+	const baseMod = 100000
+	const scale = 10000
+	candidate := (base%baseMod)*scale + seed2*100 + seed1%100
+
+	if candidate > math.MaxInt32 {
+		candidate = candidate % math.MaxInt32
+	}
+
+	return ToNullInt(safeNegateInt(candidate), true)
+}
+
+// GenerateNewUniqueInt64 will take in old value and return new unique value with randomized seed and negated
+func GenerateNewUniqueInt64(oldIntVal int64) int64 {
+	// normalize to positive to avoid '-' in buffer causing parse failure
+	if oldIntVal < 0 {
+		oldIntVal = safeNegateInt64(oldIntVal)
+	}
+
+	seed1 := randomInt64n(1000)
+	seed2 := randomInt64n(1000)
+
+	const baseMod int64 = 1_000_000_000_000 // keep last 12 digits
+	const scale int64 = 1_000_000           // shift seeds by 6 digits
+	candidate := (oldIntVal%baseMod)*scale + seed2*1000 + seed1
+
+	if candidate > math.MaxInt64 {
+		candidate = candidate % math.MaxInt64
+	}
+
+	return safeNegateInt64(candidate)
+}
+
+func safeNegateInt(v int) int { // prevent MinInt overflow
+	minInt := ^int(^uint(0) >> 1) // compute min int without overflow
+	maxInt := int(^uint(0) >> 1)  // compute max int without overflow
+
+	if v == minInt {
+		return maxInt
+	}
+	return -v
+}
+
+func safeNegateInt64(v int64) int64 { // prevent MinInt64 overflow
+	if v == math.MinInt64 {
+		return math.MaxInt64
+	}
+	return -v
+}
+
+// GenerateNewUniqueNullInt64 will take in old value and return new unique value with randomized seed and negated
+func GenerateNewUniqueNullInt64(oldIntVal sql.NullInt64) sql.NullInt64 {
+	if !oldIntVal.Valid {
+		return oldIntVal
+	}
+
+	// normalize to positive to avoid '-' in buffer causing parse failure
+	base := FromNullInt64(oldIntVal)
+	if base < 0 {
+		base = safeNegateInt64(base)
+	}
+
+	seed1 := randomInt64n(1000)
+	seed2 := randomInt64n(1000)
+
+	const baseMod int64 = 1_000_000_000_000
+	const scale int64 = 1_000_000
+	candidate := (base%baseMod)*scale + seed2*1000 + seed1
+
+	if candidate > math.MaxInt64 {
+		candidate = candidate % math.MaxInt64
+	}
+
+	return ToNullInt64(safeNegateInt64(candidate), true)
+}
+
+// ================================================================================================================
+// String Randomizer
+// ================================================================================================================
+
+// GenerateNewUniqueString will take in old value and return new unique value with randomized seed
+//
+//	stringLimit = 0 no limit, > 0 has limit
+func GenerateNewUniqueString(oldStrVal string, stringLimit int) string {
+	seed1 := Padding(Itoa(GenerateRandomNumber(999)), 3, false, "0")
+	seed2 := GenerateRandomChar()
+	seed3 := GenerateRandomChar()
+	seed4 := GenerateRandomChar()
+
+	buf := oldStrVal + seed2 + seed3 + seed4 + seed1
+
+	if stringLimit > 0 {
+		if stringLimit >= 6 {
+			buf = Right(buf, stringLimit)
+		} else {
+			if stringLimit >= 3 {
+				buf = Left(seed2+seed3+seed4+seed1, stringLimit)
+			} else {
+				buf = Left(seed2+seed3, stringLimit)
+			}
+		}
+	}
+
+	return buf
+}
+
+// GenerateNewUniqueNullString will take in old value and return new unique value with randomized seed
+//
+//	stringLimit = 0 no limit, > 0 has limit
+func GenerateNewUniqueNullString(oldStrVal sql.NullString, stringLimit int) sql.NullString {
+	if !oldStrVal.Valid {
+		return oldStrVal
+	}
+
+	seed1 := Padding(Itoa(GenerateRandomNumber(999)), 3, false, "0")
+	seed2 := GenerateRandomChar()
+	seed3 := GenerateRandomChar()
+	seed4 := GenerateRandomChar()
+
+	buf := FromNullString(oldStrVal) + seed2 + seed3 + seed4 + seed1
+
+	if stringLimit > 0 {
+		if stringLimit >= 6 {
+			buf = Right(buf, stringLimit)
+		} else {
+			if stringLimit >= 3 {
+				buf = Left(seed2+seed3+seed4+seed1, stringLimit)
+			} else {
+				buf = Left(seed2+seed3, stringLimit)
+			}
+		}
+	}
+
+	return ToNullString(buf, true)
+}

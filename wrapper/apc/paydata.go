@@ -1,0 +1,495 @@
+package apc
+
+/*
+ * Copyright 2020-2026 Aldelo, LP
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// =================================================================================================================
+// AWS CREDENTIAL:
+//		use $> aws configure (to set aws access key and secret to target machine)
+//		Store AWS Access ID and Secret Key into Default Profile Using '$ aws configure' cli
+//
+// To Install & Setup AWS CLI on Host:
+//		1) https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2-linux.html
+//				On Ubuntu, if host does not have zip and unzip:
+//					$> sudo apt install zip
+//					$> sudo apt install unzip
+//				On Ubuntu, to install AWS CLI v2:
+//					$> curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+//					$> unzip awscliv2.zip
+//					$> sudo ./aws/install
+//		2) $> aws configure set region awsRegionName --profile default
+// 		3) $> aws configure
+//				follow prompts to enter Access ID and Secret Key
+//
+// AWS Region Name Reference:
+//		us-west-2, us-east-1, ap-northeast-1, etc
+//		See: https://docs.aws.amazon.com/general/latest/gr/rande.html
+// =================================================================================================================
+
+import (
+	"context"
+	"errors"
+	"sync"
+
+	awshttp2 "github.com/aldelo/common/wrapper/aws"
+	"github.com/aldelo/common/wrapper/aws/awsregion"
+	"github.com/aldelo/common/wrapper/xray"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	pycryptoData "github.com/aws/aws-sdk-go/service/paymentcryptographydata"
+	awsxray "github.com/aws/aws-xray-sdk-go/xray"
+)
+
+// ================================================================================================================
+// STRUCTS
+// ================================================================================================================
+
+// PaymentCryptoData struct encapsulates the AWS PaymentCryptography Data access functionality
+type PaymentCryptoData struct {
+	// define the AWS region that PaymentCryptography is located at
+	AwsRegion awsregion.AWSRegion
+
+	// custom http2 client options
+	HttpOptions *awshttp2.HttpClientSettings
+
+	// define PaymentCryptography Data key or key alias
+	KeyArn string
+
+	// store aws session object
+	sess *session.Session
+
+	// store PaymentCryptography Data client object
+	pyDataClient *pycryptoData.PaymentCryptographyData
+
+	_parentSegment *xray.XRayParentSegment
+	mu             sync.RWMutex
+}
+
+// ================================================================================================================
+// internal helpers
+// ================================================================================================================
+
+func (k *PaymentCryptoData) getClient() *pycryptoData.PaymentCryptographyData {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.pyDataClient
+}
+
+func (k *PaymentCryptoData) getParentSegment() *xray.XRayParentSegment {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k._parentSegment
+}
+
+func (k *PaymentCryptoData) getKeyArn() string {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.KeyArn
+}
+
+// ================================================================================================================
+// STRUCTS FUNCTIONS
+// ================================================================================================================
+
+// ----------------------------------------------------------------------------------------------------------------
+// utility functions
+// ----------------------------------------------------------------------------------------------------------------
+
+// Connect will establish a connection to the PaymentCryptography Data service
+func (k *PaymentCryptoData) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if k == nil {
+		return errors.New("PaymentCryptoData receiver is nil")
+	}
+	if xray.XRayServiceOn() {
+		if len(parentSegment) > 0 {
+			k.mu.Lock()
+			k._parentSegment = parentSegment[0]
+			k.mu.Unlock()
+		}
+
+		seg := xray.NewSegment("PaymentCryptoData-Connect", k.getParentSegment())
+		defer seg.Close()
+		defer func() {
+			_ = seg.Seg.AddMetadata("KDS-AWS-Region", k.AwsRegion)
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+
+		err = k.connectInternal()
+
+		if err == nil {
+			if c := k.getClient(); c != nil {
+				awsxray.AWS(c.Client)
+			}
+		}
+		return err
+	}
+
+	return k.connectInternal()
+}
+
+// Connect will establish a connection to the PaymentCryptography Data service
+func (k *PaymentCryptoData) connectInternal() error {
+	k.mu.RLock()
+	region := k.AwsRegion
+	httpOpts := k.HttpOptions
+	k.mu.RUnlock()
+
+	k.mu.Lock()
+	k.sess = nil
+	k.pyDataClient = nil
+	k.mu.Unlock()
+
+	if !region.Valid() || region == awsregion.UNKNOWN {
+		return errors.New("Connect To PaymentCryptoData Failed: (AWS Session Error) " + "Region is Required")
+	}
+
+	if httpOpts == nil {
+		httpOpts = new(awshttp2.HttpClientSettings)
+	}
+
+	// use custom http2 client
+	h2 := &awshttp2.AwsHttp2Client{
+		Options: httpOpts,
+	}
+
+	httpCli, httpErr := h2.NewHttp2Client()
+	if httpErr != nil {
+		return errors.New("Connect to PaymentCryptoData Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+	}
+
+	// establish aws session connection and keep session object in struct
+	sess, err := session.NewSession(
+		&aws.Config{
+			Region:     aws.String(region.Key()),
+			HTTPClient: httpCli,
+		})
+	if err != nil {
+		// aws session error
+		return errors.New("Connect To PaymentCryptoData Failed: (AWS Session Error) " + err.Error())
+	}
+
+	client := pycryptoData.New(sess)
+	if client == nil {
+		return errors.New("Connect To PaymentCryptoData Client Failed: (New PaymentCryptography Client Connection) " + "Connection Object Nil")
+	}
+
+	k.mu.Lock()
+	k.HttpOptions = httpOpts
+	k.sess = sess
+	k.pyDataClient = client
+	k.mu.Unlock()
+
+	return nil
+}
+
+// Disconnect will disjoin from aws session by clearing it
+func (k *PaymentCryptoData) Disconnect() {
+	if k == nil {
+		return
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.pyDataClient = nil
+	k.sess = nil
+}
+
+// UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
+func (k *PaymentCryptoData) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
+	if k == nil {
+		return
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k._parentSegment = parentSegment
+}
+
+func awsNilString(input string) *string {
+	if input == "" {
+		return nil
+	}
+	return aws.String(input)
+}
+
+// ----------------------------------------------------------------------------------------------------------------
+// PaymentCryptography Data encrypt/decrypt via RSA functions
+// ----------------------------------------------------------------------------------------------------------------
+
+func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycryptoData.EncryptionDecryptionAttributes) (cipherText string, err error) {
+	var segCtx context.Context
+
+	seg := xray.NewSegmentNullable("PaymentCryptoData-encrypt", k.getParentSegment())
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	client := k.getClient()
+	if client == nil {
+		err = errors.New("encrypt with PaymentCryptoData key Failed: " + "PaymentCryptoData Client is Required")
+		return "", err
+	}
+
+	keyArn := k.getKeyArn()
+	if len(keyArn) <= 0 {
+		err = errors.New("encrypt with PaymentCryptoData key Failed: " + "PaymentCryptoData KeyArn is Required")
+		return "", err
+	}
+
+	// encrypt asymmetric
+	var encryptedOutput *pycryptoData.EncryptDataOutput
+	var e error
+
+	encryptDataInput := &pycryptoData.EncryptDataInput{
+		EncryptionAttributes: encryptionAttributes,
+		KeyIdentifier:        aws.String(keyArn),
+		PlainText:            aws.String(plainText),
+	}
+
+	if segCtx == nil {
+		encryptedOutput, e = client.EncryptData(encryptDataInput)
+	} else {
+		encryptedOutput, e = client.EncryptDataWithContext(segCtx, encryptDataInput)
+	}
+
+	if e != nil {
+		err = errors.New("encrypt with PaymentCryptoData key Failed: " + e.Error())
+		return "", err
+	}
+	if encryptedOutput == nil {
+		err = errors.New("encrypt with PaymentCryptoData key Failed: encryptedOutput is nil")
+		return "", err
+	}
+	cipherText = aws.StringValue(encryptedOutput.CipherText)
+	return cipherText, nil
+}
+
+func (k *PaymentCryptoData) decrypt(cipherText string, decryptionAttributes *pycryptoData.EncryptionDecryptionAttributes) (plainText string, err error) {
+
+	var segCtx context.Context
+
+	seg := xray.NewSegmentNullable("PaymentCryptoData-decrypt", k.getParentSegment())
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+
+			if err != nil {
+				_ = seg.Seg.AddError(err)
+			}
+		}()
+	}
+
+	client := k.getClient()
+	if client == nil {
+		err = errors.New("decrypt with PaymentCryptoData Key Failed: " + "PaymentCryptoData Client is Required")
+		return "", err
+	}
+
+	keyArn := k.getKeyArn()
+	if len(keyArn) <= 0 {
+		err = errors.New("decrypt with PaymentCryptoData Key Failed: " + "PaymentCryptoData Key Name is Required")
+		return "", err
+	}
+
+	if len(cipherText) <= 0 {
+		err = errors.New("decrypt with PaymentCryptoData Key Failed: " + "Cipher Text is Required")
+		return "", err
+	}
+
+	//prepare input
+	var decryptedOutput *pycryptoData.DecryptDataOutput
+	var e error
+
+	decryptInput := &pycryptoData.DecryptDataInput{
+		CipherText:           aws.String(cipherText),
+		DecryptionAttributes: decryptionAttributes,
+		KeyIdentifier:        aws.String(keyArn),
+	}
+
+	if segCtx == nil {
+		decryptedOutput, e = client.DecryptData(decryptInput)
+	} else {
+		decryptedOutput, e = client.DecryptDataWithContext(segCtx, decryptInput)
+	}
+
+	if e != nil {
+		err = errors.New("decrypt with PaymentCryptoData Key Failed: " + e.Error())
+		return "", err
+	}
+
+	if decryptedOutput == nil {
+		err = errors.New("decrypt with PaymentCryptoData Key Failed: decryptedOutput is nil")
+		return "", err
+	}
+	plainText = aws.StringValue(decryptedOutput.PlainText)
+
+	return plainText, nil
+}
+
+func (k *PaymentCryptoData) encryptRSA(plainText string, paddingType string) (cipherText string, err error) {
+	encryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
+		Asymmetric: &pycryptoData.AsymmetricEncryptionAttributes{
+			PaddingType: awsNilString(paddingType),
+		},
+	}
+	return k.encrypt(plainText, encryptionAttributes)
+}
+
+func (k *PaymentCryptoData) decryptRSA(cipherText string, paddingType string) (plainText string, err error) {
+	decryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
+		Asymmetric: &pycryptoData.AsymmetricEncryptionAttributes{
+			PaddingType: awsNilString(paddingType),
+		},
+	}
+	return k.decrypt(cipherText, decryptionAttributes)
+}
+
+// EncryptViaRSAPKCS1 the padding scheme is PKCS1, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) EncryptViaRSAPKCS1(plainText string) (cipherText string, err error) {
+	return k.encryptRSA(plainText, pycryptoData.PaddingTypePkcs1)
+}
+
+// EncryptViaRSANone the padding scheme is None, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) EncryptViaRSANone(plainText string) (cipherText string, err error) {
+	return k.encryptRSA(plainText, "")
+}
+
+// EncryptViaRSAOEAPSHA512 the padding scheme is OEAP SHA512, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) EncryptViaRSAOEAPSHA512(plainText string) (cipherText string, err error) {
+	return k.encryptRSA(plainText, pycryptoData.PaddingTypeOaepSha512)
+}
+
+// EncryptViaRSAOEAPSHA256 the padding scheme is OEAP SHA256, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) EncryptViaRSAOEAPSHA256(plainText string) (cipherText string, err error) {
+	return k.encryptRSA(plainText, pycryptoData.PaddingTypeOaepSha256)
+}
+
+// EncryptViaRSAOEAPSHA128 the padding scheme is OEAP SHA1, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) EncryptViaRSAOEAPSHA128(plainText string) (cipherText string, err error) {
+	return k.encryptRSA(plainText, pycryptoData.PaddingTypeOaepSha1)
+}
+
+// DecryptViaRSAPKCS1 the padding scheme is PKCS1, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) DecryptViaRSAPKCS1(cipherText string) (plainText string, err error) {
+	return k.decryptRSA(cipherText, pycryptoData.PaddingTypePkcs1)
+}
+
+// DecryptViaRSANone the padding scheme is None, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) DecryptViaRSANone(cipherText string) (plainText string, err error) {
+	return k.decryptRSA(cipherText, "")
+}
+
+// DecryptViaRSAOEAPSHA512 the padding scheme is OEAP SHA512, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) DecryptViaRSAOEAPSHA512(cipherText string) (plainText string, err error) {
+	return k.decryptRSA(cipherText, pycryptoData.PaddingTypeOaepSha512)
+}
+
+// DecryptViaRSAOEAPSHA256 the padding scheme is OEAP SHA256, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) DecryptViaRSAOEAPSHA256(cipherText string) (plainText string, err error) {
+	return k.decryptRSA(cipherText, pycryptoData.PaddingTypeOaepSha256)
+}
+
+// DecryptViaRSAOEAPSHA128 the padding scheme is OEAP SHA1, the plainText & cipherText is both hex encoded string
+func (k *PaymentCryptoData) DecryptViaRSAOEAPSHA128(cipherText string) (plainText string, err error) {
+	return k.decryptRSA(cipherText, pycryptoData.PaddingTypeOaepSha1)
+}
+
+// ----------------------------------------------------------------------------------------------------------------
+// PaymentCryptography Data encrypt/decrypt via AES functions
+// ----------------------------------------------------------------------------------------------------------------
+
+func (k *PaymentCryptoData) encryptAES(plainText string, iv, mode string) (cipherText string, err error) {
+	encryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
+		Symmetric: &pycryptoData.SymmetricEncryptionAttributes{
+			InitializationVector: awsNilString(iv),
+			Mode:                 aws.String(mode),
+			PaddingType:          nil,
+		},
+	}
+	return k.encrypt(plainText, encryptionAttributes)
+}
+
+func (k *PaymentCryptoData) decryptAES(cipherText string, iv, mode string) (plainText string, err error) {
+	decryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
+		Symmetric: &pycryptoData.SymmetricEncryptionAttributes{
+			InitializationVector: awsNilString(iv),
+			Mode:                 aws.String(mode),
+			PaddingType:          nil,
+		},
+	}
+	return k.decrypt(cipherText, decryptionAttributes)
+}
+
+func (k *PaymentCryptoData) EncryptViaAesECB(plainText string) (cipherText string, err error) {
+	return k.encryptAES(plainText, "", pycryptoData.EncryptionModeEcb)
+}
+
+func (k *PaymentCryptoData) EncryptViaAesCBC(plainText, iv string) (cipherText string, err error) {
+	return k.encryptAES(plainText, iv, pycryptoData.EncryptionModeCbc)
+}
+
+func (k *PaymentCryptoData) EncryptViaAesCFB(plainText, iv string) (cipherText string, err error) {
+	return k.encryptAES(plainText, iv, pycryptoData.EncryptionModeCfb)
+}
+
+func (k *PaymentCryptoData) EncryptViaAesOFB(plainText, iv string) (cipherText string, err error) {
+	return k.encryptAES(plainText, iv, pycryptoData.EncryptionModeOfb)
+}
+
+func (k *PaymentCryptoData) DecryptViaAesECB(cipherText string) (plainText string, err error) {
+	return k.decryptAES(cipherText, "", pycryptoData.EncryptionModeEcb)
+}
+
+func (k *PaymentCryptoData) DecryptViaAesCBC(cipherText, iv string) (plainText string, err error) {
+	return k.decryptAES(cipherText, iv, pycryptoData.EncryptionModeCbc)
+}
+
+func (k *PaymentCryptoData) DecryptViaAesCFB(cipherText, iv string) (plainText string, err error) {
+	return k.decryptAES(cipherText, iv, pycryptoData.EncryptionModeCfb)
+}
+
+func (k *PaymentCryptoData) DecryptViaAesOFB(cipherText, iv string) (plainText string, err error) {
+	return k.decryptAES(cipherText, iv, pycryptoData.EncryptionModeOfb)
+}
+
+func (k *PaymentCryptoData) DecryptViaDUKPT(cipherText, ksn string) (plainText string, err error) {
+	decryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
+		Dukpt: &pycryptoData.DukptEncryptionAttributes{
+			KeySerialNumber: aws.String(ksn),
+		},
+	}
+	return k.decrypt(cipherText, decryptionAttributes)
+}
+
+func (k *PaymentCryptoData) EncryptViaDUKPT(plainText, ksn string) (cipherText string, err error) {
+	decryptionAttributes := &pycryptoData.EncryptionDecryptionAttributes{
+		Dukpt: &pycryptoData.DukptEncryptionAttributes{
+			KeySerialNumber: aws.String(ksn),
+		},
+	}
+	return k.encrypt(plainText, decryptionAttributes)
+}

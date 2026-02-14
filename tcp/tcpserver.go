@@ -1,0 +1,396 @@
+package tcp
+
+/*
+ * Copyright 2020-2026 Aldelo, LP
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import (
+	"bytes"
+	"fmt"
+	"log"
+	"net"
+	"strings"
+	"sync"
+	"time"
+
+	util "github.com/aldelo/common"
+)
+
+// TCP server specific configuration constants
+const (
+	maxListenerYieldDuration = 250 // Maximum listener yield time in milliseconds
+)
+
+// TCPServer defines a concurrent tcp server for handling inbound client requests, and sending back responses
+//
+// Port = this tcp server port number to listen on
+// ListenerErrorHandler = func to trigger when listener caused error event, this also signifies the end of tcp server listener serving mode
+// ClientReceiveHandler = func to trigger when this tcp server receives data from client, the writeToClientFunc is provided for sending data back to the connected client
+// ClientErrorHandler = func to trigger when this tcp server detected tcp client error during data receive event
+// ReadBufferSize = default 1024, cannot be greater than 65535, defines the byte length of read buffer
+// ListenerYieldDuration = default 0, no yield, valid range is 0 - 250ms, the amount of time to yield to cpu during listener accept loop cycle
+// ReaderYieldDuration = default 25ms, the amount of time to yield to cpu process during each cycle of Read loop
+// ReadDeadLineDuration = default 1000ms, the amount of time to wait for read action before timeout, valid range is 250ms - 5000ms
+// WriteDeadLineDuration = the amount of time to wait for write action before timeout, if 0, then no timeout
+type TCPServer struct {
+	Port uint
+
+	ListenerAcceptHandler func(clientIP string)
+	ListenerErrorHandler  func(err error)
+
+	ClientReceiveHandler func(clientIP string, data []byte, writeToClientFunc func(writeData []byte, clientIP string) error)
+	ClientErrorHandler   func(clientIP string, err error)
+
+	ReadBufferSize        uint
+	ListenerYieldDuration time.Duration
+	ReaderYieldDuration   time.Duration
+
+	ReadDeadlineDuration  time.Duration
+	WriteDeadLineDuration time.Duration
+
+	_tcpListener net.Listener
+	_serving     bool
+	_clients     map[string]net.Conn
+	_clientEnd   map[string]chan struct{}
+
+	_mux sync.RWMutex
+}
+
+// Serve will startup TCP Server and begin accepting TCP Client connections, and initiates connection processing
+func (s *TCPServer) Serve() (err error) {
+	if s == nil {
+		return fmt.Errorf("TCP Server Object Is Nil")
+	}
+
+	s._mux.Lock()
+	if s._serving {
+		s._mux.Unlock()
+		return fmt.Errorf("TCP Server Already Serving, Use Close() To Stop")
+	}
+	s._mux.Unlock()
+
+	if s.Port == 0 || s.Port > maxPortNumber {
+		return fmt.Errorf("TCP Server Listening Port Must Be 1 - %d", maxPortNumber)
+	}
+
+	// Initialize maps if nil (defensive programming)
+	s._mux.Lock()
+	if s._clients == nil {
+		s._clients = make(map[string]net.Conn)
+	}
+	if s._clientEnd == nil {
+		s._clientEnd = make(map[string]chan struct{})
+	}
+	s._mux.Unlock()
+
+	if s._tcpListener, err = net.Listen("tcp4", fmt.Sprintf(":%d", s.Port)); err != nil {
+		return err
+	} else {
+		s._mux.Lock()
+		s._serving = true
+		s._mux.Unlock()
+
+		// start continuous loop to accept incoming tcp client,
+		// and initiate client handler go-routine for each connection
+		go func() {
+			for {
+				// perform listener action on connected tcp client
+				if c, e := s._tcpListener.Accept(); e != nil {
+					// error encountered
+					if s.ListenerErrorHandler != nil {
+						if strings.Contains(strings.ToLower(e.Error()), "closed") {
+							s.ListenerErrorHandler(fmt.Errorf("TCP Server Closed"))
+						} else {
+							s.ListenerErrorHandler(e)
+						}
+					}
+
+					// clean up clients
+					s._mux.Lock()
+					for _, v := range s._clients {
+						if v != nil {
+							_ = v.Close()
+						}
+					}
+					s._clients = nil
+					s._clientEnd = nil
+					s._serving = false
+					s._mux.Unlock()
+
+					return
+				} else {
+					// tcp client connected accepted
+					clientIP := c.RemoteAddr().String()
+
+					s._mux.Lock()
+					s._clients[clientIP] = c
+
+					// create stop channel once per client, buffered to avoid blocking
+					s._clientEnd[clientIP] = make(chan struct{}, 1)
+					s._mux.Unlock()
+
+					// handle client connection
+					go s.handleClientConnection(c, clientIP)
+
+					// notify accept event
+					if s.ListenerAcceptHandler != nil {
+						s.ListenerAcceptHandler(clientIP)
+					}
+				}
+
+				if s.ListenerYieldDuration > 0 && s.ListenerYieldDuration <= maxListenerYieldDuration*time.Millisecond {
+					time.Sleep(s.ListenerYieldDuration)
+				}
+			}
+		}()
+
+		log.Println("TCP Server Addr: ", util.GetLocalIP()+":"+util.UintToStr(s.Port))
+		return nil
+	}
+}
+
+// Close will shut down TCP Server, and clean up resources allocated
+func (s *TCPServer) Close() {
+	if s == nil {
+		return
+	}
+
+	// store listener reference before acquiring lock
+	s._mux.Lock()
+	listener := s._tcpListener
+	s._tcpListener = nil
+	s._mux.Unlock()
+
+	// close listener outside mutex to avoid blocking
+	if listener != nil {
+		_ = listener.Close()
+	}
+
+	s._mux.Lock()
+	defer s._mux.Unlock()
+
+	// signal all client goroutines to stop
+	if s._clientEnd != nil {
+		for _, ch := range s._clientEnd {
+			if ch != nil {
+				select {
+				case ch <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
+
+	// clean up clients
+	if s._clients != nil {
+		for _, v := range s._clients {
+			if v != nil {
+				_ = v.Close()
+			}
+		}
+	}
+
+	// stop serving
+	s._clients = nil
+	s._clientEnd = nil
+	s._serving = false
+}
+
+// GetConnectedClients returns list of connected tcp clients
+func (s *TCPServer) GetConnectedClients() (clientsList []string) {
+	if s == nil {
+		return []string{}
+	}
+
+	s._mux.RLock()
+	defer s._mux.RUnlock()
+
+	if s._clients == nil || len(s._clients) == 0 {
+		return []string{}
+	}
+
+	for k := range s._clients {
+		clientsList = append(clientsList, k)
+	}
+
+	return clientsList
+}
+
+// DisconnectClient will close client connection and end the client reader service
+func (s *TCPServer) DisconnectClient(clientIP string) {
+	if s == nil {
+		return
+	}
+
+	s._mux.Lock()
+	if s._clientEnd == nil {
+		s._mux.Unlock()
+		return
+	}
+	ch, ok := s._clientEnd[clientIP]
+	s._mux.Unlock()
+
+	if !ok || ch == nil {
+		return
+	}
+
+	// non-blocking stop signal; channel is buffered
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
+}
+
+// WriteToClient accepts byte slice and clientIP target, for writing data to the target client
+func (s *TCPServer) WriteToClient(writeData []byte, clientIP string) error {
+	if s == nil {
+		return fmt.Errorf("TCP Server Object Is Nil")
+	}
+
+	if writeData == nil {
+		return nil
+	}
+
+	if len(writeData) == 0 {
+		return nil
+	}
+
+	if util.LenTrim(clientIP) == 0 {
+		return nil
+	}
+
+	s._mux.Lock()
+	if s._clients == nil {
+		s._mux.Unlock()
+		return fmt.Errorf("Write To Client Failed: TCP Server Not Initialized")
+	}
+	c, ok := s._clients[clientIP]
+	s._mux.Unlock()
+
+	if c == nil || !ok {
+		return fmt.Errorf("Write To Client IP %s Failed: Client Not Found in TCP Client Connections", clientIP)
+	}
+
+	// write data to tcp client connection
+	if s.WriteDeadLineDuration > 0 {
+		_ = c.SetWriteDeadline(time.Now().Add(s.WriteDeadLineDuration))
+		defer c.SetWriteDeadline(time.Time{})
+	}
+
+	if _, e := c.Write(writeData); e != nil {
+		return fmt.Errorf("Write To Client IP %s Failed: %s", clientIP, e.Error())
+	}
+	return nil
+}
+
+// handleClientConnection is an internal method invoked by Serve,
+// handleClientConnection stores tcp client connection into map, and begins the read loop to continuously acquire client data upon arrival
+func (s *TCPServer) handleClientConnection(conn net.Conn, clientIP string) {
+	if s == nil || conn == nil {
+		return
+	}
+
+	if util.LenTrim(clientIP) == 0 {
+		return
+	}
+
+	// clean up upon exit method
+	defer conn.Close()
+
+	readBufferSize := uint(defaultReadBufferSize)
+	if s.ReadBufferSize > 0 && s.ReadBufferSize < maxPortNumber {
+		readBufferSize = s.ReadBufferSize
+	}
+
+	readYield := defaultReaderYieldDuration * time.Millisecond
+	if s.ReaderYieldDuration > 0 && s.ReaderYieldDuration < maxReaderYieldDuration*time.Millisecond {
+		readYield = s.ReaderYieldDuration
+	}
+
+	readDeadline := defaultReadDeadlineDuration * time.Millisecond
+	if s.ReadDeadlineDuration > minReadDeadlineDuration*time.Millisecond && s.ReadDeadlineDuration <= maxReadDeadlineDuration*time.Millisecond {
+		readDeadline = s.ReadDeadlineDuration
+	}
+
+	// get the stop channel once (under lock) to avoid map races
+	s._mux.Lock()
+	stopCh := s._clientEnd[clientIP]
+	if stopCh == nil {
+		s._mux.Unlock()
+		return
+	}
+	s._mux.Unlock()
+
+	for {
+		select {
+		case <-stopCh:
+			s._mux.Lock()
+			delete(s._clients, clientIP)
+			delete(s._clientEnd, clientIP)
+			s._mux.Unlock()
+			return
+
+		default:
+			// read data from client continuously
+			readBytes := make([]byte, readBufferSize)
+			_ = conn.SetReadDeadline(time.Now().Add(readDeadline))
+
+			if _, e := conn.Read(readBytes); e != nil {
+				_ = conn.SetReadDeadline(time.Time{})
+
+				errInfo := strings.ToLower(e.Error())
+				timeout := strings.Contains(errInfo, "timeout")
+				eof := strings.Contains(errInfo, "eof")
+
+				if timeout {
+					// continue reader service
+					time.Sleep(readYield)
+					continue
+				}
+
+				if s.ClientErrorHandler != nil {
+					if !eof {
+						s.ClientErrorHandler(clientIP, e)
+					} else {
+						s.ClientErrorHandler(clientIP, fmt.Errorf("TCP Client Socket Closed By Remote Host"))
+					}
+				}
+
+				s._mux.Lock()
+				delete(s._clients, clientIP)
+				delete(s._clientEnd, clientIP)
+				s._mux.Unlock()
+				return
+
+			} else {
+				_ = conn.SetReadDeadline(time.Time{})
+
+				// read ok
+				if s.ClientReceiveHandler != nil {
+					// send client data received to client handler for processing
+					s.ClientReceiveHandler(clientIP, bytes.Trim(readBytes, "\x00"), s.WriteToClient)
+				} else {
+					s._mux.Lock()
+					delete(s._clients, clientIP)
+					delete(s._clientEnd, clientIP)
+					s._mux.Unlock()
+					return
+				}
+			}
+		}
+
+		time.Sleep(readYield)
+	}
+}

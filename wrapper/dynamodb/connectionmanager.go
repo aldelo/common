@@ -1,0 +1,374 @@
+package dynamodb
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+)
+
+type ServiceConnectionManager struct {
+	semaphore  chan struct{}
+	mu         sync.RWMutex
+	wg         sync.WaitGroup
+	shutdownCh chan struct{} // non-nil while manager is active; closed on shutdown
+	once       sync.Once
+	closing    bool // prevents new wg.Add after shutdown begins to avoid WaitGroup misuse
+
+	logAcquire     bool          // allow opting out of per-operation acquire logging
+	logRelease     bool          // allow opting out of per-operation release logging
+	defaultTimeout time.Duration // allow callers to override the default timeout
+
+	shutdownWaitTimeout time.Duration
+}
+
+var (
+	globalConnMgr      *ServiceConnectionManager
+	globalConnMgrMutex sync.RWMutex
+)
+
+// option to set shutdown wait timeout (0 or <0 => wait forever, current behavior)
+func WithShutdownWaitTimeout(d time.Duration) func(*ServiceConnectionManager) {
+	return func(s *ServiceConnectionManager) {
+		s.shutdownWaitTimeout = d
+	}
+}
+
+// convertAwsContextSafely tries to extract a stdlib context.Context from aws.Context.
+// If not possible, it returns context.Background().
+func convertAwsContextSafely(awsCtx aws.Context) context.Context {
+	if awsCtx == nil {
+		return context.Background()
+	}
+
+	// Most aws.Context implementations embed context.Context; try a type assertion.
+	if c, ok := awsCtx.(context.Context); ok && c != nil {
+		return c
+	}
+
+	// Fallback: best-effort background context.
+	return context.Background()
+}
+
+func ensureAwsContext(ctx aws.Context) aws.Context {
+	if ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
+// InitGlobalConnectionManager initializes the global manager if it is nil or shut down.
+func InitGlobalConnectionManager(maxConcurrentConnections int, opts ...func(*ServiceConnectionManager)) error {
+	if maxConcurrentConnections <= 0 {
+		err := fmt.Errorf("maxConcurrentConnections must be greater than 0")
+		log.Printf("InitGlobalConnectionManager: %v", err)
+		return err
+	}
+
+	// Fast path with read lock.
+	globalConnMgrMutex.RLock()
+	mgr := globalConnMgr
+	globalConnMgrMutex.RUnlock()
+
+	if mgr != nil && !mgr.isShutdown() {
+		log.Printf("InitGlobalConnectionManager: already initialized and open")
+		return nil
+	}
+
+	// Slow path: acquire write lock and re-check.
+	globalConnMgrMutex.Lock()
+	defer globalConnMgrMutex.Unlock()
+
+	if globalConnMgr == nil || globalConnMgr.isShutdown() {
+		m := &ServiceConnectionManager{
+			semaphore:           make(chan struct{}, maxConcurrentConnections),
+			shutdownCh:          make(chan struct{}),
+			closing:             false,
+			logAcquire:          false,
+			logRelease:          false,
+			defaultTimeout:      30 * time.Second, // default remains 30s
+			shutdownWaitTimeout: 60 * time.Second, // default shutdown wait timeout
+		}
+		for _, opt := range opts { // CHANGE: apply functional options
+			opt(m)
+		}
+		globalConnMgr = m
+		log.Printf("InitGlobalConnectionManager: initialized with capacity=%d", maxConcurrentConnections)
+	} else {
+		log.Printf("InitGlobalConnectionManager: already initialized and open (write-lock check)")
+	}
+	return nil
+}
+
+func WithLogging(acquire, release bool) func(*ServiceConnectionManager) {
+	return func(s *ServiceConnectionManager) {
+		s.logAcquire = acquire
+		s.logRelease = release
+	}
+}
+
+func WithDefaultTimeout(d time.Duration) func(*ServiceConnectionManager) {
+	return func(s *ServiceConnectionManager) {
+		s.defaultTimeout = d
+	}
+}
+
+func IsGlobalConnectionManagerInitialized() bool {
+	globalConnMgrMutex.RLock()
+	mgr := globalConnMgr
+	globalConnMgrMutex.RUnlock()
+	return mgr != nil && !mgr.isShutdown()
+}
+
+func GetGlobalConnectionManager() *ServiceConnectionManager {
+	globalConnMgrMutex.RLock()
+	mgr := globalConnMgr
+	globalConnMgrMutex.RUnlock()
+	if mgr == nil || mgr.isShutdown() {
+		return nil
+	}
+	return mgr
+}
+
+func LogGlobalConnectionManagerStats() {
+	connMgr := GetGlobalConnectionManager()
+	if connMgr != nil {
+		current := connMgr.GetCurrentLoad()
+		maxLoad := connMgr.GetMaxCapacity()
+		log.Printf("Connection Manager Stats: %d/%d semaphore usage", current, maxLoad)
+	} else {
+		log.Printf("Connection Manager Stats: Not initialized or shutdown")
+	}
+}
+
+func ShutdownGlobalConnectionManager() {
+	globalConnMgrMutex.Lock()
+	mgr := globalConnMgr
+	globalConnMgr = nil
+	globalConnMgrMutex.Unlock()
+
+	if mgr != nil {
+		log.Printf("ShutdownGlobalConnectionManager: initiating shutdown")
+		mgr.shutdown()
+	} else {
+		log.Printf("ShutdownGlobalConnectionManager: no manager to shutdown")
+	}
+}
+
+// isShutdown is safe to call concurrently.
+func (scm *ServiceConnectionManager) isShutdown() bool {
+	if scm == nil {
+		return true
+	}
+	scm.mu.RLock()
+	defer scm.mu.RUnlock()
+	if scm.shutdownCh == nil {
+		return true
+	}
+	select {
+	case <-scm.shutdownCh:
+		return true
+	default:
+		return false
+	}
+}
+
+// shutdown closes shutdownCh once and waits for all in-flight operations.
+func (scm *ServiceConnectionManager) shutdown() {
+	if scm == nil {
+		log.Printf("ServiceConnectionManager.shutdown: scm is nil")
+		return
+	}
+
+	scm.once.Do(func() {
+		log.Printf("ServiceConnectionManager.shutdown: closing shutdownCh")
+
+		// Protect shutdownCh mutation with write lock to avoid races with isShutdown.
+		scm.mu.Lock()
+		scm.closing = true
+		if scm.shutdownCh != nil {
+			close(scm.shutdownCh)
+			// leave shutdownCh non-nil but closed; isShutdown handles this
+		}
+		scm.mu.Unlock()
+
+		// bounded wait with warning/early exit if desired
+		if scm.shutdownWaitTimeout > 0 {
+			done := make(chan struct{})
+			go func() {
+				scm.wg.Wait()
+				close(done)
+			}()
+
+			select {
+			case <-done:
+				log.Printf("ServiceConnectionManager.shutdown: all operations completed")
+			case <-time.After(scm.shutdownWaitTimeout):
+				log.Printf("ServiceConnectionManager.shutdown: timeout waiting for operations after %s; %d still active",
+					scm.shutdownWaitTimeout, scm.GetCurrentLoad())
+				return
+			}
+		} else {
+			scm.wg.Wait()
+			log.Printf("ServiceConnectionManager.shutdown: all operations completed")
+		}
+	})
+}
+
+func (scm *ServiceConnectionManager) GetCurrentLoad() int {
+	if scm == nil || scm.isShutdown() {
+		return 0
+	}
+	if scm.semaphore == nil {
+		return 0
+	}
+	return len(scm.semaphore)
+}
+
+func (scm *ServiceConnectionManager) GetMaxCapacity() int {
+	if scm == nil || scm.isShutdown() {
+		return 0
+	}
+	if scm.semaphore == nil {
+		return 0
+	}
+	return cap(scm.semaphore)
+}
+
+// ExecuteWithLimit runs operation respecting the semaphore and shutdown.
+// Operations that have already acquired the semaphore may continue running
+// after shutdown is initiated; shutdown waits for them via wg.
+func (scm *ServiceConnectionManager) ExecuteWithLimit(ctx context.Context, operation func() error) error {
+	if operation == nil {
+		err := fmt.Errorf("operation is nil")
+		log.Printf("ExecuteWithLimit: %v", err)
+		return err
+	}
+	if scm == nil {
+		err := fmt.Errorf("connection manager unavailable (nil)")
+		log.Printf("ExecuteWithLimit: %v", err)
+		return err
+	}
+
+	var cancel context.CancelFunc
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if _, ok := ctx.Deadline(); !ok {
+		timeout := scm.defaultTimeout
+		if timeout <= 0 { // allow disabling default timeout by setting non-positive
+			timeout = 0
+		}
+		if timeout > 0 {
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+		}
+	}
+	if cancel != nil {
+		defer cancel()
+	}
+
+	// Decide based on shutdown and context under read lock.
+	scm.mu.RLock()
+	shutdownCh := scm.shutdownCh
+	semaphore := scm.semaphore
+	closing := scm.closing
+	scm.mu.RUnlock()
+
+	if semaphore == nil {
+		err := fmt.Errorf("semaphore is nil")
+		log.Printf("ExecuteWithLimit: %v", err)
+		return err
+	}
+
+	if shutdownCh == nil || closing || scm.isShutdown() {
+		err := fmt.Errorf("connection manager shutdown")
+		log.Printf("ExecuteWithLimit: %v", err)
+		return err
+	}
+
+	for {
+		select {
+		case <-shutdownCh:
+			err := fmt.Errorf("connection manager shutdown")
+			log.Printf("ExecuteWithLimit: %v", err)
+			return err
+
+		case <-ctx.Done():
+			err := fmt.Errorf("context timed out while waiting for semaphore: %w", ctx.Err())
+			log.Printf("ExecuteWithLimit: %v", err)
+			return err
+
+		case semaphore <- struct{}{}:
+			// success path
+			if scm.logAcquire {
+				log.Printf("ExecuteWithLimit: semaphore acquired")
+			}
+
+			scm.mu.RLock()
+			if scm.closing {
+				scm.mu.RUnlock()
+				<-semaphore
+				if scm.logRelease {
+					log.Printf("ExecuteWithLimit: semaphore released")
+				}
+				err := fmt.Errorf("connection manager shutdown")
+				log.Printf("ExecuteWithLimit: %v", err)
+				return err
+			}
+			scm.wg.Add(1)
+			scm.mu.RUnlock()
+
+			defer func() {
+				<-semaphore
+				if scm.logRelease {
+					log.Printf("ExecuteWithLimit: semaphore released")
+				}
+				scm.wg.Done()
+			}()
+
+			goto runOperation
+		}
+	}
+
+	// At this point, the goroutine is registered in wg and holds a semaphore slot.
+	// Shutdown will wait for completion; we do not re-check shutdownCh here to
+	// avoid unsynchronized reads and to keep semantics simple.
+
+runOperation:
+	var opErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("ExecuteWithLimit.run: recovered panic: %v", r)
+				if e, ok := r.(error); ok {
+					opErr = fmt.Errorf("panic: %w", e)
+				} else {
+					opErr = fmt.Errorf("panic: %v", r)
+				}
+			}
+		}()
+		log.Printf("ExecuteWithLimit: executing operation")
+		opErr = operation()
+		if opErr != nil {
+			log.Printf("ExecuteWithLimit: operation returned error: %v", opErr)
+		} else {
+			log.Printf("ExecuteWithLimit: operation completed successfully")
+		}
+	}()
+	return opErr
+}
+
+// =====================================================================================================================
+// SCM Setup in Consuming Application main()
+// =====================================================================================================================
+
+// func main() {
+// 	// Initialize global connection manager early
+// 	_ = InitGlobalConnectionManager(150) // Limit to 150 concurrent DynamoDB operations
+//
+// 	// ... rest of service initialization
+// }

@@ -17,11 +17,14 @@ package sqlite
  */
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	util "github.com/aldelo/common"
 	"github.com/jmoiron/sqlx"
@@ -188,10 +191,25 @@ type SQLite struct {
 	JournalMode   string // _journal_mode=DELETE, MEMORY, WAL (set default to WAL)
 	Synchronous   string // _synchronous=0: OFF; 1: NORMAL; 2: FULL; 3: EXTRA (set default to NORMAL)
 	BusyTimeoutMS int    // _busy_timeout=milliseconds
+	LockingMode   string // _locking_mode=EXCLUSIVE (default), NORMAL
+
+	// Connection pool configuration
+	MaxOpenConns    int           // 0 = default (1 for SQLite single-writer)
+	MaxIdleConns    int           // 0 = default
+	MaxConnIdleTime time.Duration // 0 = no limit
+
+	// Ping cache configuration
+	PingFrequencySec int // 0 = default 30 seconds; <0 = ping every time (old behavior)
 
 	// sqlite database state object
 	db *sqlx.DB
 	tx *sqlx.Tx
+
+	// named transaction map for concurrent transaction support
+	txMap map[string]*SQLiteTransaction
+
+	// ping cache state
+	lastPing time.Time
 
 	mu sync.RWMutex
 }
@@ -244,7 +262,11 @@ func (svr *SQLite) GetDsn() (string, error) {
 	// format = test.db?cache=private&mode=rwc
 	//
 	str := svr.DatabasePath + "?" + "cache=private"
-	str += "&_locking_mode=EXCLUSIVE"
+	if util.LenTrim(svr.LockingMode) == 0 {
+		str += "&_locking_mode=EXCLUSIVE"
+	} else {
+		str += "&_locking_mode=" + svr.LockingMode
+	}
 	str += "&_txlock=immediate"
 	str += "&_foreign_keys=true"
 
@@ -321,6 +343,21 @@ func (svr *SQLite) Open() error {
 
 	svr.db = db
 	svr.tx = nil
+
+	// Connection pool defaults for SQLite (single-writer)
+	if svr.MaxOpenConns > 0 {
+		db.SetMaxOpenConns(svr.MaxOpenConns)
+	} else {
+		db.SetMaxOpenConns(1) // SQLite single-writer default
+	}
+	if svr.MaxIdleConns > 0 {
+		db.SetMaxIdleConns(svr.MaxIdleConns)
+	}
+	if svr.MaxConnIdleTime > 0 {
+		db.SetConnMaxIdleTime(svr.MaxConnIdleTime)
+	}
+	svr.lastPing = time.Now()
+
 	return nil
 }
 
@@ -338,6 +375,17 @@ func (svr *SQLite) Close() error {
 		svr.tx = nil
 	}
 
+	// rollback any outstanding named transactions
+	for id, t := range svr.txMap {
+		t.mu.Lock()
+		if !t.closed && t.tx != nil {
+			_ = t.tx.Rollback()
+			t.closed = true
+		}
+		t.mu.Unlock()
+		delete(svr.txMap, id)
+	}
+
 	if svr.db != nil {
 		if err := svr.db.Close(); err != nil {
 			return err
@@ -350,21 +398,45 @@ func (svr *SQLite) Close() error {
 	return nil
 }
 
-// Ping tests if current database connection is still active and ready
+// Ping tests if current database connection is still active and ready.
+// It supports cached pings to reduce overhead: by default pings are skipped
+// if the last successful ping was within 30 seconds. Set PingFrequencySec
+// to a positive value to change the interval, or to a negative value to
+// always ping (backward-compatible behavior).
 func (svr *SQLite) Ping() error {
 	if svr == nil {
-		return errors.New("SQLite Ping Failed: SQLite receiver is nil")
+		return errors.New("SQLite Ping Failed: SQLite Receiver is Nil")
 	}
 
 	svr.mu.RLock()
 	db := svr.db
+	lastPing := svr.lastPing
 	svr.mu.RUnlock()
 
 	if db == nil {
 		return errors.New("SQLite Database is Not Connected")
 	}
 
-	return db.Ping()
+	// Determine ping frequency
+	freq := 30 * time.Second // default
+	if svr.PingFrequencySec > 0 {
+		freq = time.Duration(svr.PingFrequencySec) * time.Second
+	} else if svr.PingFrequencySec < 0 {
+		freq = 0 // always ping (backward compat mode)
+	}
+
+	if freq > 0 && time.Since(lastPing) < freq {
+		return nil // skip ping, within cache window
+	}
+
+	if err := db.Ping(); err != nil {
+		return err
+	}
+
+	svr.mu.Lock()
+	svr.lastPing = time.Now()
+	svr.mu.Unlock()
+	return nil
 }
 
 // Begin starts a database transaction, and stores the transaction object until commit or rollback
@@ -1437,4 +1509,294 @@ func (svr *SQLite) ExecByStructParam(actionQuery string, args interface{}) SQLit
 
 	// return result
 	return SQLiteResult{RowsAffected: affected, NewlyInsertedID: newID, Err: nil}
+}
+
+// ----------------------------------------------------------------------------------------------------------------
+// context-aware query and exec helpers
+// ----------------------------------------------------------------------------------------------------------------
+
+// GetStructContext is the context-aware version of GetStruct.
+func (svr *SQLite) GetStructContext(ctx context.Context, dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if svr == nil {
+		return false, errors.New("SQLite GetStructContext Failed: SQLite Receiver is Nil")
+	}
+	if err := svr.Ping(); err != nil {
+		return false, err
+	}
+	svr.mu.RLock()
+	defer svr.mu.RUnlock()
+	if svr.db == nil {
+		return false, errors.New("SQLite Database is Not Connected")
+	}
+	resetDest(dest)
+	var err error
+	if svr.tx == nil {
+		err = svr.db.GetContext(ctx, dest, query, args...)
+	} else {
+		err = svr.tx.GetContext(ctx, dest, query, args...)
+	}
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			resetDest(dest)
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+
+// GetStructSliceContext is the context-aware version of GetStructSlice.
+func (svr *SQLite) GetStructSliceContext(ctx context.Context, dest interface{}, query string, args ...interface{}) (notFound bool, retErr error) {
+	if svr == nil {
+		return false, errors.New("SQLite GetStructSliceContext Failed: SQLite Receiver is Nil")
+	}
+	if err := svr.Ping(); err != nil {
+		return false, err
+	}
+	svr.mu.RLock()
+	defer svr.mu.RUnlock()
+	if svr.db == nil {
+		return false, errors.New("SQLite Database is Not Connected")
+	}
+	resetDest(dest)
+	var err error
+	if svr.tx == nil {
+		err = svr.db.SelectContext(ctx, dest, query, args...)
+	} else {
+		err = svr.tx.SelectContext(ctx, dest, query, args...)
+	}
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			resetDest(dest)
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+
+// ExecByOrdinalParamsContext is the context-aware version of ExecByOrdinalParams.
+func (svr *SQLite) ExecByOrdinalParamsContext(ctx context.Context, actionQuery string, args ...interface{}) SQLiteResult {
+	if svr == nil {
+		return SQLiteResult{Err: errors.New("SQLite ExecByOrdinalParamsContext Failed: SQLite Receiver is Nil")}
+	}
+	if err := svr.Ping(); err != nil {
+		return SQLiteResult{Err: err}
+	}
+
+	isInsert := strings.ToUpper(util.Left(strings.TrimSpace(actionQuery), 6)) == "INSERT"
+
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
+	if svr.db == nil {
+		return SQLiteResult{Err: errors.New("SQLite Database is Not Connected")}
+	}
+
+	var result sql.Result
+	var err error
+	if svr.tx == nil {
+		result, err = svr.db.ExecContext(ctx, actionQuery, args...)
+	} else {
+		result, err = svr.tx.ExecContext(ctx, actionQuery, args...)
+	}
+	if err != nil {
+		return SQLiteResult{Err: err}
+	}
+
+	rtn := SQLiteResult{}
+	rtn.RowsAffected, _ = result.RowsAffected()
+	if isInsert {
+		rtn.NewlyInsertedID, _ = result.LastInsertId()
+	}
+	return rtn
+}
+
+// GetScalarStringContext is the context-aware version of GetScalarString.
+func (svr *SQLite) GetScalarStringContext(ctx context.Context, query string, args ...interface{}) (retVal string, retNotFound bool, retErr error) {
+	if svr == nil {
+		return "", false, errors.New("SQLite GetScalarStringContext Failed: SQLite Receiver is Nil")
+	}
+	if err := svr.Ping(); err != nil {
+		return "", false, err
+	}
+	svr.mu.RLock()
+	defer svr.mu.RUnlock()
+	if svr.db == nil {
+		return "", false, errors.New("SQLite Database is Not Connected")
+	}
+	var result string
+	var err error
+	if svr.tx == nil {
+		err = svr.db.GetContext(ctx, &result, query, args...)
+	} else {
+		err = svr.tx.GetContext(ctx, &result, query, args...)
+	}
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", true, nil
+		}
+		return "", false, err
+	}
+	return result, false, nil
+}
+
+// ----------------------------------------------------------------------------------------------------------------
+// concurrent named transaction support
+// ----------------------------------------------------------------------------------------------------------------
+
+// SQLiteTransaction represents a named database transaction for concurrent transaction support.
+type SQLiteTransaction struct {
+	id     string
+	parent *SQLite
+	tx     *sqlx.Tx
+	closed bool
+	mu     sync.Mutex
+}
+
+// BeginTx starts a new named transaction. The tag is used as an identifier.
+// Multiple transactions can coexist with different tags.
+// Call Commit() or Rollback() on the returned transaction when done.
+func (svr *SQLite) BeginTx(tag string) (*SQLiteTransaction, error) {
+	if svr == nil {
+		return nil, errors.New("SQLite BeginTx Failed: SQLite Receiver is Nil")
+	}
+	if err := svr.Ping(); err != nil {
+		return nil, err
+	}
+	svr.mu.Lock()
+	defer svr.mu.Unlock()
+	if svr.db == nil {
+		return nil, errors.New("SQLite Database is Not Connected")
+	}
+	tx, err := svr.db.Beginx()
+	if err != nil {
+		return nil, err
+	}
+	id := tag
+	if id == "" {
+		id = fmt.Sprintf("tx_%d", time.Now().UnixNano())
+	}
+	t := &SQLiteTransaction{id: id, parent: svr, tx: tx, closed: false}
+	if svr.txMap == nil {
+		svr.txMap = make(map[string]*SQLiteTransaction)
+	}
+	svr.txMap[id] = t
+	return t, nil
+}
+
+// ID returns the transaction identifier.
+func (t *SQLiteTransaction) ID() string {
+	return t.id
+}
+
+// Commit commits the named transaction.
+func (t *SQLiteTransaction) Commit() error {
+	if t == nil {
+		return errors.New("SQLiteTransaction Commit Failed: Receiver is Nil")
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return errors.New("SQLiteTransaction Already Closed")
+	}
+	if err := t.tx.Commit(); err != nil {
+		return err
+	}
+	t.closed = true
+	// Remove from parent txMap
+	if t.parent != nil {
+		t.parent.mu.Lock()
+		delete(t.parent.txMap, t.id)
+		t.parent.mu.Unlock()
+	}
+	return nil
+}
+
+// Rollback rolls back the named transaction.
+func (t *SQLiteTransaction) Rollback() error {
+	if t == nil {
+		return errors.New("SQLiteTransaction Rollback Failed: Receiver is Nil")
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return nil // already closed, no-op
+	}
+	err := t.tx.Rollback()
+	t.closed = true
+	// Remove from parent txMap
+	if t.parent != nil {
+		t.parent.mu.Lock()
+		delete(t.parent.txMap, t.id)
+		t.parent.mu.Unlock()
+	}
+	return err
+}
+
+// GetStruct queries a single row within the transaction.
+func (t *SQLiteTransaction) GetStruct(dest interface{}, query string, args ...interface{}) (notFound bool, err error) {
+	if t == nil {
+		return false, errors.New("SQLiteTransaction GetStruct Failed: Receiver is Nil")
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return false, errors.New("SQLiteTransaction Already Closed")
+	}
+	resetDest(dest)
+	if err := t.tx.Get(dest, query, args...); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			resetDest(dest)
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+
+// GetStructSlice queries multiple rows within the transaction.
+func (t *SQLiteTransaction) GetStructSlice(dest interface{}, query string, args ...interface{}) (notFound bool, err error) {
+	if t == nil {
+		return false, errors.New("SQLiteTransaction GetStructSlice Failed: Receiver is Nil")
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return false, errors.New("SQLiteTransaction Already Closed")
+	}
+	resetDest(dest)
+	if err := t.tx.Select(dest, query, args...); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			resetDest(dest)
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
+}
+
+// ExecByOrdinalParams executes a write query within the transaction.
+func (t *SQLiteTransaction) ExecByOrdinalParams(actionQuery string, args ...interface{}) SQLiteResult {
+	if t == nil {
+		return SQLiteResult{Err: errors.New("SQLiteTransaction ExecByOrdinalParams Failed: Receiver is Nil")}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return SQLiteResult{Err: errors.New("SQLiteTransaction Already Closed")}
+	}
+
+	isInsert := strings.ToUpper(util.Left(strings.TrimSpace(actionQuery), 6)) == "INSERT"
+
+	result, err := t.tx.Exec(actionQuery, args...)
+	if err != nil {
+		return SQLiteResult{Err: err}
+	}
+
+	rtn := SQLiteResult{}
+	rtn.RowsAffected, _ = result.RowsAffected()
+	if isInsert {
+		rtn.NewlyInsertedID, _ = result.LastInsertId()
+	}
+	return rtn
 }

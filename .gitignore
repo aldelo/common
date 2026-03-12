@@ -19,10 +19,14 @@
 .idea/**/dynamic.xml
 .idea/**/uiDesigner.xml
 .idea/**/dbnavigator.xml
+.idea/
 
 # Gradle
 .idea/**/gradle.xml
 .idea/**/libraries
+
+# Claude
+.claude/
 
 # Gradle and Maven with auto-import
 # When using Gradle or Maven with auto-import, you should exclude module files,

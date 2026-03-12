@@ -526,7 +526,11 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 
 	// setup cookie options if applicable
 	authMiddleware.SendCookie = j.SendCookie
-	authMiddleware.CookieMaxAge = j.TokenValidDuration
+	if j.CookieMaxAge > 0 {
+		authMiddleware.CookieMaxAge = j.CookieMaxAge
+	} else if j.TokenValidDuration > 0 {
+		authMiddleware.CookieMaxAge = j.TokenValidDuration
+	}
 
 	if j.SecureCookie == nil {
 		authMiddleware.SecureCookie = true

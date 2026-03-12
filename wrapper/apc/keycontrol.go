@@ -363,6 +363,10 @@ func (k *PaymentCryptography) GenerateAES256Key() (keyArn string, err error) {
 		return "", err
 	}
 
+	if dataKeyOutput == nil {
+		return "", errors.New("GenerateAES256Key with PaymentCryptography Failed: Nil Output Returned")
+	}
+
 	if dataKeyOutput.Key != nil {
 		keyArn = aws.StringValue(dataKeyOutput.Key.KeyArn)
 	}
@@ -415,6 +419,11 @@ func (k *PaymentCryptography) GetRSAPublicKey(keyArn string) (cert, certChain st
 		err = errors.New("GetRSAPublicKey with PaymentCryptography Failed: (Get Data Key) " + e.Error())
 		return "", "", err
 	}
+
+	if publicKeyOutput == nil {
+		return "", "", errors.New("GetRSAPublicKey with PaymentCryptography Failed: Nil Output Returned")
+	}
+
 	return aws.StringValue(publicKeyOutput.KeyCertificate), aws.StringValue(publicKeyOutput.KeyCertificateChain), nil
 }
 

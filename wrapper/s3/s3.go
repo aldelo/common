@@ -338,54 +338,53 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 	}
 
 	// open file to prepare for upload
-	if f, err := os.Open(sourceFilePath); err != nil {
+	f, openErr := os.Open(sourceFilePath)
+	if openErr != nil {
 		// open file failed
-		err = errors.New("S3 UploadFile Failed: (Open Source File) " + err.Error())
+		err = errors.New("S3 UploadFile Failed: (Open Source File) " + openErr.Error())
 		return "", err
+	}
+	defer f.Close()
+
+	// upload content to s3 bucket as an object with the key being custom
+	var output *s3manager.UploadOutput
+
+	if timeOutDuration != nil {
+		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
+		defer cancel()
+
+		output, err = s.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
+			Bucket: aws.String(s.BucketName),
+			Key:    aws.String(key),
+			Body:   f,
+		})
 	} else {
-		// open file successful
-		defer f.Close()
-
-		// upload content to s3 bucket as an object with the key being custom
-		var output *s3manager.UploadOutput
-
-		if timeOutDuration != nil {
-			ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
-			defer cancel()
-
-			output, err = s.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
-				Bucket: aws.String(s.BucketName),
-				Key:    aws.String(key),
-				Body:   f,
-			})
-		} else {
-			if segCtxSet {
-				output, err = s.uploader.UploadWithContext(segCtx,
-					&s3manager.UploadInput{
-						Bucket: aws.String(s.BucketName),
-						Key:    aws.String(key),
-						Body:   f,
-					})
-			} else {
-				output, err = s.uploader.Upload(&s3manager.UploadInput{
+		if segCtxSet {
+			output, err = s.uploader.UploadWithContext(segCtx,
+				&s3manager.UploadInput{
 					Bucket: aws.String(s.BucketName),
 					Key:    aws.String(key),
 					Body:   f,
 				})
-			}
-		}
-
-		// evaluate result
-		if err != nil {
-			// upload error
-			err = errors.New("S3 UploadFile Failed: (Upload Source File) " + err.Error())
-			return "", err
 		} else {
-			// upload success
-			location = output.Location
-			return location, nil
+			output, err = s.uploader.Upload(&s3manager.UploadInput{
+				Bucket: aws.String(s.BucketName),
+				Key:    aws.String(key),
+				Body:   f,
+			})
 		}
 	}
+
+	// evaluate result
+	if err != nil {
+		// upload error
+		err = errors.New("S3 UploadFile Failed: (Upload Source File) " + err.Error())
+		return "", err
+	}
+
+	// upload success
+	location = output.Location
+	return location, nil
 }
 
 // Upload will upload the specified bytes to S3 in the bucket name defined within S3 struct

@@ -411,6 +411,7 @@ func (svr *SQLite) Ping() error {
 	svr.mu.RLock()
 	db := svr.db
 	lastPing := svr.lastPing
+	pingFreq := svr.PingFrequencySec
 	svr.mu.RUnlock()
 
 	if db == nil {
@@ -419,9 +420,9 @@ func (svr *SQLite) Ping() error {
 
 	// Determine ping frequency
 	freq := 30 * time.Second // default
-	if svr.PingFrequencySec > 0 {
-		freq = time.Duration(svr.PingFrequencySec) * time.Second
-	} else if svr.PingFrequencySec < 0 {
+	if pingFreq > 0 {
+		freq = time.Duration(pingFreq) * time.Second
+	} else if pingFreq < 0 {
 		freq = 0 // always ping (backward compat mode)
 	}
 
@@ -490,13 +491,9 @@ func (svr *SQLite) Commit() error {
 	}
 
 	// perform tx commit
-	if err := svr.tx.Commit(); err != nil {
-		return err
-	}
-
-	// commit successful
-	svr.tx = nil
-	return nil
+	err := svr.tx.Commit()
+	svr.tx = nil // always clear, regardless of commit outcome
+	return err
 }
 
 // Rollback cancels pending database changes for the current transaction and clears out transaction object
@@ -910,7 +907,6 @@ func (svr *SQLite) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool
 		// if err is sql.ErrNoRows then treat as no error
 		if err != nil && errors.Is(err, sql.ErrNoRows) {
 			endOfRows = true
-			dest = nil
 			err = nil
 			return
 		}
@@ -918,7 +914,6 @@ func (svr *SQLite) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool
 		if err != nil {
 			// has error
 			endOfRows = false // although error but may not be at end of rows
-			dest = nil
 			return
 		}
 
@@ -1059,7 +1054,6 @@ func (svr *SQLite) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound bo
 
 	// if row is nil, treat as no row and not an error
 	if row == nil {
-		dest = nil
 		return true, nil
 	}
 
@@ -1068,13 +1062,11 @@ func (svr *SQLite) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound bo
 
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
-		dest = nil
 		return true, nil
 	}
 
 	if err != nil {
 		// has error
-		dest = nil
 		return false, err // although error but may not be not found
 	}
 
@@ -1676,10 +1668,15 @@ func (svr *SQLite) BeginTx(tag string) (*SQLiteTransaction, error) {
 	if id == "" {
 		id = fmt.Sprintf("tx_%d", time.Now().UnixNano())
 	}
-	t := &SQLiteTransaction{id: id, parent: svr, tx: tx, closed: false}
 	if svr.txMap == nil {
 		svr.txMap = make(map[string]*SQLiteTransaction)
 	}
+	// reject duplicate transaction IDs to prevent orphaning an existing live transaction
+	if _, exists := svr.txMap[id]; exists {
+		_ = tx.Rollback()
+		return nil, fmt.Errorf("BeginTx: transaction with tag %q already exists", id)
+	}
+	t := &SQLiteTransaction{id: id, parent: svr, tx: tx, closed: false}
 	svr.txMap[id] = t
 	return t, nil
 }
@@ -1695,21 +1692,21 @@ func (t *SQLiteTransaction) Commit() error {
 		return errors.New("SQLiteTransaction Commit Failed: Receiver is Nil")
 	}
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.closed {
+		t.mu.Unlock()
 		return errors.New("SQLiteTransaction Already Closed")
 	}
-	if err := t.tx.Commit(); err != nil {
-		return err
-	}
+	err := t.tx.Commit()
 	t.closed = true
+	t.mu.Unlock() // release own lock before acquiring parent lock to prevent deadlock
+
 	// Remove from parent txMap
 	if t.parent != nil {
 		t.parent.mu.Lock()
 		delete(t.parent.txMap, t.id)
 		t.parent.mu.Unlock()
 	}
-	return nil
+	return err
 }
 
 // Rollback rolls back the named transaction.
@@ -1718,12 +1715,14 @@ func (t *SQLiteTransaction) Rollback() error {
 		return errors.New("SQLiteTransaction Rollback Failed: Receiver is Nil")
 	}
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.closed {
+		t.mu.Unlock()
 		return nil // already closed, no-op
 	}
 	err := t.tx.Rollback()
 	t.closed = true
+	t.mu.Unlock() // release own lock before acquiring parent lock to prevent deadlock
+
 	// Remove from parent txMap
 	if t.parent != nil {
 		t.parent.mu.Lock()

@@ -1305,8 +1305,6 @@ func (d *DynamoDB) connectInternal() error {
 
 	// clean up prior cn reference
 	d.cn = nil
-	d.SkipDax = false
-
 	if !d.AwsRegion.Valid() || d.AwsRegion == awsregion.UNKNOWN {
 		return errors.New("Connect To DynamoDB Failed: (AWS Session Error) " + "Region is Required")
 	}
@@ -2212,11 +2210,12 @@ func (d *DynamoDB) do_Scan(input *dynamodb.ScanInput, pagedQuery bool, pagedQuer
 					return false
 				}
 				if pageOutput == nil {
-					return !lastPage
+					return false
 				}
 
+				pageCount++
+
 				if len(pageOutput.Items) > 0 {
-					pageCount++
 					items = append(items, pageOutput.Items...)
 				}
 
@@ -2827,7 +2826,10 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return ddbErr
 	}
@@ -3185,7 +3187,10 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return ddbErr
 	}
@@ -3520,7 +3525,10 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return ddbErr
 	}
@@ -4887,7 +4895,7 @@ func (d *DynamoDB) queryPaginationDataNormal(
 	}
 
 	if paginationData == nil {
-		return nil, d.handleError(err, "QueryPaginationDataNormal Failed: (QueryPaginationDataNormal)")
+		return nil, d.handleError(errors.New("QueryPaginationDataNormal Failed: Nil PaginationData Returned"), "QueryPaginationDataNormal Failed: (QueryPaginationDataNormal)")
 	}
 
 	// query pagination data successful

@@ -969,7 +969,6 @@ func (svr *SQLServer) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows b
 		// if err is sql.ErrNoRows then treat as no error
 		if err != nil && errors.Is(err, sql.ErrNoRows) {
 			endOfRows = true
-			dest = nil
 			err = nil
 			return
 		}
@@ -977,7 +976,7 @@ func (svr *SQLServer) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows b
 		if err != nil {
 			// has error
 			endOfRows = false // although error but may not be at end of rows
-			dest = nil
+			_ = rows.Close()
 			return
 		}
 
@@ -1132,7 +1131,6 @@ func (svr *SQLServer) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound
 
 	// if row is nil, treat as no row and not an error
 	if row == nil {
-		dest = nil
 		return true, nil
 	}
 
@@ -1141,13 +1139,11 @@ func (svr *SQLServer) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound
 
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && errors.Is(err, sql.ErrNoRows) {
-		dest = nil
 		return true, nil
 	}
 
 	if err != nil {
 		// has error
-		dest = nil
 		return false, err // although error but may not be not found
 	}
 

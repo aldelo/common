@@ -949,7 +949,6 @@ func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interfa
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && err == sql.ErrNoRows {
 		notFound = true
-		dest = nil
 		err = nil
 	} else {
 		notFound = false
@@ -1013,7 +1012,6 @@ func (t *MySqlTransaction) GetStructSlice(dest interface{}, query string, args .
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && err == sql.ErrNoRows {
 		notFound = true
-		dest = nil
 		err = nil
 	} else {
 		notFound = false
@@ -1074,7 +1072,6 @@ func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{})
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && err == sql.ErrNoRows {
 		notFound = true
-		dest = nil
 		err = nil
 	} else {
 		notFound = false
@@ -1134,7 +1131,6 @@ func (t *MySqlTransaction) GetStruct(dest interface{}, query string, args ...int
 	// if err is sql.ErrNoRows then treat as no error
 	if err != nil && err == sql.ErrNoRows {
 		notFound = true
-		dest = nil
 		err = nil
 	} else {
 		notFound = false

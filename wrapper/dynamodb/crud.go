@@ -659,20 +659,19 @@ func (c *Crud) BatchGetEx(multiGetRequestResponse ...*DynamoDBMultiGetRequestRes
 		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 4) GetRequests Empty")
 	}
 
-	if multiGetRequestResponse[0] == nil {
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 5) GetRequest Nil")
-	}
-
-	if multiGetRequestResponse[0].SearchKeys == nil {
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 6) Search Keys Nil")
-	}
-
-	if len(multiGetRequestResponse[0].SearchKeys) == 0 {
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 7) Search Keys Missing Values")
-	}
-
-	if multiGetRequestResponse[0].ResultItemsSlicePtr == nil {
-		return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 8) Result Slice Pointer Missing")
+	for i, req := range multiGetRequestResponse {
+		if req == nil {
+			return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 5) GetRequest[%d] Nil", i)
+		}
+		if req.SearchKeys == nil {
+			return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 6) GetRequest[%d] Search Keys Nil", i)
+		}
+		if len(req.SearchKeys) == 0 {
+			return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 7) GetRequest[%d] Search Keys Missing Values", i)
+		}
+		if req.ResultItemsSlicePtr == nil {
+			return false, fmt.Errorf("BatchGetEx From Data Store Failed: (Validater 8) GetRequest[%d] Result Slice Pointer Missing", i)
+		}
 	}
 
 	if notFound, e := _ddb.BatchGetItemsWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), multiGetRequestResponse...); e != nil {
@@ -2092,8 +2091,16 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	}
 
 	// if we removed unique attrs, ensure UniqueFields stays in sync (unless explicitly removed)
+	// check if UniqueFields was already added to the SET expression during unique-field-value update (lines above)
+	uniqueFieldsAlreadyInSet := strings.Contains(setExpression, "UniqueFields=:UniqueFields")
 	if len(newUniqueFieldsSlice) > 0 && !removeUniqueFieldsRequested {
-		if util.LenTrim(setExpression) > 0 {
+		if uniqueFieldsAlreadyInSet {
+			// UniqueFields path already in SET expression; only update the attribute value
+			// so that removed attributes are excluded from the unique fields list
+			expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
+				SS: aws.StringSlice(newUniqueFieldsSlice),
+			}
+		} else if util.LenTrim(setExpression) > 0 {
 			// append to existing SET
 			for i, part := range updateExprParts {
 				if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(part)), "SET") {
@@ -2101,11 +2108,14 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 					break
 				}
 			}
+			expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
+				SS: aws.StringSlice(newUniqueFieldsSlice),
+			}
 		} else {
 			updateExprParts = append([]string{"SET UniqueFields=:UniqueFields"}, updateExprParts...)
-		}
-		expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
-			SS: aws.StringSlice(newUniqueFieldsSlice),
+			expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
+				SS: aws.StringSlice(newUniqueFieldsSlice),
+			}
 		}
 	} else if len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested && len(normalizedRemoveExpr) > 0 &&
 		uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {

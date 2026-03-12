@@ -218,7 +218,7 @@ func (c *CircuitBreaker) Go(run RunLogic,
 		//
 		// using circuit breaker
 		//
-		result := make(chan interface{})
+		result := make(chan interface{}, 1)
 
 		errChan := hystrix.Go(c.CommandName,
 			func() error {
@@ -331,7 +331,7 @@ func (c *CircuitBreaker) GoC(ctx context.Context,
 		//
 		// using circuit breaker
 		//
-		result := make(chan interface{})
+		result := make(chan interface{}, 1)
 
 		errChan := hystrix.GoC(ctx, c.CommandName,
 			func(ct context.Context) error {

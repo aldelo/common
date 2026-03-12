@@ -116,7 +116,28 @@ type Redis struct {
 
 	_parentSegment *xray.XRayParentSegment
 
-	connectMU sync.Mutex
+	connectMU sync.RWMutex
+}
+
+// connectionSnapshot captures the connection state under a read lock,
+// so that callers can safely use cnWriter/cnReader without racing against Connect/Disconnect.
+type redisConnSnapshot struct {
+	ready          bool
+	writer         *redis.Client
+	reader         *redis.Client
+	parentSegment  *xray.XRayParentSegment
+}
+
+func (r *Redis) connSnapshot() redisConnSnapshot {
+	r.connectMU.RLock()
+	snap := redisConnSnapshot{
+		ready:         r.cnAreReady,
+		writer:        r.cnWriter,
+		reader:        r.cnReader,
+		parentSegment: r._parentSegment,
+	}
+	r.connectMU.RUnlock()
+	return snap
 }
 
 // BIT defines redis BIT operations
@@ -412,61 +433,11 @@ func (r *Redis) Disconnect() {
 
 	r.cnAreReady = false
 
-	// clean up prior cn reference
-	if r.BIT != nil {
-		r.BIT.core = nil
-		r.BIT = nil
-	}
-
-	if r.LIST != nil {
-		r.LIST.core = nil
-		r.LIST = nil
-	}
-
-	if r.HASH != nil {
-		r.HASH.core = nil
-		r.HASH = nil
-	}
-
-	if r.SET != nil {
-		r.SET.core = nil
-		r.SET = nil
-	}
-
-	if r.SORTED_SET != nil {
-		r.SORTED_SET.core = nil
-		r.SORTED_SET = nil
-	}
-
-	if r.GEO != nil {
-		r.GEO.core = nil
-		r.GEO = nil
-	}
-
-	if r.STREAM != nil {
-		r.STREAM.core = nil
-		r.STREAM = nil
-	}
-
-	if r.PUBSUB != nil {
-		r.PUBSUB.core = nil
-		r.PUBSUB = nil
-	}
-
-	if r.PIPELINE != nil {
-		r.PIPELINE.core = nil
-		r.PIPELINE = nil
-	}
-
-	if r.TTL != nil {
-		r.TTL.core = nil
-		r.TTL = nil
-	}
-
-	if r.UTILS != nil {
-		r.UTILS.core = nil
-		r.UTILS = nil
-	}
+	// Note: sub-struct pointers (BIT, LIST, etc.) and their .core fields are NOT
+	// nilled here. They are read without locks by callers (e.g., r.BIT.SetBit(...)),
+	// so nilling them would create a data race. The cnAreReady=false flag, captured
+	// atomically by connSnapshot(), is sufficient to make all operations return an
+	// error safely. connectInternal() handles full cleanup/recreation under the write lock.
 
 	if r.cnWriter != nil {
 		_ = r.cnWriter.Close()
@@ -484,7 +455,9 @@ func (r *Redis) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 	if r == nil {
 		return
 	}
+	r.connectMU.Lock()
 	r._parentSegment = parentSegment
+	r.connectMU.Unlock()
 }
 
 // ----------------------------------------------------------------------------------------------------------------
@@ -1399,8 +1372,9 @@ func (r *Redis) SetBase(key string, val interface{}, setCondition redissetcondit
 	if r == nil {
 		return errors.New("Redis SetBase Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Set", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Set", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -1420,10 +1394,10 @@ func (r *Redis) SetBase(key string, val interface{}, setCondition redissetcondit
 			}
 		}()
 
-		err = r.setBaseInternal(key, val, setCondition, expires...)
+		err = r.setBaseInternal(snap, key, val, setCondition, expires...)
 		return err
 	} else {
-		return r.setBaseInternal(key, val, setCondition, expires...)
+		return r.setBaseInternal(snap, key, val, setCondition, expires...)
 	}
 }
 
@@ -1432,9 +1406,9 @@ func (r *Redis) SetBase(key string, val interface{}, setCondition redissetcondit
 // notes
 //
 //	setCondition = support for SetNX and SetXX
-func (r *Redis) setBaseInternal(key string, val interface{}, setCondition redissetcondition.RedisSetCondition, expires ...time.Duration) error {
+func (r *Redis) setBaseInternal(snap redisConnSnapshot, key string, val interface{}, setCondition redissetcondition.RedisSetCondition, expires ...time.Duration) error {
 	// validate
-	if !r.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis Set Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -1451,11 +1425,11 @@ func (r *Redis) setBaseInternal(key string, val interface{}, setCondition rediss
 
 	switch setCondition {
 	case redissetcondition.Normal:
-		cmd := r.cnWriter.Set(r.cnWriter.Context(), key, val, expireDuration)
+		cmd := snap.writer.Set(snap.writer.Context(), key, val, expireDuration)
 		return r.handleStatusCmd(cmd, "Redis Set Failed: (Set Method) ")
 
 	case redissetcondition.SetIfExists:
-		cmd := r.cnWriter.SetXX(r.cnWriter.Context(), key, val, expireDuration)
+		cmd := snap.writer.SetXX(snap.writer.Context(), key, val, expireDuration)
 		if val, err := r.handleBoolCmd(cmd, "Redis Set Failed: (SetXX Method) "); err != nil {
 			return err
 		} else {
@@ -1469,7 +1443,7 @@ func (r *Redis) setBaseInternal(key string, val interface{}, setCondition rediss
 		}
 
 	case redissetcondition.SetIfNotExists:
-		cmd := r.cnWriter.SetNX(r.cnWriter.Context(), key, val, expireDuration)
+		cmd := snap.writer.SetNX(snap.writer.Context(), key, val, expireDuration)
 		if val, err := r.handleBoolCmd(cmd, "Redis Set Failed: (SetNX Method) "); err != nil {
 			return err
 		} else {
@@ -1560,8 +1534,9 @@ func (r *Redis) GetBase(key string) (cmd *redis.StringCmd, notFound bool, err er
 	if r == nil {
 		return nil, false, errors.New("Redis GetBase Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Get", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Get", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -1575,17 +1550,17 @@ func (r *Redis) GetBase(key string) (cmd *redis.StringCmd, notFound bool, err er
 			}
 		}()
 
-		cmd, notFound, err = r.getBaseInternal(key)
+		cmd, notFound, err = r.getBaseInternal(snap, key)
 		return cmd, notFound, err
 	} else {
-		return r.getBaseInternal(key)
+		return r.getBaseInternal(snap, key)
 	}
 }
 
 // getBaseInternal is internal helper to get value from redis.
-func (r *Redis) getBaseInternal(key string) (cmd *redis.StringCmd, notFound bool, err error) {
+func (r *Redis) getBaseInternal(snap redisConnSnapshot, key string) (cmd *redis.StringCmd, notFound bool, err error) {
 	// validate
-	if !r.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis Get Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -1594,7 +1569,7 @@ func (r *Redis) getBaseInternal(key string) (cmd *redis.StringCmd, notFound bool
 	}
 
 	// get value from redis
-	cmd = r.cnReader.Get(r.cnReader.Context(), key)
+	cmd = snap.reader.Get(snap.reader.Context(), key)
 
 	if cmd.Err() != nil {
 		if cmd.Err() == redis.Nil {
@@ -1830,8 +1805,9 @@ func (r *Redis) GetSet(key string, val string) (oldValue string, notFound bool, 
 	if r == nil {
 		return "", false, errors.New("Redis GetSet Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// reg new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GetSet", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GetSet", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -1846,18 +1822,18 @@ func (r *Redis) GetSet(key string, val string) (oldValue string, notFound bool, 
 			}
 		}()
 
-		oldValue, notFound, err = r.getSetInternal(key, val)
+		oldValue, notFound, err = r.getSetInternal(snap, key, val)
 		return oldValue, notFound, err
 	} else {
-		return r.getSetInternal(key, val)
+		return r.getSetInternal(snap, key, val)
 	}
 }
 
 // getSetInternal will get old string value from redis by key,
 // and then set new string value into redis by the same key.
-func (r *Redis) getSetInternal(key string, val string) (oldValue string, notFound bool, err error) {
+func (r *Redis) getSetInternal(snap redisConnSnapshot, key string, val string) (oldValue string, notFound bool, err error) {
 	// validate
-	if !r.cnAreReady {
+	if !snap.ready {
 		return "", false, errors.New("Redis GetSet Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -1866,7 +1842,7 @@ func (r *Redis) getSetInternal(key string, val string) (oldValue string, notFoun
 	}
 
 	// persist value and get old value as return result
-	cmd := r.cnWriter.GetSet(r.cnWriter.Context(), key, val)
+	cmd := snap.writer.GetSet(snap.writer.Context(), key, val)
 	notFound, err = r.handleStringCmd(cmd, redisdatatype.String, &oldValue, "Redis GetSet Failed:  ")
 
 	// return result
@@ -1887,8 +1863,9 @@ func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err 
 	if r == nil {
 		return errors.New("Redis MSet Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-MSet", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-MSet", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -1900,10 +1877,10 @@ func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err 
 			}
 		}()
 
-		err = r.msetInternal(kvMap, setIfNotExists...)
+		err = r.msetInternal(snap, kvMap, setIfNotExists...)
 		return err
 	} else {
-		return r.msetInternal(kvMap, setIfNotExists...)
+		return r.msetInternal(snap, kvMap, setIfNotExists...)
 	}
 }
 
@@ -1913,13 +1890,13 @@ func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err 
 // notes
 //
 //	kvMap = map of key string, and interface{} value
-func (r *Redis) msetInternal(kvMap map[string]interface{}, setIfNotExists ...bool) error {
+func (r *Redis) msetInternal(snap redisConnSnapshot, kvMap map[string]interface{}, setIfNotExists ...bool) error {
 	// validate
 	if kvMap == nil || len(kvMap) == 0 {
 		return errors.New("Redis MSet Failed: " + "KVMap is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis MSet Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -1932,11 +1909,11 @@ func (r *Redis) msetInternal(kvMap map[string]interface{}, setIfNotExists ...boo
 
 	if !nx {
 		// normal
-		cmd := r.cnWriter.MSet(r.cnWriter.Context(), kvMap)
+		cmd := snap.writer.MSet(snap.writer.Context(), kvMap)
 		return r.handleStatusCmd(cmd, "Redis MSet Failed: ")
 	} else {
 		// nx
-		cmd := r.cnWriter.MSetNX(r.cnWriter.Context(), kvMap)
+		cmd := snap.writer.MSetNX(snap.writer.Context(), kvMap)
 		if val, err := r.handleBoolCmd(cmd, "Redis MSetNX Failed: "); err != nil {
 			return err
 		} else {
@@ -1956,8 +1933,9 @@ func (r *Redis) MGet(key ...string) (results []interface{}, notFound bool, err e
 	if r == nil {
 		return nil, false, errors.New("Redis MGet Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-MGet", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-MGet", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -1971,25 +1949,25 @@ func (r *Redis) MGet(key ...string) (results []interface{}, notFound bool, err e
 			}
 		}()
 
-		results, notFound, err = r.mgetInternal(key...)
+		results, notFound, err = r.mgetInternal(snap, key...)
 		return results, notFound, err
 	} else {
-		return r.mgetInternal(key...)
+		return r.mgetInternal(snap, key...)
 	}
 }
 
 // mgetInternal is a helper to get values from redis based on one or more keys specified
-func (r *Redis) mgetInternal(key ...string) (results []interface{}, notFound bool, err error) {
+func (r *Redis) mgetInternal(snap redisConnSnapshot, key ...string) (results []interface{}, notFound bool, err error) {
 	// validate
 	if len(key) <= 0 {
 		return nil, false, errors.New("Redis MGet Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis MGet Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnReader.MGet(r.cnReader.Context(), key...)
+	cmd := snap.reader.MGet(snap.reader.Context(), key...)
 	return r.handleSliceCmd(cmd, "Redis MGet Failed: ")
 }
 
@@ -2008,8 +1986,9 @@ func (r *Redis) SetRange(key string, offset int64, val string) (err error) {
 	if r == nil {
 		return errors.New("Redis SetRange Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SetRange", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SetRange", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2023,10 +2002,10 @@ func (r *Redis) SetRange(key string, offset int64, val string) (err error) {
 			}
 		}()
 
-		err = r.setRangeInternal(key, offset, val)
+		err = r.setRangeInternal(snap, key, offset, val)
 		return err
 	} else {
-		return r.setRangeInternal(key, offset, val)
+		return r.setRangeInternal(snap, key, offset, val)
 	}
 }
 
@@ -2037,13 +2016,13 @@ func (r *Redis) SetRange(key string, offset int64, val string) (err error) {
 //  2. Offset 6 = W
 //  3. Val "Xyz" replaces string from Offset Position 6
 //  4. End Result String = "Hello Xyzld"
-func (r *Redis) setRangeInternal(key string, offset int64, val string) error {
+func (r *Redis) setRangeInternal(snap redisConnSnapshot, key string, offset int64, val string) error {
 	// validate
 	if len(key) <= 0 {
 		return errors.New("Redis SetRange Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis SetRange Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -2051,7 +2030,7 @@ func (r *Redis) setRangeInternal(key string, offset int64, val string) error {
 		return errors.New("Redis SetRange Failed: " + "Offset Must Be 0 or Greater")
 	}
 
-	cmd := r.cnWriter.SetRange(r.cnWriter.Context(), key, offset, val)
+	cmd := snap.writer.SetRange(snap.writer.Context(), key, offset, val)
 
 	if _, _, err := r.handleIntCmd(cmd, "Redis SetRange Failed: "); err != nil {
 		return err
@@ -2065,8 +2044,9 @@ func (r *Redis) GetRange(key string, start int64, end int64) (val string, notFou
 	if r == nil {
 		return "", false, errors.New("Redis GetRange Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GetRange", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GetRange", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2081,21 +2061,21 @@ func (r *Redis) GetRange(key string, start int64, end int64) (val string, notFou
 			}
 		}()
 
-		val, notFound, err = r.getRangeInternal(key, start, end)
+		val, notFound, err = r.getRangeInternal(snap, key, start, end)
 		return val, notFound, err
 	} else {
-		return r.getRangeInternal(key, start, end)
+		return r.getRangeInternal(snap, key, start, end)
 	}
 }
 
 // getRangeInternal gets val between start and end positions from string value stored by key in redis
-func (r *Redis) getRangeInternal(key string, start int64, end int64) (val string, notFound bool, err error) {
+func (r *Redis) getRangeInternal(snap redisConnSnapshot, key string, start int64, end int64) (val string, notFound bool, err error) {
 	// validate
 	if len(key) <= 0 {
 		return "", false, errors.New("Redis GetRange Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return "", false, errors.New("Redis GetRange Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -2107,7 +2087,7 @@ func (r *Redis) getRangeInternal(key string, start int64, end int64) (val string
 		return "", false, errors.New("Redis GetRange Failed: " + "End Must Equal or Be Greater Than Start")
 	}
 
-	cmd := r.cnReader.GetRange(r.cnReader.Context(), key, start, end)
+	cmd := snap.reader.GetRange(snap.reader.Context(), key, start, end)
 
 	if notFound, err = r.handleStringCmd(cmd, redisdatatype.String, &val, "Redis GetRange Failed: "); err != nil {
 		return "", false, err
@@ -2126,8 +2106,9 @@ func (r *Redis) Int64AddOrReduce(key string, val int64, isReduce ...bool) (newVa
 	if r == nil {
 		return 0, false, errors.New("Redis Int64AddOrReduce Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Int64AddOrReduce", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Int64AddOrReduce", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2149,16 +2130,16 @@ func (r *Redis) Int64AddOrReduce(key string, val int64, isReduce ...bool) (newVa
 			}
 		}()
 
-		newVal, notFound, err = r.int64AddOrReduceInternal(key, val, isReduce...)
+		newVal, notFound, err = r.int64AddOrReduceInternal(snap, key, val, isReduce...)
 		return newVal, notFound, err
 	} else {
-		return r.int64AddOrReduceInternal(key, val, isReduce...)
+		return r.int64AddOrReduceInternal(snap, key, val, isReduce...)
 	}
 }
 
 // int64AddOrReduceInternal will add or reduce int64 value against a key in redis,
 // and return the new value if found and performed
-func (r *Redis) int64AddOrReduceInternal(key string, val int64, isReduce ...bool) (newVal int64, notFound bool, err error) {
+func (r *Redis) int64AddOrReduceInternal(snap redisConnSnapshot, key string, val int64, isReduce ...bool) (newVal int64, notFound bool, err error) {
 	// get reduce bool
 	reduce := false
 
@@ -2179,7 +2160,7 @@ func (r *Redis) int64AddOrReduceInternal(key string, val int64, isReduce ...bool
 		return 0, false, errors.New("Redis " + methodName + " Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis " + methodName + " Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -2192,16 +2173,16 @@ func (r *Redis) int64AddOrReduceInternal(key string, val int64, isReduce ...bool
 	if !reduce {
 		// increment
 		if val == 1 {
-			cmd = r.cnWriter.Incr(r.cnWriter.Context(), key)
+			cmd = snap.writer.Incr(snap.writer.Context(), key)
 		} else {
-			cmd = r.cnWriter.IncrBy(r.cnWriter.Context(), key, val)
+			cmd = snap.writer.IncrBy(snap.writer.Context(), key, val)
 		}
 	} else {
 		// decrement
 		if val == 1 {
-			cmd = r.cnWriter.Decr(r.cnWriter.Context(), key)
+			cmd = snap.writer.Decr(snap.writer.Context(), key)
 		} else {
-			cmd = r.cnWriter.DecrBy(r.cnWriter.Context(), key, val)
+			cmd = snap.writer.DecrBy(snap.writer.Context(), key, val)
 		}
 	}
 
@@ -2215,8 +2196,9 @@ func (r *Redis) Float64AddOrReduce(key string, val float64) (newVal float64, not
 	if r == nil {
 		return 0.0, false, errors.New("Redis Float64AddOrReduce Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Float64AddOrReduce", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Float64AddOrReduce", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2231,26 +2213,26 @@ func (r *Redis) Float64AddOrReduce(key string, val float64) (newVal float64, not
 			}
 		}()
 
-		newVal, notFound, err = r.float64AddOrReduceInternal(key, val)
+		newVal, notFound, err = r.float64AddOrReduceInternal(snap, key, val)
 		return newVal, notFound, err
 	} else {
-		return r.float64AddOrReduceInternal(key, val)
+		return r.float64AddOrReduceInternal(snap, key, val)
 	}
 }
 
 // float64AddOrReduceInternal will add or reduce float64 value against a key in redis,
 // and return the new value if found and performed
-func (r *Redis) float64AddOrReduceInternal(key string, val float64) (newVal float64, notFound bool, err error) {
+func (r *Redis) float64AddOrReduceInternal(snap redisConnSnapshot, key string, val float64) (newVal float64, notFound bool, err error) {
 	// validate
 	if len(key) <= 0 {
 		return 0.00, false, errors.New("Redis Float64AddOrReduce Failed: (IncrByFloat) " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return 0.00, false, errors.New("Redis Float64AddOrReduce Failed: (IncrByFloat) " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnWriter.IncrByFloat(r.cnWriter.Context(), key, val)
+	cmd := snap.writer.IncrByFloat(snap.writer.Context(), key, val)
 	return r.handleFloatCmd(cmd, "Redis Float64AddOrReduce Failed: (IncrByFloat)")
 }
 
@@ -2264,8 +2246,9 @@ func (r *Redis) PFAdd(key string, elements ...interface{}) (err error) {
 	if r == nil {
 		return errors.New("Redis PFAdd Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-PFAdd", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-PFAdd", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2278,26 +2261,26 @@ func (r *Redis) PFAdd(key string, elements ...interface{}) (err error) {
 			}
 		}()
 
-		err = r.pfAddInternal(key, elements...)
+		err = r.pfAddInternal(snap, key, elements...)
 		return err
 	} else {
-		return r.pfAddInternal(key, elements...)
+		return r.pfAddInternal(snap, key, elements...)
 	}
 }
 
 // pfAddInternal is a HyperLogLog function to uniquely accumulate the count of a specific value to redis,
 // such as email hit count, user hit count, ip address hit count etc, that is based on the unique occurences of such value
-func (r *Redis) pfAddInternal(key string, elements ...interface{}) error {
+func (r *Redis) pfAddInternal(snap redisConnSnapshot, key string, elements ...interface{}) error {
 	// validate
 	if len(key) <= 0 {
 		return errors.New("Redis PFAdd Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis PFAdd Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnWriter.PFAdd(r.cnWriter.Context(), key, elements...)
+	cmd := snap.writer.PFAdd(snap.writer.Context(), key, elements...)
 
 	if _, _, err := r.handleIntCmd(cmd, "Redis PFAdd Failed: "); err != nil {
 		return err
@@ -2312,8 +2295,9 @@ func (r *Redis) PFCount(key ...string) (val int64, notFound bool, err error) {
 	if r == nil {
 		return 0, false, errors.New("Redis PFCount Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-PFCount", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-PFCount", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2327,26 +2311,26 @@ func (r *Redis) PFCount(key ...string) (val int64, notFound bool, err error) {
 			}
 		}()
 
-		val, notFound, err = r.pfCountInternal(key...)
+		val, notFound, err = r.pfCountInternal(snap, key...)
 		return val, notFound, err
 	} else {
-		return r.pfCountInternal(key...)
+		return r.pfCountInternal(snap, key...)
 	}
 }
 
 // pfCountInternal is a HyperLogLog function to retrieve the current count associated with the given unique value in redis,
 // Specify one or more keys, if multiple keys used, the result count is the union of all keys' unique value counts
-func (r *Redis) pfCountInternal(key ...string) (val int64, notFound bool, err error) {
+func (r *Redis) pfCountInternal(snap redisConnSnapshot, key ...string) (val int64, notFound bool, err error) {
 	// validate
 	if len(key) <= 0 {
 		return 0, false, errors.New("Redis PFCount Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis PFCount Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnReader.PFCount(r.cnReader.Context(), key...)
+	cmd := snap.reader.PFCount(snap.reader.Context(), key...)
 	return r.handleIntCmd(cmd, "Redis PFCount Failed: ")
 }
 
@@ -2355,8 +2339,9 @@ func (r *Redis) PFMerge(destKey string, sourceKey ...string) (err error) {
 	if r == nil {
 		return errors.New("Redis PFMerge Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-PFMerge", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-PFMerge", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2369,15 +2354,15 @@ func (r *Redis) PFMerge(destKey string, sourceKey ...string) (err error) {
 			}
 		}()
 
-		err = r.pfMergeInternal(destKey, sourceKey...)
+		err = r.pfMergeInternal(snap, destKey, sourceKey...)
 		return err
 	} else {
-		return r.pfMergeInternal(destKey, sourceKey...)
+		return r.pfMergeInternal(snap, destKey, sourceKey...)
 	}
 }
 
 // pfMergeInternal is a HyperLogLog function to merge two or more HyperLogLog as defined by keys together
-func (r *Redis) pfMergeInternal(destKey string, sourceKey ...string) error {
+func (r *Redis) pfMergeInternal(snap redisConnSnapshot, destKey string, sourceKey ...string) error {
 	// validate
 	if len(destKey) <= 0 {
 		return errors.New("Redis PFMerge Failed: " + "Destination Key is Required")
@@ -2387,11 +2372,11 @@ func (r *Redis) pfMergeInternal(destKey string, sourceKey ...string) error {
 		return errors.New("Redis PFMerge Failed: " + "Source Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis PFMerge Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnWriter.PFMerge(r.cnWriter.Context(), destKey, sourceKey...)
+	cmd := snap.writer.PFMerge(snap.writer.Context(), destKey, sourceKey...)
 	return r.handleStatusCmd(cmd, "Redis PFMerge Failed: ")
 }
 
@@ -2406,8 +2391,9 @@ func (r *Redis) Exists(key ...string) (foundCount int64, err error) {
 	if r == nil {
 		return 0, errors.New("Redis Exists Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Exists", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Exists", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2420,27 +2406,27 @@ func (r *Redis) Exists(key ...string) (foundCount int64, err error) {
 			}
 		}()
 
-		foundCount, err = r.existsInternal(key...)
+		foundCount, err = r.existsInternal(snap, key...)
 		return foundCount, err
 	} else {
-		return r.existsInternal(key...)
+		return r.existsInternal(snap, key...)
 	}
 }
 
 // existsInternal checks if one or more keys exists in redis
 //
 // foundCount = 0 indicates not found; > 0 indicates found count
-func (r *Redis) existsInternal(key ...string) (foundCount int64, err error) {
+func (r *Redis) existsInternal(snap redisConnSnapshot, key ...string) (foundCount int64, err error) {
 	// validate
 	if len(key) <= 0 {
 		return 0, errors.New("Redis Exists Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis Exists Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnReader.Exists(r.cnReader.Context(), key...)
+	cmd := snap.reader.Exists(snap.reader.Context(), key...)
 	foundCount, _, err = r.handleIntCmd(cmd, "Redis Exists Failed: ")
 
 	return foundCount, err
@@ -2451,8 +2437,9 @@ func (r *Redis) StrLen(key string) (length int64, notFound bool, err error) {
 	if r == nil {
 		return 0, false, errors.New("Redis StrLen Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-StrLen", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-StrLen", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2466,32 +2453,32 @@ func (r *Redis) StrLen(key string) (length int64, notFound bool, err error) {
 			}
 		}()
 
-		length, notFound, err = r.strLenInternal(key)
+		length, notFound, err = r.strLenInternal(snap, key)
 		return length, notFound, err
 	} else {
-		return r.strLenInternal(key)
+		return r.strLenInternal(snap, key)
 	}
 }
 
 // strLenInternal gets the string length of the value stored by the key in redis
-func (r *Redis) strLenInternal(key string) (length int64, notFound bool, err error) {
+func (r *Redis) strLenInternal(snap redisConnSnapshot, key string) (length int64, notFound bool, err error) {
 	// validate
 	if len(key) <= 0 {
 		return 0, false, errors.New("Redis StrLen Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis StrLen Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnReader.StrLen(r.cnReader.Context(), key)
+	cmd := snap.reader.StrLen(snap.reader.Context(), key)
 	if length, _, err = r.handleIntCmd(cmd, "Redis StrLen Failed: "); err != nil {
 		return 0, false, err
 	}
 
 	// Redis returns 0 for missing keys; detect that and surface notFound=true
 	if length == 0 {
-		if exists, _, existsErr := r.handleIntCmd(r.cnReader.Exists(r.cnReader.Context(), key), "Redis StrLen Failed: (Exists) "); existsErr != nil {
+		if exists, _, existsErr := r.handleIntCmd(snap.reader.Exists(snap.reader.Context(), key), "Redis StrLen Failed: (Exists) "); existsErr != nil {
 			return 0, false, existsErr
 		} else if exists == 0 {
 			return 0, true, nil
@@ -2507,8 +2494,9 @@ func (r *Redis) Append(key string, valToAppend string) (err error) {
 	if r == nil {
 		return errors.New("Redis Append Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Append", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Append", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2521,26 +2509,26 @@ func (r *Redis) Append(key string, valToAppend string) (err error) {
 			}
 		}()
 
-		err = r.appendInternal(key, valToAppend)
+		err = r.appendInternal(snap, key, valToAppend)
 		return err
 	} else {
-		return r.appendInternal(key, valToAppend)
+		return r.appendInternal(snap, key, valToAppend)
 	}
 }
 
 // appendInternal will append a value to the existing value under the given key in redis,
 // if key does not exist, a new key based on the given key is created
-func (r *Redis) appendInternal(key string, valToAppend string) error {
+func (r *Redis) appendInternal(snap redisConnSnapshot, key string, valToAppend string) error {
 	// validate
 	if len(key) <= 0 {
 		return errors.New("Redis Append Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis Append Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnWriter.Append(r.cnWriter.Context(), key, valToAppend)
+	cmd := snap.writer.Append(snap.writer.Context(), key, valToAppend)
 	_, _, err := r.handleIntCmd(cmd)
 	return err
 }
@@ -2550,8 +2538,9 @@ func (r *Redis) Del(key ...string) (deletedCount int64, err error) {
 	if r == nil {
 		return 0, errors.New("Redis Del Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Del", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Del", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2564,25 +2553,25 @@ func (r *Redis) Del(key ...string) (deletedCount int64, err error) {
 			}
 		}()
 
-		deletedCount, err = r.delInternal(key...)
+		deletedCount, err = r.delInternal(snap, key...)
 		return deletedCount, err
 	} else {
-		return r.delInternal(key...)
+		return r.delInternal(snap, key...)
 	}
 }
 
 // delInternal will delete one or more keys specified from redis
-func (r *Redis) delInternal(key ...string) (deletedCount int64, err error) {
+func (r *Redis) delInternal(snap redisConnSnapshot, key ...string) (deletedCount int64, err error) {
 	// validate
 	if len(key) <= 0 {
 		return 0, errors.New("Redis Del Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis Del Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnWriter.Del(r.cnWriter.Context(), key...)
+	cmd := snap.writer.Del(snap.writer.Context(), key...)
 	deletedCount, _, err = r.handleIntCmd(cmd, "Redis Del Failed: ")
 	return deletedCount, err
 }
@@ -2593,8 +2582,9 @@ func (r *Redis) Unlink(key ...string) (unlinkedCount int64, err error) {
 	if r == nil {
 		return 0, errors.New("Redis Unlink Failed: Redis receiver is nil")
 	}
+	snap := r.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Unlink", r._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Unlink", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2607,26 +2597,26 @@ func (r *Redis) Unlink(key ...string) (unlinkedCount int64, err error) {
 			}
 		}()
 
-		unlinkedCount, err = r.unlinkInternal(key...)
+		unlinkedCount, err = r.unlinkInternal(snap, key...)
 		return unlinkedCount, err
 	} else {
-		return r.unlinkInternal(key...)
+		return r.unlinkInternal(snap, key...)
 	}
 }
 
 // unlinkInternal is similar to Del where it removes one or more keys specified from redis,
 // however, unlink performs the delete asynchronously and is faster than Del
-func (r *Redis) unlinkInternal(key ...string) (unlinkedCount int64, err error) {
+func (r *Redis) unlinkInternal(snap redisConnSnapshot, key ...string) (unlinkedCount int64, err error) {
 	// validate
 	if len(key) <= 0 {
 		return 0, errors.New("Redis Unlink Failed: " + "Key is Required")
 	}
 
-	if !r.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis Unlink Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := r.cnWriter.Unlink(r.cnWriter.Context(), key...)
+	cmd := snap.writer.Unlink(snap.writer.Context(), key...)
 	unlinkedCount, _, err = r.handleIntCmd(cmd, "Redis Unlink Failed: ")
 	return unlinkedCount, err
 }
@@ -2647,8 +2637,9 @@ func (b *BIT) SetBit(key string, offset int64, bitValue bool) (err error) {
 	if b.core == nil {
 		return errors.New("Redis BIT SetBit Failed: Redis core is nil")
 	}
+	snap := b.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SetBit", b.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SetBit", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2662,10 +2653,10 @@ func (b *BIT) SetBit(key string, offset int64, bitValue bool) (err error) {
 			}
 		}()
 
-		err = b.setBitInternal(key, offset, bitValue)
+		err = b.setBitInternal(snap, key, offset, bitValue)
 		return err
 	} else {
-		return b.setBitInternal(key, offset, bitValue)
+		return b.setBitInternal(snap, key, offset, bitValue)
 	}
 }
 
@@ -2674,13 +2665,13 @@ func (b *BIT) SetBit(key string, offset int64, bitValue bool) (err error) {
 // The string holding bit value will grow as needed when offset exceeds the string, grown value defaults with bit 0
 //
 // bit range = left 0 -> right 8 = byte
-func (b *BIT) setBitInternal(key string, offset int64, bitValue bool) error {
+func (b *BIT) setBitInternal(snap redisConnSnapshot, key string, offset int64, bitValue bool) error {
 	// validate
 	if b.core == nil {
 		return errors.New("Redis SetBit Failed: " + "Base is Nil")
 	}
 
-	if !b.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis SetBit Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -2698,7 +2689,7 @@ func (b *BIT) setBitInternal(key string, offset int64, bitValue bool) error {
 		v = 1
 	}
 
-	cmd := b.core.cnWriter.SetBit(b.core.cnWriter.Context(), key, offset, v)
+	cmd := snap.writer.SetBit(snap.writer.Context(), key, offset, v)
 	_, _, err := b.core.handleIntCmd(cmd, "Redis SetBit Failed: ")
 	return err
 }
@@ -2712,8 +2703,9 @@ func (b *BIT) GetBit(key string, offset int64) (val int, err error) {
 	if b.core == nil {
 		return 0, errors.New("Redis BIT GetBit Failed: Redis core is nil")
 	}
+	snap := b.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GetBit", b.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GetBit", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2727,22 +2719,22 @@ func (b *BIT) GetBit(key string, offset int64) (val int, err error) {
 			}
 		}()
 
-		val, err = b.getBitInternal(key, offset)
+		val, err = b.getBitInternal(snap, key, offset)
 		return val, err
 	} else {
-		return b.getBitInternal(key, offset)
+		return b.getBitInternal(snap, key, offset)
 	}
 }
 
 // getBitInternal will return the bit value (1 or 0) at offset position of the value for the key in redis
 // If key is not found or offset is greater than key's value, then blank string is assumed and bit 0 is returned
-func (b *BIT) getBitInternal(key string, offset int64) (val int, err error) {
+func (b *BIT) getBitInternal(snap redisConnSnapshot, key string, offset int64) (val int, err error) {
 	// validate
 	if b.core == nil {
 		return 0, errors.New("Redis GetBit Failed: " + "Base is Nil")
 	}
 
-	if !b.core.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis GetBit Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -2754,7 +2746,7 @@ func (b *BIT) getBitInternal(key string, offset int64) (val int, err error) {
 		return 0, errors.New("Redis GetBit Failed: " + "Offset is 0 or Greater")
 	}
 
-	cmd := b.core.cnReader.GetBit(b.core.cnReader.Context(), key, offset)
+	cmd := snap.reader.GetBit(snap.reader.Context(), key, offset)
 	v, _, e := b.core.handleIntCmd(cmd, "Redis GetBit Failed: ")
 	val = int(v)
 	return val, e
@@ -2771,8 +2763,9 @@ func (b *BIT) BitCount(key string, offsetFrom int64, offsetTo int64) (valCount i
 	if b.core == nil {
 		return 0, errors.New("Redis BIT BitCount Failed: Redis core is nil")
 	}
+	snap := b.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-BitCount", b.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-BitCount", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2787,10 +2780,10 @@ func (b *BIT) BitCount(key string, offsetFrom int64, offsetTo int64) (valCount i
 			}
 		}()
 
-		valCount, err = b.bitCountInternal(key, offsetFrom, offsetTo)
+		valCount, err = b.bitCountInternal(snap, key, offsetFrom, offsetTo)
 		return valCount, err
 	} else {
-		return b.bitCountInternal(key, offsetFrom, offsetTo)
+		return b.bitCountInternal(snap, key, offsetFrom, offsetTo)
 	}
 }
 
@@ -2798,13 +2791,13 @@ func (b *BIT) BitCount(key string, offsetFrom int64, offsetTo int64) (valCount i
 //
 // offsetFrom = evaluate bitcount begin at offsetFrom position
 // offsetTo = evaluate bitcount until offsetTo position
-func (b *BIT) bitCountInternal(key string, offsetFrom int64, offsetTo int64) (valCount int64, err error) {
+func (b *BIT) bitCountInternal(snap redisConnSnapshot, key string, offsetFrom int64, offsetTo int64) (valCount int64, err error) {
 	// validate
 	if b.core == nil {
 		return 0, errors.New("Redis BitCount Failed: " + "Base is Nil")
 	}
 
-	if !b.core.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis BitCount Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -2813,7 +2806,7 @@ func (b *BIT) bitCountInternal(key string, offsetFrom int64, offsetTo int64) (va
 	bc.Start = offsetFrom
 	bc.End = offsetTo
 
-	cmd := b.core.cnReader.BitCount(b.core.cnReader.Context(), key, bc)
+	cmd := snap.reader.BitCount(snap.reader.Context(), key, bc)
 	valCount, _, err = b.core.handleIntCmd(cmd, "Redis BitCount Failed: ")
 	return valCount, err
 }
@@ -2839,8 +2832,9 @@ func (b *BIT) BitField(key string, args ...interface{}) (valBits []int64, err er
 	if b.core == nil {
 		return nil, errors.New("Redis BIT BitField Failed: Redis core is nil")
 	}
+	snap := b.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-BitField", b.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-BitField", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2854,10 +2848,10 @@ func (b *BIT) BitField(key string, args ...interface{}) (valBits []int64, err er
 			}
 		}()
 
-		valBits, err = b.bitFieldInternal(key, args...)
+		valBits, err = b.bitFieldInternal(snap, key, args...)
 		return valBits, err
 	} else {
-		return b.bitFieldInternal(key, args...)
+		return b.bitFieldInternal(snap, key, args...)
 	}
 }
 
@@ -2875,13 +2869,13 @@ func (b *BIT) BitField(key string, args ...interface{}) (valBits []int64, err er
 //	i = if integer type, i can be preceeded to indicate signed integer, such as i5 = signed integer 5
 //	u = if integer type, u can be preceeded to indicate unsigned integer, such as u5 = unsigned integer 5
 //	# = if offset is preceeded with #, the specified offset is multiplied by the type width, such as #0 = 0, #1 = 8 when type if 8-bit byte
-func (b *BIT) bitFieldInternal(key string, args ...interface{}) (valBits []int64, err error) {
+func (b *BIT) bitFieldInternal(snap redisConnSnapshot, key string, args ...interface{}) (valBits []int64, err error) {
 	// validate
 	if b.core == nil {
 		return nil, errors.New("Redis BitField Failed: " + "Base is Nil")
 	}
 
-	if !b.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis BitField Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -2893,7 +2887,7 @@ func (b *BIT) bitFieldInternal(key string, args ...interface{}) (valBits []int64
 		return nil, errors.New("Redis BitField Failed: " + "Args is Required")
 	}
 
-	cmd := b.core.cnWriter.BitField(b.core.cnWriter.Context(), key, args...)
+	cmd := snap.writer.BitField(snap.writer.Context(), key, args...)
 	valBits, _, err = b.core.handleIntSliceCmd(cmd, "Redis BitField Failed: ")
 	return valBits, err
 }
@@ -2912,8 +2906,9 @@ func (b *BIT) BitOp(keyDest string, bitOpType redisbitop.RedisBitop, keySource .
 	if b.core == nil {
 		return errors.New("Redis BIT BitOp Failed: Redis core is nil")
 	}
+	snap := b.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-BitOp", b.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-BitOp", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -2927,10 +2922,10 @@ func (b *BIT) BitOp(keyDest string, bitOpType redisbitop.RedisBitop, keySource .
 			}
 		}()
 
-		err = b.bitOpInternal(keyDest, bitOpType, keySource...)
+		err = b.bitOpInternal(snap, keyDest, bitOpType, keySource...)
 		return err
 	} else {
-		return b.bitOpInternal(keyDest, bitOpType, keySource...)
+		return b.bitOpInternal(snap, keyDest, bitOpType, keySource...)
 	}
 }
 
@@ -2941,13 +2936,13 @@ func (b *BIT) BitOp(keyDest string, bitOpType redisbitop.RedisBitop, keySource .
 // Supported:
 //
 //	And, Or, XOr, Not
-func (b *BIT) bitOpInternal(keyDest string, bitOpType redisbitop.RedisBitop, keySource ...string) error {
+func (b *BIT) bitOpInternal(snap redisConnSnapshot, keyDest string, bitOpType redisbitop.RedisBitop, keySource ...string) error {
 	// validate
 	if b.core == nil {
 		return errors.New("Redis BitOp Failed: " + "Base is Nil")
 	}
 
-	if !b.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis BitOp Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -2973,13 +2968,13 @@ func (b *BIT) bitOpInternal(keyDest string, bitOpType redisbitop.RedisBitop, key
 
 	switch bitOpType {
 	case redisbitop.And:
-		cmd = b.core.cnWriter.BitOpAnd(b.core.cnWriter.Context(), keyDest, keySource...)
+		cmd = snap.writer.BitOpAnd(snap.writer.Context(), keyDest, keySource...)
 	case redisbitop.Or:
-		cmd = b.core.cnWriter.BitOpOr(b.core.cnWriter.Context(), keyDest, keySource...)
+		cmd = snap.writer.BitOpOr(snap.writer.Context(), keyDest, keySource...)
 	case redisbitop.XOr:
-		cmd = b.core.cnWriter.BitOpXor(b.core.cnWriter.Context(), keyDest, keySource...)
+		cmd = snap.writer.BitOpXor(snap.writer.Context(), keyDest, keySource...)
 	case redisbitop.NOT:
-		cmd = b.core.cnWriter.BitOpNot(b.core.cnWriter.Context(), keyDest, keySource[0])
+		cmd = snap.writer.BitOpNot(snap.writer.Context(), keyDest, keySource[0])
 	default:
 		return errors.New("Redis BitOp Failed: " + "BitOp Type Not Expected")
 	}
@@ -3002,8 +2997,9 @@ func (b *BIT) BitPos(key string, bitValue int64, startPosition ...int64) (valPos
 	if b.core == nil {
 		return 0, errors.New("Redis BIT BitPos Failed: Redis core is nil")
 	}
+	snap := b.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-BitPos", b.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-BitPos", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3018,10 +3014,10 @@ func (b *BIT) BitPos(key string, bitValue int64, startPosition ...int64) (valPos
 			}
 		}()
 
-		valPosition, err = b.bitPosInternal(key, bitValue, startPosition...)
+		valPosition, err = b.bitPosInternal(snap, key, bitValue, startPosition...)
 		return valPosition, err
 	} else {
-		return b.bitPosInternal(key, bitValue, startPosition...)
+		return b.bitPosInternal(snap, key, bitValue, startPosition...)
 	}
 }
 
@@ -3032,13 +3028,13 @@ func (b *BIT) BitPos(key string, bitValue int64, startPosition ...int64) (valPos
 //
 // bitValue = 1 or 0
 // startPosition = bit pos start from this bit offset position
-func (b *BIT) bitPosInternal(key string, bitValue int64, startPosition ...int64) (valPosition int64, err error) {
+func (b *BIT) bitPosInternal(snap redisConnSnapshot, key string, bitValue int64, startPosition ...int64) (valPosition int64, err error) {
 	// validate
 	if b.core == nil {
 		return 0, errors.New("Redis BitPos Failed: " + "Base is Nil")
 	}
 
-	if !b.core.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis BitPos Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3050,7 +3046,7 @@ func (b *BIT) bitPosInternal(key string, bitValue int64, startPosition ...int64)
 		return 0, errors.New("Redis BitPos Failed: " + "Bit Value Must Be 1 or 0")
 	}
 
-	cmd := b.core.cnReader.BitPos(b.core.cnReader.Context(), key, bitValue, startPosition...)
+	cmd := snap.reader.BitPos(snap.reader.Context(), key, bitValue, startPosition...)
 	valPosition, _, err = b.core.handleIntCmd(cmd, "Redis BitPos Failed: ")
 	return valPosition, err
 }
@@ -3067,8 +3063,9 @@ func (l *LIST) LSet(key string, index int64, value interface{}) (err error) {
 	if l.core == nil {
 		return errors.New("Redis LIST LSet Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LSet", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LSet", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3082,21 +3079,21 @@ func (l *LIST) LSet(key string, index int64, value interface{}) (err error) {
 			}
 		}()
 
-		err = l.lsetInternal(key, index, value)
+		err = l.lsetInternal(snap, key, index, value)
 		return err
 	} else {
-		return l.lsetInternal(key, index, value)
+		return l.lsetInternal(snap, key, index, value)
 	}
 }
 
 // lsetInternal will set element to the list index
-func (l *LIST) lsetInternal(key string, index int64, value interface{}) error {
+func (l *LIST) lsetInternal(snap redisConnSnapshot, key string, index int64, value interface{}) error {
 	// validate
 	if l.core == nil {
 		return errors.New("Redis LSet Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis LSet Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3108,7 +3105,7 @@ func (l *LIST) lsetInternal(key string, index int64, value interface{}) error {
 		return errors.New("Redis LSet Failed: " + "Value is Required")
 	}
 
-	cmd := l.core.cnWriter.LSet(l.core.cnWriter.Context(), key, index, value)
+	cmd := snap.writer.LSet(snap.writer.Context(), key, index, value)
 	return l.core.handleStatusCmd(cmd, "Redis LSet Failed: ")
 }
 
@@ -3120,8 +3117,9 @@ func (l *LIST) LInsert(key string, bBefore bool, pivot interface{}, value interf
 	if l.core == nil {
 		return errors.New("Redis LIST LInsert Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LInsert", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LInsert", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3136,21 +3134,21 @@ func (l *LIST) LInsert(key string, bBefore bool, pivot interface{}, value interf
 			}
 		}()
 
-		err = l.linsertInternal(key, bBefore, pivot, value)
+		err = l.linsertInternal(snap, key, bBefore, pivot, value)
 		return err
 	} else {
-		return l.linsertInternal(key, bBefore, pivot, value)
+		return l.linsertInternal(snap, key, bBefore, pivot, value)
 	}
 }
 
 // linsertInternal will insert a value either before or after the pivot element
-func (l *LIST) linsertInternal(key string, bBefore bool, pivot interface{}, value interface{}) error {
+func (l *LIST) linsertInternal(snap redisConnSnapshot, key string, bBefore bool, pivot interface{}, value interface{}) error {
 	// validate
 	if l.core == nil {
 		return errors.New("Redis LInsert Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis LInsert Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3169,9 +3167,9 @@ func (l *LIST) linsertInternal(key string, bBefore bool, pivot interface{}, valu
 	var cmd *redis.IntCmd
 
 	if bBefore {
-		cmd = l.core.cnWriter.LInsertBefore(l.core.cnWriter.Context(), key, pivot, value)
+		cmd = snap.writer.LInsertBefore(snap.writer.Context(), key, pivot, value)
 	} else {
-		cmd = l.core.cnWriter.LInsertAfter(l.core.cnWriter.Context(), key, pivot, value)
+		cmd = snap.writer.LInsertAfter(snap.writer.Context(), key, pivot, value)
 	}
 
 	_, _, err := l.core.handleIntCmd(cmd, "Redis LInsert Failed: ")
@@ -3192,8 +3190,9 @@ func (l *LIST) LPush(key string, keyMustExist bool, value ...interface{}) (err e
 	if l.core == nil {
 		return errors.New("Redis LIST LPush Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LPush", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LPush", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3207,10 +3206,10 @@ func (l *LIST) LPush(key string, keyMustExist bool, value ...interface{}) (err e
 			}
 		}()
 
-		err = l.lpushInternal(key, keyMustExist, value...)
+		err = l.lpushInternal(snap, key, keyMustExist, value...)
 		return err
 	} else {
-		return l.lpushInternal(key, keyMustExist, value...)
+		return l.lpushInternal(snap, key, keyMustExist, value...)
 	}
 }
 
@@ -3221,13 +3220,13 @@ func (l *LIST) LPush(key string, keyMustExist bool, value ...interface{}) (err e
 // for example, LPush mylist a b c will result in a list containing c as first element, b as second element, and a as third element
 //
 // error is returned if the key is not holding a value of type list
-func (l *LIST) lpushInternal(key string, keyMustExist bool, value ...interface{}) error {
+func (l *LIST) lpushInternal(snap redisConnSnapshot, key string, keyMustExist bool, value ...interface{}) error {
 	// validate
 	if l.core == nil {
 		return errors.New("Redis LPush Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis LPush Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3242,9 +3241,9 @@ func (l *LIST) lpushInternal(key string, keyMustExist bool, value ...interface{}
 	var cmd *redis.IntCmd
 
 	if !keyMustExist {
-		cmd = l.core.cnWriter.LPush(l.core.cnWriter.Context(), key, value...)
+		cmd = snap.writer.LPush(snap.writer.Context(), key, value...)
 	} else {
-		cmd = l.core.cnWriter.LPushX(l.core.cnWriter.Context(), key, value...)
+		cmd = snap.writer.LPushX(snap.writer.Context(), key, value...)
 	}
 
 	return l.core.handleIntCmd2(cmd, "Redis LPush Failed: ")
@@ -3264,8 +3263,9 @@ func (l *LIST) RPush(key string, keyMustExist bool, value ...interface{}) (err e
 	if l.core == nil {
 		return errors.New("Redis LIST RPush Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-RPush", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-RPush", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3279,10 +3279,10 @@ func (l *LIST) RPush(key string, keyMustExist bool, value ...interface{}) (err e
 			}
 		}()
 
-		err = l.rpushInternal(key, keyMustExist, value...)
+		err = l.rpushInternal(snap, key, keyMustExist, value...)
 		return err
 	} else {
-		return l.rpushInternal(key, keyMustExist, value...)
+		return l.rpushInternal(snap, key, keyMustExist, value...)
 	}
 }
 
@@ -3293,13 +3293,13 @@ func (l *LIST) RPush(key string, keyMustExist bool, value ...interface{}) (err e
 // for example, RPush mylist a b c will result in a list containing a as first element, b as second element, and c as third element
 //
 // error is returned if the key is not holding a value of type list
-func (l *LIST) rpushInternal(key string, keyMustExist bool, value ...interface{}) error {
+func (l *LIST) rpushInternal(snap redisConnSnapshot, key string, keyMustExist bool, value ...interface{}) error {
 	// validate
 	if l.core == nil {
 		return errors.New("Redis RPush Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis RPush Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3314,9 +3314,9 @@ func (l *LIST) rpushInternal(key string, keyMustExist bool, value ...interface{}
 	var cmd *redis.IntCmd
 
 	if !keyMustExist {
-		cmd = l.core.cnWriter.RPush(l.core.cnWriter.Context(), key, value...)
+		cmd = snap.writer.RPush(snap.writer.Context(), key, value...)
 	} else {
-		cmd = l.core.cnWriter.RPushX(l.core.cnWriter.Context(), key, value...)
+		cmd = snap.writer.RPushX(snap.writer.Context(), key, value...)
 	}
 
 	return l.core.handleIntCmd2(cmd, "Redis RPush Failed: ")
@@ -3330,8 +3330,9 @@ func (l *LIST) LPop(key string, outputDataType redisdatatype.RedisDataType, outp
 	if l.core == nil {
 		return false, errors.New("Redis LIST LPop Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LPop", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LPop", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3346,21 +3347,21 @@ func (l *LIST) LPop(key string, outputDataType redisdatatype.RedisDataType, outp
 			}
 		}()
 
-		notFound, err = l.lpopInternal(key, outputDataType, outputObjectPtr)
+		notFound, err = l.lpopInternal(snap, key, outputDataType, outputObjectPtr)
 		return notFound, err
 	} else {
-		return l.lpopInternal(key, outputDataType, outputObjectPtr)
+		return l.lpopInternal(snap, key, outputDataType, outputObjectPtr)
 	}
 }
 
 // lpopInternal will remove and return the first element from the list stored at key
-func (l *LIST) lpopInternal(key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+func (l *LIST) lpopInternal(snap redisConnSnapshot, key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
 	// validate
 	if l.core == nil {
 		return false, errors.New("Redis LPop Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return false, errors.New("Redis LPop Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3376,7 +3377,7 @@ func (l *LIST) lpopInternal(key string, outputDataType redisdatatype.RedisDataTy
 		return false, errors.New("Redis LPop Failed: " + "Output Object Pointer is Required")
 	}
 
-	cmd := l.core.cnWriter.LPop(l.core.cnWriter.Context(), key)
+	cmd := snap.writer.LPop(snap.writer.Context(), key)
 	return l.core.handleStringCmd(cmd, outputDataType, outputObjectPtr, "Redis LPop Failed: ")
 }
 
@@ -3388,8 +3389,9 @@ func (l *LIST) RPop(key string, outputDataType redisdatatype.RedisDataType, outp
 	if l.core == nil {
 		return false, errors.New("Redis LIST RPop Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-RPop", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-RPop", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3404,21 +3406,21 @@ func (l *LIST) RPop(key string, outputDataType redisdatatype.RedisDataType, outp
 			}
 		}()
 
-		notFound, err = l.rpopInternal(key, outputDataType, outputObjectPtr)
+		notFound, err = l.rpopInternal(snap, key, outputDataType, outputObjectPtr)
 		return notFound, err
 	} else {
-		return l.rpopInternal(key, outputDataType, outputObjectPtr)
+		return l.rpopInternal(snap, key, outputDataType, outputObjectPtr)
 	}
 }
 
 // rpopInternal removes and returns the last element of the list stored at key
-func (l *LIST) rpopInternal(key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+func (l *LIST) rpopInternal(snap redisConnSnapshot, key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
 	// validate
 	if l.core == nil {
 		return false, errors.New("Redis RPop Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return false, errors.New("Redis RPop Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3434,7 +3436,7 @@ func (l *LIST) rpopInternal(key string, outputDataType redisdatatype.RedisDataTy
 		return false, errors.New("Redis RPop Failed: " + "Output Object Pointer is Required")
 	}
 
-	cmd := l.core.cnWriter.RPop(l.core.cnWriter.Context(), key)
+	cmd := snap.writer.RPop(snap.writer.Context(), key)
 	return l.core.handleStringCmd(cmd, outputDataType, outputObjectPtr, "Redis RPop Failed: ")
 }
 
@@ -3447,8 +3449,9 @@ func (l *LIST) RPopLPush(keySource string, keyDest string, outputDataType redisd
 	if l.core == nil {
 		return false, errors.New("Redis LIST RPopLPush Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-RPopLPush", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-RPopLPush", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3464,22 +3467,22 @@ func (l *LIST) RPopLPush(keySource string, keyDest string, outputDataType redisd
 			}
 		}()
 
-		notFound, err = l.rpopLPushInternal(keySource, keyDest, outputDataType, outputObjectPtr)
+		notFound, err = l.rpopLPushInternal(snap, keySource, keyDest, outputDataType, outputObjectPtr)
 		return notFound, err
 	} else {
-		return l.rpopLPushInternal(keySource, keyDest, outputDataType, outputObjectPtr)
+		return l.rpopLPushInternal(snap, keySource, keyDest, outputDataType, outputObjectPtr)
 	}
 }
 
 // rpopLPushInternal will atomically remove and return last element of the list stored at keySource,
 // and then push the returned element at first element position (head) of the list stored at keyDest
-func (l *LIST) rpopLPushInternal(keySource string, keyDest string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+func (l *LIST) rpopLPushInternal(snap redisConnSnapshot, keySource string, keyDest string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
 	// validate
 	if l.core == nil {
 		return false, errors.New("Redis RPopLPush Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return false, errors.New("Redis RPopLPush Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3499,7 +3502,7 @@ func (l *LIST) rpopLPushInternal(keySource string, keyDest string, outputDataTyp
 		return false, errors.New("Redis RPopLPush Failed: " + "Output Object Pointer is Required")
 	}
 
-	cmd := l.core.cnWriter.RPopLPush(l.core.cnWriter.Context(), keySource, keyDest)
+	cmd := snap.writer.RPopLPush(snap.writer.Context(), keySource, keyDest)
 	return l.core.handleStringCmd(cmd, outputDataType, outputObjectPtr, "Redis RPopLPush Failed: ")
 }
 
@@ -3518,8 +3521,9 @@ func (l *LIST) LIndex(key string, index int64, outputDataType redisdatatype.Redi
 	if l.core == nil {
 		return false, errors.New("Redis LIST LIndex Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LIndex", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LIndex", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3535,10 +3539,10 @@ func (l *LIST) LIndex(key string, index int64, outputDataType redisdatatype.Redi
 			}
 		}()
 
-		notFound, err = l.lindexInternal(key, index, outputDataType, outputObjectPtr)
+		notFound, err = l.lindexInternal(snap, key, index, outputDataType, outputObjectPtr)
 		return notFound, err
 	} else {
-		return l.lindexInternal(key, index, outputDataType, outputObjectPtr)
+		return l.lindexInternal(snap, key, index, outputDataType, outputObjectPtr)
 	}
 }
 
@@ -3550,13 +3554,13 @@ func (l *LIST) LIndex(key string, index int64, outputDataType redisdatatype.Redi
 //	such as -2 = second to last element, and so on
 //
 // Error is returned if value at key is not a list
-func (l *LIST) lindexInternal(key string, index int64, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+func (l *LIST) lindexInternal(snap redisConnSnapshot, key string, index int64, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
 	// validate
 	if l.core == nil {
 		return false, errors.New("Redis LIndex Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return false, errors.New("Redis LIndex Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3564,7 +3568,7 @@ func (l *LIST) lindexInternal(key string, index int64, outputDataType redisdatat
 		return false, errors.New("Redis LIndex Failed: " + "Key is Required")
 	}
 
-	cmd := l.core.cnReader.LIndex(l.core.cnReader.Context(), key, index)
+	cmd := snap.reader.LIndex(snap.reader.Context(), key, index)
 	return l.core.handleStringCmd(cmd, outputDataType, outputObjectPtr, "Redis LIndex Failed: ")
 }
 
@@ -3579,8 +3583,9 @@ func (l *LIST) LLen(key string) (val int64, notFound bool, err error) {
 	if l.core == nil {
 		return 0, false, errors.New("Redis LIST LLen Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LLen", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LLen", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3594,10 +3599,10 @@ func (l *LIST) LLen(key string) (val int64, notFound bool, err error) {
 			}
 		}()
 
-		val, notFound, err = l.llenInternal(key)
+		val, notFound, err = l.llenInternal(snap, key)
 		return val, notFound, err
 	} else {
-		return l.llenInternal(key)
+		return l.llenInternal(snap, key)
 	}
 }
 
@@ -3605,13 +3610,13 @@ func (l *LIST) LLen(key string) (val int64, notFound bool, err error) {
 // if key does not exist, it is treated as empty list and 0 is returned,
 //
 // Error is returned if value at key is not a list
-func (l *LIST) llenInternal(key string) (val int64, notFound bool, err error) {
+func (l *LIST) llenInternal(snap redisConnSnapshot, key string) (val int64, notFound bool, err error) {
 	// validate
 	if l.core == nil {
 		return 0, false, errors.New("Redis LLen Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis LLen Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3619,7 +3624,7 @@ func (l *LIST) llenInternal(key string) (val int64, notFound bool, err error) {
 		return 0, false, errors.New("Redis LLen Failed: " + "Key is Required")
 	}
 
-	cmd := l.core.cnReader.LLen(l.core.cnReader.Context(), key)
+	cmd := snap.reader.LLen(snap.reader.Context(), key)
 	return l.core.handleIntCmd(cmd, "Redis LLen Failed: ")
 }
 
@@ -3640,8 +3645,9 @@ func (l *LIST) LRange(key string, start int64, stop int64) (outputSlice []string
 	if l.core == nil {
 		return nil, false, errors.New("Redis LIST LRange Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LRange", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LRange", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3657,10 +3663,10 @@ func (l *LIST) LRange(key string, start int64, stop int64) (outputSlice []string
 			}
 		}()
 
-		outputSlice, notFound, err = l.lrangeInternal(key, start, stop)
+		outputSlice, notFound, err = l.lrangeInternal(snap, key, start, stop)
 		return outputSlice, notFound, err
 	} else {
-		return l.lrangeInternal(key, start, stop)
+		return l.lrangeInternal(snap, key, start, stop)
 	}
 }
 
@@ -3674,13 +3680,13 @@ func (l *LIST) LRange(key string, start int64, stop int64) (outputSlice []string
 // Example:
 //
 //	start top = 0 - 10 = returns 11 elements (0 to 10 = 11)
-func (l *LIST) lrangeInternal(key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
+func (l *LIST) lrangeInternal(snap redisConnSnapshot, key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if l.core == nil {
 		return nil, false, errors.New("Redis LRange Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis LRange Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3688,7 +3694,7 @@ func (l *LIST) lrangeInternal(key string, start int64, stop int64) (outputSlice 
 		return nil, false, errors.New("Redis LRange Failed: " + "Key is Required")
 	}
 
-	cmd := l.core.cnReader.LRange(l.core.cnReader.Context(), key, start, stop)
+	cmd := snap.reader.LRange(snap.reader.Context(), key, start, stop)
 	return l.core.handleStringSliceCmd(cmd, "Redis LRange Failed: ")
 }
 
@@ -3709,8 +3715,9 @@ func (l *LIST) LRem(key string, count int64, value interface{}) (err error) {
 	if l.core == nil {
 		return errors.New("Redis LIST LRem Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LRem", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LRem", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3724,10 +3731,10 @@ func (l *LIST) LRem(key string, count int64, value interface{}) (err error) {
 			}
 		}()
 
-		err = l.lremInternal(key, count, value)
+		err = l.lremInternal(snap, key, count, value)
 		return err
 	} else {
-		return l.lremInternal(key, count, value)
+		return l.lremInternal(snap, key, count, value)
 	}
 }
 
@@ -3741,13 +3748,13 @@ func (l *LIST) LRem(key string, count int64, value interface{}) (err error) {
 // Example:
 //
 //	LREM list 02 "hello" = removes the last two occurrences of "hello" in the list stored at key named 'list'
-func (l *LIST) lremInternal(key string, count int64, value interface{}) error {
+func (l *LIST) lremInternal(snap redisConnSnapshot, key string, count int64, value interface{}) error {
 	// validate
 	if l.core == nil {
 		return errors.New("Redis LRem Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis LRem Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3759,7 +3766,7 @@ func (l *LIST) lremInternal(key string, count int64, value interface{}) error {
 		return errors.New("Redis LRem Failed: " + "Value is Required")
 	}
 
-	cmd := l.core.cnWriter.LRem(l.core.cnWriter.Context(), key, count, value)
+	cmd := snap.writer.LRem(snap.writer.Context(), key, count, value)
 	return l.core.handleIntCmd2(cmd, "Redis LRem Failed: ")
 }
 
@@ -3777,8 +3784,9 @@ func (l *LIST) LTrim(key string, start int64, stop int64) (err error) {
 	if l.core == nil {
 		return errors.New("Redis LIST LTrim Failed: Redis core is nil")
 	}
+	snap := l.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LTrim", l.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LTrim", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3792,10 +3800,10 @@ func (l *LIST) LTrim(key string, start int64, stop int64) (err error) {
 			}
 		}()
 
-		err = l.ltrimInternal(key, start, stop)
+		err = l.ltrimInternal(snap, key, start, stop)
 		return err
 	} else {
-		return l.ltrimInternal(key, start, stop)
+		return l.ltrimInternal(snap, key, start, stop)
 	}
 }
 
@@ -3806,13 +3814,13 @@ func (l *LIST) LTrim(key string, start int64, stop int64) (err error) {
 // Example:
 //
 //	LTRIM foobar 0 2 = modifies the list store at key named 'foobar' so that only the first 3 elements of the list will remain
-func (l *LIST) ltrimInternal(key string, start int64, stop int64) error {
+func (l *LIST) ltrimInternal(snap redisConnSnapshot, key string, start int64, stop int64) error {
 	// validate
 	if l.core == nil {
 		return errors.New("Redis LTrim Failed: " + "Base is Nil")
 	}
 
-	if !l.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis LTrim Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3820,7 +3828,7 @@ func (l *LIST) ltrimInternal(key string, start int64, stop int64) error {
 		return errors.New("Redis LTrim Failed: " + "Key is Required")
 	}
 
-	cmd := l.core.cnWriter.LTrim(l.core.cnWriter.Context(), key, start, stop)
+	cmd := snap.writer.LTrim(snap.writer.Context(), key, start, stop)
 	return l.core.handleStatusCmd(cmd, "Redis LTrim Failed: ")
 }
 
@@ -3838,8 +3846,9 @@ func (h *HASH) HExists(key string, field string) (valExists bool, err error) {
 	if h.core == nil {
 		return false, errors.New("Redis HASH HExists Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HExists", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HExists", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3853,23 +3862,23 @@ func (h *HASH) HExists(key string, field string) (valExists bool, err error) {
 			}
 		}()
 
-		valExists, err = h.hexistsInternal(key, field)
+		valExists, err = h.hexistsInternal(snap, key, field)
 		return valExists, err
 	} else {
-		return h.hexistsInternal(key, field)
+		return h.hexistsInternal(snap, key, field)
 	}
 }
 
 // hexistsInternal returns if field is an existing field in the hash stored at key
 //
 // 1 = exists; 0 = not exist or key not exist
-func (h *HASH) hexistsInternal(key string, field string) (valExists bool, err error) {
+func (h *HASH) hexistsInternal(snap redisConnSnapshot, key string, field string) (valExists bool, err error) {
 	// validate
 	if h.core == nil {
 		return false, errors.New("Redis HExists Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return false, errors.New("Redis HExists Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3881,7 +3890,7 @@ func (h *HASH) hexistsInternal(key string, field string) (valExists bool, err er
 		return false, errors.New("Redis HExists Failed: " + "Field is Required")
 	}
 
-	cmd := h.core.cnReader.HExists(h.core.cnReader.Context(), key, field)
+	cmd := snap.reader.HExists(snap.reader.Context(), key, field)
 	return h.core.handleBoolCmd(cmd, "Redis HExists Failed: ")
 }
 
@@ -3893,8 +3902,9 @@ func (h *HASH) HLen(key string) (valLen int64, notFound bool, err error) {
 	if h.core == nil {
 		return 0, false, errors.New("Redis HASH HLen Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HLen", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HLen", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3908,21 +3918,21 @@ func (h *HASH) HLen(key string) (valLen int64, notFound bool, err error) {
 			}
 		}()
 
-		valLen, notFound, err = h.hlenInternal(key)
+		valLen, notFound, err = h.hlenInternal(snap, key)
 		return valLen, notFound, err
 	} else {
-		return h.hlenInternal(key)
+		return h.hlenInternal(snap, key)
 	}
 }
 
 // hlenInternal returns the number of fields contained in the hash stored at key
-func (h *HASH) hlenInternal(key string) (valLen int64, notFound bool, err error) {
+func (h *HASH) hlenInternal(snap redisConnSnapshot, key string) (valLen int64, notFound bool, err error) {
 	// validate
 	if h.core == nil {
 		return 0, false, errors.New("Redis HLen Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis HLen Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3930,7 +3940,7 @@ func (h *HASH) hlenInternal(key string) (valLen int64, notFound bool, err error)
 		return 0, false, errors.New("Redis HLen Failed: " + "Key is Required")
 	}
 
-	cmd := h.core.cnReader.HLen(h.core.cnReader.Context(), key)
+	cmd := snap.reader.HLen(snap.reader.Context(), key)
 	return h.core.handleIntCmd(cmd, "Redis HLen Failed: ")
 }
 
@@ -3946,8 +3956,9 @@ func (h *HASH) HSet(key string, value ...interface{}) (err error) {
 	if h.core == nil {
 		return errors.New("Redis HASH HSet Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HSet", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HSet", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -3960,10 +3971,10 @@ func (h *HASH) HSet(key string, value ...interface{}) (err error) {
 			}
 		}()
 
-		err = h.hsetInternal(key, value...)
+		err = h.hsetInternal(snap, key, value...)
 		return err
 	} else {
-		return h.hsetInternal(key, value...)
+		return h.hsetInternal(snap, key, value...)
 	}
 }
 
@@ -3972,13 +3983,13 @@ func (h *HASH) HSet(key string, value ...interface{}) (err error) {
 //
 // if 'field' already exists in the hash, it will be overridden
 // if 'field' does not exist, it will be added
-func (h *HASH) hsetInternal(key string, value ...interface{}) error {
+func (h *HASH) hsetInternal(snap redisConnSnapshot, key string, value ...interface{}) error {
 	// validate
 	if h.core == nil {
 		return errors.New("Redis HSet Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis HSet Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -3990,7 +4001,7 @@ func (h *HASH) hsetInternal(key string, value ...interface{}) error {
 		return errors.New("Redis HSet Failed: " + "At Least 1 Value is Required")
 	}
 
-	cmd := h.core.cnWriter.HSet(h.core.cnWriter.Context(), key, value...)
+	cmd := snap.writer.HSet(snap.writer.Context(), key, value...)
 	return h.core.handleIntCmd2(cmd, "Redis HSet Failed: ")
 }
 
@@ -4007,8 +4018,9 @@ func (h *HASH) HSetNX(key string, field string, value interface{}) (err error) {
 	if h.core == nil {
 		return errors.New("Redis HASH HSetNX Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HSetNX", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HSetNX", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4022,10 +4034,10 @@ func (h *HASH) HSetNX(key string, field string, value interface{}) (err error) {
 			}
 		}()
 
-		err = h.hsetNXInternal(key, field, value)
+		err = h.hsetNXInternal(snap, key, field, value)
 		return err
 	} else {
-		return h.hsetNXInternal(key, field, value)
+		return h.hsetNXInternal(snap, key, field, value)
 	}
 }
 
@@ -4035,13 +4047,13 @@ func (h *HASH) HSetNX(key string, field string, value interface{}) (err error) {
 // note:
 //
 //	'field' must not yet exist in hash, otherwise will not add
-func (h *HASH) hsetNXInternal(key string, field string, value interface{}) error {
+func (h *HASH) hsetNXInternal(snap redisConnSnapshot, key string, field string, value interface{}) error {
 	// validate
 	if h.core == nil {
 		return errors.New("Redis HSetNX Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis HSetNX Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4057,7 +4069,7 @@ func (h *HASH) hsetNXInternal(key string, field string, value interface{}) error
 		return errors.New("Redis HSetNX Failed: " + "Value is Required")
 	}
 
-	cmd := h.core.cnWriter.HSetNX(h.core.cnWriter.Context(), key, field, value)
+	cmd := snap.writer.HSetNX(snap.writer.Context(), key, field, value)
 
 	if val, err := h.core.handleBoolCmd(cmd, "Redis HSetNX Failed: "); err != nil {
 		return err
@@ -4080,8 +4092,9 @@ func (h *HASH) HGet(key string, field string, outputDataType redisdatatype.Redis
 	if h.core == nil {
 		return false, errors.New("Redis HASH HGet Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HGet", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HGet", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4097,21 +4110,21 @@ func (h *HASH) HGet(key string, field string, outputDataType redisdatatype.Redis
 			}
 		}()
 
-		notFound, err = h.hgetInternal(key, field, outputDataType, outputObjectPtr)
+		notFound, err = h.hgetInternal(snap, key, field, outputDataType, outputObjectPtr)
 		return notFound, err
 	} else {
-		return h.hgetInternal(key, field, outputDataType, outputObjectPtr)
+		return h.hgetInternal(snap, key, field, outputDataType, outputObjectPtr)
 	}
 }
 
 // hgetInternal returns the value associated with 'field' in the hash stored at key
-func (h *HASH) hgetInternal(key string, field string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+func (h *HASH) hgetInternal(snap redisConnSnapshot, key string, field string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
 	// validate
 	if h.core == nil {
 		return false, errors.New("Redis HGet Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return false, errors.New("Redis HGet Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4131,7 +4144,7 @@ func (h *HASH) hgetInternal(key string, field string, outputDataType redisdataty
 		return false, errors.New("Redis HGet Failed: " + "Output Object Pointer is Required")
 	}
 
-	cmd := h.core.cnReader.HGet(h.core.cnReader.Context(), key, field)
+	cmd := snap.reader.HGet(snap.reader.Context(), key, field)
 	return h.core.handleStringCmd(cmd, outputDataType, outputObjectPtr, "Redis HGet Failed: ")
 }
 
@@ -4144,8 +4157,9 @@ func (h *HASH) HGetAll(key string) (outputMap map[string]string, notFound bool, 
 	if h.core == nil {
 		return nil, false, errors.New("Redis HASH HGetAll Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HGetAll", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HGetAll", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4159,22 +4173,22 @@ func (h *HASH) HGetAll(key string) (outputMap map[string]string, notFound bool, 
 			}
 		}()
 
-		outputMap, notFound, err = h.hgetAllInternal(key)
+		outputMap, notFound, err = h.hgetAllInternal(snap, key)
 		return outputMap, notFound, err
 	} else {
-		return h.hgetAllInternal(key)
+		return h.hgetAllInternal(snap, key)
 	}
 }
 
 // hgetAllInternal returns all fields and values of the hash store at key,
 // in the returned value, every field name is followed by its value, so the length of the reply is twice the size of the hash
-func (h *HASH) hgetAllInternal(key string) (outputMap map[string]string, notFound bool, err error) {
+func (h *HASH) hgetAllInternal(snap redisConnSnapshot, key string) (outputMap map[string]string, notFound bool, err error) {
 	// validate
 	if h.core == nil {
 		return nil, false, errors.New("Redis HGetAll Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis HGetAll Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4182,7 +4196,7 @@ func (h *HASH) hgetAllInternal(key string) (outputMap map[string]string, notFoun
 		return nil, false, errors.New("Redis HGetAll Failed: " + "Key is Required")
 	}
 
-	cmd := h.core.cnReader.HGetAll(h.core.cnReader.Context(), key)
+	cmd := snap.reader.HGetAll(snap.reader.Context(), key)
 	return h.core.handleStringStringMapCmd(cmd, "Redis HGetAll Failed: ")
 }
 
@@ -4196,8 +4210,9 @@ func (h *HASH) HMSet(key string, value ...interface{}) (err error) {
 	if h.core == nil {
 		return errors.New("Redis HASH HMSet Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HMSet", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HMSet", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4210,23 +4225,23 @@ func (h *HASH) HMSet(key string, value ...interface{}) (err error) {
 			}
 		}()
 
-		err = h.hmsetInternal(key, value...)
+		err = h.hmsetInternal(snap, key, value...)
 		return err
 	} else {
-		return h.hmsetInternal(key, value...)
+		return h.hmsetInternal(snap, key, value...)
 	}
 }
 
 // hmsetInternal will set the specified 'fields' to their respective values in the hash stored by key,
 // This command overrides any specified 'fields' already existing in the hash,
 // If key does not exist, a new key holding a hash is created
-func (h *HASH) hmsetInternal(key string, value ...interface{}) error {
+func (h *HASH) hmsetInternal(snap redisConnSnapshot, key string, value ...interface{}) error {
 	// validate
 	if h.core == nil {
 		return errors.New("Redis HMSet Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis HMSet Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4238,7 +4253,7 @@ func (h *HASH) hmsetInternal(key string, value ...interface{}) error {
 		return errors.New("Redis HMSet Failed: " + "At Least 1 Value is Required")
 	}
 
-	cmd := h.core.cnWriter.HMSet(h.core.cnWriter.Context(), key, value...)
+	cmd := snap.writer.HMSet(snap.writer.Context(), key, value...)
 
 	if val, err := h.core.handleBoolCmd(cmd, "Redis HMSet Failed: "); err != nil {
 		return err
@@ -4263,8 +4278,9 @@ func (h *HASH) HMGet(key string, field ...string) (outputSlice []interface{}, no
 	if h.core == nil {
 		return nil, false, errors.New("Redis HASH HMGet Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HMGet", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HMGet", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4279,23 +4295,23 @@ func (h *HASH) HMGet(key string, field ...string) (outputSlice []interface{}, no
 			}
 		}()
 
-		outputSlice, notFound, err = h.hmgetInternal(key, field...)
+		outputSlice, notFound, err = h.hmgetInternal(snap, key, field...)
 		return outputSlice, notFound, err
 	} else {
-		return h.hmgetInternal(key, field...)
+		return h.hmgetInternal(snap, key, field...)
 	}
 }
 
 // hmgetInternal will return the values associated with the specified 'fields' in the hash stored at key,
 // For every 'field' that does not exist in the hash, a nil value is returned,
 // If key is not existent, then nil is returned for all values
-func (h *HASH) hmgetInternal(key string, field ...string) (outputSlice []interface{}, notFound bool, err error) {
+func (h *HASH) hmgetInternal(snap redisConnSnapshot, key string, field ...string) (outputSlice []interface{}, notFound bool, err error) {
 	// validate
 	if h.core == nil {
 		return nil, false, errors.New("Redis HMGet Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis HMGet Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4307,7 +4323,7 @@ func (h *HASH) hmgetInternal(key string, field ...string) (outputSlice []interfa
 		return nil, false, errors.New("Redis HMGet Failed: " + "At Least 1 Field is Required")
 	}
 
-	cmd := h.core.cnReader.HMGet(h.core.cnReader.Context(), key, field...)
+	cmd := snap.reader.HMGet(snap.reader.Context(), key, field...)
 	return h.core.handleSliceCmd(cmd, "Redis HMGet Failed: ")
 }
 
@@ -4321,8 +4337,9 @@ func (h *HASH) HDel(key string, field ...string) (deletedCount int64, err error)
 	if h.core == nil {
 		return 0, errors.New("Redis HASH HDel Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HDel", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HDel", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4336,23 +4353,23 @@ func (h *HASH) HDel(key string, field ...string) (deletedCount int64, err error)
 			}
 		}()
 
-		deletedCount, err = h.hdelInternal(key, field...)
+		deletedCount, err = h.hdelInternal(snap, key, field...)
 		return deletedCount, err
 	} else {
-		return h.hdelInternal(key, field...)
+		return h.hdelInternal(snap, key, field...)
 	}
 }
 
 // hdelInternal removes the specified 'fields' from the hash stored at key,
 // any specified 'fields' that do not exist in the hash are ignored,
 // if key does not exist, it is treated as an empty hash, and 0 is returned
-func (h *HASH) hdelInternal(key string, field ...string) (deletedCount int64, err error) {
+func (h *HASH) hdelInternal(snap redisConnSnapshot, key string, field ...string) (deletedCount int64, err error) {
 	// validate
 	if h.core == nil {
 		return 0, errors.New("Redis HDel Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis HDel Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4364,7 +4381,7 @@ func (h *HASH) hdelInternal(key string, field ...string) (deletedCount int64, er
 		return 0, errors.New("Redis HDel Failed: " + "At Least 1 Field is Required")
 	}
 
-	cmd := h.core.cnWriter.HDel(h.core.cnWriter.Context(), key, field...)
+	cmd := snap.writer.HDel(snap.writer.Context(), key, field...)
 	deletedCount, _, err = h.core.handleIntCmd(cmd, "Redis HDel Failed: ")
 	return deletedCount, err
 }
@@ -4378,8 +4395,9 @@ func (h *HASH) HKeys(key string) (outputSlice []string, notFound bool, err error
 	if h.core == nil {
 		return nil, false, errors.New("Redis HASH HKeys Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HKeys", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HKeys", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4393,22 +4411,22 @@ func (h *HASH) HKeys(key string) (outputSlice []string, notFound bool, err error
 			}
 		}()
 
-		outputSlice, notFound, err = h.hkeysInternal(key)
+		outputSlice, notFound, err = h.hkeysInternal(snap, key)
 		return outputSlice, notFound, err
 	} else {
-		return h.hkeysInternal(key)
+		return h.hkeysInternal(snap, key)
 	}
 }
 
 // hkeysInternal returns all field names in the hash stored at key,
 // field names are the element keys
-func (h *HASH) hkeysInternal(key string) (outputSlice []string, notFound bool, err error) {
+func (h *HASH) hkeysInternal(snap redisConnSnapshot, key string) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if h.core == nil {
 		return nil, false, errors.New("Redis HKeys Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis HKeys Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4416,7 +4434,7 @@ func (h *HASH) hkeysInternal(key string) (outputSlice []string, notFound bool, e
 		return nil, false, errors.New("Redis HKeys Failed: " + "Key is Required")
 	}
 
-	cmd := h.core.cnReader.HKeys(h.core.cnReader.Context(), key)
+	cmd := snap.reader.HKeys(snap.reader.Context(), key)
 	return h.core.handleStringSliceCmd(cmd, "Redis HKeys Failed: ")
 }
 
@@ -4428,8 +4446,9 @@ func (h *HASH) HVals(key string) (outputSlice []string, notFound bool, err error
 	if h.core == nil {
 		return nil, false, errors.New("Redis HASH HVals Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HVals", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HVals", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4443,21 +4462,21 @@ func (h *HASH) HVals(key string) (outputSlice []string, notFound bool, err error
 			}
 		}()
 
-		outputSlice, notFound, err = h.hvalsInternal(key)
+		outputSlice, notFound, err = h.hvalsInternal(snap, key)
 		return outputSlice, notFound, err
 	} else {
-		return h.hvalsInternal(key)
+		return h.hvalsInternal(snap, key)
 	}
 }
 
 // hvalsInternal returns all values in the hash stored at key
-func (h *HASH) hvalsInternal(key string) (outputSlice []string, notFound bool, err error) {
+func (h *HASH) hvalsInternal(snap redisConnSnapshot, key string) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if h.core == nil {
 		return nil, false, errors.New("Redis HVals Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis HVals Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4465,7 +4484,7 @@ func (h *HASH) hvalsInternal(key string) (outputSlice []string, notFound bool, e
 		return nil, false, errors.New("Redis HVals Failed: " + "Key is Required")
 	}
 
-	cmd := h.core.cnReader.HVals(h.core.cnReader.Context(), key)
+	cmd := snap.reader.HVals(snap.reader.Context(), key)
 	return h.core.handleStringSliceCmd(cmd, "Redis HVals Failed: ")
 }
 
@@ -4494,8 +4513,9 @@ func (h *HASH) HScan(key string, cursor uint64, match string, count int64) (outp
 	if h.core == nil {
 		return nil, 0, errors.New("Redis HASH HScan Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HScan", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HScan", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4512,10 +4532,10 @@ func (h *HASH) HScan(key string, cursor uint64, match string, count int64) (outp
 			}
 		}()
 
-		outputKeys, outputCursor, err = h.hscanInternal(key, cursor, match, count)
+		outputKeys, outputCursor, err = h.hscanInternal(snap, key, cursor, match, count)
 		return outputKeys, outputCursor, err
 	} else {
-		return h.hscanInternal(key, cursor, match, count)
+		return h.hscanInternal(snap, key, cursor, match, count)
 	}
 }
 
@@ -4537,13 +4557,13 @@ func (h *HASH) HScan(key string, cursor uint64, match string, count int64) (outp
 //		7) Use \ to escape special characters if needing to match verbatim
 //
 // count = hint to redis count of elements to retrieve in the call
-func (h *HASH) hscanInternal(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
+func (h *HASH) hscanInternal(snap redisConnSnapshot, key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
 	// validate
 	if h.core == nil {
 		return nil, 0, errors.New("Redis HScan Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return nil, 0, errors.New("Redis HScan Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4555,7 +4575,7 @@ func (h *HASH) hscanInternal(key string, cursor uint64, match string, count int6
 		return nil, 0, errors.New("Redis HScan Failed: " + "Count Must Be Zero or Greater")
 	}
 
-	cmd := h.core.cnReader.HScan(h.core.cnReader.Context(), key, cursor, match, count)
+	cmd := snap.reader.HScan(snap.reader.Context(), key, cursor, match, count)
 	return h.core.handleScanCmd(cmd, "Redis HScan Failed: ")
 }
 
@@ -4571,8 +4591,9 @@ func (h *HASH) HIncrBy(key string, field string, incrValue int64) (err error) {
 	if h.core == nil {
 		return errors.New("Redis HASH HIncrBy Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HIncrBy", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HIncrBy", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4586,10 +4607,10 @@ func (h *HASH) HIncrBy(key string, field string, incrValue int64) (err error) {
 			}
 		}()
 
-		err = h.hincrByInternal(key, field, incrValue)
+		err = h.hincrByInternal(snap, key, field, incrValue)
 		return err
 	} else {
-		return h.hincrByInternal(key, field, incrValue)
+		return h.hincrByInternal(snap, key, field, incrValue)
 	}
 }
 
@@ -4598,13 +4619,13 @@ func (h *HASH) HIncrBy(key string, field string, incrValue int64) (err error) {
 // if 'field' does not exist then the value is set to 0 before operation is performed
 //
 // this function supports both increment and decrement (although name of function is increment)
-func (h *HASH) hincrByInternal(key string, field string, incrValue int64) error {
+func (h *HASH) hincrByInternal(snap redisConnSnapshot, key string, field string, incrValue int64) error {
 	// validate
 	if h.core == nil {
 		return errors.New("Redis HIncrBy Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis HIncrBy Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4620,7 +4641,7 @@ func (h *HASH) hincrByInternal(key string, field string, incrValue int64) error 
 		return errors.New("Redis HIncrBy Failed: " + "Increment Value Must Not Be Zero")
 	}
 
-	cmd := h.core.cnWriter.HIncrBy(h.core.cnWriter.Context(), key, field, incrValue)
+	cmd := snap.writer.HIncrBy(snap.writer.Context(), key, field, incrValue)
 
 	if _, _, err := h.core.handleIntCmd(cmd, "Redis HIncrBy Failed: "); err != nil {
 		return err
@@ -4641,8 +4662,9 @@ func (h *HASH) HIncrByFloat(key string, field string, incrValue float64) (err er
 	if h.core == nil {
 		return errors.New("Redis HASH HIncrByFloat Failed: Redis core is nil")
 	}
+	snap := h.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-HIncrByFloat", h.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-HIncrByFloat", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4656,10 +4678,10 @@ func (h *HASH) HIncrByFloat(key string, field string, incrValue float64) (err er
 			}
 		}()
 
-		err = h.hincrByFloatInternal(key, field, incrValue)
+		err = h.hincrByFloatInternal(snap, key, field, incrValue)
 		return err
 	} else {
-		return h.hincrByFloatInternal(key, field, incrValue)
+		return h.hincrByFloatInternal(snap, key, field, incrValue)
 	}
 }
 
@@ -4668,13 +4690,13 @@ func (h *HASH) HIncrByFloat(key string, field string, incrValue float64) (err er
 // if 'field' does not exist then the value is set to 0 before operation is performed
 //
 // this function supports both increment and decrement (although name of function is increment)
-func (h *HASH) hincrByFloatInternal(key string, field string, incrValue float64) error {
+func (h *HASH) hincrByFloatInternal(snap redisConnSnapshot, key string, field string, incrValue float64) error {
 	// validate
 	if h.core == nil {
 		return errors.New("Redis HIncrByFloat Failed: " + "Base is Nil")
 	}
 
-	if !h.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis HIncrByFloat Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4690,7 +4712,7 @@ func (h *HASH) hincrByFloatInternal(key string, field string, incrValue float64)
 		return errors.New("Redis HIncrByFloat Failed: " + "Increment Value Must Not Be Zero")
 	}
 
-	cmd := h.core.cnWriter.HIncrByFloat(h.core.cnWriter.Context(), key, field, incrValue)
+	cmd := snap.writer.HIncrByFloat(snap.writer.Context(), key, field, incrValue)
 
 	if _, _, err := h.core.handleFloatCmd(cmd, "Redis HIncrByFloat Failed: "); err != nil {
 		return err
@@ -4715,8 +4737,9 @@ func (s *SET) SAdd(key string, member ...interface{}) (err error) {
 	if s.core == nil {
 		return errors.New("Redis SET SAdd Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SAdd", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SAdd", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4729,10 +4752,10 @@ func (s *SET) SAdd(key string, member ...interface{}) (err error) {
 			}
 		}()
 
-		err = s.saddInternal(key, member...)
+		err = s.saddInternal(snap, key, member...)
 		return err
 	} else {
-		return s.saddInternal(key, member...)
+		return s.saddInternal(snap, key, member...)
 	}
 }
 
@@ -4741,13 +4764,13 @@ func (s *SET) SAdd(key string, member ...interface{}) (err error) {
 // If key does not exist, a new set is created before adding the specified members
 //
 // Error is returned when the value stored at key is not a set
-func (s *SET) saddInternal(key string, member ...interface{}) error {
+func (s *SET) saddInternal(snap redisConnSnapshot, key string, member ...interface{}) error {
 	// validate
 	if s.core == nil {
 		return errors.New("Redis SAdd Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis SAdd Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4759,7 +4782,7 @@ func (s *SET) saddInternal(key string, member ...interface{}) error {
 		return errors.New("Redis SAdd Failed: " + "At Least 1 Member is Required")
 	}
 
-	cmd := s.core.cnWriter.SAdd(s.core.cnWriter.Context(), key, member...)
+	cmd := snap.writer.SAdd(snap.writer.Context(), key, member...)
 	return s.core.handleIntCmd2(cmd, "Redis SAdd Failed: ")
 }
 
@@ -4771,8 +4794,9 @@ func (s *SET) SCard(key string) (val int64, notFound bool, err error) {
 	if s.core == nil {
 		return 0, false, errors.New("Redis SET SCard Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SCard", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SCard", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4786,21 +4810,21 @@ func (s *SET) SCard(key string) (val int64, notFound bool, err error) {
 			}
 		}()
 
-		val, notFound, err = s.scardInternal(key)
+		val, notFound, err = s.scardInternal(snap, key)
 		return val, notFound, err
 	} else {
-		return s.scardInternal(key)
+		return s.scardInternal(snap, key)
 	}
 }
 
 // scardInternal returns the set cardinality (number of elements) of the set stored at key
-func (s *SET) scardInternal(key string) (val int64, notFound bool, err error) {
+func (s *SET) scardInternal(snap redisConnSnapshot, key string) (val int64, notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return 0, false, errors.New("Redis SCard Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis SCard Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4808,7 +4832,7 @@ func (s *SET) scardInternal(key string) (val int64, notFound bool, err error) {
 		return 0, false, errors.New("Redis SCard Failed: " + "Key is Required")
 	}
 
-	cmd := s.core.cnReader.SCard(s.core.cnReader.Context(), key)
+	cmd := snap.reader.SCard(snap.reader.Context(), key)
 	return s.core.handleIntCmd(cmd, "Redis SCard Failed: ")
 }
 
@@ -4828,8 +4852,9 @@ func (s *SET) SDiff(key ...string) (outputSlice []string, notFound bool, err err
 	if s.core == nil {
 		return nil, false, errors.New("Redis SET SDiff Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SDiff", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SDiff", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4843,10 +4868,10 @@ func (s *SET) SDiff(key ...string) (outputSlice []string, notFound bool, err err
 			}
 		}()
 
-		outputSlice, notFound, err = s.sdiffInternal(key...)
+		outputSlice, notFound, err = s.sdiffInternal(snap, key...)
 		return outputSlice, notFound, err
 	} else {
-		return s.sdiffInternal(key...)
+		return s.sdiffInternal(snap, key...)
 	}
 }
 
@@ -4859,13 +4884,13 @@ func (s *SET) SDiff(key ...string) (outputSlice []string, notFound bool, err err
 //	key3 = { a, c, e }
 //	SDIFF key1, key2, key3 = { b, d }
 //		{ b, d } is returned because this is the difference delta
-func (s *SET) sdiffInternal(key ...string) (outputSlice []string, notFound bool, err error) {
+func (s *SET) sdiffInternal(snap redisConnSnapshot, key ...string) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return nil, false, errors.New("Redis SDiff Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis SDiff Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4873,7 +4898,7 @@ func (s *SET) sdiffInternal(key ...string) (outputSlice []string, notFound bool,
 		return nil, false, errors.New("Redis SDiff Failed: " + "At Least 2 Keys Are Required")
 	}
 
-	cmd := s.core.cnReader.SDiff(s.core.cnReader.Context(), key...)
+	cmd := snap.reader.SDiff(snap.reader.Context(), key...)
 	return s.core.handleStringSliceCmd(cmd, "Redis SDiff Failed: ")
 }
 
@@ -4894,8 +4919,9 @@ func (s *SET) SDiffStore(keyDest string, keySource ...string) (err error) {
 	if s.core == nil {
 		return errors.New("Redis SET SDiffStore Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SDiffStore", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SDiffStore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4908,10 +4934,10 @@ func (s *SET) SDiffStore(keyDest string, keySource ...string) (err error) {
 			}
 		}()
 
-		err = s.sdiffStoreInternal(keyDest, keySource...)
+		err = s.sdiffStoreInternal(snap, keyDest, keySource...)
 		return err
 	} else {
-		return s.sdiffStoreInternal(keyDest, keySource...)
+		return s.sdiffStoreInternal(snap, keyDest, keySource...)
 	}
 }
 
@@ -4925,13 +4951,13 @@ func (s *SET) SDiffStore(keyDest string, keySource ...string) (err error) {
 //	key3 = { a, c, e }
 //	SDIFF key1, key2, key3 = { b, d }
 //		{ b, d } is stored because this is the difference delta
-func (s *SET) sdiffStoreInternal(keyDest string, keySource ...string) error {
+func (s *SET) sdiffStoreInternal(snap redisConnSnapshot, keyDest string, keySource ...string) error {
 	// validate
 	if s.core == nil {
 		return errors.New("Redis SDiffStore Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis SDiffStore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -4943,7 +4969,7 @@ func (s *SET) sdiffStoreInternal(keyDest string, keySource ...string) error {
 		return errors.New("Redis SDiffStore Failed: " + "At Least 2 Key Sources are Required")
 	}
 
-	cmd := s.core.cnWriter.SDiffStore(s.core.cnWriter.Context(), keyDest, keySource...)
+	cmd := snap.writer.SDiffStore(snap.writer.Context(), keyDest, keySource...)
 	return s.core.handleIntCmd2(cmd, "Redis SDiffStore Failed: ")
 }
 
@@ -4963,8 +4989,9 @@ func (s *SET) SInter(key ...string) (outputSlice []string, notFound bool, err er
 	if s.core == nil {
 		return nil, false, errors.New("Redis SET SInter Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SInter", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SInter", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -4978,10 +5005,10 @@ func (s *SET) SInter(key ...string) (outputSlice []string, notFound bool, err er
 			}
 		}()
 
-		outputSlice, notFound, err = s.sinterInternal(key...)
+		outputSlice, notFound, err = s.sinterInternal(snap, key...)
 		return outputSlice, notFound, err
 	} else {
-		return s.sinterInternal(key...)
+		return s.sinterInternal(snap, key...)
 	}
 }
 
@@ -4994,13 +5021,13 @@ func (s *SET) SInter(key ...string) (outputSlice []string, notFound bool, err er
 //	Key3 = { a, c, e }
 //	SINTER key1 key2 key3 = { c }
 //		{ c } is returned because this is the intersection on all keys (appearing in all keys)
-func (s *SET) sinterInternal(key ...string) (outputSlice []string, notFound bool, err error) {
+func (s *SET) sinterInternal(snap redisConnSnapshot, key ...string) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return nil, false, errors.New("Redis SInter Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis SInter Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5008,7 +5035,7 @@ func (s *SET) sinterInternal(key ...string) (outputSlice []string, notFound bool
 		return nil, false, errors.New("Redis SInter Failed: " + "At Least 2 Keys Are Required")
 	}
 
-	cmd := s.core.cnReader.SInter(s.core.cnReader.Context(), key...)
+	cmd := snap.reader.SInter(snap.reader.Context(), key...)
 	return s.core.handleStringSliceCmd(cmd, "Redis SInter Failed: ")
 }
 
@@ -5029,8 +5056,9 @@ func (s *SET) SInterStore(keyDest string, keySource ...string) (err error) {
 	if s.core == nil {
 		return errors.New("Redis SET SInterStore Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SInterStore", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SInterStore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5043,10 +5071,10 @@ func (s *SET) SInterStore(keyDest string, keySource ...string) (err error) {
 			}
 		}()
 
-		err = s.sinterStoreInternal(keyDest, keySource...)
+		err = s.sinterStoreInternal(snap, keyDest, keySource...)
 		return err
 	} else {
-		return s.sinterStoreInternal(keyDest, keySource...)
+		return s.sinterStoreInternal(snap, keyDest, keySource...)
 	}
 }
 
@@ -5060,13 +5088,13 @@ func (s *SET) SInterStore(keyDest string, keySource ...string) (err error) {
 //	Key3 = { a, c, e }
 //	SINTER key1 key2 key3 = { c }
 //		{ c } is stored because this is the intersection on all keys (appearing in all keys)
-func (s *SET) sinterStoreInternal(keyDest string, keySource ...string) error {
+func (s *SET) sinterStoreInternal(snap redisConnSnapshot, keyDest string, keySource ...string) error {
 	// validate
 	if s.core == nil {
 		return errors.New("Redis SInterStore Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis SInterStore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5078,7 +5106,7 @@ func (s *SET) sinterStoreInternal(keyDest string, keySource ...string) error {
 		return errors.New("Redis SInterStore Failed: " + "At Least 2 Key Sources are Required")
 	}
 
-	cmd := s.core.cnWriter.SInterStore(s.core.cnWriter.Context(), keyDest, keySource...)
+	cmd := snap.writer.SInterStore(snap.writer.Context(), keyDest, keySource...)
 	return s.core.handleIntCmd2(cmd, "Redis SInterStore Failed: ")
 }
 
@@ -5090,8 +5118,9 @@ func (s *SET) SIsMember(key string, member interface{}) (val bool, err error) {
 	if s.core == nil {
 		return false, errors.New("Redis SET SIsMember Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SIsMember", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SIsMember", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5105,21 +5134,21 @@ func (s *SET) SIsMember(key string, member interface{}) (val bool, err error) {
 			}
 		}()
 
-		val, err = s.sisMemberInternal(key, member)
+		val, err = s.sisMemberInternal(snap, key, member)
 		return val, err
 	} else {
-		return s.sisMemberInternal(key, member)
+		return s.sisMemberInternal(snap, key, member)
 	}
 }
 
 // sisMemberInternal returns status if 'member' is a member of the set stored at key
-func (s *SET) sisMemberInternal(key string, member interface{}) (val bool, err error) {
+func (s *SET) sisMemberInternal(snap redisConnSnapshot, key string, member interface{}) (val bool, err error) {
 	// validate
 	if s.core == nil {
 		return false, errors.New("Redis SIsMember Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return false, errors.New("Redis SIsMember Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5131,7 +5160,7 @@ func (s *SET) sisMemberInternal(key string, member interface{}) (val bool, err e
 		return false, errors.New("Redis SIsMember Failed: " + "Member is Required")
 	}
 
-	cmd := s.core.cnReader.SIsMember(s.core.cnReader.Context(), key, member)
+	cmd := snap.reader.SIsMember(snap.reader.Context(), key, member)
 	return s.core.handleBoolCmd(cmd, "Redis SIsMember Failed: ")
 }
 
@@ -5143,8 +5172,9 @@ func (s *SET) SMembers(key string) (outputSlice []string, notFound bool, err err
 	if s.core == nil {
 		return nil, false, errors.New("Redis SET SMembers Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SMembers", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SMembers", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5158,21 +5188,21 @@ func (s *SET) SMembers(key string) (outputSlice []string, notFound bool, err err
 			}
 		}()
 
-		outputSlice, notFound, err = s.smembersInternal(key)
+		outputSlice, notFound, err = s.smembersInternal(snap, key)
 		return outputSlice, notFound, err
 	} else {
-		return s.smembersInternal(key)
+		return s.smembersInternal(snap, key)
 	}
 }
 
 // smembersInternal returns all the members of the set value stored at key
-func (s *SET) smembersInternal(key string) (outputSlice []string, notFound bool, err error) {
+func (s *SET) smembersInternal(snap redisConnSnapshot, key string) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return nil, false, errors.New("Redis SMembers Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis SMembers Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5180,7 +5210,7 @@ func (s *SET) smembersInternal(key string) (outputSlice []string, notFound bool,
 		return nil, false, errors.New("Redis SMembers Failed: " + "Key is Required")
 	}
 
-	cmd := s.core.cnReader.SMembers(s.core.cnReader.Context(), key)
+	cmd := snap.reader.SMembers(snap.reader.Context(), key)
 	return s.core.handleStringSliceCmd(cmd, "Redis SMember Failed: ")
 }
 
@@ -5192,8 +5222,9 @@ func (s *SET) SMembersMap(key string) (outputMap map[string]struct{}, notFound b
 	if s.core == nil {
 		return nil, false, errors.New("Redis SET SMembersMap Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SMembersMap", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SMembersMap", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5207,21 +5238,21 @@ func (s *SET) SMembersMap(key string) (outputMap map[string]struct{}, notFound b
 			}
 		}()
 
-		outputMap, notFound, err = s.smembersMapInternal(key)
+		outputMap, notFound, err = s.smembersMapInternal(snap, key)
 		return outputMap, notFound, err
 	} else {
-		return s.smembersMapInternal(key)
+		return s.smembersMapInternal(snap, key)
 	}
 }
 
 // smembersMapInternal returns all the members of the set value stored at key, via map
-func (s *SET) smembersMapInternal(key string) (outputMap map[string]struct{}, notFound bool, err error) {
+func (s *SET) smembersMapInternal(snap redisConnSnapshot, key string) (outputMap map[string]struct{}, notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return nil, false, errors.New("Redis SMembersMap Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis SMembersMap Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5229,7 +5260,7 @@ func (s *SET) smembersMapInternal(key string) (outputMap map[string]struct{}, no
 		return nil, false, errors.New("Redis SMembersMap Failed: " + "Key is Required")
 	}
 
-	cmd := s.core.cnReader.SMembersMap(s.core.cnReader.Context(), key)
+	cmd := snap.reader.SMembersMap(snap.reader.Context(), key)
 	return s.core.handleStringStructMapCmd(cmd, "Redis SMembersMap Failed: ")
 }
 
@@ -5258,8 +5289,9 @@ func (s *SET) SScan(key string, cursor uint64, match string, count int64) (outpu
 	if s.core == nil {
 		return nil, 0, errors.New("Redis SET SScan Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SScan", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SScan", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5276,10 +5308,10 @@ func (s *SET) SScan(key string, cursor uint64, match string, count int64) (outpu
 			}
 		}()
 
-		outputKeys, outputCursor, err = s.sscanInternal(key, cursor, match, count)
+		outputKeys, outputCursor, err = s.sscanInternal(snap, key, cursor, match, count)
 		return outputKeys, outputCursor, err
 	} else {
-		return s.sscanInternal(key, cursor, match, count)
+		return s.sscanInternal(snap, key, cursor, match, count)
 	}
 }
 
@@ -5301,13 +5333,13 @@ func (s *SET) SScan(key string, cursor uint64, match string, count int64) (outpu
 //		7) Use \ to escape special characters if needing to match verbatim
 //
 // count = hint to redis count of elements to retrieve in the call
-func (s *SET) sscanInternal(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
+func (s *SET) sscanInternal(snap redisConnSnapshot, key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
 	// validate
 	if s.core == nil {
 		return nil, 0, errors.New("Redis SScan Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return nil, 0, errors.New("Redis SScan Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5319,7 +5351,7 @@ func (s *SET) sscanInternal(key string, cursor uint64, match string, count int64
 		return nil, 0, errors.New("Redis SScan Failed: " + "Count Must Be 0 or Greater")
 	}
 
-	cmd := s.core.cnReader.SScan(s.core.cnReader.Context(), key, cursor, match, count)
+	cmd := snap.reader.SScan(snap.reader.Context(), key, cursor, match, count)
 	return s.core.handleScanCmd(cmd, "Redis SScan Failed: ")
 }
 
@@ -5331,8 +5363,9 @@ func (s *SET) SRandMember(key string, outputDataType redisdatatype.RedisDataType
 	if s.core == nil {
 		return false, errors.New("Redis SET SRandMember Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SRandMember", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SRandMember", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5347,21 +5380,21 @@ func (s *SET) SRandMember(key string, outputDataType redisdatatype.RedisDataType
 			}
 		}()
 
-		notFound, err = s.srandMemberInternal(key, outputDataType, outputObjectPtr)
+		notFound, err = s.srandMemberInternal(snap, key, outputDataType, outputObjectPtr)
 		return notFound, err
 	} else {
-		return s.srandMemberInternal(key, outputDataType, outputObjectPtr)
+		return s.srandMemberInternal(snap, key, outputDataType, outputObjectPtr)
 	}
 }
 
 // srandMemberInternal returns a random element from the set value stored at key
-func (s *SET) srandMemberInternal(key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+func (s *SET) srandMemberInternal(snap redisConnSnapshot, key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return false, errors.New("Redis SRandMember Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return false, errors.New("Redis SRandMember Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5377,7 +5410,7 @@ func (s *SET) srandMemberInternal(key string, outputDataType redisdatatype.Redis
 		return false, errors.New("Redis SRandMember Failed: " + "Output Object Pointer is Required")
 	}
 
-	cmd := s.core.cnReader.SRandMember(s.core.cnReader.Context(), key)
+	cmd := snap.reader.SRandMember(snap.reader.Context(), key)
 	return s.core.handleStringCmd(cmd, outputDataType, outputObjectPtr, "Redis SRandMember Failed: ")
 }
 
@@ -5392,8 +5425,9 @@ func (s *SET) SRandMemberN(key string, count int64) (outputSlice []string, notFo
 	if s.core == nil {
 		return nil, false, errors.New("Redis SET SRandMemberN Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SRandMemberN", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SRandMemberN", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5408,10 +5442,10 @@ func (s *SET) SRandMemberN(key string, count int64) (outputSlice []string, notFo
 			}
 		}()
 
-		outputSlice, notFound, err = s.srandMemberNInternal(key, count)
+		outputSlice, notFound, err = s.srandMemberNInternal(snap, key, count)
 		return outputSlice, notFound, err
 	} else {
-		return s.srandMemberNInternal(key, count)
+		return s.srandMemberNInternal(snap, key, count)
 	}
 }
 
@@ -5419,13 +5453,13 @@ func (s *SET) SRandMemberN(key string, count int64) (outputSlice []string, notFo
 //
 // count > 0 = returns an array of count distinct elements (non-repeating), up to the set elements size
 // count < 0 = returns an array of count elements (may be repeating), and up to the count size (selected members may still be part of the subsequent selection process)
-func (s *SET) srandMemberNInternal(key string, count int64) (outputSlice []string, notFound bool, err error) {
+func (s *SET) srandMemberNInternal(snap redisConnSnapshot, key string, count int64) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return nil, false, errors.New("Redis SRandMemberN Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis SRandMemberN Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5437,7 +5471,7 @@ func (s *SET) srandMemberNInternal(key string, count int64) (outputSlice []strin
 		return nil, false, errors.New("Redis SRandMemberN Failed: " + "Count Must Not Be Zero")
 	}
 
-	cmd := s.core.cnReader.SRandMemberN(s.core.cnReader.Context(), key, count)
+	cmd := snap.reader.SRandMemberN(snap.reader.Context(), key, count)
 	return s.core.handleStringSliceCmd(cmd, "Redis SRandMemberN Failed: ")
 }
 
@@ -5453,8 +5487,9 @@ func (s *SET) SRem(key string, member ...interface{}) (err error) {
 	if s.core == nil {
 		return errors.New("Redis SET SRem Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SRem", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SRem", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5467,10 +5502,10 @@ func (s *SET) SRem(key string, member ...interface{}) (err error) {
 			}
 		}()
 
-		err = s.sremInternal(key, member...)
+		err = s.sremInternal(snap, key, member...)
 		return err
 	} else {
-		return s.sremInternal(key, member...)
+		return s.sremInternal(snap, key, member...)
 	}
 }
 
@@ -5479,13 +5514,13 @@ func (s *SET) SRem(key string, member ...interface{}) (err error) {
 // If key does not exist, it is treated as an empty set and this command returns 0
 //
 // Error is returned if the value stored at key is not a set
-func (s *SET) sremInternal(key string, member ...interface{}) error {
+func (s *SET) sremInternal(snap redisConnSnapshot, key string, member ...interface{}) error {
 	// validate
 	if s.core == nil {
 		return errors.New("Redis SRem Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis SRem Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5497,7 +5532,7 @@ func (s *SET) sremInternal(key string, member ...interface{}) error {
 		return errors.New("Redis SRem Failed: " + "At Least 1 Member is Required")
 	}
 
-	cmd := s.core.cnWriter.SRem(s.core.cnWriter.Context(), key, member...)
+	cmd := snap.writer.SRem(snap.writer.Context(), key, member...)
 	return s.core.handleIntCmd2(cmd, "Redis SRem Failed: ")
 }
 
@@ -5517,8 +5552,9 @@ func (s *SET) SMove(keySource string, keyDest string, member interface{}) (err e
 	if s.core == nil {
 		return errors.New("Redis SET SMove Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SMove", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SMove", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5532,10 +5568,10 @@ func (s *SET) SMove(keySource string, keyDest string, member interface{}) (err e
 			}
 		}()
 
-		err = s.smoveInternal(keySource, keyDest, member)
+		err = s.smoveInternal(snap, keySource, keyDest, member)
 		return err
 	} else {
-		return s.smoveInternal(keySource, keyDest, member)
+		return s.smoveInternal(snap, keySource, keyDest, member)
 	}
 }
 
@@ -5548,13 +5584,13 @@ func (s *SET) SMove(keySource string, keyDest string, member interface{}) (err e
 // # If the specified element already exist in the destination set, it is only removed from the source set
 //
 // Error is returned if the source or destination does not hold a set value
-func (s *SET) smoveInternal(keySource string, keyDest string, member interface{}) error {
+func (s *SET) smoveInternal(snap redisConnSnapshot, keySource string, keyDest string, member interface{}) error {
 	// validate
 	if s.core == nil {
 		return errors.New("Redis SMove Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis SMove Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5570,7 +5606,7 @@ func (s *SET) smoveInternal(keySource string, keyDest string, member interface{}
 		return errors.New("Redis SMove Failed: " + "Member is Required")
 	}
 
-	cmd := s.core.cnWriter.SMove(s.core.cnWriter.Context(), keySource, keyDest, member)
+	cmd := snap.writer.SMove(snap.writer.Context(), keySource, keyDest, member)
 
 	if val, err := s.core.handleBoolCmd(cmd, "Redis SMove Failed: "); err != nil {
 		return err
@@ -5593,8 +5629,9 @@ func (s *SET) SPop(key string, outputDataType redisdatatype.RedisDataType, outpu
 	if s.core == nil {
 		return false, errors.New("Redis SET SPop Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SPop", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SPop", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5609,21 +5646,21 @@ func (s *SET) SPop(key string, outputDataType redisdatatype.RedisDataType, outpu
 			}
 		}()
 
-		notFound, err = s.spopInternal(key, outputDataType, outputObjectPtr)
+		notFound, err = s.spopInternal(snap, key, outputDataType, outputObjectPtr)
 		return notFound, err
 	} else {
-		return s.spopInternal(key, outputDataType, outputObjectPtr)
+		return s.spopInternal(snap, key, outputDataType, outputObjectPtr)
 	}
 }
 
 // spopInternal removes and returns one random element from the set value stored at key
-func (s *SET) spopInternal(key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
+func (s *SET) spopInternal(snap redisConnSnapshot, key string, outputDataType redisdatatype.RedisDataType, outputObjectPtr interface{}) (notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return false, errors.New("Redis SPop Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return false, errors.New("Redis SPop Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5639,7 +5676,7 @@ func (s *SET) spopInternal(key string, outputDataType redisdatatype.RedisDataTyp
 		return false, errors.New("Redis SPop Failed: " + "Output Object Pointer is Required")
 	}
 
-	cmd := s.core.cnWriter.SPop(s.core.cnWriter.Context(), key)
+	cmd := snap.writer.SPop(snap.writer.Context(), key)
 	return s.core.handleStringCmd(cmd, outputDataType, outputObjectPtr, "Redis SPop Failed: ")
 }
 
@@ -5654,8 +5691,9 @@ func (s *SET) SPopN(key string, count int64) (outputSlice []string, notFound boo
 	if s.core == nil {
 		return nil, false, errors.New("Redis SET SPopN Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SPopN", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SPopN", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5670,10 +5708,10 @@ func (s *SET) SPopN(key string, count int64) (outputSlice []string, notFound boo
 			}
 		}()
 
-		outputSlice, notFound, err = s.spopNInternal(key, count)
+		outputSlice, notFound, err = s.spopNInternal(snap, key, count)
 		return outputSlice, notFound, err
 	} else {
-		return s.spopNInternal(key, count)
+		return s.spopNInternal(snap, key, count)
 	}
 }
 
@@ -5681,13 +5719,13 @@ func (s *SET) SPopN(key string, count int64) (outputSlice []string, notFound boo
 //
 // count > 0 = returns an array of count distinct elements (non-repeating), up to the set elements size
 // count < 0 = returns an array of count elements (may be repeating), and up to the count size (selected members may still be part of the subsequent selection process)
-func (s *SET) spopNInternal(key string, count int64) (outputSlice []string, notFound bool, err error) {
+func (s *SET) spopNInternal(snap redisConnSnapshot, key string, count int64) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return nil, false, errors.New("Redis SPopN Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis SPopN Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5699,7 +5737,7 @@ func (s *SET) spopNInternal(key string, count int64) (outputSlice []string, notF
 		return nil, false, errors.New("Redis SPopN Failed: " + "Count Must Not Be Zero")
 	}
 
-	cmd := s.core.cnWriter.SPopN(s.core.cnWriter.Context(), key, count)
+	cmd := snap.writer.SPopN(snap.writer.Context(), key, count)
 	return s.core.handleStringSliceCmd(cmd, "Redis SPopN Failed: ")
 }
 
@@ -5719,8 +5757,9 @@ func (s *SET) SUnion(key ...string) (outputSlice []string, notFound bool, err er
 	if s.core == nil {
 		return nil, false, errors.New("Redis SET SUnion Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SUnion", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SUnion", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5734,10 +5773,10 @@ func (s *SET) SUnion(key ...string) (outputSlice []string, notFound bool, err er
 			}
 		}()
 
-		outputSlice, notFound, err = s.sunionInternal(key...)
+		outputSlice, notFound, err = s.sunionInternal(snap, key...)
 		return outputSlice, notFound, err
 	} else {
-		return s.sunionInternal(key...)
+		return s.sunionInternal(snap, key...)
 	}
 }
 
@@ -5750,13 +5789,13 @@ func (s *SET) SUnion(key ...string) (outputSlice []string, notFound bool, err er
 //	key2 = { c }
 //	key3 = { a, c, e }
 //	SUNION key1 key2 key3 = { a, b, c, d, e }
-func (s *SET) sunionInternal(key ...string) (outputSlice []string, notFound bool, err error) {
+func (s *SET) sunionInternal(snap redisConnSnapshot, key ...string) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if s.core == nil {
 		return nil, false, errors.New("Redis SUnion Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis SUnion Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5764,7 +5803,7 @@ func (s *SET) sunionInternal(key ...string) (outputSlice []string, notFound bool
 		return nil, false, errors.New("Redis SUnion Failed: " + "At Least 2 Keys Are Required")
 	}
 
-	cmd := s.core.cnReader.SUnion(s.core.cnReader.Context(), key...)
+	cmd := snap.reader.SUnion(snap.reader.Context(), key...)
 	return s.core.handleStringSliceCmd(cmd, "Redis SUnion Failed: ")
 }
 
@@ -5785,8 +5824,9 @@ func (s *SET) SUnionStore(keyDest string, keySource ...string) (err error) {
 	if s.core == nil {
 		return errors.New("Redis SET SUnionStore Failed: Redis core is nil")
 	}
+	snap := s.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SUnionStore", s.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SUnionStore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5799,10 +5839,10 @@ func (s *SET) SUnionStore(keyDest string, keySource ...string) (err error) {
 			}
 		}()
 
-		err = s.sunionStoreInternal(keyDest, keySource...)
+		err = s.sunionStoreInternal(snap, keyDest, keySource...)
 		return err
 	} else {
-		return s.sunionStoreInternal(keyDest, keySource...)
+		return s.sunionStoreInternal(snap, keyDest, keySource...)
 	}
 }
 
@@ -5816,13 +5856,13 @@ func (s *SET) SUnionStore(keyDest string, keySource ...string) (err error) {
 //	key2 = { c }
 //	key3 = { a, c, e }
 //	SUNION key1 key2 key3 = { a, b, c, d, e }
-func (s *SET) sunionStoreInternal(keyDest string, keySource ...string) error {
+func (s *SET) sunionStoreInternal(snap redisConnSnapshot, keyDest string, keySource ...string) error {
 	// validate
 	if s.core == nil {
 		return errors.New("Redis SUnionStore Failed: " + "Base is Nil")
 	}
 
-	if !s.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis SUnionStore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5834,7 +5874,7 @@ func (s *SET) sunionStoreInternal(keyDest string, keySource ...string) error {
 		return errors.New("Redis SUnionStore Failed: " + "At Least 2 Key Sources are Required")
 	}
 
-	cmd := s.core.cnWriter.SUnionStore(s.core.cnWriter.Context(), keyDest, keySource...)
+	cmd := snap.writer.SUnionStore(snap.writer.Context(), keyDest, keySource...)
 	return s.core.handleIntCmd2(cmd, "Redis SUnionStore Failed: ")
 }
 
@@ -5863,8 +5903,9 @@ func (z *SORTED_SET) ZAdd(key string, setCondition redissetcondition.RedisSetCon
 	if z.core == nil {
 		return errors.New("Redis SORTED_SET ZAdd Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZAdd", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZAdd", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5879,10 +5920,10 @@ func (z *SORTED_SET) ZAdd(key string, setCondition redissetcondition.RedisSetCon
 			}
 		}()
 
-		err = z.zaddInternal(key, setCondition, getChanged, member...)
+		err = z.zaddInternal(snap, key, setCondition, getChanged, member...)
 		return err
 	} else {
-		return z.zaddInternal(key, setCondition, getChanged, member...)
+		return z.zaddInternal(snap, key, setCondition, getChanged, member...)
 	}
 }
 
@@ -5900,13 +5941,13 @@ func (z *SORTED_SET) ZAdd(key string, setCondition redissetcondition.RedisSetCon
 //  1. ZAdd XX / XXCH = only update elements that already exists, never add elements
 //  2. ZAdd NX / NXCH = don't update already existing elements, always add new elements
 //  3. ZAdd CH = modify the return value from the number of new or updated elements added, CH = Changed
-func (z *SORTED_SET) zaddInternal(key string, setCondition redissetcondition.RedisSetCondition, getChanged bool, member ...*redis.Z) error {
+func (z *SORTED_SET) zaddInternal(snap redisConnSnapshot, key string, setCondition redissetcondition.RedisSetCondition, getChanged bool, member ...*redis.Z) error {
 	// validate
 	if z.core == nil {
 		return errors.New("Redis ZAdd Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ZAdd Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5927,21 +5968,21 @@ func (z *SORTED_SET) zaddInternal(key string, setCondition redissetcondition.Red
 	switch setCondition {
 	case redissetcondition.Normal:
 		if !getChanged {
-			cmd = z.core.cnWriter.ZAdd(z.core.cnWriter.Context(), key, member...)
+			cmd = snap.writer.ZAdd(snap.writer.Context(), key, member...)
 		} else {
-			cmd = z.core.cnWriter.ZAddCh(z.core.cnWriter.Context(), key, member...)
+			cmd = snap.writer.ZAddCh(snap.writer.Context(), key, member...)
 		}
 	case redissetcondition.SetIfNotExists:
 		if !getChanged {
-			cmd = z.core.cnWriter.ZAddNX(z.core.cnWriter.Context(), key, member...)
+			cmd = snap.writer.ZAddNX(snap.writer.Context(), key, member...)
 		} else {
-			cmd = z.core.cnWriter.ZAddNXCh(z.core.cnWriter.Context(), key, member...)
+			cmd = snap.writer.ZAddNXCh(snap.writer.Context(), key, member...)
 		}
 	case redissetcondition.SetIfExists:
 		if !getChanged {
-			cmd = z.core.cnWriter.ZAddXX(z.core.cnWriter.Context(), key, member...)
+			cmd = snap.writer.ZAddXX(snap.writer.Context(), key, member...)
 		} else {
-			cmd = z.core.cnWriter.ZAddXXCh(z.core.cnWriter.Context(), key, member...)
+			cmd = snap.writer.ZAddXXCh(snap.writer.Context(), key, member...)
 		}
 	default:
 		return errors.New("Redis ZAdd Failed: " + "Set Condition is Required")
@@ -5958,8 +5999,9 @@ func (z *SORTED_SET) ZCard(key string) (val int64, notFound bool, err error) {
 	if z.core == nil {
 		return 0, false, errors.New("Redis SORTED_SET ZCard Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZCard", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZCard", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -5973,21 +6015,21 @@ func (z *SORTED_SET) ZCard(key string) (val int64, notFound bool, err error) {
 			}
 		}()
 
-		val, notFound, err = z.zcardInternal(key)
+		val, notFound, err = z.zcardInternal(snap, key)
 		return val, notFound, err
 	} else {
-		return z.zcardInternal(key)
+		return z.zcardInternal(snap, key)
 	}
 }
 
 // zcardInternal returns the sorted set cardinality (number of elements) of the sorted set stored at key
-func (z *SORTED_SET) zcardInternal(key string) (val int64, notFound bool, err error) {
+func (z *SORTED_SET) zcardInternal(snap redisConnSnapshot, key string) (val int64, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return 0, false, errors.New("Redis ZCard Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis ZCard Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -5995,7 +6037,7 @@ func (z *SORTED_SET) zcardInternal(key string) (val int64, notFound bool, err er
 		return 0, false, errors.New("Redis ZCard Failed: " + "Key is Required")
 	}
 
-	cmd := z.core.cnReader.ZCard(z.core.cnReader.Context(), key)
+	cmd := snap.reader.ZCard(snap.reader.Context(), key)
 	return z.core.handleIntCmd(cmd, "Redis ZCard Failed: ")
 }
 
@@ -6007,8 +6049,9 @@ func (z *SORTED_SET) ZCount(key string, min string, max string) (val int64, notF
 	if z.core == nil {
 		return 0, false, errors.New("Redis SORTED_SET ZCount Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZCount", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZCount", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6024,21 +6067,21 @@ func (z *SORTED_SET) ZCount(key string, min string, max string) (val int64, notF
 			}
 		}()
 
-		val, notFound, err = z.zcountInternal(key, min, max)
+		val, notFound, err = z.zcountInternal(snap, key, min, max)
 		return val, notFound, err
 	} else {
-		return z.zcountInternal(key, min, max)
+		return z.zcountInternal(snap, key, min, max)
 	}
 }
 
 // zcountInternal returns the number of elements in the sorted set at key with a score between min and max
-func (z *SORTED_SET) zcountInternal(key string, min string, max string) (val int64, notFound bool, err error) {
+func (z *SORTED_SET) zcountInternal(snap redisConnSnapshot, key string, min string, max string) (val int64, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return 0, false, errors.New("Redis ZCount Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis ZCount Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6054,7 +6097,7 @@ func (z *SORTED_SET) zcountInternal(key string, min string, max string) (val int
 		return 0, false, errors.New("Redis ZCount Failed: " + "Max is Required")
 	}
 
-	cmd := z.core.cnReader.ZCount(z.core.cnReader.Context(), key, min, max)
+	cmd := snap.reader.ZCount(snap.reader.Context(), key, min, max)
 	return z.core.handleIntCmd(cmd, "Redis ZCount Failed: ")
 }
 
@@ -6068,8 +6111,9 @@ func (z *SORTED_SET) ZIncr(key string, setCondition redissetcondition.RedisSetCo
 	if z.core == nil {
 		return errors.New("Redis SORTED_SET ZIncr Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZIncr", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZIncr", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6083,23 +6127,23 @@ func (z *SORTED_SET) ZIncr(key string, setCondition redissetcondition.RedisSetCo
 			}
 		}()
 
-		err = z.zincrInternal(key, setCondition, member)
+		err = z.zincrInternal(snap, key, setCondition, member)
 		return err
 	} else {
-		return z.zincrInternal(key, setCondition, member)
+		return z.zincrInternal(snap, key, setCondition, member)
 	}
 }
 
 // zincrInternal will increment the score of member in sorted set at key
 //
 // Also support for ZIncrXX (member must exist), ZIncrNX (member must not exist)
-func (z *SORTED_SET) zincrInternal(key string, setCondition redissetcondition.RedisSetCondition, member *redis.Z) error {
+func (z *SORTED_SET) zincrInternal(snap redisConnSnapshot, key string, setCondition redissetcondition.RedisSetCondition, member *redis.Z) error {
 	// validate
 	if z.core == nil {
 		return errors.New("Redis ZIncr Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ZIncr Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6119,11 +6163,11 @@ func (z *SORTED_SET) zincrInternal(key string, setCondition redissetcondition.Re
 
 	switch setCondition {
 	case redissetcondition.Normal:
-		cmd = z.core.cnWriter.ZIncr(z.core.cnWriter.Context(), key, member)
+		cmd = snap.writer.ZIncr(snap.writer.Context(), key, member)
 	case redissetcondition.SetIfNotExists:
-		cmd = z.core.cnWriter.ZIncrNX(z.core.cnWriter.Context(), key, member)
+		cmd = snap.writer.ZIncrNX(snap.writer.Context(), key, member)
 	case redissetcondition.SetIfExists:
-		cmd = z.core.cnWriter.ZIncrXX(z.core.cnWriter.Context(), key, member)
+		cmd = snap.writer.ZIncrXX(snap.writer.Context(), key, member)
 	default:
 		return errors.New("Redis ZIncr Failed: " + "Set Condition is Required")
 	}
@@ -6150,8 +6194,9 @@ func (z *SORTED_SET) ZIncrBy(key string, increment float64, member string) (err 
 	if z.core == nil {
 		return errors.New("Redis SORTED_SET ZIncrBy Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZIncrBy", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZIncrBy", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6165,10 +6210,10 @@ func (z *SORTED_SET) ZIncrBy(key string, increment float64, member string) (err 
 			}
 		}()
 
-		err = z.zincrByInternal(key, increment, member)
+		err = z.zincrByInternal(snap, key, increment, member)
 		return err
 	} else {
-		return z.zincrByInternal(key, increment, member)
+		return z.zincrByInternal(snap, key, increment, member)
 	}
 }
 
@@ -6180,13 +6225,13 @@ func (z *SORTED_SET) ZIncrBy(key string, increment float64, member string) (err 
 //
 // Score should be string representation of a numeric value, and accepts double precision floating point numbers
 // To decrement, use negative value
-func (z *SORTED_SET) zincrByInternal(key string, increment float64, member string) error {
+func (z *SORTED_SET) zincrByInternal(snap redisConnSnapshot, key string, increment float64, member string) error {
 	// validate
 	if z.core == nil {
 		return errors.New("Redis ZIncrBy Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ZIncrBy Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6202,7 +6247,7 @@ func (z *SORTED_SET) zincrByInternal(key string, increment float64, member strin
 		return errors.New("Redis ZIncrBy Failed: " + "Member is Required")
 	}
 
-	cmd := z.core.cnWriter.ZIncrBy(z.core.cnWriter.Context(), key, increment, member)
+	cmd := snap.writer.ZIncrBy(snap.writer.Context(), key, increment, member)
 	if _, _, err := z.core.handleFloatCmd(cmd, "Redis ZIncrBy Failed: "); err != nil {
 		return err
 	} else {
@@ -6227,8 +6272,9 @@ func (z *SORTED_SET) ZInterStore(keyDest string, store *redis.ZStore) (err error
 	if z.core == nil {
 		return errors.New("Redis SORTED_SET ZInterStore Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZInterStore", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZInterStore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6241,10 +6287,10 @@ func (z *SORTED_SET) ZInterStore(keyDest string, store *redis.ZStore) (err error
 			}
 		}()
 
-		err = z.zinterStoreInternal(keyDest, store)
+		err = z.zinterStoreInternal(snap, keyDest, store)
 		return err
 	} else {
-		return z.zinterStoreInternal(keyDest, store)
+		return z.zinterStoreInternal(snap, keyDest, store)
 	}
 }
 
@@ -6258,13 +6304,13 @@ func (z *SORTED_SET) ZInterStore(keyDest string, store *redis.ZStore) (err error
 // Default Logic:
 //
 //	Resulting score of an element is the sum of its scores in the sorted set where it exists
-func (z *SORTED_SET) zinterStoreInternal(keyDest string, store *redis.ZStore) error {
+func (z *SORTED_SET) zinterStoreInternal(snap redisConnSnapshot, keyDest string, store *redis.ZStore) error {
 	// validate
 	if z.core == nil {
 		return errors.New("Redis ZInterStore Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ZInterStore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6276,7 +6322,7 @@ func (z *SORTED_SET) zinterStoreInternal(keyDest string, store *redis.ZStore) er
 		return errors.New("Redis ZInterStore Failed: " + "Store is Required")
 	}
 
-	cmd := z.core.cnWriter.ZInterStore(z.core.cnWriter.Context(), keyDest, store)
+	cmd := snap.writer.ZInterStore(snap.writer.Context(), keyDest, store)
 	return z.core.handleIntCmd2(cmd, "Redis ZInterStore Failed: ")
 }
 
@@ -6288,8 +6334,9 @@ func (z *SORTED_SET) ZLexCount(key string, min string, max string) (val int64, n
 	if z.core == nil {
 		return 0, false, errors.New("Redis SORTED_SET ZLexCount Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZLexCount", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZLexCount", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6305,21 +6352,21 @@ func (z *SORTED_SET) ZLexCount(key string, min string, max string) (val int64, n
 			}
 		}()
 
-		val, notFound, err = z.zlexCountInternal(key, min, max)
+		val, notFound, err = z.zlexCountInternal(snap, key, min, max)
 		return val, notFound, err
 	} else {
-		return z.zlexCountInternal(key, min, max)
+		return z.zlexCountInternal(snap, key, min, max)
 	}
 }
 
 // zlexCountInternal returns the number of elements in the sorted set at key, with a value between min and max
-func (z *SORTED_SET) zlexCountInternal(key string, min string, max string) (val int64, notFound bool, err error) {
+func (z *SORTED_SET) zlexCountInternal(snap redisConnSnapshot, key string, min string, max string) (val int64, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return 0, false, errors.New("Redis ZLexCount Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis ZLexCount Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6335,7 +6382,7 @@ func (z *SORTED_SET) zlexCountInternal(key string, min string, max string) (val 
 		return 0, false, errors.New("Redis ZLexCount Failed: " + "Max is Required")
 	}
 
-	cmd := z.core.cnReader.ZLexCount(z.core.cnReader.Context(), key, min, max)
+	cmd := snap.reader.ZLexCount(snap.reader.Context(), key, min, max)
 	return z.core.handleIntCmd(cmd, "Redis ZLexCount Failed: ")
 }
 
@@ -6349,8 +6396,9 @@ func (z *SORTED_SET) ZPopMax(key string, count ...int64) (outputSlice []redis.Z,
 	if z.core == nil {
 		return nil, false, errors.New("Redis SORTED_SET ZPopMax Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZPopMax", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZPopMax", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6365,23 +6413,23 @@ func (z *SORTED_SET) ZPopMax(key string, count ...int64) (outputSlice []redis.Z,
 			}
 		}()
 
-		outputSlice, notFound, err = z.zpopMaxInternal(key, count...)
+		outputSlice, notFound, err = z.zpopMaxInternal(snap, key, count...)
 		return outputSlice, notFound, err
 	} else {
-		return z.zpopMaxInternal(key, count...)
+		return z.zpopMaxInternal(snap, key, count...)
 	}
 }
 
 // zpopMaxInternal removes and returns up to the count of members with the highest scores in the sorted set stored at key,
 // Specifying more count than members will not cause error, rather given back smaller result set,
 // Returning elements ordered with highest score first, then subsequent and so on
-func (z *SORTED_SET) zpopMaxInternal(key string, count ...int64) (outputSlice []redis.Z, notFound bool, err error) {
+func (z *SORTED_SET) zpopMaxInternal(snap redisConnSnapshot, key string, count ...int64) (outputSlice []redis.Z, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return nil, false, errors.New("Redis ZPopMax Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis ZPopMax Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6392,9 +6440,9 @@ func (z *SORTED_SET) zpopMaxInternal(key string, count ...int64) (outputSlice []
 	var cmd *redis.ZSliceCmd
 
 	if len(count) <= 0 {
-		cmd = z.core.cnWriter.ZPopMax(z.core.cnWriter.Context(), key)
+		cmd = snap.writer.ZPopMax(snap.writer.Context(), key)
 	} else {
-		cmd = z.core.cnWriter.ZPopMax(z.core.cnWriter.Context(), key, count...)
+		cmd = snap.writer.ZPopMax(snap.writer.Context(), key, count...)
 	}
 
 	return z.core.handleZSliceCmd(cmd, "Redis ZPopMax Failed: ")
@@ -6410,8 +6458,9 @@ func (z *SORTED_SET) ZPopMin(key string, count ...int64) (outputSlice []redis.Z,
 	if z.core == nil {
 		return nil, false, errors.New("Redis SORTED_SET ZPopMin Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZPopMin", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZPopMin", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6426,23 +6475,23 @@ func (z *SORTED_SET) ZPopMin(key string, count ...int64) (outputSlice []redis.Z,
 			}
 		}()
 
-		outputSlice, notFound, err = z.zpopMinInternal(key, count...)
+		outputSlice, notFound, err = z.zpopMinInternal(snap, key, count...)
 		return outputSlice, notFound, err
 	} else {
-		return z.zpopMinInternal(key, count...)
+		return z.zpopMinInternal(snap, key, count...)
 	}
 }
 
 // zpopMinInternal removes and returns up to the count of members with the lowest scores in the sorted set stored at key,
 // Specifying more count than members will not cause error, rather given back smaller result set,
 // Returning elements ordered with lowest score first, then subsequently higher score, and so on
-func (z *SORTED_SET) zpopMinInternal(key string, count ...int64) (outputSlice []redis.Z, notFound bool, err error) {
+func (z *SORTED_SET) zpopMinInternal(snap redisConnSnapshot, key string, count ...int64) (outputSlice []redis.Z, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return nil, false, errors.New("Redis ZPopMin Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis ZPopMin Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6453,9 +6502,9 @@ func (z *SORTED_SET) zpopMinInternal(key string, count ...int64) (outputSlice []
 	var cmd *redis.ZSliceCmd
 
 	if len(count) <= 0 {
-		cmd = z.core.cnWriter.ZPopMin(z.core.cnWriter.Context(), key)
+		cmd = snap.writer.ZPopMin(snap.writer.Context(), key)
 	} else {
-		cmd = z.core.cnWriter.ZPopMin(z.core.cnWriter.Context(), key, count...)
+		cmd = snap.writer.ZPopMin(snap.writer.Context(), key, count...)
 	}
 
 	return z.core.handleZSliceCmd(cmd, "Redis ZPopMin Failed: ")
@@ -6475,8 +6524,9 @@ func (z *SORTED_SET) ZRange(key string, start int64, stop int64) (outputSlice []
 	if z.core == nil {
 		return nil, false, errors.New("Redis SORTED_SET ZRange Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRange", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRange", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6492,10 +6542,10 @@ func (z *SORTED_SET) ZRange(key string, start int64, stop int64) (outputSlice []
 			}
 		}()
 
-		outputSlice, notFound, err = z.zrangeInternal(key, start, stop)
+		outputSlice, notFound, err = z.zrangeInternal(snap, key, start, stop)
 		return outputSlice, notFound, err
 	} else {
-		return z.zrangeInternal(key, start, stop)
+		return z.zrangeInternal(snap, key, start, stop)
 	}
 }
 
@@ -6506,13 +6556,13 @@ func (z *SORTED_SET) ZRange(key string, start int64, stop int64) (outputSlice []
 // start and stop are both zero-based indexes,
 // start and stop may be negative, where -1 is the last index, and -2 is the second to the last index,
 // start and stop are inclusive range
-func (z *SORTED_SET) zrangeInternal(key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
+func (z *SORTED_SET) zrangeInternal(snap redisConnSnapshot, key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return nil, false, errors.New("Redis ZRange Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis ZRange Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6520,7 +6570,7 @@ func (z *SORTED_SET) zrangeInternal(key string, start int64, stop int64) (output
 		return nil, false, errors.New("Redis ZRange Failed: " + "Key is Required")
 	}
 
-	cmd := z.core.cnReader.ZRange(z.core.cnReader.Context(), key, start, stop)
+	cmd := snap.reader.ZRange(snap.reader.Context(), key, start, stop)
 	return z.core.handleStringSliceCmd(cmd, "Redis ZRange Failed: ")
 }
 
@@ -6532,8 +6582,9 @@ func (z *SORTED_SET) ZRangeByLex(key string, opt *redis.ZRangeBy) (outputSlice [
 	if z.core == nil {
 		return nil, false, errors.New("Redis SORTED_SET ZRangeByLex Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRangeByLex", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRangeByLex", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6548,21 +6599,21 @@ func (z *SORTED_SET) ZRangeByLex(key string, opt *redis.ZRangeBy) (outputSlice [
 			}
 		}()
 
-		outputSlice, notFound, err = z.zrangeByLexInternal(key, opt)
+		outputSlice, notFound, err = z.zrangeByLexInternal(snap, key, opt)
 		return outputSlice, notFound, err
 	} else {
-		return z.zrangeByLexInternal(key, opt)
+		return z.zrangeByLexInternal(snap, key, opt)
 	}
 }
 
 // zrangeByLexInternal returns all the elements in the sorted set at key with a value between min and max
-func (z *SORTED_SET) zrangeByLexInternal(key string, opt *redis.ZRangeBy) (outputSlice []string, notFound bool, err error) {
+func (z *SORTED_SET) zrangeByLexInternal(snap redisConnSnapshot, key string, opt *redis.ZRangeBy) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return nil, false, errors.New("Redis ZRangeByLex Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis ZRangeByLex Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6574,7 +6625,7 @@ func (z *SORTED_SET) zrangeByLexInternal(key string, opt *redis.ZRangeBy) (outpu
 		return nil, false, errors.New("Redis ZRangeByLex Failed: " + "Opt is Required")
 	}
 
-	cmd := z.core.cnReader.ZRangeByLex(z.core.cnReader.Context(), key, opt)
+	cmd := snap.reader.ZRangeByLex(snap.reader.Context(), key, opt)
 	return z.core.handleStringSliceCmd(cmd, "Redis ZRangeByLex Failed: ")
 }
 
@@ -6587,8 +6638,9 @@ func (z *SORTED_SET) ZRangeByScore(key string, opt *redis.ZRangeBy) (outputSlice
 	if z.core == nil {
 		return nil, false, errors.New("Redis SORTED_SET ZRangeByScore Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRangeByScore", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRangeByScore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6603,22 +6655,22 @@ func (z *SORTED_SET) ZRangeByScore(key string, opt *redis.ZRangeBy) (outputSlice
 			}
 		}()
 
-		outputSlice, notFound, err = z.zrangeByScoreInternal(key, opt)
+		outputSlice, notFound, err = z.zrangeByScoreInternal(snap, key, opt)
 		return outputSlice, notFound, err
 	} else {
-		return z.zrangeByScoreInternal(key, opt)
+		return z.zrangeByScoreInternal(snap, key, opt)
 	}
 }
 
 // zrangeByScoreInternal returns all the elements in the sorted set at key with a score between min and max,
 // Elements are considered to be ordered from low to high scores
-func (z *SORTED_SET) zrangeByScoreInternal(key string, opt *redis.ZRangeBy) (outputSlice []string, notFound bool, err error) {
+func (z *SORTED_SET) zrangeByScoreInternal(snap redisConnSnapshot, key string, opt *redis.ZRangeBy) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return nil, false, errors.New("Redis ZRangeByScore Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis ZRangeByScore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6630,7 +6682,7 @@ func (z *SORTED_SET) zrangeByScoreInternal(key string, opt *redis.ZRangeBy) (out
 		return nil, false, errors.New("Redis ZRangeByLex Failed: " + "Opt is Required")
 	}
 
-	cmd := z.core.cnReader.ZRangeByScore(z.core.cnReader.Context(), key, opt)
+	cmd := snap.reader.ZRangeByScore(snap.reader.Context(), key, opt)
 	return z.core.handleStringSliceCmd(cmd, "Redis ZRangeByScore Failed: ")
 }
 
@@ -6643,8 +6695,9 @@ func (z *SORTED_SET) ZRangeByScoreWithScores(key string, opt *redis.ZRangeBy) (o
 	if z.core == nil {
 		return nil, false, errors.New("Redis SORTED_SET ZRangeByScoreWithScores Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRangeByScoreWithScores", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRangeByScoreWithScores", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6659,22 +6712,22 @@ func (z *SORTED_SET) ZRangeByScoreWithScores(key string, opt *redis.ZRangeBy) (o
 			}
 		}()
 
-		outputSlice, notFound, err = z.zrangeByScoreWithScoresInternal(key, opt)
+		outputSlice, notFound, err = z.zrangeByScoreWithScoresInternal(snap, key, opt)
 		return outputSlice, notFound, err
 	} else {
-		return z.zrangeByScoreWithScoresInternal(key, opt)
+		return z.zrangeByScoreWithScoresInternal(snap, key, opt)
 	}
 }
 
 // zrangeByScoreWithScoresInternal returns all the elements in the sorted set at key with a score between min and max,
 // Elements are considered to be ordered from low to high scores
-func (z *SORTED_SET) zrangeByScoreWithScoresInternal(key string, opt *redis.ZRangeBy) (outputSlice []redis.Z, notFound bool, err error) {
+func (z *SORTED_SET) zrangeByScoreWithScoresInternal(snap redisConnSnapshot, key string, opt *redis.ZRangeBy) (outputSlice []redis.Z, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return nil, false, errors.New("Redis ZRangeByScoreWithScores Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis ZRangeByScoreWithScores Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6686,7 +6739,7 @@ func (z *SORTED_SET) zrangeByScoreWithScoresInternal(key string, opt *redis.ZRan
 		return nil, false, errors.New("Redis ZRangeByLex Failed: " + "Opt is Required")
 	}
 
-	cmd := z.core.cnReader.ZRangeByScoreWithScores(z.core.cnReader.Context(), key, opt)
+	cmd := snap.reader.ZRangeByScoreWithScores(snap.reader.Context(), key, opt)
 	return z.core.handleZSliceCmd(cmd, "ZRangeByLex")
 }
 
@@ -6699,8 +6752,9 @@ func (z *SORTED_SET) ZRank(key string, member string) (val int64, notFound bool,
 	if z.core == nil {
 		return 0, false, errors.New("Redis SORTED_SET ZRank Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRank", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRank", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6715,22 +6769,22 @@ func (z *SORTED_SET) ZRank(key string, member string) (val int64, notFound bool,
 			}
 		}()
 
-		val, notFound, err = z.zrankInternal(key, member)
+		val, notFound, err = z.zrankInternal(snap, key, member)
 		return val, notFound, err
 	} else {
-		return z.zrankInternal(key, member)
+		return z.zrankInternal(snap, key, member)
 	}
 }
 
 // zrankInternal returns the rank of member in the sorted set stored at key, with the scores ordered from low to high,
 // The rank (or index) is zero-based, where lowest member is index 0 (or rank 0)
-func (z *SORTED_SET) zrankInternal(key string, member string) (val int64, notFound bool, err error) {
+func (z *SORTED_SET) zrankInternal(snap redisConnSnapshot, key string, member string) (val int64, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return 0, false, errors.New("Redis ZRank Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis ZRank Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6742,7 +6796,7 @@ func (z *SORTED_SET) zrankInternal(key string, member string) (val int64, notFou
 		return 0, false, errors.New("Redis ZRank Failed: " + "Member is Required")
 	}
 
-	cmd := z.core.cnReader.ZRank(z.core.cnReader.Context(), key, member)
+	cmd := snap.reader.ZRank(snap.reader.Context(), key, member)
 	return z.core.handleIntCmd(cmd, "Redis ZRank Failed: ")
 }
 
@@ -6757,8 +6811,9 @@ func (z *SORTED_SET) ZRem(key string, member ...interface{}) (err error) {
 	if z.core == nil {
 		return errors.New("Redis SORTED_SET ZRem Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRem", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRem", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6771,10 +6826,10 @@ func (z *SORTED_SET) ZRem(key string, member ...interface{}) (err error) {
 			}
 		}()
 
-		err = z.zremInternal(key, member...)
+		err = z.zremInternal(snap, key, member...)
 		return err
 	} else {
-		return z.zremInternal(key, member...)
+		return z.zremInternal(snap, key, member...)
 	}
 }
 
@@ -6782,13 +6837,13 @@ func (z *SORTED_SET) ZRem(key string, member ...interface{}) (err error) {
 // Non-existing members are ignored
 //
 // Error is returned if the value at key is not a sorted set
-func (z *SORTED_SET) zremInternal(key string, member ...interface{}) error {
+func (z *SORTED_SET) zremInternal(snap redisConnSnapshot, key string, member ...interface{}) error {
 	// validate
 	if z.core == nil {
 		return errors.New("Redis ZRem Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ZRem Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6800,7 +6855,7 @@ func (z *SORTED_SET) zremInternal(key string, member ...interface{}) error {
 		return errors.New("Redis ZRem Failed: " + "Member is Required")
 	}
 
-	cmd := z.core.cnWriter.ZRem(z.core.cnWriter.Context(), key, member...)
+	cmd := snap.writer.ZRem(snap.writer.Context(), key, member...)
 	return z.core.handleIntCmd2(cmd, "Redis ZRem Failed: ")
 }
 
@@ -6812,8 +6867,9 @@ func (z *SORTED_SET) ZRemRangeByLex(key string, min string, max string) (err err
 	if z.core == nil {
 		return errors.New("Redis SORTED_SET ZRemRangeByLex Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRemRangeByLex", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRemRangeByLex", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6827,21 +6883,21 @@ func (z *SORTED_SET) ZRemRangeByLex(key string, min string, max string) (err err
 			}
 		}()
 
-		err = z.zremRangeByLexInternal(key, min, max)
+		err = z.zremRangeByLexInternal(snap, key, min, max)
 		return err
 	} else {
-		return z.zremRangeByLexInternal(key, min, max)
+		return z.zremRangeByLexInternal(snap, key, min, max)
 	}
 }
 
 // zremRangeByLexInternal removes all elements in the sorted set stored at key, between the lexicographical range specified by min and max
-func (z *SORTED_SET) zremRangeByLexInternal(key string, min string, max string) error {
+func (z *SORTED_SET) zremRangeByLexInternal(snap redisConnSnapshot, key string, min string, max string) error {
 	// validate
 	if z.core == nil {
 		return errors.New("Redis ZRemRangeByLex Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ZRemRangeByLex Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6857,7 +6913,7 @@ func (z *SORTED_SET) zremRangeByLexInternal(key string, min string, max string) 
 		return errors.New("Redis ZRemRangeByLex Failed: " + "Max is Required")
 	}
 
-	cmd := z.core.cnWriter.ZRemRangeByLex(z.core.cnWriter.Context(), key, min, max)
+	cmd := snap.writer.ZRemRangeByLex(snap.writer.Context(), key, min, max)
 	return z.core.handleIntCmd2(cmd, "Redis ZRemRangeByLex Failed: ")
 }
 
@@ -6869,8 +6925,9 @@ func (z *SORTED_SET) ZRemRangeByScore(key string, min string, max string) (err e
 	if z.core == nil {
 		return errors.New("Redis SORTED_SET ZRemRangeByScore Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRemRangeByScore", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRemRangeByScore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6884,21 +6941,21 @@ func (z *SORTED_SET) ZRemRangeByScore(key string, min string, max string) (err e
 			}
 		}()
 
-		err = z.zremRangeByScoreInternal(key, min, max)
+		err = z.zremRangeByScoreInternal(snap, key, min, max)
 		return err
 	} else {
-		return z.zremRangeByScoreInternal(key, min, max)
+		return z.zremRangeByScoreInternal(snap, key, min, max)
 	}
 }
 
 // zremRangeByScoreInternal removes all elements in the sorted set stored at key, with a score between min and max (inclusive)
-func (z *SORTED_SET) zremRangeByScoreInternal(key string, min string, max string) error {
+func (z *SORTED_SET) zremRangeByScoreInternal(snap redisConnSnapshot, key string, min string, max string) error {
 	// validate
 	if z.core == nil {
 		return errors.New("Redis ZRemRangeByScore Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ZRemRangeByScore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6914,7 +6971,7 @@ func (z *SORTED_SET) zremRangeByScoreInternal(key string, min string, max string
 		return errors.New("Redis ZRemRangeByScore Failed: " + "Max is Required")
 	}
 
-	cmd := z.core.cnWriter.ZRemRangeByScore(z.core.cnWriter.Context(), key, min, max)
+	cmd := snap.writer.ZRemRangeByScore(snap.writer.Context(), key, min, max)
 	return z.core.handleIntCmd2(cmd, "Redis ZRemRangeByScore Failed: ")
 }
 
@@ -6929,8 +6986,9 @@ func (z *SORTED_SET) ZRemRangeByRank(key string, start int64, stop int64) (err e
 	if z.core == nil {
 		return errors.New("Redis SORTED_SET ZRemRangeByRank Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRemRangeByRank", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRemRangeByRank", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -6944,10 +7002,10 @@ func (z *SORTED_SET) ZRemRangeByRank(key string, start int64, stop int64) (err e
 			}
 		}()
 
-		err = z.zremRangeByRankInternal(key, start, stop)
+		err = z.zremRangeByRankInternal(snap, key, start, stop)
 		return err
 	} else {
-		return z.zremRangeByRankInternal(key, start, stop)
+		return z.zremRangeByRankInternal(snap, key, start, stop)
 	}
 }
 
@@ -6955,13 +7013,13 @@ func (z *SORTED_SET) ZRemRangeByRank(key string, start int64, stop int64) (err e
 //
 // Both start and stop are zero-based,
 // Both start and stop can be negative, where -1 is the element with highest score, -2 is the element with next to highest score, and so on
-func (z *SORTED_SET) zremRangeByRankInternal(key string, start int64, stop int64) error {
+func (z *SORTED_SET) zremRangeByRankInternal(snap redisConnSnapshot, key string, start int64, stop int64) error {
 	// validate
 	if z.core == nil {
 		return errors.New("Redis ZRemRangeByRank Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ZRemRangeByRank Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -6969,7 +7027,7 @@ func (z *SORTED_SET) zremRangeByRankInternal(key string, start int64, stop int64
 		return errors.New("Redis ZRemRangeByRank Failed: " + "Key is Required")
 	}
 
-	cmd := z.core.cnWriter.ZRemRangeByRank(z.core.cnWriter.Context(), key, start, stop)
+	cmd := snap.writer.ZRemRangeByRank(snap.writer.Context(), key, start, stop)
 	return z.core.handleIntCmd2(cmd, "Redis ZRemRangeByRank Failed: ")
 }
 
@@ -6983,8 +7041,9 @@ func (z *SORTED_SET) ZRevRange(key string, start int64, stop int64) (outputSlice
 	if z.core == nil {
 		return nil, false, errors.New("Redis SORTED_SET ZRevRange Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRevRange", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRevRange", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7000,23 +7059,23 @@ func (z *SORTED_SET) ZRevRange(key string, start int64, stop int64) (outputSlice
 			}
 		}()
 
-		outputSlice, notFound, err = z.zrevRangeInternal(key, start, stop)
+		outputSlice, notFound, err = z.zrevRangeInternal(snap, key, start, stop)
 		return outputSlice, notFound, err
 	} else {
-		return z.zrevRangeInternal(key, start, stop)
+		return z.zrevRangeInternal(snap, key, start, stop)
 	}
 }
 
 // zrevRangeInternal returns the specified range of elements in the sorted set stored at key,
 // With elements ordered from highest to the lowest score,
 // Descending lexicographical order is used for elements with equal score
-func (z *SORTED_SET) zrevRangeInternal(key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
+func (z *SORTED_SET) zrevRangeInternal(snap redisConnSnapshot, key string, start int64, stop int64) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return nil, false, errors.New("Redis ZRevRange Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis ZRevRange Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7024,7 +7083,7 @@ func (z *SORTED_SET) zrevRangeInternal(key string, start int64, stop int64) (out
 		return nil, false, errors.New("Redis ZRevRange Failed: " + "Key is Required")
 	}
 
-	cmd := z.core.cnReader.ZRevRange(z.core.cnReader.Context(), key, start, stop)
+	cmd := snap.reader.ZRevRange(snap.reader.Context(), key, start, stop)
 	return z.core.handleStringSliceCmd(cmd, "Redis ZRevRange Failed: ")
 }
 
@@ -7038,8 +7097,9 @@ func (z *SORTED_SET) ZRevRangeWithScores(key string, start int64, stop int64) (o
 	if z.core == nil {
 		return nil, false, errors.New("Redis SORTED_SET ZRevRangeWithScores Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRevRangeWithScores", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRevRangeWithScores", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7055,23 +7115,23 @@ func (z *SORTED_SET) ZRevRangeWithScores(key string, start int64, stop int64) (o
 			}
 		}()
 
-		outputSlice, notFound, err = z.zrevRangeWithScoresInternal(key, start, stop)
+		outputSlice, notFound, err = z.zrevRangeWithScoresInternal(snap, key, start, stop)
 		return outputSlice, notFound, err
 	} else {
-		return z.zrevRangeWithScoresInternal(key, start, stop)
+		return z.zrevRangeWithScoresInternal(snap, key, start, stop)
 	}
 }
 
 // zrevRangeWithScoresInternal returns the specified range of elements (with scores) in the sorted set stored at key,
 // With elements ordered from highest to the lowest score,
 // Descending lexicographical order is used for elements with equal score
-func (z *SORTED_SET) zrevRangeWithScoresInternal(key string, start int64, stop int64) (outputSlice []redis.Z, notFound bool, err error) {
+func (z *SORTED_SET) zrevRangeWithScoresInternal(snap redisConnSnapshot, key string, start int64, stop int64) (outputSlice []redis.Z, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return nil, false, errors.New("Redis ZRevRangeWithScores Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis ZRevRangeWithScores Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7079,7 +7139,7 @@ func (z *SORTED_SET) zrevRangeWithScoresInternal(key string, start int64, stop i
 		return nil, false, errors.New("Redis ZRevRangeWithScores Failed: " + "Key is Required")
 	}
 
-	cmd := z.core.cnReader.ZRevRangeWithScores(z.core.cnReader.Context(), key, start, stop)
+	cmd := snap.reader.ZRevRangeWithScores(snap.reader.Context(), key, start, stop)
 	return z.core.handleZSliceCmd(cmd, "Redis ZRevRangeWithScores Failed: ")
 }
 
@@ -7093,8 +7153,9 @@ func (z *SORTED_SET) ZRevRangeByScoreWithScores(key string, opt *redis.ZRangeBy)
 	if z.core == nil {
 		return nil, false, errors.New("Redis SORTED_SET ZRevRangeByScoreWithScores Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRevRangeByScoreWithScores", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRevRangeByScoreWithScores", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7109,23 +7170,23 @@ func (z *SORTED_SET) ZRevRangeByScoreWithScores(key string, opt *redis.ZRangeBy)
 			}
 		}()
 
-		outputSlice, notFound, err = z.zrevRangeByScoreWithScoresInternal(key, opt)
+		outputSlice, notFound, err = z.zrevRangeByScoreWithScoresInternal(snap, key, opt)
 		return outputSlice, notFound, err
 	} else {
-		return z.zrevRangeByScoreWithScoresInternal(key, opt)
+		return z.zrevRangeByScoreWithScoresInternal(snap, key, opt)
 	}
 }
 
 // zrevRangeByScoreWithScoresInternal returns all the elements (with scores) in the sorted set at key, with a score between max and min (inclusive),
 // With elements ordered from highest to lowest scores,
 // Descending lexicographical order is used for elements with equal score
-func (z *SORTED_SET) zrevRangeByScoreWithScoresInternal(key string, opt *redis.ZRangeBy) (outputSlice []redis.Z, notFound bool, err error) {
+func (z *SORTED_SET) zrevRangeByScoreWithScoresInternal(snap redisConnSnapshot, key string, opt *redis.ZRangeBy) (outputSlice []redis.Z, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return nil, false, errors.New("Redis ZRevRangeByScoreWithScores Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis ZRevRangeByScoreWithScores Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7137,7 +7198,7 @@ func (z *SORTED_SET) zrevRangeByScoreWithScoresInternal(key string, opt *redis.Z
 		return nil, false, errors.New("Redis ZRevRangeByScoreWithScores Failed: " + "Opt is Required")
 	}
 
-	cmd := z.core.cnReader.ZRevRangeByScoreWithScores(z.core.cnReader.Context(), key, opt)
+	cmd := snap.reader.ZRevRangeByScoreWithScores(snap.reader.Context(), key, opt)
 	return z.core.handleZSliceCmd(cmd, "Redis ZRevRangeByScoreWithScores Failed: ")
 }
 
@@ -7151,8 +7212,9 @@ func (z *SORTED_SET) ZRevRank(key string, member string) (val int64, notFound bo
 	if z.core == nil {
 		return 0, false, errors.New("Redis SORTED_SET ZRevRank Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZRevRank", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZRevRank", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7167,23 +7229,23 @@ func (z *SORTED_SET) ZRevRank(key string, member string) (val int64, notFound bo
 			}
 		}()
 
-		val, notFound, err = z.zrevRankInternal(key, member)
+		val, notFound, err = z.zrevRankInternal(snap, key, member)
 		return val, notFound, err
 	} else {
-		return z.zrevRankInternal(key, member)
+		return z.zrevRankInternal(snap, key, member)
 	}
 }
 
 // zrevRankInternal returns the rank of member in the sorted set stored at key, with the scores ordered from high to low,
 // Rank (index) is ordered from high to low, and is zero-based, where 0 is the highest rank (index)
 // ZRevRank is opposite of ZRank
-func (z *SORTED_SET) zrevRankInternal(key string, member string) (val int64, notFound bool, err error) {
+func (z *SORTED_SET) zrevRankInternal(snap redisConnSnapshot, key string, member string) (val int64, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return 0, false, errors.New("Redis ZRevRank Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis ZRevRank Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7195,7 +7257,7 @@ func (z *SORTED_SET) zrevRankInternal(key string, member string) (val int64, not
 		return 0, false, errors.New("Redis ZRevRank Failed: " + "Member is Required")
 	}
 
-	cmd := z.core.cnReader.ZRevRank(z.core.cnReader.Context(), key, member)
+	cmd := snap.reader.ZRevRank(snap.reader.Context(), key, member)
 	return z.core.handleIntCmd(cmd, "Redis ZRevRank Failed: ")
 }
 
@@ -7224,8 +7286,9 @@ func (z *SORTED_SET) ZScan(key string, cursor uint64, match string, count int64)
 	if z.core == nil {
 		return nil, 0, errors.New("Redis SORTED_SET ZScan Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZScan", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZScan", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7242,10 +7305,10 @@ func (z *SORTED_SET) ZScan(key string, cursor uint64, match string, count int64)
 			}
 		}()
 
-		outputKeys, outputCursor, err = z.zscanInternal(key, cursor, match, count)
+		outputKeys, outputCursor, err = z.zscanInternal(snap, key, cursor, match, count)
 		return outputKeys, outputCursor, err
 	} else {
-		return z.zscanInternal(key, cursor, match, count)
+		return z.zscanInternal(snap, key, cursor, match, count)
 	}
 }
 
@@ -7267,13 +7330,13 @@ func (z *SORTED_SET) ZScan(key string, cursor uint64, match string, count int64)
 //		7) Use \ to escape special characters if needing to match verbatim
 //
 // count = hint to redis count of elements to retrieve in the call
-func (z *SORTED_SET) zscanInternal(key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
+func (z *SORTED_SET) zscanInternal(snap redisConnSnapshot, key string, cursor uint64, match string, count int64) (outputKeys []string, outputCursor uint64, err error) {
 	// validate
 	if z.core == nil {
 		return nil, 0, errors.New("Redis ZScan Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return nil, 0, errors.New("Redis ZScan Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7285,7 +7348,7 @@ func (z *SORTED_SET) zscanInternal(key string, cursor uint64, match string, coun
 		return nil, 0, errors.New("Redis ZScan Failed: " + "Count Must Be Zero or Greater")
 	}
 
-	cmd := z.core.cnReader.ZScan(z.core.cnReader.Context(), key, cursor, match, count)
+	cmd := snap.reader.ZScan(snap.reader.Context(), key, cursor, match, count)
 	return z.core.handleScanCmd(cmd, "Redis ZScan Failed: ")
 }
 
@@ -7298,8 +7361,9 @@ func (z *SORTED_SET) ZScore(key string, member string) (val float64, notFound bo
 	if z.core == nil {
 		return 0.0, false, errors.New("Redis SORTED_SET ZScore Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZScore", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZScore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7314,22 +7378,22 @@ func (z *SORTED_SET) ZScore(key string, member string) (val float64, notFound bo
 			}
 		}()
 
-		val, notFound, err = z.zscoreInternal(key, member)
+		val, notFound, err = z.zscoreInternal(snap, key, member)
 		return val, notFound, err
 	} else {
-		return z.zscoreInternal(key, member)
+		return z.zscoreInternal(snap, key, member)
 	}
 }
 
 // zscoreInternal returns the score of member in the sorted set at key,
 // if member is not existent in the sorted set, or key does not exist, nil is returned
-func (z *SORTED_SET) zscoreInternal(key string, member string) (val float64, notFound bool, err error) {
+func (z *SORTED_SET) zscoreInternal(snap redisConnSnapshot, key string, member string) (val float64, notFound bool, err error) {
 	// validate
 	if z.core == nil {
 		return 0, false, errors.New("Redis ZScore Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis ZScore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7341,7 +7405,7 @@ func (z *SORTED_SET) zscoreInternal(key string, member string) (val float64, not
 		return 0, false, errors.New("Redis ZScore Failed: " + "Member is Required")
 	}
 
-	cmd := z.core.cnReader.ZScore(z.core.cnReader.Context(), key, member)
+	cmd := snap.reader.ZScore(snap.reader.Context(), key, member)
 	return z.core.handleFloatCmd(cmd, "Redis ZScore Failed: ")
 }
 
@@ -7356,8 +7420,9 @@ func (z *SORTED_SET) ZUnionStore(keyDest string, store *redis.ZStore) (err error
 	if z.core == nil {
 		return errors.New("Redis SORTED_SET ZUnionStore Failed: Redis core is nil")
 	}
+	snap := z.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ZUnionStore", z.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ZUnionStore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7370,10 +7435,10 @@ func (z *SORTED_SET) ZUnionStore(keyDest string, store *redis.ZStore) (err error
 			}
 		}()
 
-		err = z.zunionStoreInternal(keyDest, store)
+		err = z.zunionStoreInternal(snap, keyDest, store)
 		return err
 	} else {
-		return z.zunionStoreInternal(keyDest, store)
+		return z.zunionStoreInternal(snap, keyDest, store)
 	}
 }
 
@@ -7381,13 +7446,13 @@ func (z *SORTED_SET) ZUnionStore(keyDest string, store *redis.ZStore) (err error
 // and stores the result in 'destination'
 //
 // numKeys (input keys) are required
-func (z *SORTED_SET) zunionStoreInternal(keyDest string, store *redis.ZStore) error {
+func (z *SORTED_SET) zunionStoreInternal(snap redisConnSnapshot, keyDest string, store *redis.ZStore) error {
 	// validate
 	if z.core == nil {
 		return errors.New("Redis ZUnionStore Failed: " + "Base is Nil")
 	}
 
-	if !z.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ZUnionStore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7399,7 +7464,7 @@ func (z *SORTED_SET) zunionStoreInternal(keyDest string, store *redis.ZStore) er
 		return errors.New("Redis ZUnionStore Failed: " + "Store is Required")
 	}
 
-	cmd := z.core.cnWriter.ZUnionStore(z.core.cnWriter.Context(), keyDest, store)
+	cmd := snap.writer.ZUnionStore(snap.writer.Context(), keyDest, store)
 	return z.core.handleIntCmd2(cmd, "Redis ZUnionStore Failed: ")
 }
 
@@ -7422,8 +7487,9 @@ func (g *GEO) GeoAdd(key string, geoLocation *redis.GeoLocation) (err error) {
 	if g.core == nil {
 		return errors.New("Redis GEO GeoAdd Failed: Redis core is nil")
 	}
+	snap := g.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GeoAdd", g.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GeoAdd", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7436,10 +7502,10 @@ func (g *GEO) GeoAdd(key string, geoLocation *redis.GeoLocation) (err error) {
 			}
 		}()
 
-		err = g.geoAddInternal(key, geoLocation)
+		err = g.geoAddInternal(snap, key, geoLocation)
 		return err
 	} else {
-		return g.geoAddInternal(key, geoLocation)
+		return g.geoAddInternal(snap, key, geoLocation)
 	}
 }
 
@@ -7451,13 +7517,13 @@ func (g *GEO) GeoAdd(key string, geoLocation *redis.GeoLocation) (err error) {
 // valid latitude = -85.05112878 to 85.05112878 degrees
 //
 // Use ZREM to remove Geo Key (since there is no GEODEL Command)
-func (g *GEO) geoAddInternal(key string, geoLocation *redis.GeoLocation) error {
+func (g *GEO) geoAddInternal(snap redisConnSnapshot, key string, geoLocation *redis.GeoLocation) error {
 	// validate
 	if g.core == nil {
 		return errors.New("Redis GeoAdd Failed: " + "Base is Nil")
 	}
 
-	if !g.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis GeoAdd Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7469,7 +7535,7 @@ func (g *GEO) geoAddInternal(key string, geoLocation *redis.GeoLocation) error {
 		return errors.New("Redis GeoAdd Failed: " + "Geo Location is Required")
 	}
 
-	cmd := g.core.cnWriter.GeoAdd(g.core.cnWriter.Context(), key, geoLocation)
+	cmd := snap.writer.GeoAdd(snap.writer.Context(), key, geoLocation)
 	_, _, err := g.core.handleIntCmd(cmd, "Redis GeoAdd Failed: ")
 	return err
 }
@@ -7484,8 +7550,9 @@ func (g *GEO) GeoDist(key string, member1 string, member2 string, unit redisradi
 	if g.core == nil {
 		return 0.0, false, errors.New("Redis GEO GeoDist Failed: Redis core is nil")
 	}
+	snap := g.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GeoDist", g.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GeoDist", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7502,23 +7569,23 @@ func (g *GEO) GeoDist(key string, member1 string, member2 string, unit redisradi
 			}
 		}()
 
-		valDist, notFound, err = g.geoDistInternal(key, member1, member2, unit)
+		valDist, notFound, err = g.geoDistInternal(snap, key, member1, member2, unit)
 		return valDist, notFound, err
 	} else {
-		return g.geoDistInternal(key, member1, member2, unit)
+		return g.geoDistInternal(snap, key, member1, member2, unit)
 	}
 }
 
 // geoDistInternal returns the distance between two members in the geospatial index represented by the sorted set
 //
 // unit = m (meters), km (kilometers), mi (miles), ft (feet)
-func (g *GEO) geoDistInternal(key string, member1 string, member2 string, unit redisradiusunit.RedisRadiusUnit) (valDist float64, notFound bool, err error) {
+func (g *GEO) geoDistInternal(snap redisConnSnapshot, key string, member1 string, member2 string, unit redisradiusunit.RedisRadiusUnit) (valDist float64, notFound bool, err error) {
 	// validate
 	if g.core == nil {
 		return 0.00, false, errors.New("Redis GeoDist Failed: " + "Base is Nil")
 	}
 
-	if !g.core.cnAreReady {
+	if !snap.ready {
 		return 0.00, false, errors.New("Redis GeoDist Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7538,7 +7605,7 @@ func (g *GEO) geoDistInternal(key string, member1 string, member2 string, unit r
 		return 0.00, false, errors.New("Radius GeoDist Failed: " + "Radius Unit is Required")
 	}
 
-	cmd := g.core.cnReader.GeoDist(g.core.cnReader.Context(), key, member1, member2, unit.Key())
+	cmd := snap.reader.GeoDist(snap.reader.Context(), key, member1, member2, unit.Key())
 	return g.core.handleFloatCmd(cmd, "Redis GeoDist Failed: ")
 }
 
@@ -7551,8 +7618,9 @@ func (g *GEO) GeoHash(key string, member ...string) (geoHashSlice []string, notF
 	if g.core == nil {
 		return nil, false, errors.New("Redis GEO GeoHash Failed: Redis core is nil")
 	}
+	snap := g.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GeoHash", g.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GeoHash", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7567,22 +7635,22 @@ func (g *GEO) GeoHash(key string, member ...string) (geoHashSlice []string, notF
 			}
 		}()
 
-		geoHashSlice, notFound, err = g.geoHashInternal(key, member...)
+		geoHashSlice, notFound, err = g.geoHashInternal(snap, key, member...)
 		return geoHashSlice, notFound, err
 	} else {
-		return g.geoHashInternal(key, member...)
+		return g.geoHashInternal(snap, key, member...)
 	}
 }
 
 // geoHashInternal returns valid GeoHash string representing the position of one or more elements in a sorted set (added by GeoAdd)
 // This function returns a STANDARD GEOHASH as described on geohash.org site
-func (g *GEO) geoHashInternal(key string, member ...string) (geoHashSlice []string, notFound bool, err error) {
+func (g *GEO) geoHashInternal(snap redisConnSnapshot, key string, member ...string) (geoHashSlice []string, notFound bool, err error) {
 	// validate
 	if g.core == nil {
 		return nil, false, errors.New("Redis GeoHash Failed: " + "Base is Nil")
 	}
 
-	if !g.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis GeoHash Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7594,7 +7662,7 @@ func (g *GEO) geoHashInternal(key string, member ...string) (geoHashSlice []stri
 		return nil, false, errors.New("Redis GeoHash Failed: " + "At Least 1 Member is Required")
 	}
 
-	cmd := g.core.cnReader.GeoHash(g.core.cnReader.Context(), key, member...)
+	cmd := snap.reader.GeoHash(snap.reader.Context(), key, member...)
 	return g.core.handleStringSliceCmd(cmd, "Redis GeoHash Failed: ")
 }
 
@@ -7606,8 +7674,9 @@ func (g *GEO) GeoPos(key string, member ...string) (cmd *redis.GeoPosCmd, err er
 	if g.core == nil {
 		return nil, errors.New("Redis GEO GeoPos Failed: Redis core is nil")
 	}
+	snap := g.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GeoPos", g.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GeoPos", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7621,21 +7690,21 @@ func (g *GEO) GeoPos(key string, member ...string) (cmd *redis.GeoPosCmd, err er
 			}
 		}()
 
-		cmd, err = g.geoPosInternal(key, member...)
+		cmd, err = g.geoPosInternal(snap, key, member...)
 		return cmd, err
 	} else {
-		return g.geoPosInternal(key, member...)
+		return g.geoPosInternal(snap, key, member...)
 	}
 }
 
 // geoPosInternal returns the position (longitude and latitude) of all the specified members of the geospatial index represented by the sorted set at key
-func (g *GEO) geoPosInternal(key string, member ...string) (*redis.GeoPosCmd, error) {
+func (g *GEO) geoPosInternal(snap redisConnSnapshot, key string, member ...string) (*redis.GeoPosCmd, error) {
 	// validate
 	if g.core == nil {
 		return nil, errors.New("Redis GeoPos Failed: " + "Base is Nil")
 	}
 
-	if !g.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis GeoPos Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7647,7 +7716,7 @@ func (g *GEO) geoPosInternal(key string, member ...string) (*redis.GeoPosCmd, er
 		return nil, errors.New("Redis GeoPos Failed: " + "At Least 1 Member is Required")
 	}
 
-	return g.core.cnReader.GeoPos(g.core.cnReader.Context(), key, member...), nil
+	return snap.reader.GeoPos(snap.reader.Context(), key, member...), nil
 }
 
 // GeoRadius returns the members of a sorted set populated with geospatial information using GeoAdd,
@@ -7671,8 +7740,9 @@ func (g *GEO) GeoRadius(key string, longitude float64, latitude float64, query *
 	if g.core == nil {
 		return nil, errors.New("Redis GEO GeoRadius Failed: Redis core is nil")
 	}
+	snap := g.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GeoRadius", g.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GeoRadius", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7688,10 +7758,10 @@ func (g *GEO) GeoRadius(key string, longitude float64, latitude float64, query *
 			}
 		}()
 
-		cmd, err = g.geoRadiusInternal(key, longitude, latitude, query)
+		cmd, err = g.geoRadiusInternal(snap, key, longitude, latitude, query)
 		return cmd, err
 	} else {
-		return g.geoRadiusInternal(key, longitude, latitude, query)
+		return g.geoRadiusInternal(snap, key, longitude, latitude, query)
 	}
 }
 
@@ -7757,13 +7827,13 @@ func validateGeoRadiusQuery(query *redis.GeoRadiusQuery, allowStore bool) (*redi
 //
 // store = store the items in a sorted set populated with their geospatial information
 // storeDist = store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius
-func (g *GEO) geoRadiusInternal(key string, longitude float64, latitude float64, query *redis.GeoRadiusQuery) (*redis.GeoLocationCmd, error) {
+func (g *GEO) geoRadiusInternal(snap redisConnSnapshot, key string, longitude float64, latitude float64, query *redis.GeoRadiusQuery) (*redis.GeoLocationCmd, error) {
 	// validate
 	if g.core == nil {
 		return nil, errors.New("Redis GeoRadius Failed: " + "Base is Nil")
 	}
 
-	if !g.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis GeoRadius Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7776,7 +7846,7 @@ func (g *GEO) geoRadiusInternal(key string, longitude float64, latitude float64,
 		return nil, err
 	}
 
-	return g.core.cnReader.GeoRadius(g.core.cnReader.Context(), key, longitude, latitude, q), nil
+	return snap.reader.GeoRadius(snap.reader.Context(), key, longitude, latitude, q), nil
 }
 
 // GeoRadiusStore will store the members of a sorted set populated with geospatial information using GeoAdd,
@@ -7800,8 +7870,9 @@ func (g *GEO) GeoRadiusStore(key string, longitude float64, latitude float64, qu
 	if g.core == nil {
 		return errors.New("Redis GEO GeoRadiusStore Failed: Redis core is nil")
 	}
+	snap := g.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GeoRadiusStore", g.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GeoRadiusStore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7816,10 +7887,10 @@ func (g *GEO) GeoRadiusStore(key string, longitude float64, latitude float64, qu
 			}
 		}()
 
-		err = g.geoRadiusStoreInternal(key, longitude, latitude, query)
+		err = g.geoRadiusStoreInternal(snap, key, longitude, latitude, query)
 		return err
 	} else {
-		return g.geoRadiusStoreInternal(key, longitude, latitude, query)
+		return g.geoRadiusStoreInternal(snap, key, longitude, latitude, query)
 	}
 }
 
@@ -7837,13 +7908,13 @@ func (g *GEO) GeoRadiusStore(key string, longitude float64, latitude float64, qu
 //
 // store = store the items in a sorted set populated with their geospatial information
 // storeDist = store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius
-func (g *GEO) geoRadiusStoreInternal(key string, longitude float64, latitude float64, query *redis.GeoRadiusQuery) error {
+func (g *GEO) geoRadiusStoreInternal(snap redisConnSnapshot, key string, longitude float64, latitude float64, query *redis.GeoRadiusQuery) error {
 	// validate
 	if g.core == nil {
 		return errors.New("Redis GeoRadiusStore Failed: " + "Base is Nil")
 	}
 
-	if !g.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis GeoRadiusStore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7856,7 +7927,7 @@ func (g *GEO) geoRadiusStoreInternal(key string, longitude float64, latitude flo
 		return err
 	}
 
-	cmd := g.core.cnWriter.GeoRadiusStore(g.core.cnWriter.Context(), key, longitude, latitude, q)
+	cmd := snap.writer.GeoRadiusStore(snap.writer.Context(), key, longitude, latitude, q)
 	_, _, err = g.core.handleIntCmd(cmd, "Redis GeoRadiusStore Failed: ")
 	return err
 }
@@ -7884,8 +7955,9 @@ func (g *GEO) GeoRadiusByMember(key string, member string, query *redis.GeoRadiu
 	if g.core == nil {
 		return nil, errors.New("Redis GEO GeoRadiusByMember Failed: Redis core is nil")
 	}
+	snap := g.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GeoRadiusByMember", g.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GeoRadiusByMember", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7900,10 +7972,10 @@ func (g *GEO) GeoRadiusByMember(key string, member string, query *redis.GeoRadiu
 			}
 		}()
 
-		cmd, err = g.geoRadiusByMemberInternal(key, member, query)
+		cmd, err = g.geoRadiusByMemberInternal(snap, key, member, query)
 		return cmd, err
 	} else {
-		return g.geoRadiusByMemberInternal(key, member, query)
+		return g.geoRadiusByMemberInternal(snap, key, member, query)
 	}
 }
 
@@ -7923,13 +7995,13 @@ func (g *GEO) GeoRadiusByMember(key string, member string, query *redis.GeoRadiu
 //
 // store = store the items in a sorted set populated with their geospatial information
 // storeDist = store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius
-func (g *GEO) geoRadiusByMemberInternal(key string, member string, query *redis.GeoRadiusQuery) (*redis.GeoLocationCmd, error) {
+func (g *GEO) geoRadiusByMemberInternal(snap redisConnSnapshot, key string, member string, query *redis.GeoRadiusQuery) (*redis.GeoLocationCmd, error) {
 	// validate
 	if g.core == nil {
 		return nil, errors.New("Redis GeoRadiusByMember Failed: " + "Base is Nil")
 	}
 
-	if !g.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis GeoRadiusByMember Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -7946,7 +8018,7 @@ func (g *GEO) geoRadiusByMemberInternal(key string, member string, query *redis.
 		return nil, err
 	}
 
-	return g.core.cnReader.GeoRadiusByMember(g.core.cnReader.Context(), key, member, q), nil
+	return snap.reader.GeoRadiusByMember(snap.reader.Context(), key, member, q), nil
 }
 
 // GeoRadiusByMemberStore is same as GeoRadiusStore, except instead of taking as the center of the area to query (long lat),
@@ -7972,8 +8044,9 @@ func (g *GEO) GeoRadiusByMemberStore(key string, member string, query *redis.Geo
 	if g.core == nil {
 		return errors.New("Redis GEO GeoRadiusByMemberStore Failed: Redis core is nil")
 	}
+	snap := g.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-GeoRadiusByMemberStore", g.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-GeoRadiusByMemberStore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -7987,10 +8060,10 @@ func (g *GEO) GeoRadiusByMemberStore(key string, member string, query *redis.Geo
 			}
 		}()
 
-		err = g.geoRadiusByMemberStoreInternal(key, member, query)
+		err = g.geoRadiusByMemberStoreInternal(snap, key, member, query)
 		return err
 	} else {
-		return g.geoRadiusByMemberStoreInternal(key, member, query)
+		return g.geoRadiusByMemberStoreInternal(snap, key, member, query)
 	}
 }
 
@@ -8010,13 +8083,13 @@ func (g *GEO) GeoRadiusByMemberStore(key string, member string, query *redis.Geo
 //
 // store = store the items in a sorted set populated with their geospatial information
 // storeDist = store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius
-func (g *GEO) geoRadiusByMemberStoreInternal(key string, member string, query *redis.GeoRadiusQuery) error {
+func (g *GEO) geoRadiusByMemberStoreInternal(snap redisConnSnapshot, key string, member string, query *redis.GeoRadiusQuery) error {
 	// validate
 	if g.core == nil {
 		return errors.New("Redis GeoRadiusByMemberStore Failed: " + "Base is Nil")
 	}
 
-	if !g.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis GeoRadiusByMemberStore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8033,7 +8106,7 @@ func (g *GEO) geoRadiusByMemberStoreInternal(key string, member string, query *r
 		return err
 	}
 
-	cmd := g.core.cnWriter.GeoRadiusByMemberStore(g.core.cnWriter.Context(), key, member, q)
+	cmd := snap.writer.GeoRadiusByMemberStore(snap.writer.Context(), key, member, q)
 	_, _, err = g.core.handleIntCmd(cmd, "Redis GeoRadiusByMemberStore Failed: ")
 	return err
 }
@@ -8058,8 +8131,9 @@ func (x *STREAM) XAck(stream string, group string, id ...string) (err error) {
 	if x.core == nil {
 		return errors.New("Redis STREAM XAck Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XAck", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XAck", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8073,10 +8147,10 @@ func (x *STREAM) XAck(stream string, group string, id ...string) (err error) {
 			}
 		}()
 
-		err = x.xackInternal(stream, group, id...)
+		err = x.xackInternal(snap, stream, group, id...)
 		return err
 	} else {
-		return x.xackInternal(stream, group, id...)
+		return x.xackInternal(snap, stream, group, id...)
 	}
 }
 
@@ -8085,13 +8159,13 @@ func (x *STREAM) XAck(stream string, group string, id ...string) (err error) {
 // # A message is pending, and as such stored inside the PEL, when it was delivered to some consumer
 //
 // Once a consumer successfully processes a message, it should call XAck to remove the message so it does not get processed again (and releases message from memory in redis)
-func (x *STREAM) xackInternal(stream string, group string, id ...string) error {
+func (x *STREAM) xackInternal(snap redisConnSnapshot, stream string, group string, id ...string) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XAck Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XAck Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8107,7 +8181,7 @@ func (x *STREAM) xackInternal(stream string, group string, id ...string) error {
 		return errors.New("Redis XAck Failed: " + "At Least 1 ID is Required")
 	}
 
-	cmd := x.core.cnWriter.XAck(x.core.cnWriter.Context(), stream, group, id...)
+	cmd := snap.writer.XAck(snap.writer.Context(), stream, group, id...)
 	return x.core.handleIntCmd2(cmd, "Redis XAck Failed: ")
 }
 
@@ -8120,8 +8194,9 @@ func (x *STREAM) XAdd(addArgs *redis.XAddArgs) (err error) {
 	if x.core == nil {
 		return errors.New("Redis STREAM XAdd Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XAdd", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XAdd", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8133,22 +8208,22 @@ func (x *STREAM) XAdd(addArgs *redis.XAddArgs) (err error) {
 			}
 		}()
 
-		err = x.xaddInternal(addArgs)
+		err = x.xaddInternal(snap, addArgs)
 		return err
 	} else {
-		return x.xaddInternal(addArgs)
+		return x.xaddInternal(snap, addArgs)
 	}
 }
 
 // xaddInternal appends the specified stream entry to the stream at the specified key,
 // If the key does not exist, as a side effect of running this command the key is created with a stream value
-func (x *STREAM) xaddInternal(addArgs *redis.XAddArgs) error {
+func (x *STREAM) xaddInternal(snap redisConnSnapshot, addArgs *redis.XAddArgs) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XAdd Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XAdd Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8156,7 +8231,7 @@ func (x *STREAM) xaddInternal(addArgs *redis.XAddArgs) error {
 		return errors.New("Redis XAdd Failed: " + "AddArgs is Required")
 	}
 
-	cmd := x.core.cnWriter.XAdd(x.core.cnWriter.Context(), addArgs)
+	cmd := snap.writer.XAdd(snap.writer.Context(), addArgs)
 
 	if _, _, err := x.core.handleStringCmd2(cmd, "Redis XAdd Failed: "); err != nil {
 		return err
@@ -8174,8 +8249,9 @@ func (x *STREAM) XClaim(claimArgs *redis.XClaimArgs) (valMessages []redis.XMessa
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XClaim Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XClaim", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XClaim", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8189,22 +8265,22 @@ func (x *STREAM) XClaim(claimArgs *redis.XClaimArgs) (valMessages []redis.XMessa
 			}
 		}()
 
-		valMessages, notFound, err = x.xclaimInternal(claimArgs)
+		valMessages, notFound, err = x.xclaimInternal(snap, claimArgs)
 		return valMessages, notFound, err
 	} else {
-		return x.xclaimInternal(claimArgs)
+		return x.xclaimInternal(snap, claimArgs)
 	}
 }
 
 // xclaimInternal in the context of stream consumer group, this function changes the ownership of a pending message,
 // so that the new owner is the consumer specified as the command argument
-func (x *STREAM) xclaimInternal(claimArgs *redis.XClaimArgs) (valMessages []redis.XMessage, notFound bool, err error) {
+func (x *STREAM) xclaimInternal(snap redisConnSnapshot, claimArgs *redis.XClaimArgs) (valMessages []redis.XMessage, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XClaim Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XClaim Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8212,7 +8288,7 @@ func (x *STREAM) xclaimInternal(claimArgs *redis.XClaimArgs) (valMessages []redi
 		return nil, false, errors.New("Redis XClaim Failed: " + "ClaimArgs is Required")
 	}
 
-	cmd := x.core.cnWriter.XClaim(x.core.cnWriter.Context(), claimArgs)
+	cmd := snap.writer.XClaim(snap.writer.Context(), claimArgs)
 	return x.core.handleXMessageSliceCmd(cmd, "Redis XClaim Failed: ")
 }
 
@@ -8225,8 +8301,9 @@ func (x *STREAM) XClaimJustID(claimArgs *redis.XClaimArgs) (outputSlice []string
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XClaimJustID Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XClaimJustID", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XClaimJustID", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8240,22 +8317,22 @@ func (x *STREAM) XClaimJustID(claimArgs *redis.XClaimArgs) (outputSlice []string
 			}
 		}()
 
-		outputSlice, notFound, err = x.xclaimJustIDInternal(claimArgs)
+		outputSlice, notFound, err = x.xclaimJustIDInternal(snap, claimArgs)
 		return outputSlice, notFound, err
 	} else {
-		return x.xclaimJustIDInternal(claimArgs)
+		return x.xclaimJustIDInternal(snap, claimArgs)
 	}
 }
 
 // xclaimJustIDInternal in the context of stream consumer group, this function changes the ownership of a pending message,
 // so that the new owner is the consumer specified as the command argument
-func (x *STREAM) xclaimJustIDInternal(claimArgs *redis.XClaimArgs) (outputSlice []string, notFound bool, err error) {
+func (x *STREAM) xclaimJustIDInternal(snap redisConnSnapshot, claimArgs *redis.XClaimArgs) (outputSlice []string, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XClaim Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XClaim Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8263,7 +8340,7 @@ func (x *STREAM) xclaimJustIDInternal(claimArgs *redis.XClaimArgs) (outputSlice 
 		return nil, false, errors.New("Redis XClaim Failed: " + "ClaimArgs is Required")
 	}
 
-	cmd := x.core.cnWriter.XClaimJustID(x.core.cnWriter.Context(), claimArgs)
+	cmd := snap.writer.XClaimJustID(snap.writer.Context(), claimArgs)
 	return x.core.handleStringSliceCmd(cmd, "Redis XClaim Failed: ")
 }
 
@@ -8275,8 +8352,9 @@ func (x *STREAM) XDel(stream string, id ...string) (err error) {
 	if x.core == nil {
 		return errors.New("Redis STREAM XDel Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XDel", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XDel", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8289,21 +8367,21 @@ func (x *STREAM) XDel(stream string, id ...string) (err error) {
 			}
 		}()
 
-		err = x.xdelInternal(stream, id...)
+		err = x.xdelInternal(snap, stream, id...)
 		return err
 	} else {
-		return x.xdelInternal(stream, id...)
+		return x.xdelInternal(snap, stream, id...)
 	}
 }
 
 // xdelInternal removes the specified entries from a stream
-func (x *STREAM) xdelInternal(stream string, id ...string) error {
+func (x *STREAM) xdelInternal(snap redisConnSnapshot, stream string, id ...string) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XDel Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XDel Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8315,7 +8393,7 @@ func (x *STREAM) xdelInternal(stream string, id ...string) error {
 		return errors.New("Redis XDel Failed: " + "At Least 1 ID is Required")
 	}
 
-	cmd := x.core.cnWriter.XDel(x.core.cnWriter.Context(), stream, id...)
+	cmd := snap.writer.XDel(snap.writer.Context(), stream, id...)
 	return x.core.handleIntCmd2(cmd, "Redis XDel Failed: ")
 }
 
@@ -8327,8 +8405,9 @@ func (x *STREAM) XGroupCreate(stream string, group string, start string) (err er
 	if x.core == nil {
 		return errors.New("Redis STREAM XGroupCreate Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XGroupCreate", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XGroupCreate", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8342,21 +8421,21 @@ func (x *STREAM) XGroupCreate(stream string, group string, start string) (err er
 			}
 		}()
 
-		err = x.xgroupCreateInternal(stream, group, start)
+		err = x.xgroupCreateInternal(snap, stream, group, start)
 		return err
 	} else {
-		return x.xgroupCreateInternal(stream, group, start)
+		return x.xgroupCreateInternal(snap, stream, group, start)
 	}
 }
 
 // xgroupCreateInternal will create a new consumer group associated with a stream
-func (x *STREAM) xgroupCreateInternal(stream string, group string, start string) error {
+func (x *STREAM) xgroupCreateInternal(snap redisConnSnapshot, stream string, group string, start string) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XGroupCreate Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XGroupCreate Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8372,7 +8451,7 @@ func (x *STREAM) xgroupCreateInternal(stream string, group string, start string)
 		return errors.New("Redis XGroupCreate Failed: " + "Start is Required")
 	}
 
-	cmd := x.core.cnWriter.XGroupCreate(x.core.cnWriter.Context(), stream, group, start)
+	cmd := snap.writer.XGroupCreate(snap.writer.Context(), stream, group, start)
 	return x.core.handleStatusCmd(cmd, "Redis XGroupCreate Failed: ")
 }
 
@@ -8384,8 +8463,9 @@ func (x *STREAM) XGroupCreateMkStream(stream string, group string, start string)
 	if x.core == nil {
 		return errors.New("Redis STREAM XGroupCreateMkStream Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XGroupCreateMkStream", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XGroupCreateMkStream", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8399,21 +8479,21 @@ func (x *STREAM) XGroupCreateMkStream(stream string, group string, start string)
 			}
 		}()
 
-		err = x.xgroupCreateMkStreamInternal(stream, group, start)
+		err = x.xgroupCreateMkStreamInternal(snap, stream, group, start)
 		return err
 	} else {
-		return x.xgroupCreateMkStreamInternal(stream, group, start)
+		return x.xgroupCreateMkStreamInternal(snap, stream, group, start)
 	}
 }
 
 // xgroupCreateMkStreamInternal will create a new consumer group, and create a stream if stream doesn't exist
-func (x *STREAM) xgroupCreateMkStreamInternal(stream string, group string, start string) error {
+func (x *STREAM) xgroupCreateMkStreamInternal(snap redisConnSnapshot, stream string, group string, start string) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XGroupCreateMkStream Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XGroupCreateMkStream Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8429,7 +8509,7 @@ func (x *STREAM) xgroupCreateMkStreamInternal(stream string, group string, start
 		return errors.New("Redis XGroupCreateMkStream Failed: " + "Start is Required")
 	}
 
-	cmd := x.core.cnWriter.XGroupCreateMkStream(x.core.cnWriter.Context(), stream, group, start)
+	cmd := snap.writer.XGroupCreateMkStream(snap.writer.Context(), stream, group, start)
 	return x.core.handleStatusCmd(cmd, "Redis XGroupCreateMkStream Failed: ")
 }
 
@@ -8441,8 +8521,9 @@ func (x *STREAM) XGroupDelConsumer(stream string, group string, consumer string)
 	if x.core == nil {
 		return errors.New("Redis STREAM XGroupDelConsumer Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XGroupDelConsumer", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XGroupDelConsumer", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8456,21 +8537,21 @@ func (x *STREAM) XGroupDelConsumer(stream string, group string, consumer string)
 			}
 		}()
 
-		err = x.xgroupDelConsumerInternal(stream, group, consumer)
+		err = x.xgroupDelConsumerInternal(snap, stream, group, consumer)
 		return err
 	} else {
-		return x.xgroupDelConsumerInternal(stream, group, consumer)
+		return x.xgroupDelConsumerInternal(snap, stream, group, consumer)
 	}
 }
 
 // xgroupDelConsumerInternal removes a given consumer from a consumer group
-func (x *STREAM) xgroupDelConsumerInternal(stream string, group string, consumer string) error {
+func (x *STREAM) xgroupDelConsumerInternal(snap redisConnSnapshot, stream string, group string, consumer string) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XGroupDelConsumer Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XGroupDelConsumer Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8486,7 +8567,7 @@ func (x *STREAM) xgroupDelConsumerInternal(stream string, group string, consumer
 		return errors.New("Redis XGroupDelConsumer Failed: " + "Consumer is Required")
 	}
 
-	cmd := x.core.cnWriter.XGroupDelConsumer(x.core.cnWriter.Context(), stream, group, consumer)
+	cmd := snap.writer.XGroupDelConsumer(snap.writer.Context(), stream, group, consumer)
 	return x.core.handleIntCmd2(cmd, "Redis XGroupDelConsumer Failed: ")
 }
 
@@ -8498,8 +8579,9 @@ func (x *STREAM) XGroupDestroy(stream string, group string) (err error) {
 	if x.core == nil {
 		return errors.New("Redis STREAM XGroupDestroy Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XGroupDestroy", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XGroupDestroy", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8512,21 +8594,21 @@ func (x *STREAM) XGroupDestroy(stream string, group string) (err error) {
 			}
 		}()
 
-		err = x.xgroupDestroyInternal(stream, group)
+		err = x.xgroupDestroyInternal(snap, stream, group)
 		return err
 	} else {
-		return x.xgroupDestroyInternal(stream, group)
+		return x.xgroupDestroyInternal(snap, stream, group)
 	}
 }
 
 // xgroupDestroyInternal will destroy a consumer group even if there are active consumers and pending messages
-func (x *STREAM) xgroupDestroyInternal(stream string, group string) error {
+func (x *STREAM) xgroupDestroyInternal(snap redisConnSnapshot, stream string, group string) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XGroupDestroy Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XGroupDestroy Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8538,7 +8620,7 @@ func (x *STREAM) xgroupDestroyInternal(stream string, group string) error {
 		return errors.New("Redis XGroupDestroy Failed: " + "Group is Required")
 	}
 
-	cmd := x.core.cnWriter.XGroupDestroy(x.core.cnWriter.Context(), stream, group)
+	cmd := snap.writer.XGroupDestroy(snap.writer.Context(), stream, group)
 	return x.core.handleIntCmd2(cmd, "Redis XGroupDestroy Failed: ")
 }
 
@@ -8552,8 +8634,9 @@ func (x *STREAM) XGroupSetID(stream string, group string, start string) (err err
 	if x.core == nil {
 		return errors.New("Redis STREAM XGroupSetID Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XGroupSetID", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XGroupSetID", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8567,23 +8650,23 @@ func (x *STREAM) XGroupSetID(stream string, group string, start string) (err err
 			}
 		}()
 
-		err = x.xgroupSetIDInternal(stream, group, start)
+		err = x.xgroupSetIDInternal(snap, stream, group, start)
 		return err
 	} else {
-		return x.xgroupSetIDInternal(stream, group, start)
+		return x.xgroupSetIDInternal(snap, stream, group, start)
 	}
 }
 
 // xgroupSetIDInternal will set the next message to deliver,
 // Normally the next ID is set when the consumer is created, as the last argument to XGroupCreate,
 // However, using XGroupSetID resets the next message ID in case prior message needs to be reprocessed
-func (x *STREAM) xgroupSetIDInternal(stream string, group string, start string) error {
+func (x *STREAM) xgroupSetIDInternal(snap redisConnSnapshot, stream string, group string, start string) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XGroupSetID Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XGroupSetID Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8599,7 +8682,7 @@ func (x *STREAM) xgroupSetIDInternal(stream string, group string, start string) 
 		return errors.New("Redis XGroupSetID Failed: " + "Start is Required")
 	}
 
-	cmd := x.core.cnWriter.XGroupSetID(x.core.cnWriter.Context(), stream, group, start)
+	cmd := snap.writer.XGroupSetID(snap.writer.Context(), stream, group, start)
 	return x.core.handleStatusCmd(cmd, "Redis XGroupSetID Failed: ")
 }
 
@@ -8611,8 +8694,9 @@ func (x *STREAM) XInfoGroups(key string) (outputSlice []redis.XInfoGroup, notFou
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XInfoGroups Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XInfoGroups", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XInfoGroups", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8626,21 +8710,21 @@ func (x *STREAM) XInfoGroups(key string) (outputSlice []redis.XInfoGroup, notFou
 			}
 		}()
 
-		outputSlice, notFound, err = x.xinfoGroupsInternal(key)
+		outputSlice, notFound, err = x.xinfoGroupsInternal(snap, key)
 		return outputSlice, notFound, err
 	} else {
-		return x.xinfoGroupsInternal(key)
+		return x.xinfoGroupsInternal(snap, key)
 	}
 }
 
 // xinfoGroupsInternal retrieves different information about the streams, and associated consumer groups
-func (x *STREAM) xinfoGroupsInternal(key string) (outputSlice []redis.XInfoGroup, notFound bool, err error) {
+func (x *STREAM) xinfoGroupsInternal(snap redisConnSnapshot, key string) (outputSlice []redis.XInfoGroup, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XInfoGroups Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XInfoGroups Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8648,7 +8732,7 @@ func (x *STREAM) xinfoGroupsInternal(key string) (outputSlice []redis.XInfoGroup
 		return nil, false, errors.New("Redis XInfoGroups Failed: " + "Key is Required")
 	}
 
-	cmd := x.core.cnReader.XInfoGroups(x.core.cnReader.Context(), key)
+	cmd := snap.reader.XInfoGroups(snap.reader.Context(), key)
 	return x.core.handleXInfoGroupsCmd(cmd, "Redis XInfoGroups Failed: ")
 }
 
@@ -8660,8 +8744,9 @@ func (x *STREAM) XLen(stream string) (val int64, notFound bool, err error) {
 	if x.core == nil {
 		return 0, false, errors.New("Redis STREAM XLen Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XLen", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XLen", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8675,21 +8760,21 @@ func (x *STREAM) XLen(stream string) (val int64, notFound bool, err error) {
 			}
 		}()
 
-		val, notFound, err = x.xlenInternal(stream)
+		val, notFound, err = x.xlenInternal(snap, stream)
 		return val, notFound, err
 	} else {
-		return x.xlenInternal(stream)
+		return x.xlenInternal(snap, stream)
 	}
 }
 
 // xlenInternal returns the number of entries inside a stream
-func (x *STREAM) xlenInternal(stream string) (val int64, notFound bool, err error) {
+func (x *STREAM) xlenInternal(snap redisConnSnapshot, stream string) (val int64, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return 0, false, errors.New("Redis XLen Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis XLen Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8697,7 +8782,7 @@ func (x *STREAM) xlenInternal(stream string) (val int64, notFound bool, err erro
 		return 0, false, errors.New("Redis XLen Failed: " + "Stream is Required")
 	}
 
-	cmd := x.core.cnReader.XLen(x.core.cnReader.Context(), stream)
+	cmd := snap.reader.XLen(snap.reader.Context(), stream)
 	return x.core.handleIntCmd(cmd, "Redis XLen Failed: ")
 }
 
@@ -8709,8 +8794,9 @@ func (x *STREAM) XPending(stream string, group string) (val *redis.XPending, not
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XPending Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XPending", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XPending", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8725,21 +8811,21 @@ func (x *STREAM) XPending(stream string, group string) (val *redis.XPending, not
 			}
 		}()
 
-		val, notFound, err = x.xpendingInternal(stream, group)
+		val, notFound, err = x.xpendingInternal(snap, stream, group)
 		return val, notFound, err
 	} else {
-		return x.xpendingInternal(stream, group)
+		return x.xpendingInternal(snap, stream, group)
 	}
 }
 
 // xpendingInternal fetches data from a stream via a consumer group, and not acknowledging such data, its like creating pending entries
-func (x *STREAM) xpendingInternal(stream string, group string) (val *redis.XPending, notFound bool, err error) {
+func (x *STREAM) xpendingInternal(snap redisConnSnapshot, stream string, group string) (val *redis.XPending, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XPending Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XPending Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8751,7 +8837,7 @@ func (x *STREAM) xpendingInternal(stream string, group string) (val *redis.XPend
 		return nil, false, errors.New("Redis XPending Failed: " + "Group is Required")
 	}
 
-	cmd := x.core.cnWriter.XPending(x.core.cnWriter.Context(), stream, group)
+	cmd := snap.writer.XPending(snap.writer.Context(), stream, group)
 	return x.core.handleXPendingCmd(cmd, "Redis XPending Failed: ")
 }
 
@@ -8763,8 +8849,9 @@ func (x *STREAM) XPendingExt(pendingArgs *redis.XPendingExtArgs) (outputSlice []
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XPendingExt Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XPendingExt", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XPendingExt", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8778,21 +8865,21 @@ func (x *STREAM) XPendingExt(pendingArgs *redis.XPendingExtArgs) (outputSlice []
 			}
 		}()
 
-		outputSlice, notFound, err = x.xpendingExtInternal(pendingArgs)
+		outputSlice, notFound, err = x.xpendingExtInternal(snap, pendingArgs)
 		return outputSlice, notFound, err
 	} else {
-		return x.xpendingExtInternal(pendingArgs)
+		return x.xpendingExtInternal(snap, pendingArgs)
 	}
 }
 
 // xpendingExtInternal fetches data from a stream via a consumer group, and not acknowledging such data, its like creating pending entries
-func (x *STREAM) xpendingExtInternal(pendingArgs *redis.XPendingExtArgs) (outputSlice []redis.XPendingExt, notFound bool, err error) {
+func (x *STREAM) xpendingExtInternal(snap redisConnSnapshot, pendingArgs *redis.XPendingExtArgs) (outputSlice []redis.XPendingExt, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XPendingExt Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XPendingExt Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8800,7 +8887,7 @@ func (x *STREAM) xpendingExtInternal(pendingArgs *redis.XPendingExtArgs) (output
 		return nil, false, errors.New("Redis XPendingExt Failed: " + "PendingArgs is Required")
 	}
 
-	cmd := x.core.cnWriter.XPendingExt(x.core.cnWriter.Context(), pendingArgs)
+	cmd := snap.writer.XPendingExt(snap.writer.Context(), pendingArgs)
 	return x.core.handleXPendingExtCmd(cmd, "Redis XPendingExt Failed: ")
 }
 
@@ -8814,8 +8901,9 @@ func (x *STREAM) XRange(stream string, start string, stop string, count ...int64
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XRange Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XRange", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XRange", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8838,23 +8926,23 @@ func (x *STREAM) XRange(stream string, start string, stop string, count ...int64
 			}
 		}()
 
-		outputSlice, notFound, err = x.xrangeInternal(stream, start, stop, count...)
+		outputSlice, notFound, err = x.xrangeInternal(snap, stream, start, stop, count...)
 		return outputSlice, notFound, err
 	} else {
-		return x.xrangeInternal(stream, start, stop, count...)
+		return x.xrangeInternal(snap, stream, start, stop, count...)
 	}
 }
 
 // xrangeInternal returns the stream entries matching a given range of IDs,
 // Range is specified by a minimum and maximum ID,
 // Ordering is lowest to highest
-func (x *STREAM) xrangeInternal(stream string, start string, stop string, count ...int64) (outputSlice []redis.XMessage, notFound bool, err error) {
+func (x *STREAM) xrangeInternal(snap redisConnSnapshot, stream string, start string, stop string, count ...int64) (outputSlice []redis.XMessage, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XRange Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XRange Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8873,9 +8961,9 @@ func (x *STREAM) xrangeInternal(stream string, start string, stop string, count 
 	var cmd *redis.XMessageSliceCmd
 
 	if len(count) <= 0 {
-		cmd = x.core.cnReader.XRange(x.core.cnReader.Context(), stream, start, stop)
+		cmd = snap.reader.XRange(snap.reader.Context(), stream, start, stop)
 	} else {
-		cmd = x.core.cnReader.XRangeN(x.core.cnReader.Context(), stream, start, stop, count[0])
+		cmd = snap.reader.XRangeN(snap.reader.Context(), stream, start, stop, count[0])
 	}
 
 	return x.core.handleXMessageSliceCmd(cmd, "Redis XRange Failed: ")
@@ -8891,8 +8979,9 @@ func (x *STREAM) XRevRange(stream string, start string, stop string, count ...in
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XRevRange Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XRevRange", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XRevRange", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8915,23 +9004,23 @@ func (x *STREAM) XRevRange(stream string, start string, stop string, count ...in
 			}
 		}()
 
-		outputSlice, notFound, err = x.xrevRangeInternal(stream, start, stop, count...)
+		outputSlice, notFound, err = x.xrevRangeInternal(snap, stream, start, stop, count...)
 		return outputSlice, notFound, err
 	} else {
-		return x.xrevRangeInternal(stream, start, stop, count...)
+		return x.xrevRangeInternal(snap, stream, start, stop, count...)
 	}
 }
 
 // xrevRangeInternal returns the stream entries matching a given range of IDs,
 // Range is specified by a maximum and minimum ID,
 // Ordering is highest to lowest
-func (x *STREAM) xrevRangeInternal(stream string, start string, stop string, count ...int64) (outputSlice []redis.XMessage, notFound bool, err error) {
+func (x *STREAM) xrevRangeInternal(snap redisConnSnapshot, stream string, start string, stop string, count ...int64) (outputSlice []redis.XMessage, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XRevRange Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XRevRange Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -8950,9 +9039,9 @@ func (x *STREAM) xrevRangeInternal(stream string, start string, stop string, cou
 	var cmd *redis.XMessageSliceCmd
 
 	if len(count) <= 0 {
-		cmd = x.core.cnReader.XRevRange(x.core.cnReader.Context(), stream, start, stop)
+		cmd = snap.reader.XRevRange(snap.reader.Context(), stream, start, stop)
 	} else {
-		cmd = x.core.cnReader.XRevRangeN(x.core.cnReader.Context(), stream, start, stop, count[0])
+		cmd = snap.reader.XRevRangeN(snap.reader.Context(), stream, start, stop, count[0])
 	}
 
 	return x.core.handleXMessageSliceCmd(cmd, "Redis XRevRange Failed: ")
@@ -8967,8 +9056,9 @@ func (x *STREAM) XRead(readArgs *redis.XReadArgs) (outputSlice []redis.XStream, 
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XRead Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XRead", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XRead", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -8982,22 +9072,22 @@ func (x *STREAM) XRead(readArgs *redis.XReadArgs) (outputSlice []redis.XStream, 
 			}
 		}()
 
-		outputSlice, notFound, err = x.xreadInternal(readArgs)
+		outputSlice, notFound, err = x.xreadInternal(snap, readArgs)
 		return outputSlice, notFound, err
 	} else {
-		return x.xreadInternal(readArgs)
+		return x.xreadInternal(snap, readArgs)
 	}
 }
 
 // xreadInternal will read data from one or multiple streams,
 // only returning entries with an ID greater than the last received ID reported by the caller
-func (x *STREAM) xreadInternal(readArgs *redis.XReadArgs) (outputSlice []redis.XStream, notFound bool, err error) {
+func (x *STREAM) xreadInternal(snap redisConnSnapshot, readArgs *redis.XReadArgs) (outputSlice []redis.XStream, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XRead Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XRead Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9005,7 +9095,7 @@ func (x *STREAM) xreadInternal(readArgs *redis.XReadArgs) (outputSlice []redis.X
 		return nil, false, errors.New("Redis XRead Failed: " + "ReadArgs is Required")
 	}
 
-	cmd := x.core.cnReader.XRead(x.core.cnReader.Context(), readArgs)
+	cmd := snap.reader.XRead(snap.reader.Context(), readArgs)
 	return x.core.handleXStreamSliceCmd(cmd, "Redis XRead Failed: ")
 }
 
@@ -9017,8 +9107,9 @@ func (x *STREAM) XReadStreams(stream ...string) (outputSlice []redis.XStream, no
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XReadStreams Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XReadStreams", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XReadStreams", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9032,21 +9123,21 @@ func (x *STREAM) XReadStreams(stream ...string) (outputSlice []redis.XStream, no
 			}
 		}()
 
-		outputSlice, notFound, err = x.xreadStreamsInternal(stream...)
+		outputSlice, notFound, err = x.xreadStreamsInternal(snap, stream...)
 		return outputSlice, notFound, err
 	} else {
-		return x.xreadStreamsInternal(stream...)
+		return x.xreadStreamsInternal(snap, stream...)
 	}
 }
 
 // xreadStreamsInternal is a special version of XRead command for streams
-func (x *STREAM) xreadStreamsInternal(stream ...string) (outputSlice []redis.XStream, notFound bool, err error) {
+func (x *STREAM) xreadStreamsInternal(snap redisConnSnapshot, stream ...string) (outputSlice []redis.XStream, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XReadStreams Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XReadStreams Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9054,7 +9145,7 @@ func (x *STREAM) xreadStreamsInternal(stream ...string) (outputSlice []redis.XSt
 		return nil, false, errors.New("Redis XReadStreams Failed: " + "At Least 1 Stream is Required")
 	}
 
-	cmd := x.core.cnReader.XReadStreams(x.core.cnReader.Context(), stream...)
+	cmd := snap.reader.XReadStreams(snap.reader.Context(), stream...)
 	return x.core.handleXStreamSliceCmd(cmd, "Redis XReadStream Failed: ")
 }
 
@@ -9066,8 +9157,9 @@ func (x *STREAM) XReadGroup(readGroupArgs *redis.XReadGroupArgs) (outputSlice []
 	if x.core == nil {
 		return nil, false, errors.New("Redis STREAM XReadGroup Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XReadGroup", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XReadGroup", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9081,21 +9173,21 @@ func (x *STREAM) XReadGroup(readGroupArgs *redis.XReadGroupArgs) (outputSlice []
 			}
 		}()
 
-		outputSlice, notFound, err = x.xreadGroupInternal(readGroupArgs)
+		outputSlice, notFound, err = x.xreadGroupInternal(snap, readGroupArgs)
 		return outputSlice, notFound, err
 	} else {
-		return x.xreadGroupInternal(readGroupArgs)
+		return x.xreadGroupInternal(snap, readGroupArgs)
 	}
 }
 
 // xreadGroupInternal is a special version of XRead command with support for consumer groups
-func (x *STREAM) xreadGroupInternal(readGroupArgs *redis.XReadGroupArgs) (outputSlice []redis.XStream, notFound bool, err error) {
+func (x *STREAM) xreadGroupInternal(snap redisConnSnapshot, readGroupArgs *redis.XReadGroupArgs) (outputSlice []redis.XStream, notFound bool, err error) {
 	// validate
 	if x.core == nil {
 		return nil, false, errors.New("Redis XReadGroup Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis XReadGroup Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9103,7 +9195,7 @@ func (x *STREAM) xreadGroupInternal(readGroupArgs *redis.XReadGroupArgs) (output
 		return nil, false, errors.New("Redis XReadGroup Failed: " + "ReadGroupArgs is Required")
 	}
 
-	cmd := x.core.cnReader.XReadGroup(x.core.cnReader.Context(), readGroupArgs)
+	cmd := snap.reader.XReadGroup(snap.reader.Context(), readGroupArgs)
 	return x.core.handleXStreamSliceCmd(cmd, "Redis XReadGroup Failed: ")
 }
 
@@ -9115,8 +9207,9 @@ func (x *STREAM) XTrim(key string, maxLen int64) (err error) {
 	if x.core == nil {
 		return errors.New("Redis STREAM XTrim Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XTrim", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XTrim", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9129,21 +9222,21 @@ func (x *STREAM) XTrim(key string, maxLen int64) (err error) {
 			}
 		}()
 
-		err = x.xtrimInternal(key, maxLen)
+		err = x.xtrimInternal(snap, key, maxLen)
 		return err
 	} else {
-		return x.xtrimInternal(key, maxLen)
+		return x.xtrimInternal(snap, key, maxLen)
 	}
 }
 
 // xtrimInternal trims the stream to a given number of items, evicting older items (items with lower IDs) if needed
-func (x *STREAM) xtrimInternal(key string, maxLen int64) error {
+func (x *STREAM) xtrimInternal(snap redisConnSnapshot, key string, maxLen int64) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XTrim Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XTrim Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9155,7 +9248,7 @@ func (x *STREAM) xtrimInternal(key string, maxLen int64) error {
 		return errors.New("Redis XTrim Failed: " + "MaxLen Must Not Be Negative")
 	}
 
-	cmd := x.core.cnWriter.XTrim(x.core.cnWriter.Context(), key, maxLen)
+	cmd := snap.writer.XTrim(snap.writer.Context(), key, maxLen)
 	_, _, err := x.core.handleIntCmd(cmd, "Redis XTrim Failed: ")
 	return err
 }
@@ -9168,8 +9261,9 @@ func (x *STREAM) XTrimApprox(key string, maxLen int64) (err error) {
 	if x.core == nil {
 		return errors.New("Redis STREAM XTrimApprox Failed: Redis core is nil")
 	}
+	snap := x.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-XTrimApprox", x.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-XTrimApprox", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9182,21 +9276,21 @@ func (x *STREAM) XTrimApprox(key string, maxLen int64) (err error) {
 			}
 		}()
 
-		err = x.xtrimApproxInternal(key, maxLen)
+		err = x.xtrimApproxInternal(snap, key, maxLen)
 		return err
 	} else {
-		return x.xtrimApproxInternal(key, maxLen)
+		return x.xtrimApproxInternal(snap, key, maxLen)
 	}
 }
 
 // xtrimApproxInternal trims the stream to a given number of items, evicting older items (items with lower IDs) if needed
-func (x *STREAM) xtrimApproxInternal(key string, maxLen int64) error {
+func (x *STREAM) xtrimApproxInternal(snap redisConnSnapshot, key string, maxLen int64) error {
 	// validate
 	if x.core == nil {
 		return errors.New("Redis XTrimApprox Failed: " + "Base is Nil")
 	}
 
-	if !x.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis XTrimApprox Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9208,7 +9302,7 @@ func (x *STREAM) xtrimApproxInternal(key string, maxLen int64) error {
 		return errors.New("Redis XTrimApprox Failed: " + "MaxLen Must Not Be Negative")
 	}
 
-	cmd := x.core.cnWriter.XTrimApprox(x.core.cnWriter.Context(), key, maxLen)
+	cmd := snap.writer.XTrimApprox(snap.writer.Context(), key, maxLen)
 	_, _, err := x.core.handleIntCmd(cmd, "Redis XTrimApprox Failed: ")
 	return err
 }
@@ -9241,8 +9335,9 @@ func (ps *PUBSUB) PSubscribe(channel ...string) (psObj *redis.PubSub, err error)
 	if ps.core == nil {
 		return nil, errors.New("Redis PUBSUB PSubscribe Failed: Redis core is nil")
 	}
+	snap := ps.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-PSubscribe", ps.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-PSubscribe", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9254,10 +9349,10 @@ func (ps *PUBSUB) PSubscribe(channel ...string) (psObj *redis.PubSub, err error)
 			}
 		}()
 
-		psObj, err = ps.psubscribeInternal(channel...)
+		psObj, err = ps.psubscribeInternal(snap, channel...)
 		return psObj, err
 	} else {
-		return ps.psubscribeInternal(channel...)
+		return ps.psubscribeInternal(snap, channel...)
 	}
 }
 
@@ -9274,13 +9369,13 @@ func (ps *PUBSUB) PSubscribe(channel ...string) (psObj *redis.PubSub, err error)
 //  5. h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
 //  6. h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
 //  7. Use \ to escape special characters if needing to match verbatim
-func (ps *PUBSUB) psubscribeInternal(channel ...string) (*redis.PubSub, error) {
+func (ps *PUBSUB) psubscribeInternal(snap redisConnSnapshot, channel ...string) (*redis.PubSub, error) {
 	// validate
 	if ps.core == nil {
 		return nil, errors.New("Redis PSubscribe Failed: " + "Base is Nil")
 	}
 
-	if !ps.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis PSubscribe Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9288,7 +9383,7 @@ func (ps *PUBSUB) psubscribeInternal(channel ...string) (*redis.PubSub, error) {
 		return nil, errors.New("Redis PSubscribe Failed: " + "At Least 1 Channel is Required")
 	}
 
-	return ps.core.cnWriter.PSubscribe(ps.core.cnWriter.Context(), channel...), nil
+	return snap.writer.PSubscribe(snap.writer.Context(), channel...), nil
 }
 
 // Subscribe (Non-Pattern Subscribe) will subscribe client to the given channels,
@@ -9302,8 +9397,9 @@ func (ps *PUBSUB) Subscribe(channel ...string) (psObj *redis.PubSub, err error) 
 	if ps.core == nil {
 		return nil, errors.New("Redis PUBSUB Subscribe Failed: Redis core is nil")
 	}
+	snap := ps.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Subscribe", ps.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Subscribe", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9315,10 +9411,10 @@ func (ps *PUBSUB) Subscribe(channel ...string) (psObj *redis.PubSub, err error) 
 			}
 		}()
 
-		psObj, err = ps.subscribeInternal(channel...)
+		psObj, err = ps.subscribeInternal(snap, channel...)
 		return psObj, err
 	} else {
-		return ps.subscribeInternal(channel...)
+		return ps.subscribeInternal(snap, channel...)
 	}
 }
 
@@ -9326,13 +9422,13 @@ func (ps *PUBSUB) Subscribe(channel ...string) (psObj *redis.PubSub, err error) 
 // a pointer to redis PubSub object is returned upon successful subscribe
 //
 // Once client is subscribed, do not call other redis actions, other than Subscribe, PSubscribe, Ping, Unsubscribe, PUnsubscribe, and Quit (Per Redis Doc)
-func (ps *PUBSUB) subscribeInternal(channel ...string) (*redis.PubSub, error) {
+func (ps *PUBSUB) subscribeInternal(snap redisConnSnapshot, channel ...string) (*redis.PubSub, error) {
 	// validate
 	if ps.core == nil {
 		return nil, errors.New("Redis Subscribe Failed: " + "Base is Nil")
 	}
 
-	if !ps.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis Subscribe Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9340,7 +9436,7 @@ func (ps *PUBSUB) subscribeInternal(channel ...string) (*redis.PubSub, error) {
 		return nil, errors.New("Redis Subscribe Failed: " + "At Least 1 Channel is Required")
 	}
 
-	return ps.core.cnWriter.Subscribe(ps.core.cnWriter.Context(), channel...), nil
+	return snap.writer.Subscribe(snap.writer.Context(), channel...), nil
 }
 
 // Publish will post a message to a given channel,
@@ -9352,8 +9448,9 @@ func (ps *PUBSUB) Publish(channel string, message interface{}) (valReceived int6
 	if ps.core == nil {
 		return 0, errors.New("Redis PUBSUB Publish Failed: Redis core is nil")
 	}
+	snap := ps.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Publish", ps.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Publish", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9367,26 +9464,26 @@ func (ps *PUBSUB) Publish(channel string, message interface{}) (valReceived int6
 			}
 		}()
 
-		valReceived, err = ps.publishInternal(channel, message)
+		valReceived, err = ps.publishInternal(snap, channel, message)
 		return valReceived, err
 	} else {
-		return ps.publishInternal(channel, message)
+		return ps.publishInternal(snap, channel, message)
 	}
 }
 
 // publishInternal will post a message to a given channel,
 // returns number of clients that received the message
-func (ps *PUBSUB) publishInternal(channel string, message interface{}) (valReceived int64, err error) {
+func (ps *PUBSUB) publishInternal(snap redisConnSnapshot, channel string, message interface{}) (valReceived int64, err error) {
 	// validate
 	if ps.core == nil {
 		return 0, errors.New("Redis Publish Failed: " + "Base is Nil")
 	}
 
-	if !ps.core.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis Publish Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := ps.core.cnWriter.Publish(ps.core.cnWriter.Context(), channel, message)
+	cmd := snap.writer.Publish(snap.writer.Context(), channel, message)
 	valReceived, _, err = ps.core.handleIntCmd(cmd, "Redis Publish Failed: ")
 	return valReceived, err
 }
@@ -9410,8 +9507,9 @@ func (ps *PUBSUB) PubSubChannels(pattern string) (valChannels []string, err erro
 	if ps.core == nil {
 		return nil, errors.New("Redis PUBSUB PubSubChannels Failed: Redis core is nil")
 	}
+	snap := ps.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-PubSubChannels", ps.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-PubSubChannels", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9424,10 +9522,10 @@ func (ps *PUBSUB) PubSubChannels(pattern string) (valChannels []string, err erro
 			}
 		}()
 
-		valChannels, err = ps.pubSubChannelsInternal(pattern)
+		valChannels, err = ps.pubSubChannelsInternal(snap, pattern)
 		return valChannels, err
 	} else {
-		return ps.pubSubChannelsInternal(pattern)
+		return ps.pubSubChannelsInternal(snap, pattern)
 	}
 }
 
@@ -9443,17 +9541,17 @@ func (ps *PUBSUB) PubSubChannels(pattern string) (valChannels []string, err erro
 //  5. h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
 //  6. h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
 //  7. Use \ to escape special characters if needing to match verbatim
-func (ps *PUBSUB) pubSubChannelsInternal(pattern string) (valChannels []string, err error) {
+func (ps *PUBSUB) pubSubChannelsInternal(snap redisConnSnapshot, pattern string) (valChannels []string, err error) {
 	// validate
 	if ps.core == nil {
 		return nil, errors.New("Redis PubSubChannels Failed: " + "Base is Nil")
 	}
 
-	if !ps.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis PubSubChannels Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := ps.core.cnReader.PubSubChannels(ps.core.cnReader.Context(), pattern)
+	cmd := snap.reader.PubSubChannels(snap.reader.Context(), pattern)
 	valChannels, _, err = ps.core.handleStringSliceCmd(cmd, "Redis PubSubChannels Failed: ")
 	return valChannels, err
 }
@@ -9467,8 +9565,9 @@ func (ps *PUBSUB) PubSubNumPat() (valPatterns int64, err error) {
 	if ps.core == nil {
 		return 0, errors.New("Redis PUBSUB PubSubNumPat Failed: Redis core is nil")
 	}
+	snap := ps.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-PubSubNumPat", ps.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-PubSubNumPat", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9480,26 +9579,26 @@ func (ps *PUBSUB) PubSubNumPat() (valPatterns int64, err error) {
 			}
 		}()
 
-		valPatterns, err = ps.pubSubNumPatInternal()
+		valPatterns, err = ps.pubSubNumPatInternal(snap)
 		return valPatterns, err
 	} else {
-		return ps.pubSubNumPatInternal()
+		return ps.pubSubNumPatInternal(snap)
 	}
 }
 
 // pubSubNumPatInternal (Pub/Sub Number of Patterns) returns the number of subscriptions to patterns (that were using PSubscribe Command),
 // This counts both clients subscribed to patterns, and also total number of patterns all the clients are subscribed to
-func (ps *PUBSUB) pubSubNumPatInternal() (valPatterns int64, err error) {
+func (ps *PUBSUB) pubSubNumPatInternal(snap redisConnSnapshot) (valPatterns int64, err error) {
 	// validate
 	if ps.core == nil {
 		return 0, errors.New("Redis PubSubNumPat Failed: " + "Base is Nil")
 	}
 
-	if !ps.core.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis PubSubNumPat Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := ps.core.cnReader.PubSubNumPat(ps.core.cnReader.Context())
+	cmd := snap.reader.PubSubNumPat(snap.reader.Context())
 	valPatterns, _, err = ps.core.handleIntCmd(cmd, "Redis PubSubNumPat Failed: ")
 	return valPatterns, err
 }
@@ -9512,8 +9611,9 @@ func (ps *PUBSUB) PubSubNumSub(channel ...string) (val map[string]int64, err err
 	if ps.core == nil {
 		return nil, errors.New("Redis PUBSUB PubSubNumSub Failed: Redis core is nil")
 	}
+	snap := ps.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-PubSubNumSub", ps.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-PubSubNumSub", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9526,25 +9626,25 @@ func (ps *PUBSUB) PubSubNumSub(channel ...string) (val map[string]int64, err err
 			}
 		}()
 
-		val, err = ps.pubSubNumSubInternal(channel...)
+		val, err = ps.pubSubNumSubInternal(snap, channel...)
 		return val, err
 	} else {
-		return ps.pubSubNumSubInternal(channel...)
+		return ps.pubSubNumSubInternal(snap, channel...)
 	}
 }
 
 // pubSubNumSubInternal (Pub/Sub Number of Subscribers) returns number of subscribers (not counting clients subscribed to patterns) for the specific channels
-func (ps *PUBSUB) pubSubNumSubInternal(channel ...string) (val map[string]int64, err error) {
+func (ps *PUBSUB) pubSubNumSubInternal(snap redisConnSnapshot, channel ...string) (val map[string]int64, err error) {
 	// validate
 	if ps.core == nil {
 		return nil, errors.New("Redis PubSubNumSub Failed: " + "Base is Nil")
 	}
 
-	if !ps.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis PubSubNumSub Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := ps.core.cnReader.PubSubNumSub(ps.core.cnReader.Context(), channel...)
+	cmd := snap.reader.PubSubNumSub(snap.reader.Context(), channel...)
 	val, _, err = ps.core.handleStringIntMapCmd(cmd, "Redis PubSubNumSub Failed: ")
 	return val, err
 }
@@ -9565,8 +9665,9 @@ func (p *PIPELINE) Pipeline() (result redis.Pipeliner, err error) {
 	if p.core == nil {
 		return nil, errors.New("Redis PIPELINE Pipeline Failed: Redis core is nil")
 	}
+	snap := p.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Pipeline", p.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Pipeline", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9578,25 +9679,25 @@ func (p *PIPELINE) Pipeline() (result redis.Pipeliner, err error) {
 			}
 		}()
 
-		result, err = p.pipelineInternal()
+		result, err = p.pipelineInternal(snap)
 		return result, err
 	} else {
-		return p.pipelineInternal()
+		return p.pipelineInternal(snap)
 	}
 }
 
 // pipelineInternal allows actions against redis to be handled in a batched fashion
-func (p *PIPELINE) pipelineInternal() (redis.Pipeliner, error) {
+func (p *PIPELINE) pipelineInternal(snap redisConnSnapshot) (redis.Pipeliner, error) {
 	// validate
 	if p.core == nil {
 		return nil, errors.New("Redis Pipeline Failed: " + "Base is Nil")
 	}
 
-	if !p.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis Pipeline Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	return p.core.cnWriter.Pipeline(), nil
+	return snap.writer.Pipeline(), nil
 }
 
 // Pipelined allows actions against redis to be handled in a batched fashion
@@ -9607,8 +9708,9 @@ func (p *PIPELINE) Pipelined(fn func(redis.Pipeliner) error) (result []redis.Cmd
 	if p.core == nil {
 		return nil, errors.New("Redis PIPELINE Pipelined Failed: Redis core is nil")
 	}
+	snap := p.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Pipelined", p.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Pipelined", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9620,25 +9722,25 @@ func (p *PIPELINE) Pipelined(fn func(redis.Pipeliner) error) (result []redis.Cmd
 			}
 		}()
 
-		result, err = p.pipelinedInternal(fn)
+		result, err = p.pipelinedInternal(snap, fn)
 		return result, err
 	} else {
-		return p.pipelinedInternal(fn)
+		return p.pipelinedInternal(snap, fn)
 	}
 }
 
 // pipelinedInternal allows actions against redis to be handled in a batched fashion
-func (p *PIPELINE) pipelinedInternal(fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+func (p *PIPELINE) pipelinedInternal(snap redisConnSnapshot, fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
 	// validate
 	if p.core == nil {
 		return nil, errors.New("Redis Pipelined Failed: " + "Base is Nil")
 	}
 
-	if !p.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis Pipelined Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	return p.core.cnWriter.Pipelined(p.core.cnWriter.Context(), fn)
+	return snap.writer.Pipelined(snap.writer.Context(), fn)
 }
 
 // TxPipeline allows actions against redis to be handled in a batched fashion
@@ -9649,8 +9751,9 @@ func (p *PIPELINE) TxPipeline() (result redis.Pipeliner, err error) {
 	if p.core == nil {
 		return nil, errors.New("Redis PIPELINE TxPipeline Failed: Redis core is nil")
 	}
+	snap := p.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-TxPipeline", p.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-TxPipeline", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9662,25 +9765,25 @@ func (p *PIPELINE) TxPipeline() (result redis.Pipeliner, err error) {
 			}
 		}()
 
-		result, err = p.txPipelineInternal()
+		result, err = p.txPipelineInternal(snap)
 		return result, err
 	} else {
-		return p.txPipelineInternal()
+		return p.txPipelineInternal(snap)
 	}
 }
 
 // txPipelineInternal allows actions against redis to be handled in a batched fashion
-func (p *PIPELINE) txPipelineInternal() (redis.Pipeliner, error) {
+func (p *PIPELINE) txPipelineInternal(snap redisConnSnapshot) (redis.Pipeliner, error) {
 	// validate
 	if p.core == nil {
 		return nil, errors.New("Redis TxPipeline Failed: " + "Base is Nil")
 	}
 
-	if !p.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis TxPipeline Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	return p.core.cnWriter.TxPipeline(), nil
+	return snap.writer.TxPipeline(), nil
 }
 
 // TxPipelined allows actions against redis to be handled in a batched fashion
@@ -9691,8 +9794,9 @@ func (p *PIPELINE) TxPipelined(fn func(redis.Pipeliner) error) (result []redis.C
 	if p.core == nil {
 		return nil, errors.New("Redis PIPELINE TxPipelined Failed: Redis core is nil")
 	}
+	snap := p.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-TxPipelined", p.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-TxPipelined", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9704,25 +9808,25 @@ func (p *PIPELINE) TxPipelined(fn func(redis.Pipeliner) error) (result []redis.C
 			}
 		}()
 
-		result, err = p.txPipelinedInternal(fn)
+		result, err = p.txPipelinedInternal(snap, fn)
 		return result, err
 	} else {
-		return p.txPipelinedInternal(fn)
+		return p.txPipelinedInternal(snap, fn)
 	}
 }
 
 // txPipelinedInternal allows actions against redis to be handled in a batched fashion
-func (p *PIPELINE) txPipelinedInternal(fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+func (p *PIPELINE) txPipelinedInternal(snap redisConnSnapshot, fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
 	// validate
 	if p.core == nil {
 		return nil, errors.New("Redis TxPipelined Failed: " + "Base is Nil")
 	}
 
-	if !p.core.cnAreReady {
+	if !snap.ready {
 		return nil, errors.New("Redis TxPipelined Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	return p.core.cnWriter.TxPipelined(p.core.cnWriter.Context(), fn)
+	return snap.writer.TxPipelined(snap.writer.Context(), fn)
 }
 
 // ----------------------------------------------------------------------------------------------------------------
@@ -9738,8 +9842,9 @@ func (t *TTL) TTL(key string, bGetMilliseconds bool) (valTTL int64, notFound boo
 	if t.core == nil {
 		return 0, false, errors.New("Redis TTL TTL Failed: Redis core is nil")
 	}
+	snap := t.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-TTL", t.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-TTL", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9758,22 +9863,22 @@ func (t *TTL) TTL(key string, bGetMilliseconds bool) (valTTL int64, notFound boo
 			}
 		}()
 
-		valTTL, notFound, err = t.ttlInternal(key, bGetMilliseconds)
+		valTTL, notFound, err = t.ttlInternal(snap, key, bGetMilliseconds)
 		return valTTL, notFound, err
 	} else {
-		return t.ttlInternal(key, bGetMilliseconds)
+		return t.ttlInternal(snap, key, bGetMilliseconds)
 	}
 }
 
 // ttlInternal returns the remainder time to live in seconds or milliseconds, for key that has a TTL set,
 // returns -1 if no TTL applicable (forever living)
-func (t *TTL) ttlInternal(key string, bGetMilliseconds bool) (valTTL int64, notFound bool, err error) {
+func (t *TTL) ttlInternal(snap redisConnSnapshot, key string, bGetMilliseconds bool) (valTTL int64, notFound bool, err error) {
 	// validate
 	if t.core == nil {
 		return 0, false, errors.New("Redis TTL Failed: " + "Base is Nil")
 	}
 
-	if !t.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis TTL Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9784,9 +9889,9 @@ func (t *TTL) ttlInternal(key string, bGetMilliseconds bool) (valTTL int64, notF
 	var cmd *redis.DurationCmd
 
 	if bGetMilliseconds {
-		cmd = t.core.cnReader.PTTL(t.core.cnReader.Context(), key)
+		cmd = snap.reader.PTTL(snap.reader.Context(), key)
 	} else {
-		cmd = t.core.cnReader.TTL(t.core.cnReader.Context(), key)
+		cmd = snap.reader.TTL(snap.reader.Context(), key)
 	}
 
 	var d time.Duration
@@ -9825,8 +9930,9 @@ func (t *TTL) Expire(key string, bSetMilliseconds bool, expireValue time.Duratio
 	if t.core == nil {
 		return errors.New("Redis TTL Expire Failed: Redis core is nil")
 	}
+	snap := t.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Expire", t.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Expire", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9844,23 +9950,23 @@ func (t *TTL) Expire(key string, bSetMilliseconds bool, expireValue time.Duratio
 			}
 		}()
 
-		err = t.expireInternal(key, bSetMilliseconds, expireValue)
+		err = t.expireInternal(snap, key, bSetMilliseconds, expireValue)
 		return err
 	} else {
-		return t.expireInternal(key, bSetMilliseconds, expireValue)
+		return t.expireInternal(snap, key, bSetMilliseconds, expireValue)
 	}
 }
 
 // expireInternal sets a timeout on key (seconds or milliseconds based on input parameter)
 //
 // expireValue = in seconds or milliseconds
-func (t *TTL) expireInternal(key string, bSetMilliseconds bool, expireValue time.Duration) error {
+func (t *TTL) expireInternal(snap redisConnSnapshot, key string, bSetMilliseconds bool, expireValue time.Duration) error {
 	// validate
 	if t.core == nil {
 		return errors.New("Redis Expire Failed: " + "Base is Nil")
 	}
 
-	if !t.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis Expire Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9875,9 +9981,9 @@ func (t *TTL) expireInternal(key string, bSetMilliseconds bool, expireValue time
 	var cmd *redis.BoolCmd
 
 	if bSetMilliseconds {
-		cmd = t.core.cnWriter.PExpire(t.core.cnWriter.Context(), key, expireValue)
+		cmd = snap.writer.PExpire(snap.writer.Context(), key, expireValue)
 	} else {
-		cmd = t.core.cnWriter.Expire(t.core.cnWriter.Context(), key, expireValue)
+		cmd = snap.writer.Expire(snap.writer.Context(), key, expireValue)
 	}
 
 	if val, err := t.core.handleBoolCmd(cmd, "Redis Expire Failed: "); err != nil {
@@ -9903,8 +10009,9 @@ func (t *TTL) ExpireAt(key string, expireTime time.Time) (err error) {
 	if t.core == nil {
 		return errors.New("Redis TTL ExpireAt Failed: Redis core is nil")
 	}
+	snap := t.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ExpireAt", t.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ExpireAt", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9917,23 +10024,23 @@ func (t *TTL) ExpireAt(key string, expireTime time.Time) (err error) {
 			}
 		}()
 
-		err = t.expireAtInternal(key, expireTime)
+		err = t.expireAtInternal(snap, key, expireTime)
 		return err
 	} else {
-		return t.expireAtInternal(key, expireTime)
+		return t.expireAtInternal(snap, key, expireTime)
 	}
 }
 
 // expireAtInternal sets the hard expiration date time based on unix timestamp for a given key
 //
 // Setting expireTime to the past immediately deletes the key
-func (t *TTL) expireAtInternal(key string, expireTime time.Time) error {
+func (t *TTL) expireAtInternal(snap redisConnSnapshot, key string, expireTime time.Time) error {
 	// validate
 	if t.core == nil {
 		return errors.New("Redis ExpireAt Failed: " + "Base is Nil")
 	}
 
-	if !t.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis ExpireAt Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -9945,7 +10052,7 @@ func (t *TTL) expireAtInternal(key string, expireTime time.Time) error {
 		return errors.New("Redis ExpireAt Failed: " + "Expire Time is Required")
 	}
 
-	cmd := t.core.cnWriter.ExpireAt(t.core.cnWriter.Context(), key, expireTime)
+	cmd := snap.writer.ExpireAt(snap.writer.Context(), key, expireTime)
 
 	if val, err := t.core.handleBoolCmd(cmd, "Redis ExpireAt Failed: "); err != nil {
 		return err
@@ -9969,8 +10076,9 @@ func (t *TTL) Touch(key ...string) (err error) {
 	if t.core == nil {
 		return errors.New("Redis TTL Touch Failed: Redis core is nil")
 	}
+	snap := t.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Touch", t.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Touch", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -9982,22 +10090,22 @@ func (t *TTL) Touch(key ...string) (err error) {
 			}
 		}()
 
-		err = t.touchInternal(key...)
+		err = t.touchInternal(snap, key...)
 		return err
 	} else {
-		return t.touchInternal(key...)
+		return t.touchInternal(snap, key...)
 	}
 }
 
 // touchInternal alters the last access time of a key or keys,
 // if key doesn't exist, it is ignored
-func (t *TTL) touchInternal(key ...string) error {
+func (t *TTL) touchInternal(snap redisConnSnapshot, key ...string) error {
 	// validate
 	if t.core == nil {
 		return errors.New("Redis Touch Failed: " + "Base is Nil")
 	}
 
-	if !t.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis Touch Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10005,7 +10113,7 @@ func (t *TTL) touchInternal(key ...string) error {
 		return errors.New("Redis Touch Failed: " + "At Least 1 Key is Required")
 	}
 
-	cmd := t.core.cnWriter.Touch(t.core.cnWriter.Context(), key...)
+	cmd := snap.writer.Touch(snap.writer.Context(), key...)
 
 	if val, _, err := t.core.handleIntCmd(cmd, "Redis Touch Failed: "); err != nil {
 		return err
@@ -10028,8 +10136,9 @@ func (t *TTL) Persist(key string) (err error) {
 	if t.core == nil {
 		return errors.New("Redis TTL Persist Failed: Redis core is nil")
 	}
+	snap := t.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Persist", t.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Persist", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10041,21 +10150,21 @@ func (t *TTL) Persist(key string) (err error) {
 			}
 		}()
 
-		err = t.persistInternal(key)
+		err = t.persistInternal(snap, key)
 		return err
 	} else {
-		return t.persistInternal(key)
+		return t.persistInternal(snap, key)
 	}
 }
 
 // persistInternal removes existing timeout TTL of a key so it lives forever
-func (t *TTL) persistInternal(key string) error {
+func (t *TTL) persistInternal(snap redisConnSnapshot, key string) error {
 	// validate
 	if t.core == nil {
 		return errors.New("Redis Persist Failed: " + "Base is Nil")
 	}
 
-	if !t.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis Persist Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10063,7 +10172,7 @@ func (t *TTL) persistInternal(key string) error {
 		return errors.New("Redis Persist Failed: " + "Key is Required")
 	}
 
-	cmd := t.core.cnWriter.Persist(t.core.cnWriter.Context(), key)
+	cmd := snap.writer.Persist(snap.writer.Context(), key)
 
 	if val, err := t.core.handleBoolCmd(cmd, "Redis Persist Failed: "); err != nil {
 		return err
@@ -10092,8 +10201,9 @@ func (u *UTILS) Ping() (err error) {
 	if u.core == nil {
 		return errors.New("Redis UTILS Ping Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Ping", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Ping", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10103,27 +10213,27 @@ func (u *UTILS) Ping() (err error) {
 			}
 		}()
 
-		err = u.pingInternal()
+		err = u.pingInternal(snap)
 		return err
 	} else {
-		return u.pingInternal()
+		return u.pingInternal(snap)
 	}
 }
 
 // pingInternal will ping the redis server to see if its up
 //
 // result nil = success; otherwise error info is returned via error object
-func (u *UTILS) pingInternal() error {
+func (u *UTILS) pingInternal(snap redisConnSnapshot) error {
 	// validate
 	if u.core == nil {
 		return errors.New("Redis Ping Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis Ping Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := u.core.cnReader.Ping(u.core.cnReader.Context())
+	cmd := snap.reader.Ping(snap.reader.Context())
 	return u.core.handleStatusCmd(cmd, "Redis Ping Failed: ")
 }
 
@@ -10135,8 +10245,9 @@ func (u *UTILS) DBSize() (val int64, err error) {
 	if u.core == nil {
 		return 0, errors.New("Redis UTILS DBSize Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-DBSize", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-DBSize", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10148,25 +10259,25 @@ func (u *UTILS) DBSize() (val int64, err error) {
 			}
 		}()
 
-		val, err = u.dbSizeInternal()
+		val, err = u.dbSizeInternal(snap)
 		return val, err
 	} else {
-		return u.dbSizeInternal()
+		return u.dbSizeInternal(snap)
 	}
 }
 
 // dbSizeInternal returns number of keys in the redis database
-func (u *UTILS) dbSizeInternal() (val int64, err error) {
+func (u *UTILS) dbSizeInternal(snap redisConnSnapshot) (val int64, err error) {
 	// validate
 	if u.core == nil {
 		return 0, errors.New("Redis DBSize Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return 0, errors.New("Redis DBSize Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := u.core.cnReader.DBSize(u.core.cnReader.Context())
+	cmd := snap.reader.DBSize(snap.reader.Context())
 	val, _, err = u.core.handleIntCmd(cmd, "Redis DBSize Failed: ")
 	return val, err
 }
@@ -10179,8 +10290,9 @@ func (u *UTILS) Time() (val time.Time, err error) {
 	if u.core == nil {
 		return time.Time{}, errors.New("Redis UTILS Time Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Time", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Time", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10192,25 +10304,25 @@ func (u *UTILS) Time() (val time.Time, err error) {
 			}
 		}()
 
-		val, err = u.timeInternal()
+		val, err = u.timeInternal(snap)
 		return val, err
 	} else {
-		return u.timeInternal()
+		return u.timeInternal(snap)
 	}
 }
 
 // timeInternal returns the redis server time
-func (u *UTILS) timeInternal() (val time.Time, err error) {
+func (u *UTILS) timeInternal(snap redisConnSnapshot) (val time.Time, err error) {
 	// validate
 	if u.core == nil {
 		return time.Time{}, errors.New("Redis Time Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return time.Time{}, errors.New("Redis Time Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := u.core.cnReader.Time(u.core.cnReader.Context())
+	cmd := snap.reader.Time(snap.reader.Context())
 	val, _, err = u.core.handleTimeCmd(cmd, "Redis Time Failed: ")
 	return val, err
 }
@@ -10223,8 +10335,9 @@ func (u *UTILS) LastSave() (val time.Time, err error) {
 	if u.core == nil {
 		return time.Time{}, errors.New("Redis UTILS LastSave Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-LastSave", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-LastSave", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10236,25 +10349,25 @@ func (u *UTILS) LastSave() (val time.Time, err error) {
 			}
 		}()
 
-		val, err = u.lastSaveInternal()
+		val, err = u.lastSaveInternal(snap)
 		return val, err
 	} else {
-		return u.lastSaveInternal()
+		return u.lastSaveInternal(snap)
 	}
 }
 
 // lastSaveInternal checks if last db save action was successful
-func (u *UTILS) lastSaveInternal() (val time.Time, err error) {
+func (u *UTILS) lastSaveInternal(snap redisConnSnapshot) (val time.Time, err error) {
 	// validate
 	if u.core == nil {
 		return time.Time{}, errors.New("Redis LastSave Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return time.Time{}, errors.New("Redis LastSave Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := u.core.cnReader.LastSave(u.core.cnReader.Context())
+	cmd := snap.reader.LastSave(snap.reader.Context())
 	v, _, e := u.core.handleIntCmd(cmd, "Redis LastSave Failed: ")
 
 	if e != nil {
@@ -10273,8 +10386,9 @@ func (u *UTILS) Type(key string) (val rediskeytype.RedisKeyType, err error) {
 	if u.core == nil {
 		return rediskeytype.UNKNOWN, errors.New("Redis UTILS Type Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Type", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Type", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10287,22 +10401,22 @@ func (u *UTILS) Type(key string) (val rediskeytype.RedisKeyType, err error) {
 			}
 		}()
 
-		val, err = u.typeInternal(key)
+		val, err = u.typeInternal(snap, key)
 		return val, err
 	} else {
-		return u.typeInternal(key)
+		return u.typeInternal(snap, key)
 	}
 }
 
 // typeInternal returns the redis key's value type stored
 // expected result in string = list, set, zset, hash, and stream
-func (u *UTILS) typeInternal(key string) (val rediskeytype.RedisKeyType, err error) {
+func (u *UTILS) typeInternal(snap redisConnSnapshot, key string) (val rediskeytype.RedisKeyType, err error) {
 	// validate
 	if u.core == nil {
 		return rediskeytype.UNKNOWN, errors.New("Redis Type Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return rediskeytype.UNKNOWN, errors.New("Redis Type Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10310,7 +10424,7 @@ func (u *UTILS) typeInternal(key string) (val rediskeytype.RedisKeyType, err err
 		return rediskeytype.UNKNOWN, errors.New("Redis Type Failed: " + "Key is Required")
 	}
 
-	cmd := u.core.cnReader.Type(u.core.cnReader.Context(), key)
+	cmd := snap.reader.Type(snap.reader.Context(), key)
 
 	if v, _, e := u.core.handleStringStatusCmd(cmd, "Redis Type Failed: "); e != nil {
 		return rediskeytype.UNKNOWN, e
@@ -10344,8 +10458,9 @@ func (u *UTILS) ObjectEncoding(key string) (val string, notFound bool, err error
 	if u.core == nil {
 		return "", false, errors.New("Redis UTILS ObjectEncoding Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ObjectEncoding", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ObjectEncoding", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10359,21 +10474,21 @@ func (u *UTILS) ObjectEncoding(key string) (val string, notFound bool, err error
 			}
 		}()
 
-		val, notFound, err = u.objectEncodingInternal(key)
+		val, notFound, err = u.objectEncodingInternal(snap, key)
 		return val, notFound, err
 	} else {
-		return u.objectEncodingInternal(key)
+		return u.objectEncodingInternal(snap, key)
 	}
 }
 
 // objectEncodingInternal returns the internal representation used in order to store the value associated with a key
-func (u *UTILS) objectEncodingInternal(key string) (val string, notFound bool, err error) {
+func (u *UTILS) objectEncodingInternal(snap redisConnSnapshot, key string) (val string, notFound bool, err error) {
 	// validate
 	if u.core == nil {
 		return "", false, errors.New("Redis ObjectEncoding Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return "", false, errors.New("Redis ObjectEncoding Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10381,7 +10496,7 @@ func (u *UTILS) objectEncodingInternal(key string) (val string, notFound bool, e
 		return "", false, errors.New("Redis ObjectEncoding Failed: " + "Key is Required")
 	}
 
-	cmd := u.core.cnReader.ObjectEncoding(u.core.cnReader.Context(), key)
+	cmd := snap.reader.ObjectEncoding(snap.reader.Context(), key)
 	return u.core.handleStringCmd2(cmd, "Redis ObjectEncoding Failed: ")
 }
 
@@ -10393,8 +10508,9 @@ func (u *UTILS) ObjectIdleTime(key string) (val time.Duration, notFound bool, er
 	if u.core == nil {
 		return 0, false, errors.New("Redis UTILS ObjectIdleTime Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ObjectIdleTime", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ObjectIdleTime", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10408,21 +10524,21 @@ func (u *UTILS) ObjectIdleTime(key string) (val time.Duration, notFound bool, er
 			}
 		}()
 
-		val, notFound, err = u.objectIdleTimeInternal(key)
+		val, notFound, err = u.objectIdleTimeInternal(snap, key)
 		return val, notFound, err
 	} else {
-		return u.objectIdleTimeInternal(key)
+		return u.objectIdleTimeInternal(snap, key)
 	}
 }
 
 // objectIdleTimeInternal returns the number of seconds since the object stored at the specified key is idle (not requested by read or write operations)
-func (u *UTILS) objectIdleTimeInternal(key string) (val time.Duration, notFound bool, err error) {
+func (u *UTILS) objectIdleTimeInternal(snap redisConnSnapshot, key string) (val time.Duration, notFound bool, err error) {
 	// validate
 	if u.core == nil {
 		return 0, false, errors.New("Redis ObjectIdleTime Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis ObjectIdleTime Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10430,7 +10546,7 @@ func (u *UTILS) objectIdleTimeInternal(key string) (val time.Duration, notFound 
 		return 0, false, errors.New("Redis ObjectIdleTime Failed: " + "Key is Required")
 	}
 
-	cmd := u.core.cnReader.ObjectIdleTime(u.core.cnReader.Context(), key)
+	cmd := snap.reader.ObjectIdleTime(snap.reader.Context(), key)
 	return u.core.handleDurationCmd(cmd, "Redis ObjectIdleTime Failed: ")
 }
 
@@ -10442,8 +10558,9 @@ func (u *UTILS) ObjectRefCount(key string) (val int64, notFound bool, err error)
 	if u.core == nil {
 		return 0, false, errors.New("Redis UTILS ObjectRefCount Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-ObjectRefCount", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-ObjectRefCount", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10457,21 +10574,21 @@ func (u *UTILS) ObjectRefCount(key string) (val int64, notFound bool, err error)
 			}
 		}()
 
-		val, notFound, err = u.objectRefCountInternal(key)
+		val, notFound, err = u.objectRefCountInternal(snap, key)
 		return val, notFound, err
 	} else {
-		return u.objectRefCountInternal(key)
+		return u.objectRefCountInternal(snap, key)
 	}
 }
 
 // objectRefCountInternal returns the number of references of the value associated with the specified key
-func (u *UTILS) objectRefCountInternal(key string) (val int64, notFound bool, err error) {
+func (u *UTILS) objectRefCountInternal(snap redisConnSnapshot, key string) (val int64, notFound bool, err error) {
 	// validate
 	if u.core == nil {
 		return 0, false, errors.New("Redis ObjectRefCount Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return 0, false, errors.New("Redis ObjectRefCount Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10479,7 +10596,7 @@ func (u *UTILS) objectRefCountInternal(key string) (val int64, notFound bool, er
 		return 0, false, errors.New("Redis ObjectRefCount Failed: " + "Key is Required")
 	}
 
-	cmd := u.core.cnReader.ObjectRefCount(u.core.cnReader.Context(), key)
+	cmd := snap.reader.ObjectRefCount(snap.reader.Context(), key)
 	return u.core.handleIntCmd(cmd, "Redis ObjectRefCount: ")
 }
 
@@ -10508,8 +10625,9 @@ func (u *UTILS) Scan(cursor uint64, match string, count int64) (keys []string, r
 	if u.core == nil {
 		return nil, 0, errors.New("Redis UTILS Scan Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Scan", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Scan", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10525,10 +10643,10 @@ func (u *UTILS) Scan(cursor uint64, match string, count int64) (keys []string, r
 			}
 		}()
 
-		keys, resultCursor, err = u.scanInternal(cursor, match, count)
+		keys, resultCursor, err = u.scanInternal(snap, cursor, match, count)
 		return keys, resultCursor, err
 	} else {
-		return u.scanInternal(cursor, match, count)
+		return u.scanInternal(snap, cursor, match, count)
 	}
 }
 
@@ -10550,17 +10668,17 @@ func (u *UTILS) Scan(cursor uint64, match string, count int64) (keys []string, r
 //		7) Use \ to escape special characters if needing to match verbatim
 //
 // count = hint to redis count of elements to retrieve in the call
-func (u *UTILS) scanInternal(cursor uint64, match string, count int64) (keys []string, resultCursor uint64, err error) {
+func (u *UTILS) scanInternal(snap redisConnSnapshot, cursor uint64, match string, count int64) (keys []string, resultCursor uint64, err error) {
 	// validate
 	if u.core == nil {
 		return nil, 0, errors.New("Redis Scan Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return nil, 0, errors.New("Redis Scan Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := u.core.cnReader.Scan(u.core.cnReader.Context(), cursor, match, count)
+	cmd := snap.reader.Scan(snap.reader.Context(), cursor, match, count)
 	return u.core.handleScanCmd(cmd, "Redis Scan Failed: ")
 }
 
@@ -10586,8 +10704,9 @@ func (u *UTILS) Keys(match string) (valKeys []string, notFound bool, err error) 
 	if u.core == nil {
 		return nil, false, errors.New("Redis UTILS Keys Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Keys", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Keys", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10601,10 +10720,10 @@ func (u *UTILS) Keys(match string) (valKeys []string, notFound bool, err error) 
 			}
 		}()
 
-		valKeys, notFound, err = u.keysInternal(match)
+		valKeys, notFound, err = u.keysInternal(snap, match)
 		return valKeys, notFound, err
 	} else {
-		return u.keysInternal(match)
+		return u.keysInternal(snap, match)
 	}
 }
 
@@ -10623,13 +10742,13 @@ func (u *UTILS) Keys(match string) (valKeys []string, notFound bool, err error) 
 //		5) h[^e]llo = [^e] represents any char other than e to match (hallo, hbllo match, but hello not match)
 //		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
 //		7) Use \ to escape special characters if needing to match verbatim
-func (u *UTILS) keysInternal(match string) (valKeys []string, notFound bool, err error) {
+func (u *UTILS) keysInternal(snap redisConnSnapshot, match string) (valKeys []string, notFound bool, err error) {
 	// validate
 	if u.core == nil {
 		return nil, false, errors.New("Redis Keys Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis Keys Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10637,7 +10756,7 @@ func (u *UTILS) keysInternal(match string) (valKeys []string, notFound bool, err
 		return nil, false, errors.New("Redis Keys Failed: " + "Match is Required")
 	}
 
-	cmd := u.core.cnReader.Keys(u.core.cnReader.Context(), match)
+	cmd := snap.reader.Keys(snap.reader.Context(), match)
 	return u.core.handleStringSliceCmd(cmd, "Redis Keys Failed: ")
 }
 
@@ -10649,8 +10768,9 @@ func (u *UTILS) RandomKey() (val string, err error) {
 	if u.core == nil {
 		return "", errors.New("Redis UTILS RandomKey Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-RandomKey", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-RandomKey", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10662,25 +10782,25 @@ func (u *UTILS) RandomKey() (val string, err error) {
 			}
 		}()
 
-		val, err = u.randomKeyInternal()
+		val, err = u.randomKeyInternal(snap)
 		return val, err
 	} else {
-		return u.randomKeyInternal()
+		return u.randomKeyInternal(snap)
 	}
 }
 
 // randomKeyInternal returns a random key from redis
-func (u *UTILS) randomKeyInternal() (val string, err error) {
+func (u *UTILS) randomKeyInternal(snap redisConnSnapshot) (val string, err error) {
 	// validate
 	if u.core == nil {
 		return "", errors.New("Redis RandomKey Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return "", errors.New("Redis RandomKey Failed: " + "Endpoint Connections Not Ready")
 	}
 
-	cmd := u.core.cnReader.RandomKey(u.core.cnReader.Context())
+	cmd := snap.reader.RandomKey(snap.reader.Context())
 	val, _, err = u.core.handleStringCmd2(cmd, "Redis RandomKey Failed: ")
 	return val, err
 }
@@ -10695,8 +10815,9 @@ func (u *UTILS) Rename(keyOriginal string, keyNew string) (err error) {
 	if u.core == nil {
 		return errors.New("Redis UTILS Rename Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Rename", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Rename", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10709,23 +10830,23 @@ func (u *UTILS) Rename(keyOriginal string, keyNew string) (err error) {
 			}
 		}()
 
-		err = u.renameInternal(keyOriginal, keyNew)
+		err = u.renameInternal(snap, keyOriginal, keyNew)
 		return err
 	} else {
-		return u.renameInternal(keyOriginal, keyNew)
+		return u.renameInternal(snap, keyOriginal, keyNew)
 	}
 }
 
 // renameInternal will rename the keyOriginal to be keyNew in redis,
 // if keyNew already exist in redis, then Rename will override existing keyNew with keyOriginal
 // if keyOriginal is not in redis, error is returned
-func (u *UTILS) renameInternal(keyOriginal string, keyNew string) error {
+func (u *UTILS) renameInternal(snap redisConnSnapshot, keyOriginal string, keyNew string) error {
 	// validate
 	if u.core == nil {
 		return errors.New("Redis Rename Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis Rename Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10737,7 +10858,7 @@ func (u *UTILS) renameInternal(keyOriginal string, keyNew string) error {
 		return errors.New("Redis Rename Failed: " + "Key New is Required")
 	}
 
-	cmd := u.core.cnWriter.Rename(u.core.cnWriter.Context(), keyOriginal, keyNew)
+	cmd := snap.writer.Rename(snap.writer.Context(), keyOriginal, keyNew)
 	return u.core.handleStatusCmd(cmd, "Redis Rename Failed: ")
 }
 
@@ -10750,8 +10871,9 @@ func (u *UTILS) RenameNX(keyOriginal string, keyNew string) (err error) {
 	if u.core == nil {
 		return errors.New("Redis UTILS RenameNX Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-RenameNX", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-RenameNX", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10764,22 +10886,22 @@ func (u *UTILS) RenameNX(keyOriginal string, keyNew string) (err error) {
 			}
 		}()
 
-		err = u.renameNXInternal(keyOriginal, keyNew)
+		err = u.renameNXInternal(snap, keyOriginal, keyNew)
 		return err
 	} else {
-		return u.renameNXInternal(keyOriginal, keyNew)
+		return u.renameNXInternal(snap, keyOriginal, keyNew)
 	}
 }
 
 // renameNXInternal will rename the keyOriginal to be keyNew IF keyNew does not yet exist in redis
 // if RenameNX fails due to keyNew already exist, or other errors, the error is returned
-func (u *UTILS) renameNXInternal(keyOriginal string, keyNew string) error {
+func (u *UTILS) renameNXInternal(snap redisConnSnapshot, keyOriginal string, keyNew string) error {
 	// validate
 	if u.core == nil {
 		return errors.New("Redis RenameNX Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis RenameNX Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10791,7 +10913,7 @@ func (u *UTILS) renameNXInternal(keyOriginal string, keyNew string) error {
 		return errors.New("Redis RenameNX Failed: " + "Key New is Required")
 	}
 
-	cmd := u.core.cnWriter.RenameNX(u.core.cnWriter.Context(), keyOriginal, keyNew)
+	cmd := snap.writer.RenameNX(snap.writer.Context(), keyOriginal, keyNew)
 	if val, err := u.core.handleBoolCmd(cmd, "Redis RenameNX Failed: "); err != nil {
 		return err
 	} else {
@@ -10816,8 +10938,9 @@ func (u *UTILS) Sort(key string, sortPattern *redis.Sort) (val []string, notFoun
 	if u.core == nil {
 		return nil, false, errors.New("Redis UTILS Sort Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-Sort", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-Sort", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10832,10 +10955,10 @@ func (u *UTILS) Sort(key string, sortPattern *redis.Sort) (val []string, notFoun
 			}
 		}()
 
-		val, notFound, err = u.sortInternal(key, sortPattern)
+		val, notFound, err = u.sortInternal(snap, key, sortPattern)
 		return val, notFound, err
 	} else {
-		return u.sortInternal(key, sortPattern)
+		return u.sortInternal(snap, key, sortPattern)
 	}
 }
 
@@ -10843,13 +10966,13 @@ func (u *UTILS) Sort(key string, sortPattern *redis.Sort) (val []string, notFoun
 // sort is applicable to list, set, or sorted set as defined by key
 //
 // sortPattern = defines the sort conditions (see redis sort documentation for details)
-func (u *UTILS) sortInternal(key string, sortPattern *redis.Sort) (val []string, notFound bool, err error) {
+func (u *UTILS) sortInternal(snap redisConnSnapshot, key string, sortPattern *redis.Sort) (val []string, notFound bool, err error) {
 	// validate
 	if u.core == nil {
 		return nil, false, errors.New("Redis Sort Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis Sort Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10857,7 +10980,7 @@ func (u *UTILS) sortInternal(key string, sortPattern *redis.Sort) (val []string,
 		return nil, false, errors.New("Redis Sort Failed: " + "Key is Required")
 	}
 
-	cmd := u.core.cnReader.Sort(u.core.cnReader.Context(), key, sortPattern)
+	cmd := snap.reader.Sort(snap.reader.Context(), key, sortPattern)
 	return u.core.handleStringSliceCmd(cmd, "Redis Sort Failed: ")
 }
 
@@ -10872,8 +10995,9 @@ func (u *UTILS) SortInterfaces(keyToSort string, sortPattern *redis.Sort) (val [
 	if u.core == nil {
 		return nil, false, errors.New("Redis UTILS SortInterfaces Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SortInterfaces", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SortInterfaces", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10888,10 +11012,10 @@ func (u *UTILS) SortInterfaces(keyToSort string, sortPattern *redis.Sort) (val [
 			}
 		}()
 
-		val, notFound, err = u.sortInterfacesInternal(keyToSort, sortPattern)
+		val, notFound, err = u.sortInterfacesInternal(snap, keyToSort, sortPattern)
 		return val, notFound, err
 	} else {
-		return u.sortInterfacesInternal(keyToSort, sortPattern)
+		return u.sortInterfacesInternal(snap, keyToSort, sortPattern)
 	}
 }
 
@@ -10899,13 +11023,13 @@ func (u *UTILS) SortInterfaces(keyToSort string, sortPattern *redis.Sort) (val [
 // sort is applicable to list, set, or sorted set as defined by key
 //
 // sortPattern = defines the sort conditions (see redis sort documentation for details)
-func (u *UTILS) sortInterfacesInternal(keyToSort string, sortPattern *redis.Sort) (val []interface{}, notFound bool, err error) {
+func (u *UTILS) sortInterfacesInternal(snap redisConnSnapshot, keyToSort string, sortPattern *redis.Sort) (val []interface{}, notFound bool, err error) {
 	// validate
 	if u.core == nil {
 		return nil, false, errors.New("Redis SortInterfaces Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return nil, false, errors.New("Redis SortInterfaces Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10913,7 +11037,7 @@ func (u *UTILS) sortInterfacesInternal(keyToSort string, sortPattern *redis.Sort
 		return nil, false, errors.New("Redis SortInterfaces Failed: " + "KeyToSort is Required")
 	}
 
-	cmd := u.core.cnReader.SortInterfaces(u.core.cnReader.Context(), keyToSort, sortPattern)
+	cmd := snap.reader.SortInterfaces(snap.reader.Context(), keyToSort, sortPattern)
 	return u.core.handleSliceCmd(cmd, "Redis SortInterfaces Failed: ")
 }
 
@@ -10928,8 +11052,9 @@ func (u *UTILS) SortStore(keyToSort string, keyToStore string, sortPattern *redi
 	if u.core == nil {
 		return errors.New("Redis UTILS SortStore Failed: Redis core is nil")
 	}
+	snap := u.core.connSnapshot()
 	// get new xray segment for tracing
-	seg := xray.NewSegmentNullable("Redis-SortStore", u.core._parentSegment)
+	seg := xray.NewSegmentNullable("Redis-SortStore", snap.parentSegment)
 
 	if seg != nil {
 		defer seg.Close()
@@ -10943,10 +11068,10 @@ func (u *UTILS) SortStore(keyToSort string, keyToStore string, sortPattern *redi
 			}
 		}()
 
-		err = u.sortStoreInternal(keyToSort, keyToStore, sortPattern)
+		err = u.sortStoreInternal(snap, keyToSort, keyToStore, sortPattern)
 		return err
 	} else {
-		return u.sortStoreInternal(keyToSort, keyToStore, sortPattern)
+		return u.sortStoreInternal(snap, keyToSort, keyToStore, sortPattern)
 	}
 }
 
@@ -10954,13 +11079,13 @@ func (u *UTILS) SortStore(keyToSort string, keyToStore string, sortPattern *redi
 // sort is applicable to list, set, or sorted set as defined by key
 //
 // sortPattern = defines the sort conditions (see redis sort documentation for details)
-func (u *UTILS) sortStoreInternal(keyToSort string, keyToStore string, sortPattern *redis.Sort) error {
+func (u *UTILS) sortStoreInternal(snap redisConnSnapshot, keyToSort string, keyToStore string, sortPattern *redis.Sort) error {
 	// validate
 	if u.core == nil {
 		return errors.New("Redis SortStore Failed: " + "Base is Nil")
 	}
 
-	if !u.core.cnAreReady {
+	if !snap.ready {
 		return errors.New("Redis SortStore Failed: " + "Endpoint Connections Not Ready")
 	}
 
@@ -10972,7 +11097,7 @@ func (u *UTILS) sortStoreInternal(keyToSort string, keyToStore string, sortPatte
 		return errors.New("Redis SortStore Failed: " + "KeyToStore is Required")
 	}
 
-	cmd := u.core.cnWriter.SortStore(u.core.cnWriter.Context(), keyToSort, keyToStore, sortPattern)
+	cmd := snap.writer.SortStore(snap.writer.Context(), keyToSort, keyToStore, sortPattern)
 	_, _, err := u.core.handleIntCmd(cmd, "Redis SortStore Failed: ")
 	return err
 }

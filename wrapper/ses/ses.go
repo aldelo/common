@@ -226,7 +226,15 @@ func (s *SES) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 
 // connectInternal will establish a connection to the SES service
 func (s *SES) connectInternal() error {
-	if !s.AwsRegion.Valid() || s.AwsRegion == awsregion.UNKNOWN {
+	s.mu.Lock()
+	region := s.AwsRegion
+	if s.HttpOptions == nil {
+		s.HttpOptions = new(awshttp2.HttpClientSettings)
+	}
+	httpOpts := s.HttpOptions
+	s.mu.Unlock()
+
+	if !region.Valid() || region == awsregion.UNKNOWN {
 		return errors.New("Connect To SES Failed: (AWS Session Error) " + "Region is Required")
 	}
 
@@ -234,13 +242,9 @@ func (s *SES) connectInternal() error {
 	var httpCli *http.Client
 	var httpErr error
 
-	if s.HttpOptions == nil {
-		s.HttpOptions = new(awshttp2.HttpClientSettings)
-	}
-
 	// use custom http2 client
 	h2 := &awshttp2.AwsHttp2Client{
-		Options: s.HttpOptions,
+		Options: httpOpts,
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
@@ -250,7 +254,7 @@ func (s *SES) connectInternal() error {
 	// establish aws session connection and keep session object in struct
 	sess, err := session.NewSession(
 		&aws.Config{
-			Region:     aws.String(s.AwsRegion.Key()),
+			Region:     aws.String(region.Key()),
 			HTTPClient: httpCli,
 		})
 	if err != nil {

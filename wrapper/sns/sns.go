@@ -318,7 +318,8 @@ func (s *SNS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 
 // Connect will establish a connection to the SNS service
 func (s *SNS) connectInternal() error {
-	if !s.AwsRegion.Valid() || s.AwsRegion == awsregion.UNKNOWN {
+	region := s.getAwsRegion()
+	if !region.Valid() || region == awsregion.UNKNOWN {
 		return errors.New("Connect To SNS Failed: (AWS Session Error) " + "Region is Required")
 	}
 
@@ -336,7 +337,7 @@ func (s *SNS) connectInternal() error {
 	// establish aws session connection and keep session object in struct
 	sess, err := session.NewSession(
 		&aws.Config{
-			Region:     aws.String(s.AwsRegion.Key()),
+			Region:     aws.String(region.Key()),
 			HTTPClient: httpCli,
 		})
 	if err != nil {

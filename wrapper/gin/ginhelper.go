@@ -2,6 +2,7 @@ package gin
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 
 	util "github.com/aldelo/common"
@@ -37,39 +38,41 @@ func BindPostDataFailed(c *gin.Context) {
 	}
 }
 
+// jsonEscapeString returns a JSON-safe escaped string value (without surrounding quotes).
+func jsonEscapeString(s string) string {
+	b, _ := json.Marshal(s)
+	// json.Marshal wraps in quotes; strip them
+	if len(b) >= 2 {
+		return string(b[1 : len(b)-1])
+	}
+	return s
+}
+
 // VerifyGoogleReCAPTCHAv2Failed will return a 412 response to caller via gin context
 func VerifyGoogleReCAPTCHAv2Failed(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(412, func() string {
-			return fmt.Sprintf(`{"errortype":"verify-google-recaptcha-v2","error":"%s"}`, errInfo)
-		}())
+		c.String(412, fmt.Sprintf(`{"errortype":"verify-google-recaptcha-v2","error":"%s"}`, jsonEscapeString(errInfo)))
 	}
 }
 
 // MarshalQueryParametersFailed will return a 412 response to caller via gin context
 func MarshalQueryParametersFailed(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(412, func() string {
-			return fmt.Sprintf(`{"errortype":"marshal-query-parameters","error":"%s"}`, errInfo)
-		}())
+		c.String(412, fmt.Sprintf(`{"errortype":"marshal-query-parameters","error":"%s"}`, jsonEscapeString(errInfo)))
 	}
 }
 
 // ActionServerFailed will return a 500 response to caller via gin context
 func ActionServerFailed(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(500, func() string {
-			return fmt.Sprintf(`{"errortype":"action-server-failed","error":"%s"}`, errInfo)
-		}())
+		c.String(500, fmt.Sprintf(`{"errortype":"action-server-failed","error":"%s"}`, jsonEscapeString(errInfo)))
 	}
 }
 
 // ActionStatusNotOK will return a 404 response to caller via gin context
 func ActionStatusNotOK(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(404, func() string {
-			return fmt.Sprintf(`{"errortype":"action-status-not-ok","error":"%s"}`, errInfo)
-		}())
+		c.String(404, fmt.Sprintf(`{"errortype":"action-status-not-ok","error":"%s"}`, jsonEscapeString(errInfo)))
 	}
 }
 

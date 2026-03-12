@@ -590,10 +590,11 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 
 	oversized := int64(len(body)) > maxRequestBodyBytes
 
-	// avoid unbounded draining when oversized (prevents hang/DoS on huge/streaming bodies).
+	// drain remaining body up to a bounded limit to allow connection reuse,
+	// but cap the drain to prevent unbounded read from streaming/malicious clients
 	if !oversized {
 		if drainErr := func() error {
-			_, err := io.Copy(io.Discard, req.Body)
+			_, err := io.Copy(io.Discard, io.LimitReader(req.Body, maxRequestBodyBytes))
 			return err
 		}(); drainErr != nil && readErr == nil {
 			readErr = drainErr

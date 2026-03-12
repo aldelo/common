@@ -1776,7 +1776,7 @@ func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk 
 		CustomKeyStoreId:               nil,
 		Description:                    nil,
 		KeySpec:                        aws.String(kms.KeySpecEccNistP256),
-		KeyUsage:                       aws.String(kms.KeyUsageTypeKeyAgreement),
+		KeyUsage:                       aws.String(kms.KeyUsageTypeSignVerify),
 		MultiRegion:                    aws.Bool(false),
 		Origin:                         aws.String(kms.OriginTypeExternal),
 		Policy:                         aws.String(keyPolicyJson),

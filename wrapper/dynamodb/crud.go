@@ -2138,6 +2138,19 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 		return fmt.Errorf("Update To Data Store Failed: (Validater 13) Resolved Update Expression is Empty")
 	}
 
+	// DynamoDB rejects ExpressionAttributeValues that contain keys not referenced in any expression
+	// (UpdateExpression or ConditionExpression). The caller may provide extra attribute values
+	// (e.g. audit fields) that aren't in the expression; strip them to avoid InvalidParameter errors.
+	allExprs := finalUpdateExpr
+	if util.LenTrim(conditionExpression) > 0 {
+		allExprs += " " + conditionExpression
+	}
+	for k := range expressionAttributeValues {
+		if !strings.Contains(allExprs, k) {
+			delete(expressionAttributeValues, k)
+		}
+	}
+
 	// avoid passing an empty ExpressionAttributeValues map (dynamodb rejects empty maps)
 	if len(expressionAttributeValues) == 0 {
 		expressionAttributeValues = nil

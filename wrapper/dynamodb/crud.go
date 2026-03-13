@@ -1915,11 +1915,16 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	putItemsCrudUniqueRecords := make([]*CrudUniqueRecord, 0)
 	deleteKeys := make([]*DynamoDBTableKeys, 0)
 
+	// setPathUpdatedFields tracks which unique fields had their values changed in the SET path,
+	// so the REMOVE path can use the updated indexes instead of stale ones from uniqueFieldsMap.
+	var setPathUpdatedFields map[string]*CrudUniqueFieldNameAndIndex
+
 	if util.LenTrim(setExpression) > 0 && uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
 		if updatedUniqueFields, newUniqueFields, ukErr := crudUniqueModel.GetUpdatedUniqueFieldsFromExpressionAttributeValues(uniqueFieldsMap, expressionAttributeValues); ukErr != nil {
 			return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromExpressionAttributeValues) %s", ukErr.Error())
 		} else if updatedUniqueFields != nil && len(updatedUniqueFields) > 0 && newUniqueFields != nil && len(newUniqueFields.UniqueFields) > 0 {
 			doUpdateItemNonTransactional = false
+			setPathUpdatedFields = updatedUniqueFields
 
 			for _, crudFieldAndIndex := range updatedUniqueFields {
 				if crudFieldAndIndex != nil &&
@@ -2042,7 +2047,9 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 				}
 			}
 
-			// keep UniqueFields in sync after removing unique attributes
+			// keep UniqueFields in sync after removing unique attributes;
+			// use updated index from the SET path when available (avoids stale data when
+			// both a unique field value change and a different unique field removal happen together).
 			for attr, info := range uniqueFieldsMap {
 				if info == nil {
 					continue
@@ -2050,7 +2057,13 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 				if _, removed := removedKeys[attr]; removed {
 					continue
 				}
-				newUniqueFieldsSlice = append(newUniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", attr, info.UniqueFieldName, info.UniqueFieldIndex))
+				fieldIndex := info.UniqueFieldIndex
+				if setPathUpdatedFields != nil {
+					if upd, ok := setPathUpdatedFields[attr]; ok && upd != nil {
+						fieldIndex = upd.UniqueFieldIndex
+					}
+				}
+				newUniqueFieldsSlice = append(newUniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", attr, info.UniqueFieldName, fieldIndex))
 			}
 		}
 	}
@@ -2068,10 +2081,11 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	}
 
 	if len(newUniqueFieldsSlice) == 0 && !removeClauseHasUniqueFields && uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
+		// only append UniqueFields to an existing REMOVE clause (all unique attrs were removed);
+		// do NOT create a REMOVE from nothing — when there is no REMOVE clause, newUniqueFieldsSlice
+		// is empty because the REMOVE processing block never ran, NOT because fields were removed.
 		if len(normalizedRemoveExpr) > 0 {
 			normalizedRemoveExpr = strings.TrimSpace(normalizedRemoveExpr) + ", UniqueFields"
-		} else {
-			normalizedRemoveExpr = "REMOVE UniqueFields"
 		}
 	}
 
@@ -2115,14 +2129,6 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			updateExprParts = append([]string{"SET UniqueFields=:UniqueFields"}, updateExprParts...)
 			expressionAttributeValues[":UniqueFields"] = &ddb.AttributeValue{
 				SS: aws.StringSlice(newUniqueFieldsSlice),
-			}
-		}
-	} else if len(newUniqueFieldsSlice) == 0 && !removeUniqueFieldsRequested && len(normalizedRemoveExpr) > 0 &&
-		uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
-		// ensure UniqueFields removed too if it still exists but was not explicitly requested
-		if !matchUniqueFieldsToken(normalizedRemoveExpr) {
-			if len(normalizedRemoveExpr) > 0 {
-				updateExprParts = append(updateExprParts, "REMOVE UniqueFields")
 			}
 		}
 	}

@@ -351,13 +351,7 @@ runOperation:
 				}
 			}
 		}()
-		log.Printf("ExecuteWithLimit: executing operation")
 		opErr = operation()
-		if opErr != nil {
-			log.Printf("ExecuteWithLimit: operation returned error: %v", opErr)
-		} else {
-			log.Printf("ExecuteWithLimit: operation completed successfully")
-		}
 	}()
 	return opErr
 }

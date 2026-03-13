@@ -56,9 +56,6 @@ func (v *ViperConf) ensureMu() {
 	if v == nil {
 		return
 	}
-	if v.mu != nil {
-		return
-	}
 
 	v.muInitOnce.Do(func() {
 		if v.mu == nil {
@@ -276,7 +273,7 @@ func (v *ViperConf) SubConf(key string) *ViperConf {
 				UseConfigPathHomeAppName:   v.UseConfigPathHomeAppName,
 				CustomConfigPath:           v.CustomConfigPath,
 				viperClient:                subViper,
-				mu:                         v.mu,
+				mu:                         new(sync.RWMutex),
 			}
 		}
 	}

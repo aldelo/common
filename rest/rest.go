@@ -443,7 +443,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	var req *http.Request
 
 	if req, err = http.NewRequest("GET", url, nil); err != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return 0, errors.New("Create New Http GET ProtoBuf Request Failed: " + err.Error())
 	}
 
@@ -468,7 +468,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get ProtoBuf Error] " + err.Error())
 	}
 
@@ -486,19 +486,19 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 
 	if err != nil {
 		// when read error, even if 200, still return error
-		outResponseProtoBufObjectPtr = nil
+
 		return statusCode, err
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
-		outResponseProtoBufObjectPtr = nil
+
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Get ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
 
 	// unmarshal bytes to protobuf object
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
-			outResponseProtoBufObjectPtr = nil
+	
 			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
@@ -533,14 +533,14 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	client := newHttpClient(timeout, tlsCfg)
 	// marshal proto message to bytes
 	if requestProtoBufObjectPtr == nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return 0, errors.New("Request ProtoBuf Object is Nil")
 	}
 
 	reqBytes, err2 := proto.Marshal(requestProtoBufObjectPtr)
 
 	if err2 != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return 0, errors.New("Request ProtoBuf Object Marshaling Failed: " + err2.Error())
 	}
 
@@ -548,7 +548,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	req, err3 := http.NewRequest("POST", url, bytes.NewReader(reqBytes))
 
 	if err3 != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return 0, errors.New("Create New Http Post ProtoBuf Request Failed: " + err3.Error())
 	}
 
@@ -573,7 +573,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post ProtoBuf Error] " + err.Error())
 	}
 
@@ -591,7 +591,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 
 	if err != nil {
 		// when read error, even if 200, still return error
-		outResponseProtoBufObjectPtr = nil
+
 		return statusCode, err
 	}
 
@@ -602,7 +602,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	// unmarshal response bytes into protobuf object message
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
-			outResponseProtoBufObjectPtr = nil
+	
 			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
@@ -637,14 +637,14 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	client := newHttpClient(timeout, tlsCfg)
 	// marshal proto message to bytes
 	if requestProtoBufObjectPtr == nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return 0, errors.New("Request ProtoBuf Object is Nil")
 	}
 
 	reqBytes, err2 := proto.Marshal(requestProtoBufObjectPtr)
 
 	if err2 != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return 0, errors.New("Request ProtoBuf Object Marshaling Failed: " + err2.Error())
 	}
 
@@ -652,7 +652,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	req, err3 := http.NewRequest("PUT", url, bytes.NewReader(reqBytes))
 
 	if err3 != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return 0, errors.New("Create New Http PUT ProtoBuf Request Failed: " + err3.Error())
 	}
 
@@ -677,7 +677,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put ProtoBuf Error] " + err.Error())
 	}
 
@@ -695,7 +695,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 
 	if err != nil {
 		// when read error, even if 200, still return error
-		outResponseProtoBufObjectPtr = nil
+
 		return statusCode, err
 	}
 
@@ -706,7 +706,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	// unmarshal response bytes into protobuf object message
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
-			outResponseProtoBufObjectPtr = nil
+	
 			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
@@ -742,7 +742,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	var req *http.Request
 
 	if req, err = http.NewRequest("DELETE", url, nil); err != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return 0, errors.New("Create New Http Delete ProtoBuf Request Failed: " + err.Error())
 	}
 
@@ -767,7 +767,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		outResponseProtoBufObjectPtr = nil
+
 		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete ProtoBuf Error] " + err.Error())
 	}
 
@@ -785,19 +785,19 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 
 	if err != nil {
 		// when read error, even if 200, still return error
-		outResponseProtoBufObjectPtr = nil
+
 		return statusCode, err
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
-		outResponseProtoBufObjectPtr = nil
+
 		return statusCode, errors.New("[" + strconv.Itoa(statusCode) + " - Delete ProtoBuf Not 200] Response ProtoBuf Bytes Length = " + strconv.Itoa(len(respBytes)))
 	}
 
 	// unmarshal bytes to protobuf object
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
-			outResponseProtoBufObjectPtr = nil
+	
 			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}

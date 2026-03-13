@@ -747,7 +747,6 @@ func (g *Gin) newRouteFunc(relativePath string, method string, bindingType ginbi
 
 				if bindingInputPtr == nil {
 					_ = c.AbortWithError(500, fmt.Errorf("%s %s Failed on %s Binding: %s", method, relativePath, bindingType.Key(), "ReflectObjectNewPtr() Yielded Nil for Target Binding Object"))
-					handler(c, nil)
 					return
 				}
 			}
@@ -755,7 +754,7 @@ func (g *Gin) newRouteFunc(relativePath string, method string, bindingType ginbi
 			if err := g.bindInput(c, bindingType, bindingInputPtr); err != nil {
 				// binding error
 				_ = c.AbortWithError(500, fmt.Errorf("%s %s Failed on %s Binding: %s", method, relativePath, bindingType.Key(), err.Error()))
-				handler(c, nil)
+				return
 			} else {
 				// continue processing
 				handler(c, bindingInputPtr)
@@ -985,7 +984,11 @@ func (g *Gin) setupSessionMiddleware() {
 				size = 1
 			}
 
-			store, _ = redis.NewStore(size, "tcp", g.SessionMiddleware.RedisHostAndPort, "", "", []byte(g.SessionMiddleware.SecretKey))
+			var storeErr error
+			store, storeErr = redis.NewStore(size, "tcp", g.SessionMiddleware.RedisHostAndPort, "", "", []byte(g.SessionMiddleware.SecretKey))
+			if storeErr != nil {
+				log.Printf("Redis session store creation failed: %s", storeErr.Error())
+			}
 		}
 
 		if store != nil {

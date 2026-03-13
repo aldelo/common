@@ -142,13 +142,13 @@ func (c *Csv) ReadCsv() (eof bool, record []string, err error) {
 	}
 
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.closed {
-		c.mu.Unlock()
 		return false, []string{}, errors.New("Read Csv Row Failed: " + "Csv Closed")
 	}
 
 	if c.cr == nil {
-		c.mu.Unlock()
 		return false, []string{}, errors.New("Read Csv Row Failed: " + "Csv Reader Nil")
 	}
 
@@ -161,20 +161,10 @@ func (c *Csv) ReadCsv() (eof bool, record []string, err error) {
 		c.ParsedCount = 0
 	}
 
-	cr := c.cr
-	c.mu.Unlock()
-
 	// read record of csv
-	record, err = cr.Read()
+	record, err = c.cr.Read()
 	if err == io.EOF {
 		return true, []string{}, nil
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.closed {
-		return false, []string{}, errors.New("Read Csv Row Failed: " + "Csv Closed")
 	}
 
 	// always increment tried count

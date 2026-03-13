@@ -238,61 +238,11 @@ func (r *Redis) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 func (r *Redis) connectInternal() error {
 	r.cnAreReady = false
 
-	// clean up prior cn reference
-	if r.BIT != nil {
-		r.BIT.core = nil
-		r.BIT = nil
-	}
-
-	if r.LIST != nil {
-		r.LIST.core = nil
-		r.LIST = nil
-	}
-
-	if r.HASH != nil {
-		r.HASH.core = nil
-		r.HASH = nil
-	}
-
-	if r.SET != nil {
-		r.SET.core = nil
-		r.SET = nil
-	}
-
-	if r.SORTED_SET != nil {
-		r.SORTED_SET.core = nil
-		r.SORTED_SET = nil
-	}
-
-	if r.GEO != nil {
-		r.GEO.core = nil
-		r.GEO = nil
-	}
-
-	if r.STREAM != nil {
-		r.STREAM.core = nil
-		r.STREAM = nil
-	}
-
-	if r.PUBSUB != nil {
-		r.PUBSUB.core = nil
-		r.PUBSUB = nil
-	}
-
-	if r.PIPELINE != nil {
-		r.PIPELINE.core = nil
-		r.PIPELINE = nil
-	}
-
-	if r.TTL != nil {
-		r.TTL.core = nil
-		r.TTL = nil
-	}
-
-	if r.UTILS != nil {
-		r.UTILS.core = nil
-		r.UTILS = nil
-	}
+	// Sub-struct pointers (BIT, LIST, etc.) are NOT nilled here.
+	// Concurrent callers may hold references to them without locks.
+	// cnAreReady=false (set above) ensures all concurrent operations
+	// fail safely via the !snap.ready check in connSnapshot().
+	// Fresh sub-struct instances are created after successful connection below.
 
 	if r.cnWriter != nil {
 		_ = r.cnWriter.Close()
@@ -368,6 +318,8 @@ func (r *Redis) connectInternal() error {
 	r.cnReader = redis.NewClient(optReader)
 
 	if r.cnReader == nil {
+		_ = r.cnWriter.Close()
+		r.cnWriter = nil
 		return errors.New("Connect To Redis Failed: (Reader Endpoint) " + "Obtain Client Yielded Nil")
 	}
 
@@ -376,9 +328,17 @@ func (r *Redis) connectInternal() error {
 	defer cancel()
 
 	if err := r.cnWriter.Ping(ctx).Err(); err != nil {
+		_ = r.cnWriter.Close()
+		r.cnWriter = nil
+		_ = r.cnReader.Close()
+		r.cnReader = nil
 		return errors.New("Connect To Redis Failed: (Writer Endpoint) ping failed: " + err.Error())
 	}
 	if err := r.cnReader.Ping(ctx).Err(); err != nil {
+		_ = r.cnWriter.Close()
+		r.cnWriter = nil
+		_ = r.cnReader.Close()
+		r.cnReader = nil
 		return errors.New("Connect To Redis Failed: (Reader Endpoint) ping failed: " + err.Error())
 	}
 
@@ -7716,7 +7676,11 @@ func (g *GEO) geoPosInternal(snap redisConnSnapshot, key string, member ...strin
 		return nil, errors.New("Redis GeoPos Failed: " + "At Least 1 Member is Required")
 	}
 
-	return snap.reader.GeoPos(snap.reader.Context(), key, member...), nil
+	cmd := snap.reader.GeoPos(snap.reader.Context(), key, member...)
+	if cmd.Err() != nil && cmd.Err() != redis.Nil {
+		return cmd, cmd.Err()
+	}
+	return cmd, nil
 }
 
 // GeoRadius returns the members of a sorted set populated with geospatial information using GeoAdd,
@@ -7846,7 +7810,11 @@ func (g *GEO) geoRadiusInternal(snap redisConnSnapshot, key string, longitude fl
 		return nil, err
 	}
 
-	return snap.reader.GeoRadius(snap.reader.Context(), key, longitude, latitude, q), nil
+	cmd := snap.reader.GeoRadius(snap.reader.Context(), key, longitude, latitude, q)
+	if cmd.Err() != nil && cmd.Err() != redis.Nil {
+		return cmd, cmd.Err()
+	}
+	return cmd, nil
 }
 
 // GeoRadiusStore will store the members of a sorted set populated with geospatial information using GeoAdd,
@@ -8018,7 +7986,11 @@ func (g *GEO) geoRadiusByMemberInternal(snap redisConnSnapshot, key string, memb
 		return nil, err
 	}
 
-	return snap.reader.GeoRadiusByMember(snap.reader.Context(), key, member, q), nil
+	cmd := snap.reader.GeoRadiusByMember(snap.reader.Context(), key, member, q)
+	if cmd.Err() != nil && cmd.Err() != redis.Nil {
+		return cmd, cmd.Err()
+	}
+	return cmd, nil
 }
 
 // GeoRadiusByMemberStore is same as GeoRadiusStore, except instead of taking as the center of the area to query (long lat),
@@ -8837,7 +8809,7 @@ func (x *STREAM) xpendingInternal(snap redisConnSnapshot, stream string, group s
 		return nil, false, errors.New("Redis XPending Failed: " + "Group is Required")
 	}
 
-	cmd := snap.writer.XPending(snap.writer.Context(), stream, group)
+	cmd := snap.reader.XPending(snap.reader.Context(), stream, group)
 	return x.core.handleXPendingCmd(cmd, "Redis XPending Failed: ")
 }
 
@@ -8887,7 +8859,7 @@ func (x *STREAM) xpendingExtInternal(snap redisConnSnapshot, pendingArgs *redis.
 		return nil, false, errors.New("Redis XPendingExt Failed: " + "PendingArgs is Required")
 	}
 
-	cmd := snap.writer.XPendingExt(snap.writer.Context(), pendingArgs)
+	cmd := snap.reader.XPendingExt(snap.reader.Context(), pendingArgs)
 	return x.core.handleXPendingExtCmd(cmd, "Redis XPendingExt Failed: ")
 }
 
@@ -9195,7 +9167,7 @@ func (x *STREAM) xreadGroupInternal(snap redisConnSnapshot, readGroupArgs *redis
 		return nil, false, errors.New("Redis XReadGroup Failed: " + "ReadGroupArgs is Required")
 	}
 
-	cmd := snap.reader.XReadGroup(snap.reader.Context(), readGroupArgs)
+	cmd := snap.writer.XReadGroup(snap.writer.Context(), readGroupArgs)
 	return x.core.handleXStreamSliceCmd(cmd, "Redis XReadGroup Failed: ")
 }
 

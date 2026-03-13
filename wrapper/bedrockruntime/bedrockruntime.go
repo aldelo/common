@@ -110,10 +110,15 @@ func (s *BedrockRuntime) Connect(parentSegment ...*xray.XRayParentSegment) (err 
 			s.mu.Unlock()
 		}
 
+		// snapshot AwsRegion under lock for the deferred closure
+		s.mu.RLock()
+		awsRegionSnap := s.AwsRegion
+		s.mu.RUnlock()
+
 		seg := xray.NewSegment("BedrockRuntime-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("BedrockRuntime-AWS-Region", s.AwsRegion)
+			_ = seg.Seg.AddMetadata("BedrockRuntime-AWS-Region", awsRegionSnap)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)

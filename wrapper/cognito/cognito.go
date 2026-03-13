@@ -105,8 +105,13 @@ func (s *Cognito) Connect(parentSegment ...*xray.XRayParentSegment) (err error) 
 
 		seg := xray.NewSegment("Cognito-Connect", s.getParentSegment())
 		defer seg.Close()
+
+		s.mu.RLock()
+		awsRegion := s.AwsRegion
+		s.mu.RUnlock()
+
 		defer func() {
-			_ = seg.Seg.AddMetadata("Cognito-AWS-Region", s.AwsRegion)
+			_ = seg.Seg.AddMetadata("Cognito-AWS-Region", awsRegion)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)

@@ -1286,7 +1286,12 @@ func (d *DynamoDB) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 		err = d.connectInternal()
 
 		if err == nil {
-			awsxray.AWS(d.cn.Client)
+			d.connMutex.RLock()
+			cn := d.cn
+			d.connMutex.RUnlock()
+			if cn != nil {
+				awsxray.AWS(cn.Client)
+			}
 		}
 
 		return err
@@ -2922,7 +2927,10 @@ func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duratio
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -3223,7 +3231,7 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 		return ddbErr
 	}
 
-	if expressionAttributeValues == nil {
+	if expressionAttributeValues == nil && strings.Contains(updateExpression, ":") {
 		ddbErr = d.handleError(errors.New("DynamoDB UpdateItem Failed: " + "ExpressionAttributeValues is Required"))
 		return ddbErr
 	}
@@ -3317,7 +3325,10 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -3344,7 +3355,7 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 		return d.handleError(errors.New("DynamoDB UpdateItem Failed: " + "UpdateExpression is Required"))
 	}
 
-	if expressionAttributeValues == nil {
+	if expressionAttributeValues == nil && strings.Contains(updateExpression, ":") {
 		return d.handleError(errors.New("DynamoDB UpdateItem Failed: " + "ExpressionAttributeValues is Required"))
 	}
 
@@ -3641,7 +3652,10 @@ func (d *DynamoDB) removeItemAttributeNormal(pkValue string, skValue string, rem
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -3848,7 +3862,10 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return ddbErr
 	}
@@ -3936,7 +3953,10 @@ func (d *DynamoDB) deleteItemNormal(pkValue string, skValue string, timeOutDurat
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -4146,7 +4166,10 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return ddbErr
 	}
@@ -4309,7 +4332,10 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -4665,7 +4691,10 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		ddbErr = d.handleError(errors.New("QueryPaginationDataWithTrace Failed: DynamoDB Connection is Required"))
 		return nil, ddbErr
 	}
@@ -4800,7 +4829,10 @@ func (d *DynamoDB) queryPaginationDataNormal(
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return nil, d.handleError(errors.New("QueryPaginationDataNormal Failed: DynamoDB Connection is Required"))
 	}
 
@@ -5053,7 +5085,10 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return nil, ddbErr
 	}
@@ -5280,7 +5315,10 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -5442,7 +5480,7 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 	}
 
 	if result == nil {
-		return nil, d.handleError(err, "DynamoDB QueryItems Failed: (QueryItems)")
+		return nil, d.handleError(errors.New("Result is Nil"), "DynamoDB QueryItems Failed: (QueryItems)")
 	}
 
 	// unmarshal result items to target object map
@@ -5958,7 +5996,10 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		ddbErr = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return nil, ddbErr
 	}
@@ -6127,7 +6168,10 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -6240,7 +6284,7 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 	}
 
 	if result == nil {
-		return nil, d.handleError(err, "DynamoDB ScanItems Failed: (ScanItems)")
+		return nil, d.handleError(errors.New("Result is Nil"), "DynamoDB ScanItems Failed: (ScanItems)")
 	}
 
 	// unmarshal result items to target object map
@@ -6556,7 +6600,10 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		err = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return 0, nil, err
 	}
@@ -6814,7 +6861,10 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return 0, nil, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -7209,7 +7259,10 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		err = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return false, err
 	}
@@ -7512,7 +7565,10 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return false, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -7976,7 +8032,10 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		err = d.handleError(errors.New("DynamoDB Connection is Required"))
 		return false, err
 	}
@@ -8185,7 +8244,10 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return false, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -8517,7 +8579,10 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 		}
 	}()
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return 0, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -8750,7 +8815,10 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 		}
 	}
 
-	if d.cn == nil {
+	d.connMutex.RLock()
+	cnNil := d.cn == nil
+	d.connMutex.RUnlock()
+	if cnNil {
 		return 0, d.handleError(errors.New("DynamoDB Connection is Required"))
 	}
 
@@ -9037,7 +9105,8 @@ func (d *DynamoDB) CreateTable(input *dynamodb.CreateTableInput, ctx ...aws.Cont
 		return nil, fmt.Errorf("DynamoDB CreateTable Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB CreateTable Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9046,9 +9115,9 @@ func (d *DynamoDB) CreateTable(input *dynamodb.CreateTableInput, ctx ...aws.Cont
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.CreateTable(input)
+		return cn.CreateTable(input)
 	} else {
-		return d.cn.CreateTableWithContext(ctx[0], input)
+		return cn.CreateTableWithContext(ctx[0], input)
 	}
 }
 
@@ -9062,7 +9131,8 @@ func (d *DynamoDB) UpdateTable(input *dynamodb.UpdateTableInput, ctx ...aws.Cont
 		return nil, fmt.Errorf("DynamoDB UpdateTable Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB UpdateTable Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9071,9 +9141,9 @@ func (d *DynamoDB) UpdateTable(input *dynamodb.UpdateTableInput, ctx ...aws.Cont
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.UpdateTable(input)
+		return cn.UpdateTable(input)
 	} else {
-		return d.cn.UpdateTableWithContext(ctx[0], input)
+		return cn.UpdateTableWithContext(ctx[0], input)
 	}
 }
 
@@ -9087,7 +9157,8 @@ func (d *DynamoDB) DeleteTable(input *dynamodb.DeleteTableInput, ctx ...aws.Cont
 		return nil, fmt.Errorf("DynamoDB DeleteTable Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB DeleteTable Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9096,9 +9167,9 @@ func (d *DynamoDB) DeleteTable(input *dynamodb.DeleteTableInput, ctx ...aws.Cont
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.DeleteTable(input)
+		return cn.DeleteTable(input)
 	} else {
-		return d.cn.DeleteTableWithContext(ctx[0], input)
+		return cn.DeleteTableWithContext(ctx[0], input)
 	}
 }
 
@@ -9112,7 +9183,8 @@ func (d *DynamoDB) ListTables(input *dynamodb.ListTablesInput, ctx ...aws.Contex
 		return nil, fmt.Errorf("DynamoDB ListTables Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB ListTables Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9121,9 +9193,9 @@ func (d *DynamoDB) ListTables(input *dynamodb.ListTablesInput, ctx ...aws.Contex
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.ListTables(input)
+		return cn.ListTables(input)
 	} else {
-		return d.cn.ListTablesWithContext(ctx[0], input)
+		return cn.ListTablesWithContext(ctx[0], input)
 	}
 }
 
@@ -9137,7 +9209,8 @@ func (d *DynamoDB) DescribeTable(input *dynamodb.DescribeTableInput, ctx ...aws.
 		return nil, fmt.Errorf("DynamoDB DescribeTable Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB DescribeTable Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9146,9 +9219,9 @@ func (d *DynamoDB) DescribeTable(input *dynamodb.DescribeTableInput, ctx ...aws.
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.DescribeTable(input)
+		return cn.DescribeTable(input)
 	} else {
-		return d.cn.DescribeTableWithContext(ctx[0], input)
+		return cn.DescribeTableWithContext(ctx[0], input)
 	}
 }
 
@@ -9162,7 +9235,8 @@ func (d *DynamoDB) CreateGlobalTable(input *dynamodb.CreateGlobalTableInput, ctx
 		return nil, fmt.Errorf("DynamoDB CreateGlobalTable Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB CreateGlobalTable Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9171,9 +9245,9 @@ func (d *DynamoDB) CreateGlobalTable(input *dynamodb.CreateGlobalTableInput, ctx
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.CreateGlobalTable(input)
+		return cn.CreateGlobalTable(input)
 	} else {
-		return d.cn.CreateGlobalTableWithContext(ctx[0], input)
+		return cn.CreateGlobalTableWithContext(ctx[0], input)
 	}
 }
 
@@ -9187,7 +9261,8 @@ func (d *DynamoDB) UpdateGlobalTable(input *dynamodb.UpdateGlobalTableInput, ctx
 		return nil, fmt.Errorf("DynamoDB UpdateGlobalTable Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB UpdateGlobalTable Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9196,9 +9271,9 @@ func (d *DynamoDB) UpdateGlobalTable(input *dynamodb.UpdateGlobalTableInput, ctx
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.UpdateGlobalTable(input)
+		return cn.UpdateGlobalTable(input)
 	} else {
-		return d.cn.UpdateGlobalTableWithContext(ctx[0], input)
+		return cn.UpdateGlobalTableWithContext(ctx[0], input)
 	}
 }
 
@@ -9212,7 +9287,8 @@ func (d *DynamoDB) ListGlobalTables(input *dynamodb.ListGlobalTablesInput, ctx .
 		return nil, fmt.Errorf("DynamoDB ListGlobalTables Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB ListGlobalTables Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9221,9 +9297,9 @@ func (d *DynamoDB) ListGlobalTables(input *dynamodb.ListGlobalTablesInput, ctx .
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.ListGlobalTables(input)
+		return cn.ListGlobalTables(input)
 	} else {
-		return d.cn.ListGlobalTablesWithContext(ctx[0], input)
+		return cn.ListGlobalTablesWithContext(ctx[0], input)
 	}
 }
 
@@ -9237,7 +9313,8 @@ func (d *DynamoDB) DescribeGlobalTable(input *dynamodb.DescribeGlobalTableInput,
 		return nil, fmt.Errorf("DynamoDB DescribeGlobalTable Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB DescribeGlobalTable Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9246,9 +9323,9 @@ func (d *DynamoDB) DescribeGlobalTable(input *dynamodb.DescribeGlobalTableInput,
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.DescribeGlobalTable(input)
+		return cn.DescribeGlobalTable(input)
 	} else {
-		return d.cn.DescribeGlobalTableWithContext(ctx[0], input)
+		return cn.DescribeGlobalTableWithContext(ctx[0], input)
 	}
 }
 
@@ -9262,7 +9339,8 @@ func (d *DynamoDB) CreateBackup(input *dynamodb.CreateBackupInput, ctx ...aws.Co
 		return nil, fmt.Errorf("DynamoDB CreateBackup Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB CreateBackup Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9271,9 +9349,9 @@ func (d *DynamoDB) CreateBackup(input *dynamodb.CreateBackupInput, ctx ...aws.Co
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.CreateBackup(input)
+		return cn.CreateBackup(input)
 	} else {
-		return d.cn.CreateBackupWithContext(ctx[0], input)
+		return cn.CreateBackupWithContext(ctx[0], input)
 	}
 }
 
@@ -9287,7 +9365,8 @@ func (d *DynamoDB) DeleteBackup(input *dynamodb.DeleteBackupInput, ctx ...aws.Co
 		return nil, fmt.Errorf("DynamoDB DeleteBackup Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB DeleteBackup Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9296,9 +9375,9 @@ func (d *DynamoDB) DeleteBackup(input *dynamodb.DeleteBackupInput, ctx ...aws.Co
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.DeleteBackup(input)
+		return cn.DeleteBackup(input)
 	} else {
-		return d.cn.DeleteBackupWithContext(ctx[0], input)
+		return cn.DeleteBackupWithContext(ctx[0], input)
 	}
 }
 
@@ -9312,7 +9391,8 @@ func (d *DynamoDB) ListBackups(input *dynamodb.ListBackupsInput, ctx ...aws.Cont
 		return nil, fmt.Errorf("DynamoDB ListBackups Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB ListBackups Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9321,9 +9401,9 @@ func (d *DynamoDB) ListBackups(input *dynamodb.ListBackupsInput, ctx ...aws.Cont
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.ListBackups(input)
+		return cn.ListBackups(input)
 	} else {
-		return d.cn.ListBackupsWithContext(ctx[0], input)
+		return cn.ListBackupsWithContext(ctx[0], input)
 	}
 }
 
@@ -9337,7 +9417,8 @@ func (d *DynamoDB) DescribeBackup(input *dynamodb.DescribeBackupInput, ctx ...aw
 		return nil, fmt.Errorf("DynamoDB DescribeBackup Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB DescribeBackup Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9346,9 +9427,9 @@ func (d *DynamoDB) DescribeBackup(input *dynamodb.DescribeBackupInput, ctx ...aw
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.DescribeBackup(input)
+		return cn.DescribeBackup(input)
 	} else {
-		return d.cn.DescribeBackupWithContext(ctx[0], input)
+		return cn.DescribeBackupWithContext(ctx[0], input)
 	}
 }
 
@@ -9362,7 +9443,8 @@ func (d *DynamoDB) UpdatePointInTimeBackup(input *dynamodb.UpdateContinuousBacku
 		return nil, fmt.Errorf("DynamoDB UpdatePointInTimeBackup Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return nil, fmt.Errorf("DynamoDB UpdatePointInTimeBackup Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9371,9 +9453,9 @@ func (d *DynamoDB) UpdatePointInTimeBackup(input *dynamodb.UpdateContinuousBacku
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.UpdateContinuousBackups(input)
+		return cn.UpdateContinuousBackups(input)
 	} else {
-		return d.cn.UpdateContinuousBackupsWithContext(ctx[0], input)
+		return cn.UpdateContinuousBackupsWithContext(ctx[0], input)
 	}
 }
 
@@ -9387,7 +9469,8 @@ func (d *DynamoDB) WaitUntilTableExists(input *dynamodb.DescribeTableInput, ctx 
 		return fmt.Errorf("DynamoDB WaitUntilTableExists Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return fmt.Errorf("DynamoDB WaitUntilTableExists Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9396,9 +9479,9 @@ func (d *DynamoDB) WaitUntilTableExists(input *dynamodb.DescribeTableInput, ctx 
 	}
 
 	if len(ctx) <= 0 {
-		return d.cn.WaitUntilTableExists(input)
+		return cn.WaitUntilTableExists(input)
 	} else {
-		return d.cn.WaitUntilTableExistsWithContext(ctx[0], input)
+		return cn.WaitUntilTableExistsWithContext(ctx[0], input)
 	}
 }
 
@@ -9412,7 +9495,8 @@ func (d *DynamoDB) WaitUntilTableFullyIdle(tableName string, ctx aws.Context) er
 		return fmt.Errorf("DynamoDB WaitUntilTableFullyIdle Failed: " + "DynamoDB Object is Nil")
 	}
 
-	if d.cn == nil {
+	cn, _, _ := d.connectionSnapshot()
+	if cn == nil {
 		return fmt.Errorf("DynamoDB WaitUntilTableFullyIdle Failed: " + "No DynamoDB Connection Available")
 	}
 
@@ -9433,7 +9517,7 @@ func (d *DynamoDB) WaitUntilTableFullyIdle(tableName string, ctx aws.Context) er
 			return ctx.Err()
 
 		case <-ticker.C:
-			out, err := d.cn.DescribeTableWithContext(
+			out, err := cn.DescribeTableWithContext(
 				ctx,
 				&dynamodb.DescribeTableInput{
 					TableName: aws.String(tableName),

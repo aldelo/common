@@ -331,6 +331,11 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 		return "", err
 	}
 
+	if encryptedOutput == nil {
+		err = errors.New("EncryptViaCmkAes256 Failed: output is nil")
+		return "", err
+	}
+
 	// return encrypted cipher text blob
 	cipherText = util.ByteToHex(encryptedOutput.CiphertextBlob)
 	return cipherText, nil
@@ -425,6 +430,11 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 		return "", err
 	}
 
+	if reEncryptOutput == nil {
+		err = errors.New("ReEncryptViaCmkAes256 Failed: output is nil")
+		return "", err
+	}
+
 	// return encrypted cipher text blob
 	targetCipherText = util.ByteToHex(reEncryptOutput.CiphertextBlob)
 	return targetCipherText, nil
@@ -504,6 +514,11 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 
 	if e != nil {
 		err = errors.New("DecryptViaCmkAes256 with KMS CMK Failed: (Symmetric Decrypt) " + e.Error())
+		return "", err
+	}
+
+	if decryptedOutput == nil {
+		err = errors.New("DecryptViaCmkAes256 Failed: output is nil")
 		return "", err
 	}
 
@@ -660,6 +675,11 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 
 	_, err = cli.CreateAlias(aliasInput)
 	if err != nil {
+		// Best-effort cleanup: schedule the orphaned key for deletion
+		_, _ = cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
+			KeyId:               encryptedOutput.KeyMetadata.KeyId,
+			PendingWindowInDays: aws.Int64(7),
+		})
 		return nil, err
 	}
 
@@ -740,6 +760,11 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 
 	_, err = cli.CreateAlias(aliasInput)
 	if err != nil {
+		// Best-effort cleanup: schedule the orphaned key for deletion
+		_, _ = cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
+			KeyId:               encryptedOutput.KeyMetadata.KeyId,
+			PendingWindowInDays: aws.Int64(7),
+		})
 		return nil, err
 	}
 
@@ -970,6 +995,11 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 		return "", err
 	}
 
+	if encryptedOutput == nil {
+		err = errors.New("EncryptViaCmkRsa2048 Failed: output is nil")
+		return "", err
+	}
+
 	// return encrypted cipher text blob
 	cipherText = util.ByteToHex(encryptedOutput.CiphertextBlob)
 	return cipherText, nil
@@ -1116,6 +1146,11 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 		return "", err
 	}
 
+	if reEncryptOutput == nil {
+		err = errors.New("ReEncryptViaCmkRsa2048 Failed: output is nil")
+		return "", err
+	}
+
 	// return encrypted cipher text blob
 	targetCipherText = util.ByteToHex(reEncryptOutput.CiphertextBlob)
 	return targetCipherText, nil
@@ -1195,6 +1230,11 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 
 	if e != nil {
 		err = errors.New("DecryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric Decrypt) " + e.Error())
+		return "", err
+	}
+
+	if decryptedOutput == nil {
+		err = errors.New("DecryptViaCmkRsa2048 Failed: output is nil")
 		return "", err
 	}
 
@@ -1284,6 +1324,11 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 		return "", err
 	}
 
+	if decryptedOutput == nil {
+		err = errors.New("decryptViaCmkRsa2048Base Failed: output is nil")
+		return "", err
+	}
+
 	// return decrypted cipher text blob
 	plainText = string(decryptedOutput.Plaintext)
 	return plainText, nil
@@ -1362,6 +1407,11 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 
 	if e != nil {
 		err = errors.New("SignViaCmkRsa2048 with KMS Failed: (Sign Action) " + e.Error())
+		return "", err
+	}
+
+	if signOutput == nil {
+		err = errors.New("SignViaCmkRsa2048 Failed: output is nil")
 		return "", err
 	}
 
@@ -1538,6 +1588,11 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 		return "", err
 	}
 
+	if dataKeyOutput == nil {
+		err = errors.New("GenerateDataKeyAes256 Failed: output is nil")
+		return "", err
+	}
+
 	// return encrypted key via cipherKey
 	cipherKey = util.ByteToHex(dataKeyOutput.CiphertextBlob)
 	return cipherKey, nil
@@ -1624,6 +1679,11 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 
 	if e != nil {
 		err = errors.New("EncryptWithDataKeyAes256 with KMS Failed: (Decrypt Data Key) " + e.Error())
+		return "", err
+	}
+
+	if dataKeyOutput == nil {
+		err = errors.New("EncryptWithDataKeyAes256 Failed: output is nil")
 		return "", err
 	}
 
@@ -1730,6 +1790,11 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 		return "", err
 	}
 
+	if dataKeyOutput == nil {
+		err = errors.New("DecryptWithDataKeyAes256 Failed: output is nil")
+		return "", err
+	}
+
 	// perform decryption action using decrypted plaintext data key
 	buf, e := crypto.AesGcmDecrypt(cipherText, string(dataKeyOutput.Plaintext))
 
@@ -1789,11 +1854,25 @@ func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk 
 		return "", e1
 	}
 
+	if cOutput == nil || cOutput.KeyMetadata == nil || cOutput.KeyMetadata.KeyId == nil {
+		return "", errors.New("ImportECCP256SignVerifyKey: CreateKey returned nil output or KeyMetadata")
+	}
+
 	keyID := aws.StringValue(cOutput.KeyMetadata.KeyId)
 
 	if keyID == "" {
 		return "", errors.New("key ID is empty")
 	}
+
+	// deferred cleanup: schedule orphaned key for deletion if function returns an error
+	defer func() {
+		if err != nil && keyID != "" {
+			_, _ = cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
+				KeyId:               aws.String(keyID),
+				PendingWindowInDays: aws.Int64(7),
+			})
+		}
+	}()
 
 	// Step 1: Get an import token and public key from KMS
 	getParams := &kms.GetParametersForImportInput{
@@ -1922,6 +2001,10 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 	outputResp, e2 := cli.DeriveSharedSecret(inputReq)
 	if e2 != nil {
 		return nil, e2
+	}
+
+	if outputResp == nil {
+		return nil, errors.New("ECDH with KMS Failed: DeriveSharedSecret returned nil output")
 	}
 
 	return outputResp.SharedSecret, nil

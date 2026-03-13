@@ -1161,7 +1161,7 @@ func RsaAesPrivateKeyDecryptAndVerify(encryptedData string, recipientPrivateKeyH
 	parts := strings.Split(aesData, ascii.AsciiToString(ascii.VT))
 
 	if len(parts) != 3 {
-		return "", "", errors.New("Decrypted AES Data Not Valid: " + "Expected 3 Parts Exactly, " + util.Itoa(len(parts)) + " Parts Returned Instead" + aesData)
+		return "", "", errors.New("Decrypted AES Data Not Valid: " + "Expected 3 Parts Exactly, " + util.Itoa(len(parts)) + " Parts Returned Instead")
 	}
 
 	plainText = parts[0]

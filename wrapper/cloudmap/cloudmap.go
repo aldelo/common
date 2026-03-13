@@ -150,8 +150,14 @@ func (sd *CloudMap) Connect(parentSegment ...*xray.XRayParentSegment) (err error
 		sd._parentSegmentMutex.Unlock()
 
 		defer seg.Close()
+
+		// snapshot AwsRegion under lock for the deferred closure
+		sd.sdClientMutex.RLock()
+		awsRegionSnap := sd.AwsRegion
+		sd.sdClientMutex.RUnlock()
+
 		defer func() {
-			_ = seg.Seg.AddMetadata("Cloudmap-AWS-Region", sd.AwsRegion)
+			_ = seg.Seg.AddMetadata("Cloudmap-AWS-Region", awsRegionSnap)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)

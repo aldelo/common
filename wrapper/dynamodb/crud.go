@@ -21,7 +21,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -41,33 +40,84 @@ var (
 
 var auditProjectionAttributes = []string{"CrUTC", "CrBy", "CrIP", "UpUTC", "UpBy", "UpIP"}
 
-// updateActionRegex splits DynamoDB update expressions into action clauses (SET/ADD/DELETE/REMOVE).
-var updateActionRegex = regexp.MustCompile(`(?i)\b(set|add|delete|remove)\b`)
+// isWordChar reports whether c is a DynamoDB expression word character [A-Za-z0-9_].
+func isWordChar(c byte) bool {
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
+}
 
 // splitUpdateSections returns ordered action sections (e.g., SET, REMOVE, ADD, DELETE) from an update expression.
 // Each section body includes the action keyword itself to preserve DynamoDB syntax.
+// This uses a tokenizer instead of regex to avoid matching keywords inside value placeholders
+// (e.g., ":set", ":remove") or expression attribute names (e.g., "#add").
 func splitUpdateSections(expr string) []struct{ Action, Body string } {
 	expr = strings.TrimSpace(expr)
-	matches := updateActionRegex.FindAllStringSubmatchIndex(expr, -1)
+	if len(expr) == 0 {
+		return nil
+	}
+
+	upper := strings.ToUpper(expr)
+	keywords := [4]string{"SET", "ADD", "DELETE", "REMOVE"}
+
+	type kwMatch struct {
+		pos    int
+		action string
+	}
+	var matches []kwMatch
+
+	i := 0
+	for i < len(upper) {
+		ch := upper[i]
+
+		// skip value placeholders (:name) and expression attribute names (#name)
+		if ch == ':' || ch == '#' {
+			i++
+			for i < len(upper) && isWordChar(upper[i]) {
+				i++
+			}
+			continue
+		}
+
+		// only check for keywords at word-start positions (preceded by start-of-string or whitespace)
+		if i == 0 || upper[i-1] == ' ' || upper[i-1] == '\t' || upper[i-1] == '\n' || upper[i-1] == '\r' {
+			found := false
+			for _, kw := range keywords {
+				kwLen := len(kw)
+				if i+kwLen <= len(upper) && upper[i:i+kwLen] == kw {
+					// check word boundary after keyword
+					afterPos := i + kwLen
+					if afterPos == len(upper) || !isWordChar(upper[afterPos]) {
+						matches = append(matches, kwMatch{pos: i, action: kw})
+						i = afterPos
+						found = true
+						break
+					}
+				}
+			}
+			if found {
+				continue
+			}
+		}
+
+		i++
+	}
 
 	if len(matches) == 0 {
 		return nil
 	}
 
 	sections := make([]struct{ Action, Body string }, 0, len(matches))
-	for i, m := range matches {
-		action := strings.ToUpper(expr[m[0]:m[1]])
+	for idx, m := range matches {
 		end := len(expr)
-		if i+1 < len(matches) {
-			end = matches[i+1][0]
+		if idx+1 < len(matches) {
+			end = matches[idx+1].pos
 		}
-		body := strings.TrimSpace(expr[m[1]:end])
+		body := strings.TrimSpace(expr[m.pos+len(m.action) : end])
 		if len(body) == 0 {
 			continue
 		}
 		sections = append(sections, struct{ Action, Body string }{
-			Action: action,
-			Body:   strings.TrimSpace(action + " " + body),
+			Action: m.action,
+			Body:   strings.TrimSpace(m.action + " " + body),
 		})
 	}
 	return sections
@@ -2284,7 +2334,9 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 							end = len(uniqueDeletes)
 						}
 
-						batch := uniqueDeletes[cursor:end]
+						// copy the sub-slice to avoid corrupting the backing array when appending
+						batch := make([]*DynamoDBTableKeys, end-cursor, end-cursor+1)
+						copy(batch, uniqueDeletes[cursor:end])
 						if cursor == 0 {
 							batch = append(batch, primaryDelete)
 						}

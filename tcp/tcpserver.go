@@ -95,12 +95,22 @@ func (s *TCPServer) Serve() (err error) {
 	}
 	s._mux.Unlock()
 
-	if s._tcpListener, err = net.Listen("tcp4", fmt.Sprintf(":%d", s.Port)); err != nil {
+	listener, err := net.Listen("tcp4", fmt.Sprintf(":%d", s.Port))
+	if err != nil {
 		return err
-	} else {
-		s._mux.Lock()
-		s._serving = true
+	}
+
+	s._mux.Lock()
+	if s._serving {
 		s._mux.Unlock()
+		_ = listener.Close()
+		return fmt.Errorf("TCP Server Already Serving (concurrent start detected)")
+	}
+	s._tcpListener = listener
+	s._serving = true
+	s._mux.Unlock()
+
+	{
 
 		// start continuous loop to accept incoming tcp client,
 		// and initiate client handler go-routine for each connection

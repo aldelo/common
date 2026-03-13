@@ -83,18 +83,27 @@ type PaymentCryptoData struct {
 // ================================================================================================================
 
 func (k *PaymentCryptoData) getClient() *pycryptoData.PaymentCryptographyData {
+	if k == nil {
+		return nil
+	}
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	return k.pyDataClient
 }
 
 func (k *PaymentCryptoData) getParentSegment() *xray.XRayParentSegment {
+	if k == nil {
+		return nil
+	}
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	return k._parentSegment
 }
 
 func (k *PaymentCryptoData) getKeyArn() string {
+	if k == nil {
+		return ""
+	}
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	return k.KeyArn
@@ -122,8 +131,13 @@ func (k *PaymentCryptoData) Connect(parentSegment ...*xray.XRayParentSegment) (e
 
 		seg := xray.NewSegment("PaymentCryptoData-Connect", k.getParentSegment())
 		defer seg.Close()
+
+		k.mu.RLock()
+		awsRegion := k.AwsRegion
+		k.mu.RUnlock()
+
 		defer func() {
-			_ = seg.Seg.AddMetadata("KDS-AWS-Region", k.AwsRegion)
+			_ = seg.Seg.AddMetadata("KDS-AWS-Region", awsRegion)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)

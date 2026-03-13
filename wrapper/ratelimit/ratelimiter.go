@@ -34,7 +34,8 @@ type RateLimiter struct {
 	// rate limiter client
 	limiterClient ratelimit.Limiter
 
-	mu sync.RWMutex
+	mu       sync.RWMutex
+	initOnce sync.Once
 }
 
 // Init will setup the rate limit for use
@@ -64,7 +65,7 @@ func (r *RateLimiter) Init() {
 
 // ensureLimiter guarantees limiterClient is non-nil.
 // It keeps existing configuration if already set, otherwise defaults to unlimited.
-func (r *RateLimiter) ensureLimiter() ratelimit.Limiter { // NEW helper
+func (r *RateLimiter) ensureLimiter() ratelimit.Limiter {
 	r.mu.RLock()
 	l := r.limiterClient
 	r.mu.RUnlock()
@@ -73,8 +74,15 @@ func (r *RateLimiter) ensureLimiter() ratelimit.Limiter { // NEW helper
 		return l
 	}
 
-	// Initialize lazily to avoid nil panic when Take is called before Init.
-	r.Init()
+	// Initialize lazily using sync.Once to avoid TOCTOU race.
+	r.initOnce.Do(func() {
+		r.mu.RLock()
+		alreadySet := r.limiterClient != nil
+		r.mu.RUnlock()
+		if !alreadySet {
+			r.Init()
+		}
+	})
 
 	r.mu.RLock()
 	l = r.limiterClient

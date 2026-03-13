@@ -195,15 +195,24 @@ func (s *SES) getParentSegment() *xray.XRayParentSegment {
 
 // Connect will establish a connection to the SES service
 func (s *SES) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
+	if s == nil {
+		return errors.New("Connect To SES Failed: (SES Struct Nil)")
+	}
+
 	if len(parentSegment) > 0 {
 		s.setParentSegment(parentSegment[0])
 	}
 
 	if xray.XRayServiceOn() {
+		// snapshot AwsRegion under lock for the deferred closure
+		s.mu.RLock()
+		awsRegionSnap := s.AwsRegion
+		s.mu.RUnlock()
+
 		seg := xray.NewSegment("SES-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-AWS-Region", s.AwsRegion)
+			_ = seg.Seg.AddMetadata("SES-AWS-Region", awsRegionSnap)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)
@@ -784,8 +793,11 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 	}
 
 	// set configurationSetName if applicable
-	if util.LenTrim(s.ConfigurationSetName) > 0 {
-		input.ConfigurationSetName = aws.String(s.ConfigurationSetName)
+	s.mu.RLock()
+	cfgSetName := s.ConfigurationSetName
+	s.mu.RUnlock()
+	if util.LenTrim(cfgSetName) > 0 {
+		input.ConfigurationSetName = aws.String(cfgSetName)
 	}
 
 	// send out email
@@ -904,8 +916,11 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 	}
 
 	// set configurationSetName if applicable
-	if util.LenTrim(s.ConfigurationSetName) > 0 {
-		input.ConfigurationSetName = aws.String(s.ConfigurationSetName)
+	s.mu.RLock()
+	cfgSetName := s.ConfigurationSetName
+	s.mu.RUnlock()
+	if util.LenTrim(cfgSetName) > 0 {
+		input.ConfigurationSetName = aws.String(cfgSetName)
 	}
 
 	// send out email
@@ -1349,8 +1364,11 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 		input.TemplateData = aws.String(emailTarget.TemplateDataJson)
 	}
 
-	if util.LenTrim(s.ConfigurationSetName) > 0 {
-		input.ConfigurationSetName = aws.String(s.ConfigurationSetName)
+	s.mu.RLock()
+	cfgSetName := s.ConfigurationSetName
+	s.mu.RUnlock()
+	if util.LenTrim(cfgSetName) > 0 {
+		input.ConfigurationSetName = aws.String(cfgSetName)
 	}
 
 	// perform action
@@ -1537,8 +1555,11 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 		return nil, 0, errors.New("SendBulkTemplateEmail Failed: no valid destinations after validation")
 	}
 
-	if util.LenTrim(s.ConfigurationSetName) > 0 {
-		input.ConfigurationSetName = aws.String(s.ConfigurationSetName)
+	s.mu.RLock()
+	cfgSetName2 := s.ConfigurationSetName
+	s.mu.RUnlock()
+	if util.LenTrim(cfgSetName2) > 0 {
+		input.ConfigurationSetName = aws.String(cfgSetName2)
 	}
 
 	// perform action
@@ -1933,8 +1954,11 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 		EmailAddress: aws.String(toEmailAddress),
 	}
 
-	if util.LenTrim(s.ConfigurationSetName) > 0 {
-		input.ConfigurationSetName = aws.String(s.ConfigurationSetName)
+	s.mu.RLock()
+	cfgSetName3 := s.ConfigurationSetName
+	s.mu.RUnlock()
+	if util.LenTrim(cfgSetName3) > 0 {
+		input.ConfigurationSetName = aws.String(cfgSetName3)
 	}
 
 	// perform action

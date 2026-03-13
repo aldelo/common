@@ -623,16 +623,16 @@ func (c *CircuitBreaker) StopStreamHttpServer() {
 		return
 	}
 
-	if c.streamHandler != nil {
-		c.streamHandler.Stop()
-		c.streamHandler = nil
-	}
-
 	if c.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		c.httpServer.Shutdown(ctx)
 		c.httpServer = nil
+	}
+
+	if c.streamHandler != nil {
+		c.streamHandler.Stop()
+		c.streamHandler = nil
 	}
 }
 

@@ -199,7 +199,7 @@ type SQLServer struct {
 	db *sqlx.DB
 	tx *sqlx.Tx
 
-	mu   sync.Mutex
+	mu   sync.RWMutex
 	txMu sync.RWMutex
 }
 
@@ -350,6 +350,13 @@ func (svr *SQLServer) Open(useADOConnectString ...bool) error {
 		return errors.New("SQLServer Open Failed: SQLServer receiver is nil")
 	}
 
+	svr.mu.Lock()
+	if svr.db != nil {
+		svr.mu.Unlock()
+		return errors.New("Open Failed: Already Connected, Close First")
+	}
+	svr.mu.Unlock()
+
 	//
 	// get parameter value,
 	// default is expected
@@ -433,7 +440,10 @@ func (svr *SQLServer) Close() error {
 	svr.mu.Lock()
 	db := svr.db
 	svr.db = nil
-	svr.tx = nil
+	if svr.tx != nil {
+		_ = svr.tx.Rollback()
+		svr.tx = nil
+	}
 	defer svr.mu.Unlock()
 
 	if db != nil {
@@ -451,9 +461,9 @@ func (svr *SQLServer) Ping() error {
 		return errors.New("SQLServer Ping Failed: SQLServer receiver is nil")
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return errors.New("SQL Server Not Connected")
@@ -531,6 +541,9 @@ func (svr *SQLServer) Commit() error {
 
 	// perform tx commit
 	if err := tx.Commit(); err != nil {
+		svr.mu.Lock()
+		svr.tx = nil
+		svr.mu.Unlock()
 		return err
 	}
 
@@ -605,10 +618,10 @@ func (svr *SQLServer) GetStructSlice(dest interface{}, query string, args ...int
 		return false, err
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return false, errors.New("SQL Server Not Connected")
@@ -661,10 +674,10 @@ func (svr *SQLServer) GetStruct(dest interface{}, query string, args ...interfac
 		return false, err
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return false, errors.New("SQL Server Not Connected")
@@ -728,10 +741,10 @@ func (svr *SQLServer) GetRowsByOrdinalParams(query string, args ...interface{}) 
 		return nil, err
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return nil, errors.New("SQL Server Not Connected")
@@ -785,10 +798,10 @@ func (svr *SQLServer) GetRowsByNamedMapParam(query string, args map[string]inter
 		return nil, err
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return nil, errors.New("SQL Server Not Connected")
@@ -854,10 +867,10 @@ func (svr *SQLServer) GetRowsByStructParam(query string, args interface{}) (*sql
 		return nil, err
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return nil, errors.New("SQL Server Not Connected")
@@ -1019,10 +1032,10 @@ func (svr *SQLServer) GetSingleRow(query string, args ...interface{}) (*sqlx.Row
 		return nil, err
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return nil, errors.New("SQL Server Not Connected")
@@ -1221,10 +1234,10 @@ func (svr *SQLServer) GetScalarString(query string, args ...interface{}) (retVal
 		return "", false, err
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return "", false, errors.New("SQL Server Not Connected")
@@ -1286,10 +1299,10 @@ func (svr *SQLServer) GetScalarNullString(query string, args ...interface{}) (re
 		return sql.NullString{}, false, err
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return sql.NullString{}, false, errors.New("SQL Server Not Connected")
@@ -1372,10 +1385,10 @@ func (svr *SQLServer) ExecByOrdinalParams(query string, args ...interface{}) SQL
 		query += "SELECT RowsAffected=@@ROWCOUNT;"
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByOrdinalParams() Error: Database Connection is Nil")}
@@ -1485,10 +1498,10 @@ func (svr *SQLServer) ExecByNamedMapParam(query string, args map[string]interfac
 		query += "SELECT RowsAffected=@@ROWCOUNT;"
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByNamedMapParam() Error: Database Connection is Nil")}
@@ -1593,10 +1606,10 @@ func (svr *SQLServer) ExecByStructParam(query string, args interface{}) SQLResul
 		query += "SELECT RowsAffected=@@ROWCOUNT;"
 	}
 
-	svr.mu.Lock()
+	svr.mu.RLock()
 	db := svr.db
 	tx := svr.tx
-	svr.mu.Unlock()
+	svr.mu.RUnlock()
 
 	if db == nil {
 		return SQLResult{RowsAffected: 0, NewlyInsertedID: 0, Err: errors.New("ExecByStructParam() Error: Database Connection is Nil")}

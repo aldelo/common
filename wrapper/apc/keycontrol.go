@@ -81,12 +81,18 @@ type PaymentCryptography struct {
 // ================================================================================================================
 
 func (k *PaymentCryptography) getClient() *pycrypto.PaymentCryptography {
+	if k == nil {
+		return nil
+	}
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	return k.pycClient
 }
 
 func (k *PaymentCryptography) getParentSegment() *xray.XRayParentSegment {
+	if k == nil {
+		return nil
+	}
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	return k._parentSegment
@@ -114,8 +120,13 @@ func (k *PaymentCryptography) Connect(parentSegment ...*xray.XRayParentSegment) 
 
 		seg := xray.NewSegment("PaymentCryptography-Connect", k.getParentSegment())
 		defer seg.Close()
+
+		k.mu.RLock()
+		awsRegion := k.AwsRegion
+		k.mu.RUnlock()
+
 		defer func() {
-			_ = seg.Seg.AddMetadata("KDS-AWS-Region", k.AwsRegion)
+			_ = seg.Seg.AddMetadata("KDS-AWS-Region", awsRegion)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)
@@ -812,7 +823,7 @@ func (k *PaymentCryptography) ListAlias() (output *pycrypto.ListAliasesOutput, e
 	}
 
 	// generate alias
-	var aliasInput *pycrypto.ListAliasesInput
+	aliasInput := &pycrypto.ListAliasesInput{}
 	var aliasOutput *pycrypto.ListAliasesOutput
 	var e error
 
@@ -833,14 +844,12 @@ func (k *PaymentCryptography) ListAliasNextPage(nextTK string) (output *pycrypto
 	}
 
 	// generate alias
-	var aliasInput *pycrypto.ListAliasesInput
+	aliasInput := &pycrypto.ListAliasesInput{}
 	var aliasOutput *pycrypto.ListAliasesOutput
 	var e error
 
 	if nextTK != "" {
-		aliasInput = &pycrypto.ListAliasesInput{
-			NextToken: aws.String(nextTK),
-		}
+		aliasInput.NextToken = aws.String(nextTK)
 	}
 
 	aliasOutput, e = client.ListAliases(aliasInput)
@@ -920,7 +929,7 @@ func (k *PaymentCryptography) ListKeys() (output *pycrypto.ListKeysOutput, err e
 	}
 
 	// generate alias
-	var aliasInput *pycrypto.ListKeysInput
+	aliasInput := &pycrypto.ListKeysInput{}
 	var aliasOutput *pycrypto.ListKeysOutput
 	var e error
 

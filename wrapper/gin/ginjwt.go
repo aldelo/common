@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"reflect"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -367,8 +366,8 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 				loginRequestData = &UserLogin{}
 			} else {
 				// clone per request to avoid shared mutations
-				if t := util.ReflectGetType(loginRequestData); t != nil && t.Kind() == reflect.Ptr {
-					loginRequestData = util.ReflectObjectNewPtr(t.Elem())
+				if t := util.ReflectGetType(loginRequestData); t != nil {
+					loginRequestData = util.ReflectObjectNewPtr(t)
 				}
 			}
 

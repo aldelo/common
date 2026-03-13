@@ -171,8 +171,11 @@ func StringSliceExtractUnique(strSlice []string) (result []string) {
 	} else if len(strSlice) <= 1 {
 		return strSlice
 	} else {
+		seen := make(map[string]struct{}, len(strSlice))
 		for _, v := range strSlice {
-			if !StringSliceContains(&result, v) {
+			lower := strings.ToLower(v)
+			if _, exists := seen[lower]; !exists {
+				seen[lower] = struct{}{}
 				result = append(result, v)
 			}
 		}

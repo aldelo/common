@@ -318,6 +318,13 @@ func ReflectCall(o reflect.Value, methodName string, paramValue ...interface{}) 
 			}
 		}
 
+		defer func() {
+			if r := recover(); r != nil {
+				resultSlice = nil
+				notFound = true
+			}
+		}()
+
 		resultSlice = method.Call(params)
 
 		if len(resultSlice) == 0 {

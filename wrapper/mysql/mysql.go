@@ -246,6 +246,9 @@ func (t *MySqlTransaction) Commit() (err error) {
 
 	if t._xrayTxSeg != nil {
 		defer func() {
+			if t._xrayTxSeg == nil {
+				return
+			}
 			if err != nil {
 				_ = t._xrayTxSeg.Seg.AddError(err)
 			}
@@ -270,12 +273,18 @@ func (t *MySqlTransaction) Commit() (err error) {
 	}
 
 	if err = t.parent.Ping(); err != nil {
-		// ping failed
+		// ping failed - close xray segment
 		if t._xrayTxSeg != nil {
 			_ = t._xrayTxSeg.Seg.AddError(err)
 			t._xrayTxSeg.Close()
 			t._xrayTxSeg = nil
 		}
+		// mark closed and cleanup
+		t.closed = true
+		_ = t.tx.Rollback()
+		t.parent.mux.Lock()
+		delete(t.parent.txMap, t.id)
+		t.parent.mux.Unlock()
 		return err
 	}
 
@@ -337,6 +346,9 @@ func (t *MySqlTransaction) Rollback() (err error) {
 
 	if t._xrayTxSeg != nil {
 		defer func() {
+			if t._xrayTxSeg == nil {
+				return
+			}
 			if err != nil {
 				_ = t._xrayTxSeg.Seg.AddError(err)
 			}
@@ -359,12 +371,18 @@ func (t *MySqlTransaction) Rollback() (err error) {
 	}
 
 	if err = t.parent.Ping(); err != nil {
-		// ping failed
+		// ping failed - close xray segment
 		if t._xrayTxSeg != nil {
 			_ = t._xrayTxSeg.Seg.AddError(err)
 			t._xrayTxSeg.Close()
 			t._xrayTxSeg = nil
 		}
+		// mark closed and cleanup
+		t.closed = true
+		_ = t.tx.Rollback()
+		t.parent.mux.Lock()
+		delete(t.parent.txMap, t.id)
+		t.parent.mux.Unlock()
 		return err
 	}
 
@@ -2613,7 +2631,7 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 	// is new insertion?
 	var isInsert bool
 
-	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
+	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(actionQuery)), "INSERT") {
 		isInsert = true
 	} else {
 		isInsert = false
@@ -2702,7 +2720,7 @@ func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...inter
 	// is new insertion?
 	var isInsert bool
 
-	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
+	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(actionQuery)), "INSERT") {
 		isInsert = true
 	} else {
 		isInsert = false
@@ -2802,7 +2820,7 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 	// is new insertion?
 	var isInsert bool
 
-	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
+	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(actionQuery)), "INSERT") {
 		isInsert = true
 	} else {
 		isInsert = false
@@ -2901,7 +2919,7 @@ func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[stri
 	// is new insertion?
 	var isInsert bool
 
-	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
+	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(actionQuery)), "INSERT") {
 		isInsert = true
 	} else {
 		isInsert = false
@@ -2997,7 +3015,7 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 	// is new insertion?
 	var isInsert bool
 
-	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
+	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(actionQuery)), "INSERT") {
 		isInsert = true
 	} else {
 		isInsert = false
@@ -3091,7 +3109,7 @@ func (t *MySqlTransaction) ExecByStructParam(actionQuery string, args interface{
 	// is new insertion?
 	var isInsert bool
 
-	if strings.ToUpper(util.Left(actionQuery, 6)) == "INSERT" {
+	if strings.HasPrefix(strings.TrimSpace(strings.ToUpper(actionQuery)), "INSERT") {
 		isInsert = true
 	} else {
 		isInsert = false

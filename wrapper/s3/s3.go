@@ -133,14 +133,23 @@ func (s *S3) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 
 	if xray.XRayServiceOn() {
 		if len(parentSegment) > 0 {
+			s.s3Mutex.Lock()
 			s._parentSegment = parentSegment[0]
+			s.s3Mutex.Unlock()
 		}
 
-		seg := xray.NewSegment("S3-Connect", s._parentSegment)
+		// snapshot fields under RLock for use in deferred closure
+		s.s3Mutex.RLock()
+		awsRegionSnap := s.AwsRegion
+		bucketNameSnap := s.BucketName
+		parentSeg := s.getParentSegment()
+		s.s3Mutex.RUnlock()
+
+		seg := xray.NewSegment("S3-Connect", parentSeg)
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("S3-AWS-Region", s.AwsRegion)
-			_ = seg.Seg.AddMetadata("S3-Bucket-Name", s.BucketName)
+			_ = seg.Seg.AddMetadata("S3-AWS-Region", awsRegionSnap)
+			_ = seg.Seg.AddMetadata("S3-Bucket-Name", bucketNameSnap)
 
 			if err != nil {
 				_ = seg.Seg.AddError(err)
@@ -247,11 +256,23 @@ func (s *S3) Disconnect() {
 	s.sess = nil
 }
 
+// getParentSegment reads _parentSegment under RLock for thread safety
+func (s *S3) getParentSegment() *xray.XRayParentSegment {
+	if s == nil {
+		return nil
+	}
+	s.s3Mutex.RLock()
+	defer s.s3Mutex.RUnlock()
+	return s._parentSegment
+}
+
 // UpdateParentSegment updates this struct's xray parent segment, if no parent segment, set nil
 func (s *S3) UpdateParentSegment(parentSegment *xray.XRayParentSegment) {
 	if s == nil {
 		return
 	}
+	s.s3Mutex.Lock()
+	defer s.s3Mutex.Unlock()
 	s._parentSegment = parentSegment
 }
 
@@ -276,7 +297,7 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-UploadFile", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-UploadFile", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -408,7 +429,7 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-Upload", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-Upload", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -534,7 +555,7 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-DownloadFile", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-DownloadFile", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -670,7 +691,7 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-Download", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-Download", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -784,7 +805,7 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-Delete", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-Delete", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -889,7 +910,7 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-DeleteBatch", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-DeleteBatch", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx
@@ -1020,7 +1041,7 @@ func (s *S3) ListFileKeys(timeOutDuration *time.Duration, nextToken string, maxR
 	segCtx := context.Background()
 	segCtxSet := false
 
-	seg := xray.NewSegmentNullable("S3-ListFileKeys", s._parentSegment)
+	seg := xray.NewSegmentNullable("S3-ListFileKeys", s.getParentSegment())
 
 	if seg != nil {
 		segCtx = seg.Ctx

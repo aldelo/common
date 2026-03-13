@@ -110,7 +110,9 @@ func (r *Route53) Connect(parentSegment ...*xray.XRayParentSegment) (err error) 
 
 		if err == nil {
 			r.r53ClientMutex.RLock()
-			awsxray.AWS(r.r53Client.Client)
+			if r.r53Client != nil {
+				awsxray.AWS(r.r53Client.Client)
+			}
 			r.r53ClientMutex.RUnlock()
 		}
 

@@ -60,6 +60,10 @@ func sanitizeLogMessage(msg string) string { // centralized newline stripping
 // ...-internal-err.log = internal zap errors logged, this file may be created but may contain no data as there may not be any internal zap errors
 // log output to file is 'appname.log'
 func (z *ZapLog) Init() error {
+	if z == nil {
+		return errors.New("ZapLog is nil")
+	}
+
 	// validate
 	if util.LenTrim(z.AppName) <= 0 {
 		return errors.New("Init Logger Failed: " + "App Name is Required")

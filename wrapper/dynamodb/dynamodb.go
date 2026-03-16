@@ -3239,6 +3239,24 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 	expressionAttributeValues = cloneExpressionAttributeValues(expressionAttributeValues)
 	expressionAttributeNames = cloneExpressionAttributeNames(expressionAttributeNames)
 
+	// Strip unused ExpressionAttributeValues before calling DynamoDB.
+	// DynamoDB rejects values not referenced in UpdateExpression or ConditionExpression.
+	// This is the lowest-level defense — catches all callers regardless of code path.
+	if expressionAttributeValues != nil {
+		allExprs := updateExpression
+		if util.LenTrim(conditionExpression) > 0 {
+			allExprs += " " + conditionExpression
+		}
+		for k := range expressionAttributeValues {
+			if !containsExactToken(allExprs, k) {
+				delete(expressionAttributeValues, k)
+			}
+		}
+		if len(expressionAttributeValues) == 0 {
+			expressionAttributeValues = nil
+		}
+	}
+
 	trace.Capture("UpdateItem", func() error {
 		// define key
 		m := make(map[string]*dynamodb.AttributeValue)
@@ -3361,6 +3379,24 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 
 	expressionAttributeValues = cloneExpressionAttributeValues(expressionAttributeValues)
 	expressionAttributeNames = cloneExpressionAttributeNames(expressionAttributeNames)
+
+	// Strip unused ExpressionAttributeValues before calling DynamoDB.
+	// DynamoDB rejects values not referenced in UpdateExpression or ConditionExpression.
+	// This is the lowest-level defense — catches all callers regardless of code path.
+	if expressionAttributeValues != nil {
+		allExprs := updateExpression
+		if util.LenTrim(conditionExpression) > 0 {
+			allExprs += " " + conditionExpression
+		}
+		for k := range expressionAttributeValues {
+			if !containsExactToken(allExprs, k) {
+				delete(expressionAttributeValues, k)
+			}
+		}
+		if len(expressionAttributeValues) == 0 {
+			expressionAttributeValues = nil
+		}
+	}
 
 	// define key
 	m := make(map[string]*dynamodb.AttributeValue)

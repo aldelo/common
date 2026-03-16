@@ -45,6 +45,29 @@ func isWordChar(c byte) bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
 }
 
+// containsExactToken checks whether token appears in expr as a complete DynamoDB value placeholder,
+// not merely as a substring of a longer placeholder. For example, ":UpIP" must NOT match inside
+// ":UpIPAddress". A token boundary is any character that is not a word char (letter, digit, underscore).
+func containsExactToken(expr string, token string) bool {
+	if len(token) == 0 {
+		return false
+	}
+	start := 0
+	for {
+		idx := strings.Index(expr[start:], token)
+		if idx < 0 {
+			return false
+		}
+		end := start + idx + len(token)
+		// check that the character after the match is NOT a word char (or is end of string)
+		if end >= len(expr) || !isWordChar(expr[end]) {
+			return true
+		}
+		// move past this false match
+		start = start + idx + 1
+	}
+}
+
 // splitUpdateSections returns ordered action sections (e.g., SET, REMOVE, ADD, DELETE) from an update expression.
 // Each section body includes the action keyword itself to preserve DynamoDB syntax.
 // This uses a tokenizer instead of regex to avoid matching keywords inside value placeholders
@@ -2191,12 +2214,14 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	// DynamoDB rejects ExpressionAttributeValues that contain keys not referenced in any expression
 	// (UpdateExpression or ConditionExpression). The caller may provide extra attribute values
 	// (e.g. audit fields) that aren't in the expression; strip them to avoid InvalidParameter errors.
+	// NOTE: Must use exact token matching, not substring — ":UpIP" is a substring of ":UpIPAddress"
+	// but they are different DynamoDB value placeholders.
 	allExprs := finalUpdateExpr
 	if util.LenTrim(conditionExpression) > 0 {
 		allExprs += " " + conditionExpression
 	}
 	for k := range expressionAttributeValues {
-		if !strings.Contains(allExprs, k) {
+		if !containsExactToken(allExprs, k) {
 			delete(expressionAttributeValues, k)
 		}
 	}

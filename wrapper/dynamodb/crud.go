@@ -68,6 +68,25 @@ func containsExactToken(expr string, token string) bool {
 	}
 }
 
+// exprWithoutRemove returns the update expression with REMOVE clause bodies excluded.
+// DynamoDB's REMOVE clause only takes attribute paths — it does NOT consume value placeholders (:name).
+// When checking which :value placeholders are actually used, we must exclude REMOVE bodies
+// to avoid false positives (e.g., a malformed "REMOVE UpUTC=:UpUTC" would make :UpUTC appear "used"
+// in the string, but DynamoDB doesn't treat it as a value reference).
+func exprWithoutRemove(expr string) string {
+	sections := splitUpdateSections(expr)
+	if len(sections) == 0 {
+		return expr
+	}
+	var parts []string
+	for _, s := range sections {
+		if s.Action != "REMOVE" {
+			parts = append(parts, s.Body)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 // splitUpdateSections returns ordered action sections (e.g., SET, REMOVE, ADD, DELETE) from an update expression.
 // Each section body includes the action keyword itself to preserve DynamoDB syntax.
 // This uses a tokenizer instead of regex to avoid matching keywords inside value placeholders
@@ -2214,9 +2233,9 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	// DynamoDB rejects ExpressionAttributeValues that contain keys not referenced in any expression
 	// (UpdateExpression or ConditionExpression). The caller may provide extra attribute values
 	// (e.g. audit fields) that aren't in the expression; strip them to avoid InvalidParameter errors.
-	// NOTE: Must use exact token matching, not substring — ":UpIP" is a substring of ":UpIPAddress"
-	// but they are different DynamoDB value placeholders.
-	allExprs := finalUpdateExpr
+	// NOTE: REMOVE clauses do NOT consume value placeholders — exclude them from the check.
+	// NOTE: Must use exact token matching, not substring — ":UpIP" is a substring of ":UpIPAddress".
+	allExprs := exprWithoutRemove(finalUpdateExpr)
 	if util.LenTrim(conditionExpression) > 0 {
 		allExprs += " " + conditionExpression
 	}

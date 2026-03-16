@@ -3241,9 +3241,10 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 
 	// Strip unused ExpressionAttributeValues before calling DynamoDB.
 	// DynamoDB rejects values not referenced in UpdateExpression or ConditionExpression.
-	// This is the lowest-level defense — catches all callers regardless of code path.
+	// IMPORTANT: REMOVE clauses do NOT consume value placeholders (:name) — only SET, ADD, DELETE do.
+	// So we must exclude the REMOVE clause body when checking for value references.
 	if expressionAttributeValues != nil {
-		allExprs := updateExpression
+		allExprs := exprWithoutRemove(updateExpression)
 		if util.LenTrim(conditionExpression) > 0 {
 			allExprs += " " + conditionExpression
 		}
@@ -3382,9 +3383,10 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 
 	// Strip unused ExpressionAttributeValues before calling DynamoDB.
 	// DynamoDB rejects values not referenced in UpdateExpression or ConditionExpression.
-	// This is the lowest-level defense — catches all callers regardless of code path.
+	// IMPORTANT: REMOVE clauses do NOT consume value placeholders (:name) — only SET, ADD, DELETE do.
+	// So we must exclude the REMOVE clause body when checking for value references.
 	if expressionAttributeValues != nil {
-		allExprs := updateExpression
+		allExprs := exprWithoutRemove(updateExpression)
 		if util.LenTrim(conditionExpression) > 0 {
 			allExprs += " " + conditionExpression
 		}

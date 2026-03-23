@@ -160,7 +160,7 @@ func (s *Cognito) connectInternal(ctx context.Context) error {
 	}
 
 	// establish aws session connection with region and http client
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(s.AwsRegion.String()))
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(s.AwsRegion.Key()))
 	if err != nil {
 		// aws session error
 		return errors.New("Connect to Cognito Failed: " + err.Error())

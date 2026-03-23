@@ -164,7 +164,7 @@ func (s *IoT) connectInternal(ctx context.Context) error {
 	}
 
 	// establish aws session connection
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(region.String()))
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(region.Key()))
 	if err != nil {
 		// aws session error
 		return errors.New("Connect to IoT Failed: (AWS Session Error) " + err.Error())

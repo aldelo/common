@@ -221,8 +221,7 @@ func (s *Textract) connectInternal(ctx context.Context) error {
 	}
 
 	// establish aws session connection
-	regionName := region.String()
-	if cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(regionName)); err != nil {
+	if cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(region.Key())); err != nil {
 		// aws session error
 		return errors.New("Connect to Textract Failed: (AWS Session Error) " + err.Error())
 	} else {

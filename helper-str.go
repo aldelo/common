@@ -586,8 +586,12 @@ func stripBase64Whitespace(data string) string {
 // Base64StdDecode will decode given data from base 64 standard encoded string
 func Base64StdDecode(data string) (string, error) {
 	clean := stripBase64Whitespace(data)
-	if len(clean) == 0 { // reject empty input instead of silently returning empty
-		return "", fmt.Errorf("base64 data is required")
+	if len(clean) == 0 {
+		// v1.6.7 contract preserved: empty input returns empty string without error.
+		// base64.StdEncoding.DecodeString("") returns ([]byte{}, nil), so this matches.
+		// Rule #10 (workspace): preserve observable contracts across minor-version bumps.
+		// Mirrors the Base64UrlDecode fix shipped in 43e842c.
+		return "", nil
 	}
 
 	padded := clean

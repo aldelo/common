@@ -208,3 +208,33 @@ func TestNextFixedLength_ZeroBlockSizeIsSafe(t *testing.T) {
 		t.Fatalf("NextFixedLength with blockSize=-1 must return 0 (safety), got %d", got)
 	}
 }
+
+// -----------------------------------------------------------------------
+// Base64StdDecode — empty input must return ("", nil), not error. (P1-1)
+// Mirrors the Base64UrlDecode fix already shipped in v1.7.8 (43e842c).
+// v1.6.7 was a thin wrapper over base64.StdEncoding.DecodeString which
+// returns ([]byte{}, nil) for empty input — the observable contract is
+// ("", nil). HEAD rejects empty input with an error, which breaks any
+// decode pipeline that tolerates optional/empty fields.
+// -----------------------------------------------------------------------
+
+func TestBase64StdDecode_EmptyInput_ReturnsEmptyNilError(t *testing.T) {
+	got, err := Base64StdDecode("")
+	if err != nil {
+		t.Fatalf("Base64StdDecode(\"\") returned error %v, want nil (v1.6.7 contract)", err)
+	}
+	if got != "" {
+		t.Fatalf("Base64StdDecode(\"\") = %q, want \"\"", got)
+	}
+}
+
+func TestBase64StdDecode_WhitespaceOnly_ReturnsEmptyNilError(t *testing.T) {
+	// Whitespace-only input strips to empty — same contract as true empty.
+	got, err := Base64StdDecode("   \n\t  ")
+	if err != nil {
+		t.Fatalf("Base64StdDecode(whitespace) returned error %v, want nil", err)
+	}
+	if got != "" {
+		t.Fatalf("Base64StdDecode(whitespace) = %q, want \"\"", got)
+	}
+}

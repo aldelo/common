@@ -68,6 +68,44 @@ regression test in `helper-str-contract_test.go`.
 - **P3-2** — Dropped impossible and tautological nil guards (8 sites in
   `wrapper/dynamodb/crud.go` and helpers).
 
+### Fixed — DynamoDB data integrity (release-readiness remediation)
+
+Findings from `_src/docs/repos/common/reviews/deep-review-2026-04-11-release-readiness.md`,
+section "P0 — ship-gate defects". These are widening fixes (accept more input,
+retry more residuals) so no downstream behavior is narrowed and rule #10 holds.
+
+- **DDB-P0-1** — `wrapper/dynamodb`: raised `TransactWriteItems` /
+  `TransactGetItems` item limit 25 → 100 to match the AWS service limit (moved
+  from 25 to 100 on 2022-09-27). Introduced exported package constants
+  `MaxTransactItems = 100` and `MaxBatchWriteItems = 25` so the two limits are
+  named, impossible to conflate, and contract-pinned by tests. `dynamodb.go`
+  validators and `crud.go` chunkers for `TransactionWriteItemsWithRetry`,
+  `TransactionGetItemsWithRetry`, `TransactionSet`, `Update` (transaction
+  branch), and `Delete` (chunker) all now reference `MaxTransactItems`.
+  `BatchWriteItemsWithRetry` / `BatchDeleteItemsWithRetry` intentionally stay
+  at 25 because `BatchWriteItem`'s AWS limit is unchanged — the new
+  `TestTransactAndBatchLimits_AreDistinct` contract-pin test guards against a
+  future naive "25 → 100 everywhere" refactor. Widening-only: any
+  previously-accepted call with ≤ 25 items remains accepted.
+- **DDB-P0-2** — `wrapper/dynamodb/BatchWriteItemsWithRetry` now actually
+  retries `BatchWriteItemOutput.UnprocessedItems`. Previous behavior: a
+  successful AWS response with a non-empty `UnprocessedItems` map (items
+  deferred by DynamoDB due to throttling / provisioned-throughput-exceeded)
+  was returned to the caller unretried, silently dropping those items. New
+  behavior: after the initial call succeeds, the residual items are retried
+  via `do_BatchWriteItem` in a local exponential-backoff loop
+  (100 ms → 200 ms → 400 ms → 800 ms → 1.6 s, capped at 2 s) up to the
+  caller-supplied `maxRetries` budget. A hard error from the retry path
+  returns the initial call's successCount plus typed residual items rather
+  than clobbering the successful initial signal. Two new pure helper
+  functions — `unprocessedItemsToAwsRequestItems` and
+  `awsRequestItemsToUnprocessedItems` — handle the typed ↔ AWS-SDK-shape
+  conversion and are unit-tested without any AWS connection. Minor
+  observability loss: the retry path calls the raw SDK bypassing
+  `batchWriteItemsWithTrace`, so xray segments cover only the initial call;
+  documented in the helper's godoc. AWS reference:
+  [BatchWriteItem error-handling guidance](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html#API_BatchWriteItem_Errors).
+
 ### Changed — documentation only (observable contracts unchanged)
 
 - **P0-12** — `Float64ToCurrencyString` godoc rewritten. The v1.7.8 docstring
@@ -95,6 +133,12 @@ regression test in `helper-str-contract_test.go`.
 - **P1-4** — Added `wrapper/xray` end-to-end panic-path test with
   `AWS_XRAY_SDK_DISABLED=TRUE`.
 - Added `helper-conv_test.go` with float-drift hazard tests (P0-12, above).
+- Added `wrapper/dynamodb/dynamodb_contract_test.go` — first test file in the
+  package. Pins `MaxTransactItems = 100` and `MaxBatchWriteItems = 25` and
+  guards that they remain distinct (DDB-P0-1), plus unit tests for the new
+  `unprocessedItemsToAwsRequestItems` / `awsRequestItemsToUnprocessedItems`
+  pure helpers covering empty input, put-only / delete-only / mixed residuals,
+  nil-skip behavior, and typed↔AWS round-trip symmetry (DDB-P0-2).
 
 ### Deferred to v2.0.0 (coordinated breaking-change release)
 

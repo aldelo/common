@@ -7161,7 +7161,134 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 	return successCount, unprocessedItems, err
 }
 
-// BatchWriteItemsWithRetry handles dynamodb retries in case action temporarily fails
+// unprocessedItemsToAwsRequestItems converts the typed UnprocessedItemsAndKeys
+// shape (returned by BatchWriteItems to consumers) back into the raw AWS SDK
+// RequestItems shape expected by BatchWriteItemInput. Used by
+// BatchWriteItemsWithRetry's UnprocessedItems-retry loop (P0-2).
+//
+// Returns the converted map plus a best-effort count of the request items that
+// were successfully reconstructed (a malformed DeleteKey that fails remarshal
+// is silently skipped — the aggregate count lets the caller tell whether the
+// conversion was lossy).
+//
+// Pure function: no receiver, no AWS calls, no side effects. Unit-testable in
+// dynamodb_contract_test.go.
+func unprocessedItemsToAwsRequestItems(unprocessed []*DynamoDBUnprocessedItemsAndKeys) (map[string][]*dynamodb.WriteRequest, int) {
+	if len(unprocessed) == 0 {
+		return nil, 0
+	}
+
+	requestItems := make(map[string][]*dynamodb.WriteRequest)
+	count := 0
+
+	for _, u := range unprocessed {
+		if u == nil || util.LenTrim(u.TableName) == 0 {
+			continue
+		}
+
+		for _, pi := range u.PutItems {
+			if pi == nil {
+				continue
+			}
+			requestItems[u.TableName] = append(requestItems[u.TableName], &dynamodb.WriteRequest{
+				PutRequest: &dynamodb.PutRequest{Item: pi},
+			})
+			count++
+		}
+
+		for _, dk := range u.DeleteKeys {
+			if dk == nil {
+				continue
+			}
+			m, e := dynamodbattribute.MarshalMap(dk)
+			if e != nil || m == nil {
+				// skip malformed delete key — caller sees residual count vs input count mismatch
+				continue
+			}
+			requestItems[u.TableName] = append(requestItems[u.TableName], &dynamodb.WriteRequest{
+				DeleteRequest: &dynamodb.DeleteRequest{Key: m},
+			})
+			count++
+		}
+	}
+
+	if len(requestItems) == 0 {
+		return nil, 0
+	}
+	return requestItems, count
+}
+
+// awsRequestItemsToUnprocessedItems converts the raw AWS SDK RequestItems shape
+// (as returned in BatchWriteItemOutput.UnprocessedItems) back into the typed
+// DynamoDBUnprocessedItemsAndKeys shape exposed to consumers.
+//
+// Returns the converted slice plus the total number of write requests it
+// contained (so callers can compute consumed = inputCount - residualCount in
+// one pass without re-walking the map).
+//
+// Pure function: no receiver, no AWS calls, no side effects. Unit-testable in
+// dynamodb_contract_test.go.
+func awsRequestItemsToUnprocessedItems(awsUnprocessed map[string][]*dynamodb.WriteRequest) ([]*DynamoDBUnprocessedItemsAndKeys, int) {
+	if len(awsUnprocessed) == 0 {
+		return nil, 0
+	}
+
+	var out []*DynamoDBUnprocessedItemsAndKeys
+	count := 0
+
+	for tblName, reqs := range awsUnprocessed {
+		if util.LenTrim(tblName) == 0 || len(reqs) == 0 {
+			continue
+		}
+		residual := &DynamoDBUnprocessedItemsAndKeys{TableName: tblName}
+		for _, r := range reqs {
+			if r == nil {
+				continue
+			}
+			if r.PutRequest != nil && r.PutRequest.Item != nil {
+				residual.PutItems = append(residual.PutItems, r.PutRequest.Item)
+				count++
+			}
+			if r.DeleteRequest != nil && r.DeleteRequest.Key != nil {
+				var o DynamoDBTableKeys
+				if e := dynamodbattribute.UnmarshalMap(r.DeleteRequest.Key, &o); e == nil {
+					residual.DeleteKeys = append(residual.DeleteKeys, &o)
+					count++
+				}
+			}
+		}
+		if len(residual.PutItems) > 0 || len(residual.DeleteKeys) > 0 {
+			out = append(out, residual)
+		}
+	}
+
+	return out, count
+}
+
+// BatchWriteItemsWithRetry handles dynamodb retries in case action temporarily fails.
+//
+// P0-2 (v1.7.9) — retries UnprocessedItems:
+// Prior to v1.7.9 this wrapper called [BatchWriteItems] exactly once and returned
+// whatever UnprocessedItems the response contained, silently surfacing them to
+// the caller without ever retrying them. Under DynamoDB throttling this caused
+// "phantom missing records" for consumers who trusted the "WithRetry" suffix to
+// mean "durable." v1.7.9 now follows the canonical AWS retry pattern: on a
+// successful call that left UnprocessedItems non-empty, it re-issues a
+// BatchWriteItem for JUST the unprocessed items with exponential backoff
+// (100ms → 200ms → 400ms → 800ms → 1.6s → 2s cap) until UnprocessedItems is
+// empty, the retry budget is exhausted, or a hard error is encountered. When
+// the budget is exhausted, the residual unprocessed items are still returned
+// to the caller so they can persist/reissue them out-of-band.
+//
+// The max retry count is shared between the two retry paths (hard-error retry
+// and UnprocessedItems retry) — a call that hits both will consume the budget
+// against whichever condition it encounters first, which matches the AWS SDK v2
+// retry semantics.
+//
+// AWS reference:
+//
+//	https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html
+//	https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ErrorHandling.html#Programming.Errors.BatchOperations
 func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 	putItemsSet []*DynamoDBTransactionWritePutItemsSet, deleteKeys []*DynamoDBTableKeys,
 	timeOutDuration *time.Duration) (successCount int, unprocessedItems []*DynamoDBUnprocessedItemsAndKeys, err *DynamoDBError) {
@@ -7232,10 +7359,88 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 				}
 			}
 		}
-	} else {
-		// no error
+	}
+
+	// P0-2: the initial call succeeded (err == nil) but DynamoDB may still have
+	// deferred some items via UnprocessedItems (typically due to
+	// ProvisionedThroughputExceeded). Retry just the deferred items with
+	// exponential backoff until empty, budget exhausted, or hard error.
+	if len(unprocessedItems) == 0 || maxRetries == 0 {
 		return successCount, unprocessedItems, nil
 	}
+
+	retryRequestItems, _ := unprocessedItemsToAwsRequestItems(unprocessedItems)
+	if len(retryRequestItems) == 0 {
+		// conversion produced nothing (all entries were nil/malformed) — return as-is
+		return successCount, unprocessedItems, nil
+	}
+
+	backoff := 100 * time.Millisecond
+	attempts := maxRetries
+	unprocessedItems = nil // rebuilt below if any items remain after the loop
+
+	for attempts > 0 && len(retryRequestItems) > 0 {
+		time.Sleep(backoff)
+
+		inputCount := 0
+		for _, reqs := range retryRequestItems {
+			inputCount += len(reqs)
+		}
+
+		retryParams := &dynamodb.BatchWriteItemInput{RequestItems: retryRequestItems}
+
+		var retryResult *dynamodb.BatchWriteItemOutput
+		var retryErr error
+
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		retryResult, retryErr = d.do_BatchWriteItem(retryParams, ctx)
+		cancel()
+
+		if retryErr != nil {
+			// Hard error on the retry path — stop retrying, return the residual as
+			// unprocessedItems so the caller can decide what to do. Do not clobber
+			// the overall return err — the INITIAL call succeeded, so the caller
+			// should see a partial-success signal, not a failure signal.
+			log.Printf("BatchWriteItemsWithRetry UnprocessedItems retry error (attempts remaining=%d): %s", attempts, retryErr.Error())
+			residual, _ := awsRequestItemsToUnprocessedItems(retryRequestItems)
+			unprocessedItems = residual
+			return successCount, unprocessedItems, nil
+		}
+
+		if retryResult == nil {
+			residual, _ := awsRequestItemsToUnprocessedItems(retryRequestItems)
+			unprocessedItems = residual
+			return successCount, unprocessedItems, nil
+		}
+
+		residualCount := 0
+		for _, reqs := range retryResult.UnprocessedItems {
+			residualCount += len(reqs)
+		}
+
+		// consumed = inputCount (sent) - residualCount (deferred again)
+		consumedThisPass := inputCount - residualCount
+		if consumedThisPass > 0 {
+			successCount += consumedThisPass
+		}
+
+		retryRequestItems = retryResult.UnprocessedItems
+		attempts--
+
+		// exponential backoff capped at 2s (matches AWS SDK v2 throttling defaults)
+		backoff *= 2
+		if backoff > 2*time.Second {
+			backoff = 2 * time.Second
+		}
+	}
+
+	// Rebuild typed residual for any items the retry budget could not clear.
+	if len(retryRequestItems) > 0 {
+		residual, _ := awsRequestItemsToUnprocessedItems(retryRequestItems)
+		unprocessedItems = residual
+	}
+
+	return successCount, unprocessedItems, nil
 }
 
 // =====================================================================================================================

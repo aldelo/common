@@ -268,8 +268,12 @@ func GenerateRandomChar() string {
 		printableRange = 94 // 126 - 33 + 1
 	)
 
+	// Explicit rune conversion silences the go-vet stringintconv warning
+	// without changing observable behavior — r is guaranteed in the
+	// printable-ASCII range [33,126] so string(rune(r)) is identical in
+	// output to the pre-fix string(r) call.
 	r := randomIntn(printableRange) + printableStart
-	return string(r)
+	return string(rune(r))
 }
 
 // GenerateNewUniqueInt32 will take in old value and return new unique value with randomized seed and negated

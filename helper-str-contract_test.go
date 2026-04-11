@@ -459,3 +459,24 @@ func TestParseKeyValue_NilPointerGuard_Preserved(t *testing.T) {
 		t.Fatal("ParseKeyValue with nil pointers returned nil, want error (safety guard must be preserved)")
 	}
 }
+
+// -----------------------------------------------------------------------
+// GenerateRandomChar — single printable ASCII byte [33,126]. (P1-10)
+//
+// P1-10 is primarily a go-vet stringintconv cleanup (string(int) →
+// string(rune(int))). These tests pin the observable contract: exactly
+// 1 byte, always within printable ASCII, stable across many draws.
+// -----------------------------------------------------------------------
+
+func TestGenerateRandomChar_OneByte_PrintableASCII(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		c := GenerateRandomChar()
+		if len(c) != 1 {
+			t.Fatalf("GenerateRandomChar() = %q (%d bytes), want 1 byte", c, len(c))
+		}
+		b := c[0]
+		if b < 33 || b > 126 {
+			t.Fatalf("GenerateRandomChar() = %q (byte=%d), want in printable ASCII [33,126]", c, b)
+		}
+	}
+}

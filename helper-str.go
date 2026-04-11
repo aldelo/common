@@ -257,11 +257,18 @@ func SplitString(source string, delimiter string, index int) string {
 
 // SliceStringToCSVString unboxes slice of string into comma separated string
 func SliceStringToCSVString(source []string, spaceAfterComma bool) string {
-	if len(source) == 0 { // fast path and avoids nil/empty loop
+	// v1.6.7 contract: plain comma-join with no RFC 4180 quoting.
+	// Elements that embed delimiters or quotes are emitted verbatim,
+	// matching legacy downstream parser expectations. Rule #10
+	// (workspace): preserve observable contracts across minor-version
+	// bumps — do NOT silently upgrade to RFC 4180. If RFC 4180 encoding
+	// is genuinely needed, add a new sibling function in a deliberate
+	// breaking release after all 36+ consumers are audited.
+	if len(source) == 0 {
 		return ""
 	}
 
-	var b strings.Builder // avoid LenTrim(output) sentinel; handle whitespace-only first entry safely
+	var b strings.Builder
 	for i, v := range source {
 		if i > 0 {
 			b.WriteString(",")
@@ -269,13 +276,7 @@ func SliceStringToCSVString(source []string, spaceAfterComma bool) string {
 				b.WriteString(" ")
 			}
 		}
-
-		field := v // ensure proper CSV quoting
-		if strings.IndexAny(field, ",\"\r\n") != -1 {
-			field = `"` + strings.ReplaceAll(field, `"`, `""`) + `"`
-		}
-
-		b.WriteString(field)
+		b.WriteString(v)
 	}
 
 	return b.String()

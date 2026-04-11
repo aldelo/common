@@ -291,3 +291,65 @@ func TestIsHexOnly_PositivePathStillWorks(t *testing.T) {
 		t.Fatal("IsHexOnly(\"xyz\") = true, want false")
 	}
 }
+
+// -----------------------------------------------------------------------
+// SliceStringToCSVString — no RFC 4180 quoting; dumb comma join. (P1-7)
+//
+// v1.6.7 contract: plain comma-join, zero escaping. If a field contained
+// a delimiter or quote character, it was emitted verbatim (ambiguous but
+// stable). HEAD silently switched to RFC 4180 quoting, producing
+// different output that breaks downstream parsers tuned to the old form.
+//
+// Restore v1.6.7 behavior. Per review, if RFC 4180 behavior is genuinely
+// wanted, introduce a sibling SliceStringToCSVStringRFC4180 as a
+// deliberate breaking add-on rather than silently upgrading the existing
+// function. This protects 36+ downstream consumers.
+// -----------------------------------------------------------------------
+
+func TestSliceStringToCSVString_NoQuoting_PlainConcat(t *testing.T) {
+	// Simple case — no delimiter collision. Must be identical in both
+	// v1.6.7 and HEAD, sanity check.
+	got := SliceStringToCSVString([]string{"a", "b", "c"}, false)
+	if got != "a,b,c" {
+		t.Fatalf("SliceStringToCSVString([a,b,c], false) = %q, want %q", got, "a,b,c")
+	}
+}
+
+func TestSliceStringToCSVString_ElementContainsComma_EmittedVerbatim(t *testing.T) {
+	// v1.6.7: ["a,b", "c"] → "a,b,c" (ambiguous but stable).
+	// HEAD pre-fix: ["a,b", "c"] → "\"a,b\",c" (RFC 4180).
+	// Restore the dumb-join contract.
+	got := SliceStringToCSVString([]string{"a,b", "c"}, false)
+	want := "a,b,c"
+	if got != want {
+		t.Fatalf("SliceStringToCSVString([\"a,b\", \"c\"]) = %q, want %q (v1.6.7 dumb-join contract)", got, want)
+	}
+}
+
+func TestSliceStringToCSVString_ElementContainsQuote_EmittedVerbatim(t *testing.T) {
+	// v1.6.7: ["a\"b", "c"] → `a"b,c`.
+	// HEAD pre-fix: wraps and doubles quotes → `"a""b",c`.
+	got := SliceStringToCSVString([]string{`a"b`, "c"}, false)
+	want := `a"b,c`
+	if got != want {
+		t.Fatalf("SliceStringToCSVString with embedded quote = %q, want %q", got, want)
+	}
+}
+
+func TestSliceStringToCSVString_SpaceAfterComma_Preserved(t *testing.T) {
+	got := SliceStringToCSVString([]string{"a", "b"}, true)
+	if got != "a, b" {
+		t.Fatalf("SliceStringToCSVString([a,b], true) = %q, want %q", got, "a, b")
+	}
+}
+
+func TestSliceStringToCSVString_EmptySlice_ReturnsEmpty(t *testing.T) {
+	got := SliceStringToCSVString(nil, false)
+	if got != "" {
+		t.Fatalf("SliceStringToCSVString(nil) = %q, want \"\"", got)
+	}
+	got = SliceStringToCSVString([]string{}, false)
+	if got != "" {
+		t.Fatalf("SliceStringToCSVString([]) = %q, want \"\"", got)
+	}
+}

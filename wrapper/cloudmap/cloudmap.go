@@ -2892,7 +2892,7 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 		HealthStatus:  aws.String(healthStatus),
 	}
 
-	if queryParameters != nil && len(queryParameters) > 0 {
+	if len(queryParameters) > 0 {
 		input.QueryParameters = aws.StringMap(queryParameters)
 	}
 

@@ -304,11 +304,11 @@ func (u *CrudUniqueModel) GetUpdatedUniqueFieldsFromExpressionAttributeValues(
 		return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 1) Crud Unique Model is Required")
 	}
 
-	if oldUniqueFields == nil || len(oldUniqueFields) == 0 {
+	if len(oldUniqueFields) == 0 {
 		return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 2) Old Unique Fields is Required")
 	}
 
-	if updateExpressionAttributeValues == nil || len(updateExpressionAttributeValues) == 0 {
+	if len(updateExpressionAttributeValues) == 0 {
 		return nil, nil, fmt.Errorf("Get Updated Unique Fields From Expression Attribute Values Failed: (Validater 3) Update Expression Attribute Values is Required")
 	}
 
@@ -873,7 +873,7 @@ func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBCondi
 	if uniqueFields, e := crudUniqueModel.GetUniqueFieldsFromCrudObject(dataPtr); e != nil {
 		return fmt.Errorf("Set To Data Store Failed: (Get Unique Fields From Crud Object) %s", e.Error())
 	} else {
-		if uniqueFields != nil && len(uniqueFields) > 0 {
+		if len(uniqueFields) > 0 {
 			//
 			// create slice string from uniqueFields map, and set into dataPtr's UniqueFields Slice String attribute if present
 			//
@@ -916,7 +916,7 @@ func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBCondi
 				if condExpr != nil {
 					putItemsSet.ConditionExpression = condExpr.ConditionExpression
 
-					if condExpr.ExpressionAttributeValues != nil && len(condExpr.ExpressionAttributeValues) > 0 {
+					if len(condExpr.ExpressionAttributeValues) > 0 {
 						putItemsSet.ExpressionAttributeValues = condExpr.ExpressionAttributeValues
 					}
 				} else {
@@ -1040,7 +1040,7 @@ func (c *Crud) prepareBatchSetResults(failedPutsMap map[string][]*PkSkValuePair,
 		return nil, nil
 	}
 
-	if failedPutsMap != nil && len(failedPutsMap) > 0 {
+	if len(failedPutsMap) > 0 {
 		for _, v := range failedPutsMap {
 			for _, vv := range v {
 				if vv != nil {
@@ -1051,7 +1051,7 @@ func (c *Crud) prepareBatchSetResults(failedPutsMap map[string][]*PkSkValuePair,
 		}
 	}
 
-	if failedDeletesMap != nil && len(failedDeletesMap) > 0 {
+	if len(failedDeletesMap) > 0 {
 		for _, v := range failedDeletesMap {
 			for _, vv := range v {
 				if vv != nil {
@@ -1119,7 +1119,7 @@ func (c *Crud) BatchSetEx(
 		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 2) Connection Not Established")
 	}
 
-	if putItemsSet != nil && len(putItemsSet) > 0 && deleteKeys != nil && len(deleteKeys) > 0 {
+	if len(putItemsSet) > 0 && len(deleteKeys) > 0 {
 		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 3) PutItemsSet and DeleteKeys Cannot Be Set At The Same Time")
 	}
 
@@ -1158,7 +1158,7 @@ func (c *Crud) BatchSetEx(
 		return 0, nil, nil, fmt.Errorf("BatchSetEx To Data Store Failed: (BatchWriteItems) %s", e.Error())
 	} else {
 		// success (may contain unprocessed)
-		if unprocessed != nil && len(unprocessed) > 0 {
+		if len(unprocessed) > 0 {
 			// failedPuts / failedDeletes are named returns — statically nil here,
 			// so initialize unconditionally.
 			failedPuts = make(map[string][]*PkSkValuePair)
@@ -1166,11 +1166,11 @@ func (c *Crud) BatchSetEx(
 
 			for _, perTable := range unprocessed {
 				if perTable != nil {
-					if perTable.PutItems != nil && len(perTable.PutItems) > 0 {
+					if len(perTable.PutItems) > 0 {
 						puts := make([]*PkSkValuePair, 0)
 
 						for _, v := range perTable.PutItems {
-							if v != nil && len(v) > 0 {
+							if len(v) > 0 {
 								pkAttr := v["PK"]
 								skAttr := v["SK"]
 
@@ -1192,7 +1192,7 @@ func (c *Crud) BatchSetEx(
 						failedPuts[perTable.TableName] = puts
 					}
 
-					if perTable.DeleteKeys != nil && len(perTable.DeleteKeys) > 0 {
+					if len(perTable.DeleteKeys) > 0 {
 						dels := make([]*PkSkValuePair, 0)
 
 						for _, v := range perTable.DeleteKeys {
@@ -1800,7 +1800,7 @@ func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpre
 		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (QueryPaged) %s", e.Error())
 	} else {
 		// query success
-		if pData != nil && len(pData) > 0 {
+		if len(pData) > 0 {
 			paginationData = make([]string, 1)
 
 			for _, v := range pData {
@@ -2008,10 +2008,10 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	// so the REMOVE path can use the updated indexes instead of stale ones from uniqueFieldsMap.
 	var setPathUpdatedFields map[string]*CrudUniqueFieldNameAndIndex
 
-	if util.LenTrim(setExpression) > 0 && uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
+	if util.LenTrim(setExpression) > 0 && len(uniqueFieldsMap) > 0 {
 		if updatedUniqueFields, newUniqueFields, ukErr := crudUniqueModel.GetUpdatedUniqueFieldsFromExpressionAttributeValues(uniqueFieldsMap, expressionAttributeValues); ukErr != nil {
 			return fmt.Errorf("Update To Data Store Failed: (GetUniqueFieldsFromExpressionAttributeValues) %s", ukErr.Error())
-		} else if updatedUniqueFields != nil && len(updatedUniqueFields) > 0 && newUniqueFields != nil && len(newUniqueFields.UniqueFields) > 0 {
+		} else if len(updatedUniqueFields) > 0 && newUniqueFields != nil && len(newUniqueFields.UniqueFields) > 0 {
 			doUpdateItemNonTransactional = false
 			setPathUpdatedFields = updatedUniqueFields
 
@@ -2092,7 +2092,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 			normalizedRemoveExpr = "REMOVE " + strings.Join(validParts, ", ")
 		}
 
-		if uniqueFieldsMap != nil && len(uniqueFieldsMap) > 0 {
+		if len(uniqueFieldsMap) > 0 {
 			removeBody := strings.TrimSpace(strings.TrimPrefix(normalizedRemoveExpr, "REMOVE"))
 			removeAttributes := strings.Split(removeBody, ",")
 
@@ -2337,7 +2337,7 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 	if oldUniqueFields, crudErr := crudUniqueModel.GetUniqueFieldsFromSource(_ddb, pkValue, skValue); crudErr != nil {
 		return fmt.Errorf("Delete From Data Store Failed: (GetUniqueFieldsFromSource) %s", crudErr.Error())
 	} else {
-		if oldUniqueFields != nil && len(oldUniqueFields) > 0 {
+		if len(oldUniqueFields) > 0 {
 			deleteKeys := make([]*DynamoDBTableKeys, 0)
 
 			for _, crudFieldAndIndex := range oldUniqueFields {
@@ -2586,11 +2586,11 @@ func (c *Crud) CreateTable(tableName string,
 		}
 	}
 
-	if lsi != nil && len(lsi) > 0 {
+	if len(lsi) > 0 {
 		input.LocalSecondaryIndexes = lsi
 	}
 
-	if gsi != nil && len(gsi) > 0 {
+	if len(gsi) > 0 {
 		input.GlobalSecondaryIndexes = gsi
 	}
 
@@ -2685,12 +2685,12 @@ func (c *Crud) UpdateTable(tableName string, rcu int64, wcu int64,
 		hasUpdates = true
 	}
 
-	if gsi != nil && len(gsi) > 0 {
+	if len(gsi) > 0 {
 		input.GlobalSecondaryIndexUpdates = gsi
 		hasUpdates = true
 	}
 
-	if attributes != nil && len(attributes) > 0 {
+	if len(attributes) > 0 {
 		input.AttributeDefinitions = attributes
 		hasUpdates = true
 	}
@@ -3093,7 +3093,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 		return fmt.Errorf("UpdateGlobalTable Failed: (Validater 5) Either Create Regions or Delete Regions List is Required")
 	}
 
-	if createRegions != nil && len(createRegions) > 0 {
+	if len(createRegions) > 0 {
 		for _, r := range createRegions {
 			if r.Valid() && r != awsregion.UNKNOWN && !c.supportGlobalTable(r) {
 				return fmt.Errorf("UpdateGlobalTable Failed: (Validater 6) Region %s Not Support Global Table", r.Key())
@@ -3104,7 +3104,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 	// *
 	// * create new regions
 	// *
-	if createRegions != nil && len(createRegions) > 0 {
+	if len(createRegions) > 0 {
 		// load current region table description
 		tblDesc, err := c.DescribeTable(tableName)
 
@@ -3131,7 +3131,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 
 		var lsi []*ddb.LocalSecondaryIndex
 
-		if tblDesc.LocalSecondaryIndexes != nil && len(tblDesc.LocalSecondaryIndexes) > 0 {
+		if len(tblDesc.LocalSecondaryIndexes) > 0 {
 			for _, v := range tblDesc.LocalSecondaryIndexes {
 				if v != nil {
 					lsi = append(lsi, &ddb.LocalSecondaryIndex{
@@ -3145,7 +3145,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 
 		var gsi []*ddb.GlobalSecondaryIndex
 
-		if tblDesc.GlobalSecondaryIndexes != nil && len(tblDesc.GlobalSecondaryIndexes) > 0 {
+		if len(tblDesc.GlobalSecondaryIndexes) > 0 {
 			for _, v := range tblDesc.GlobalSecondaryIndexes {
 				if v != nil {
 					gsi = append(gsi, &ddb.GlobalSecondaryIndex{
@@ -3159,7 +3159,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 
 		var attributes []*ddb.AttributeDefinition
 
-		if tblDesc.AttributeDefinitions != nil && len(tblDesc.AttributeDefinitions) > 0 {
+		if len(tblDesc.AttributeDefinitions) > 0 {
 			for _, v := range tblDesc.AttributeDefinitions {
 				if v != nil && strings.ToUpper(aws.StringValue(v.AttributeName)) != "PK" && strings.ToUpper(aws.StringValue(v.AttributeName)) != "SK" {
 					attributes = append(attributes, &ddb.AttributeDefinition{
@@ -3210,7 +3210,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 	// *
 	updates := []*ddb.ReplicaUpdate{}
 
-	if createRegions != nil && len(createRegions) > 0 {
+	if len(createRegions) > 0 {
 		for _, r := range createRegions {
 			if r.Valid() && r != awsregion.UNKNOWN {
 				updates = append(updates, &ddb.ReplicaUpdate{
@@ -3222,7 +3222,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 		}
 	}
 
-	if deleteRegions != nil && len(deleteRegions) > 0 {
+	if len(deleteRegions) > 0 {
 		for _, r := range deleteRegions {
 			if r.Valid() && r != awsregion.UNKNOWN {
 				updates = append(updates, &ddb.ReplicaUpdate{
@@ -3255,7 +3255,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 			// *
 			m := ""
 
-			if deleteRegions != nil && len(deleteRegions) > 0 {
+			if len(deleteRegions) > 0 {
 				for _, r := range deleteRegions {
 					if r.Valid() && r != awsregion.UNKNOWN {
 						if err := c.DeleteTable(tableName, r); err != nil {

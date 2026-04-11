@@ -314,7 +314,7 @@ func DnsLookupSrvs(host string) (ipList []string) {
 		}
 
 		for _, ipAddr := range ipAddrs {
-			if ipAddr.IP == nil || len(ipAddr.IP) == 0 {
+			if len(ipAddr.IP) == 0 {
 				continue
 			}
 			entry := net.JoinHostPort(ipAddr.String(), strconv.Itoa(int(v.Port)))

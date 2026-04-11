@@ -686,19 +686,19 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 			// add additional trace data if any to xray
 			if len(traceData) > 0 {
 				if m := traceData[0]; m != nil {
-					if m.Meta != nil && len(m.Meta) > 0 {
+					if len(m.Meta) > 0 {
 						for k, v := range m.Meta {
 							_ = xray.AddMetadata(ctx, k, v)
 						}
 					}
 
-					if m.Annotations != nil && len(m.Annotations) > 0 {
+					if len(m.Annotations) > 0 {
 						for k, v := range m.Annotations {
 							_ = xray.AddAnnotation(ctx, k, v)
 						}
 					}
 
-					if m.Errors != nil && len(m.Errors) > 0 {
+					if len(m.Errors) > 0 {
 						for _, v := range m.Errors {
 							_ = xray.AddError(ctx, v)
 						}
@@ -816,19 +816,19 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 			// add additional trace data if any to xray
 			if len(traceData) > 0 {
 				if m := traceData[0]; m != nil {
-					if m.Meta != nil && len(m.Meta) > 0 {
+					if len(m.Meta) > 0 {
 						for k, v := range m.Meta {
 							_ = xray.AddMetadata(ctx, k, v)
 						}
 					}
 
-					if m.Annotations != nil && len(m.Annotations) > 0 {
+					if len(m.Annotations) > 0 {
 						for k, v := range m.Annotations {
 							_ = xray.AddAnnotation(ctx, k, v)
 						}
 					}
 
-					if m.Errors != nil && len(m.Errors) > 0 {
+					if len(m.Errors) > 0 {
 						for _, v := range m.Errors {
 							_ = xray.AddError(ctx, v)
 						}

@@ -227,7 +227,7 @@ func (s *TCPServer) GetConnectedClients() (clientsList []string) {
 	s._mux.RLock()
 	defer s._mux.RUnlock()
 
-	if s._clients == nil || len(s._clients) == 0 {
+	if len(s._clients) == 0 {
 		return []string{}
 	}
 

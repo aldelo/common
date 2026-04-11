@@ -1852,7 +1852,7 @@ func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err 
 //	kvMap = map of key string, and interface{} value
 func (r *Redis) msetInternal(snap redisConnSnapshot, kvMap map[string]interface{}, setIfNotExists ...bool) error {
 	// validate
-	if kvMap == nil || len(kvMap) == 0 {
+	if len(kvMap) == 0 {
 		return errors.New("Redis MSet Failed: " + "KVMap is Required")
 	}
 

@@ -713,7 +713,7 @@ func (g *DynamoDBTransactionReads) UnmarshalResultItems(itemResponses []*dynamod
 	}
 
 	// treat nil/empty responses as no results instead of erroring
-	if itemResponses == nil || len(itemResponses) == 0 {
+	if len(itemResponses) == 0 {
 		g.ResultItemsCount = 0
 		return nil
 	}
@@ -1776,7 +1776,7 @@ func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...a
 				return !lastPage
 			}
 
-			if pageOutput.LastEvaluatedKey != nil && len(pageOutput.LastEvaluatedKey) > 0 {
+			if len(pageOutput.LastEvaluatedKey) > 0 {
 				paginationData = append(paginationData, cloneAttributeValueMap(pageOutput.LastEvaluatedKey))
 			}
 
@@ -2883,7 +2883,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 			if util.LenTrim(conditionExpressionStr) > 0 {
 				input.ConditionExpression = aws.String(conditionExpressionStr)
 
-				if conditionExpressionAttributeValues != nil && len(conditionExpressionAttributeValues) > 0 {
+				if len(conditionExpressionAttributeValues) > 0 {
 					input.ExpressionAttributeValues = conditionExpressionAttributeValues
 				}
 			}
@@ -2974,7 +2974,7 @@ func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duratio
 		if util.LenTrim(conditionExpressionStr) > 0 {
 			input.ConditionExpression = aws.String(conditionExpressionStr)
 
-			if conditionExpressionAttributeValues != nil && len(conditionExpressionAttributeValues) > 0 {
+			if len(conditionExpressionAttributeValues) > 0 {
 				input.ExpressionAttributeValues = conditionExpressionAttributeValues
 			}
 		}
@@ -3643,7 +3643,7 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 			if util.LenTrim(conditionExpression) > 0 {
 				params.ConditionExpression = aws.String(conditionExpression)
 
-				if conditionExpressionSet[0].ExpressionAttributeValues != nil && len(conditionExpressionSet[0].ExpressionAttributeValues) > 0 {
+				if len(conditionExpressionSet[0].ExpressionAttributeValues) > 0 {
 					params.ExpressionAttributeValues = cloneExpressionAttributeValues(conditionExpressionSet[0].ExpressionAttributeValues)
 				}
 			}
@@ -3752,7 +3752,7 @@ func (d *DynamoDB) removeItemAttributeNormal(pkValue string, skValue string, rem
 		if util.LenTrim(conditionExpression) > 0 {
 			params.ConditionExpression = aws.String(conditionExpression)
 
-			if conditionExpressionSet[0].ExpressionAttributeValues != nil && len(conditionExpressionSet[0].ExpressionAttributeValues) > 0 {
+			if len(conditionExpressionSet[0].ExpressionAttributeValues) > 0 {
 				params.ExpressionAttributeValues = cloneExpressionAttributeValues(conditionExpressionSet[0].ExpressionAttributeValues)
 			}
 		}
@@ -5803,7 +5803,7 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 			// append into accumulator
 			resultVal.Set(reflect.AppendSlice(resultVal, newPagedSlicePtr.Elem()))
 
-			if prevEvalKey == nil || len(prevEvalKey) == 0 {
+			if len(prevEvalKey) == 0 {
 				break
 			}
 		}
@@ -6557,7 +6557,7 @@ func (d *DynamoDB) ScanPagedItemsWithRetry(maxRetries uint,
 			// success
 			resultVal.Set(reflect.AppendSlice(resultVal, workingPtr.Elem()))
 
-			if prevEvalKey == nil || len(prevEvalKey) == 0 {
+			if len(prevEvalKey) == 0 {
 				break
 			}
 		}
@@ -6661,7 +6661,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 	}
 
 	// validate input parameters
-	if (putItemsSet == nil || len(putItemsSet) == 0) && (deleteKeys == nil || len(deleteKeys) == 0) { // CHANGED
+	if len(putItemsSet) == 0 && len(deleteKeys) == 0 { // CHANGED
 		err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: PutItems and DeleteKeys both cannot be nil/empty"))
 		return 0, nil, err
 	}
@@ -6671,7 +6671,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 		var putTableItemsAv map[string][]map[string]*dynamodb.AttributeValue
 		var deleteTableKeysAv map[string][]map[string]*dynamodb.AttributeValue
 
-		if putItemsSet != nil && len(putItemsSet) > 0 {
+		if len(putItemsSet) > 0 {
 			for _, putSet := range putItemsSet {
 				if putSet != nil && putSet.PutItems != nil {
 					if md, e := putSet.MarshalPutItems(); e != nil {
@@ -6841,7 +6841,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 		}
 
 		// evaluate unprocessed items
-		if result.UnprocessedItems != nil && len(result.UnprocessedItems) > 0 {
+		if len(result.UnprocessedItems) > 0 {
 			unprocessedCount := 0
 
 			for tblName, unprocessed := range result.UnprocessedItems {
@@ -6920,7 +6920,7 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 	}
 
 	// validate input parameters
-	if (putItemsSet == nil || len(putItemsSet) == 0) && (deleteKeys == nil || len(deleteKeys) == 0) { // CHANGED
+	if len(putItemsSet) == 0 && len(deleteKeys) == 0 { // CHANGED
 		return 0, nil, d.handleError(errors.New("DynamoDB BatchWriteItems Failed: PutItems and DeleteKeys both cannot be nil/empty"))
 	}
 
@@ -6928,7 +6928,7 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 	var putTableItemsAv map[string][]map[string]*dynamodb.AttributeValue
 	var deleteTableKeysAv map[string][]map[string]*dynamodb.AttributeValue
 
-	if putItemsSet != nil && len(putItemsSet) > 0 {
+	if len(putItemsSet) > 0 {
 		for _, putSet := range putItemsSet {
 			if putSet != nil && putSet.PutItems != nil {
 				if md, e := putSet.MarshalPutItems(); e != nil {
@@ -7095,7 +7095,7 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 	}
 
 	// evaluate unprocessed items
-	if result.UnprocessedItems != nil && len(result.UnprocessedItems) > 0 {
+	if len(result.UnprocessedItems) > 0 {
 		unprocessedCount := 0
 
 		for tblName, unprocessed := range result.UnprocessedItems {
@@ -7437,7 +7437,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 						notFound = false
 						err = d.handleError(projErr, "DynamoDB BatchGetItems Failed: (Projecting Attributes)")
 						return fmt.Errorf("%s", err.ErrorMessage)
-					} else if projExpr != nil && (projAttr != nil && len(projAttr) > 0) {
+					} else if projExpr != nil && len(projAttr) > 0 {
 						k.ProjectionExpression = projExpr
 						k.ExpressionAttributeNames = projAttr
 					}
@@ -7544,7 +7544,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		}
 
 		// surface partial data while still reporting unprocessed leftovers
-		if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
+		if len(unprocessedLeft) > 0 {
 			remaining := countUnprocessed(unprocessedLeft)
 			err = &DynamoDBError{
 				ErrorMessage:                      fmt.Sprintf("DynamoDB BatchGetItems Warning: %d unprocessed keys remain after retries", remaining),
@@ -7572,7 +7572,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		totalCount := 0
 
 		for _, searchSet := range multiGetRequestResponse {
-			if resp := combinedResponses[searchSet.TableName]; resp != nil && len(resp) > 0 {
+			if resp := combinedResponses[searchSet.TableName]; len(resp) > 0 {
 				// unmarshal results
 				if err1 := dynamodbattribute.UnmarshalListOfMaps(resp, searchSet.ResultItemsSlicePtr); err1 != nil {
 					notFound = false
@@ -7725,7 +7725,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 			if searchSet.ProjectedAttributes != nil {
 				if projExpr, projAttr, projErr := searchSet.ProjectedAttributes.BuildProjectionParameters(); projErr != nil {
 					return false, d.handleError(projErr, "DynamoDB BatchGetItems Failed: (Projecting Attributes)")
-				} else if projExpr != nil && (projAttr != nil && len(projAttr) > 0) {
+				} else if projExpr != nil && len(projAttr) > 0 {
 					k.ProjectionExpression = projExpr
 					k.ExpressionAttributeNames = projAttr
 				}
@@ -7825,7 +7825,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	}
 
 	// surface partial-data condition when unprocessed keys remain after retries
-	if unprocessedLeft != nil && len(unprocessedLeft) > 0 {
+	if len(unprocessedLeft) > 0 {
 		remaining := countUnprocessed(unprocessedLeft)
 		err = &DynamoDBError{
 			ErrorMessage:                      fmt.Sprintf("DynamoDB BatchGetItems Warning: %d unprocessed keys remain after retries", remaining),
@@ -7850,7 +7850,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	totalCount := 0
 
 	for _, searchSet := range multiGetRequestResponse {
-		if resp := combinedResponses[searchSet.TableName]; resp != nil && len(resp) > 0 {
+		if resp := combinedResponses[searchSet.TableName]; len(resp) > 0 {
 			// unmarshal results
 			if err1 := dynamodbattribute.UnmarshalListOfMaps(resp, searchSet.ResultItemsSlicePtr); err1 != nil {
 				return false, d.handleError(err1, "DynamoDB BatchGetItems Failed: (Unmarshal ResultItems)")
@@ -8108,7 +8108,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 
 		// loop through all tranItems slice to pre-populate transaction write items slice
 		for _, t := range tranItems {
-			if t.DeleteItems != nil && len(t.DeleteItems) > 0 {
+			if len(t.DeleteItems) > 0 {
 				for _, v := range t.DeleteItems {
 					if v == nil {
 						continue
@@ -8149,7 +8149,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 				}
 			}
 
-			if t.PutItemsSet != nil && len(t.PutItemsSet) > 0 {
+			if len(t.PutItemsSet) > 0 {
 				for _, putSet := range t.PutItemsSet {
 					if putSet == nil || putSet.PutItems == nil {
 						continue
@@ -8179,7 +8179,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 				}
 			}
 
-			if t.UpdateItems != nil && len(t.UpdateItems) > 0 {
+			if len(t.UpdateItems) > 0 {
 				for _, v := range t.UpdateItems {
 					if v == nil {
 						continue
@@ -8315,7 +8315,7 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 
 	// loop through all tranItems slice to pre-populate transaction write items slice
 	for _, t := range tranItems {
-		if t.DeleteItems != nil && len(t.DeleteItems) > 0 {
+		if len(t.DeleteItems) > 0 {
 			for _, v := range t.DeleteItems {
 				if v == nil {
 					continue
@@ -8352,7 +8352,7 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 			}
 		}
 
-		if t.PutItemsSet != nil && len(t.PutItemsSet) > 0 {
+		if len(t.PutItemsSet) > 0 {
 			for _, putSet := range t.PutItemsSet {
 				if putSet == nil || putSet.PutItems == nil {
 					continue
@@ -8380,7 +8380,7 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 			}
 		}
 
-		if t.UpdateItems != nil && len(t.UpdateItems) > 0 {
+		if len(t.UpdateItems) > 0 {
 			for _, v := range t.UpdateItems {
 				if v == nil {
 					continue

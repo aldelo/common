@@ -529,7 +529,7 @@ func (svr *MySql) GetDsn() (string, error) {
 func (svr *MySql) cleanUpAllSqlTransactions() {
 	svr.mux.Lock()
 	var txs []*MySqlTransaction
-	if svr.txMap != nil && len(svr.txMap) > 0 {
+	if len(svr.txMap) > 0 {
 		txs = make([]*MySqlTransaction, 0, len(svr.txMap))
 		for k, v := range svr.txMap {
 			txs = append(txs, v)

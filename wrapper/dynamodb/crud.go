@@ -820,8 +820,8 @@ func (c *Crud) TransactionGet(getItems ...*DynamoDBTransactionReads) (successCou
 	for _, v := range getItems {
 		if v != nil {
 			count += len(v.SearchKeys)
-			if count > 25 {
-				return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 9) Total Search Keys Exceeds 25 Items Limit")
+			if count > MaxTransactItems {
+				return 0, fmt.Errorf("TransactionGet From Data Store Failed: (Validater 9) Total Search Keys Exceeds %d Items Limit", MaxTransactItems)
 			}
 		}
 	}
@@ -1232,7 +1232,7 @@ func (c *Crud) TransactionSet(transWrites ...*DynamoDBTransactionWrites) (succes
 	}
 
 	count := 0
-	outErr := fmt.Errorf("TransactionSet To Data Store Failed: (Validater 4) Total Transaction Items Exceeds 25 Items Limit")
+	outErr := fmt.Errorf("TransactionSet To Data Store Failed: (Validater 4) Total Transaction Items Exceeds %d Items Limit", MaxTransactItems)
 
 	for _, v := range transWrites {
 		if v != nil {
@@ -1241,7 +1241,7 @@ func (c *Crud) TransactionSet(transWrites ...*DynamoDBTransactionWrites) (succes
 					if vv != nil && vv.PutItems != nil {
 						if n, ok := util.ReflectInterfaceSliceLen(vv.PutItems); ok {
 							count += n
-							if count > 25 {
+							if count > MaxTransactItems {
 								return false, outErr
 							}
 						}
@@ -1250,13 +1250,13 @@ func (c *Crud) TransactionSet(transWrites ...*DynamoDBTransactionWrites) (succes
 			}
 			if v.UpdateItems != nil {
 				count += len(v.UpdateItems)
-				if count > 25 {
+				if count > MaxTransactItems {
 					return false, outErr
 				}
 			}
 			if v.DeleteItems != nil {
 				count += len(v.DeleteItems)
-				if count > 25 {
+				if count > MaxTransactItems {
 					return false, outErr
 				}
 			}
@@ -2250,10 +2250,10 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 	// execute
 	if useTransaction {
-		// enforce DynamoDB 25 item transaction limit
+		// enforce DynamoDB transaction item limit (AWS: 100 since 2022-09-27)
 		totalTxnItems := 1 + len(deleteKeys) + len(putItemsCrudUniqueRecords)
-		if totalTxnItems > 25 {
-			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Total transaction items exceed DynamoDB 25 item limit (%d items)", totalTxnItems)
+		if totalTxnItems > MaxTransactItems {
+			return fmt.Errorf("Update To Data Store Failed: (TransactionWriteItems) Total transaction items exceed DynamoDB %d item limit (%d items)", MaxTransactItems, totalTxnItems)
 		}
 
 		// Build writes
@@ -2353,10 +2353,10 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 				primaryDelete := &DynamoDBTableKeys{PK: pkValue, SK: skValue}
 				deleteKeys = append(deleteKeys, primaryDelete)
 
-				// enforce atomicity within DynamoDB's 25 item transaction limit
-				const maxTxnItems = 25
+				// enforce atomicity within DynamoDB's transaction item limit (100 since 2022-09-27)
+				const maxTxnItems = MaxTransactItems
 				if len(deleteKeys) > maxTxnItems {
-					// FIX: gracefully handle >25 deletes by chunking while ensuring the main item is deleted in the first batch
+					// FIX: gracefully handle >limit deletes by chunking while ensuring the main item is deleted in the first batch
 					uniqueDeletes := deleteKeys[:len(deleteKeys)-1] // exclude primary item
 					batches := make([][]*DynamoDBTableKeys, 0)
 					cursor := 0

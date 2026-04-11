@@ -65,6 +65,35 @@ import (
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
 
+// =====================================================================================================================
+// AWS DynamoDB service quotas — exported so downstream repos can size
+// their own batches against the SAME source of truth this wrapper uses.
+// =====================================================================================================================
+
+// MaxTransactItems is the maximum number of items allowed in a single
+// DynamoDB TransactWriteItems or TransactGetItems call.
+//
+// As of AWS's 2022-09-27 update, the limit moved from 25 to 100 items per
+// transaction. This wrapper enforces the current 100-item limit; callers
+// submitting more than 100 items in a single transaction will receive a
+// pre-flight validation error rather than an AWS-side ValidationException.
+//
+// Do NOT confuse this with the BatchWriteItem limit, which remains 25
+// (see MaxBatchWriteItems below).
+//
+// Source: https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html
+//         https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactGetItems.html
+const MaxTransactItems = 100
+
+// MaxBatchWriteItems is the maximum number of items allowed in a single
+// DynamoDB BatchWriteItem call. This limit has not changed from 25 and is
+// enforced separately from MaxTransactItems. Provided as an exported
+// constant so downstream wrapper consumers can size BatchWrite batches
+// against the same source of truth.
+//
+// Source: https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html
+const MaxBatchWriteItems = 25
+
 // *********************************************************************************************************************
 // *********************************************************************************************************************
 // *********************************************************************************************************************
@@ -8215,10 +8244,10 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 			}
 		}
 
-		// items must not exceed 25
-		if len(items) > 25 {
+		// items must not exceed MaxTransactItems (AWS limit: 100 since 2022-09-27)
+		if len(items) > MaxTransactItems {
 			success = false
-			err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "Transaction Items May Not Exceed 25"))
+			err = d.handleError(fmt.Errorf("DynamoDB TransactionWriteItems Failed: (Payload Validate) Transaction Items May Not Exceed %d", MaxTransactItems))
 			return err
 		}
 
@@ -8415,10 +8444,10 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 		}
 	}
 
-	// items must not exceed 25
-	if len(items) > 25 {
+	// items must not exceed MaxTransactItems (AWS limit: 100 since 2022-09-27)
+	if len(items) > MaxTransactItems {
 		success = false
-		err = d.handleError(errors.New("DynamoDB TransactionWriteItems Failed: (Payload Validate) " + "Transaction Items May Not Exceed 25"))
+		err = d.handleError(fmt.Errorf("DynamoDB TransactionWriteItems Failed: (Payload Validate) Transaction Items May Not Exceed %d", MaxTransactItems))
 		return success, err
 	}
 
@@ -8703,9 +8732,9 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 		}
 	}
 
-	// search count must not exceed 25
-	if searchCount > 25 {
-		err = d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Validate Search Count) " + "Search Count May Not Exceed 25"))
+	// search count must not exceed MaxTransactItems (AWS limit: 100 since 2022-09-27)
+	if searchCount > MaxTransactItems {
+		err = d.handleError(fmt.Errorf("DynamoDB TransactionGetItems Failed: (Validate Search Count) Search Count May Not Exceed %d", MaxTransactItems))
 		return 0, err
 	}
 
@@ -8933,9 +8962,9 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 		}
 	}
 
-	// search count must not exceed 25
-	if searchCount > 25 {
-		return 0, d.handleError(errors.New("DynamoDB TransactionGetItems Failed: (Validate Search Count) " + "Search Count May Not Exceed 25"))
+	// search count must not exceed MaxTransactItems (AWS limit: 100 since 2022-09-27)
+	if searchCount > MaxTransactItems {
+		return 0, d.handleError(fmt.Errorf("DynamoDB TransactionGetItems Failed: (Validate Search Count) Search Count May Not Exceed %d", MaxTransactItems))
 	}
 
 	if searchCount <= 0 {

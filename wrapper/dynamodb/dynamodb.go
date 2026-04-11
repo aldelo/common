@@ -1275,11 +1275,16 @@ func (d *DynamoDB) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 		seg := xray.NewSegment("DynamoDB-Connect", d.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("DynamoDB-AWS-Region", d.AwsRegion)
-			_ = seg.Seg.AddMetadata("DynamoDB-Table-Name", d.TableName)
+			// P1-4: guard seg.Seg — NewSegment returns wrapper with nil
+			// Seg field when tracing is disabled OR when BeginSegment
+			// panic-recovers (xray.go:399-403).
+			if seg != nil && seg.Seg != nil {
+				_ = seg.Seg.AddMetadata("DynamoDB-AWS-Region", d.AwsRegion)
+				_ = seg.Seg.AddMetadata("DynamoDB-Table-Name", d.TableName)
 
-			if err != nil {
-				_ = seg.Seg.AddError(err)
+				if err != nil {
+					_ = seg.Seg.AddError(err)
+				}
 			}
 		}()
 
@@ -1374,10 +1379,14 @@ func (d *DynamoDB) EnableDax() (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("DynamoDB-Dax-Endpoint", d.DaxEndpoint)
+			// P1-4: guard seg.Seg — even with seg != nil, the wrapper's
+			// Seg field can be nil if BeginSegment panic-recovered.
+			if seg.Seg != nil {
+				_ = seg.Seg.AddMetadata("DynamoDB-Dax-Endpoint", d.DaxEndpoint)
 
-			if err != nil {
-				_ = seg.Seg.AddError(err)
+				if err != nil {
+					_ = seg.Seg.AddError(err)
+				}
 			}
 		}()
 

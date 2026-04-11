@@ -76,54 +76,64 @@ func NextFixedLength(data string, blockSize int) int {
 	return blocks * blockSize
 }
 
-// Left returns the left side of string indicated by variable l (size of substring)
-// negative or zero length returns empty string; otherwise clamp to length.
+// Left returns the left side of string indicated by variable l (size of substring).
+//
+// Contract: byte-indexed (not rune-indexed). This matches the v1.6.7 observable
+// contract. Critical for crypto/crypto.go which calls Left(passphrase, 32) to
+// derive AES-256 keys that MUST be exactly 32 bytes. Rune-indexing would return
+// 32 runes (up to 128 bytes for 4-byte runes), breaking aes.NewCipher.
+//
+// For rune-indexed semantics, call sites should operate on []rune(s) directly.
+//
+// Rule #10 (workspace): preserve observable contracts across minor-version bumps.
 func Left(s string, l int) string {
 	if l <= 0 {
 		return ""
 	}
 
-	r := []rune(s)
-	if len(r) <= l {
+	if len(s) <= l {
 		return s
 	}
 
-	return string(r[:l])
+	return s[:l]
 }
 
-// Right returns the right side of string indicated by variable l (size of substring)
-// negative or zero length returns empty string; otherwise clamp to length.
+// Right returns the right side of string indicated by variable l (size of substring).
+//
+// Contract: byte-indexed (not rune-indexed). See Left for rationale.
+// Rule #10 (workspace): preserve observable contracts across minor-version bumps.
 func Right(s string, l int) string {
 	if l <= 0 {
 		return ""
 	}
 
-	r := []rune(s)
-	if len(r) <= l {
+	if len(s) <= l {
 		return s
 	}
 
-	return string(r[len(r)-l:])
+	return s[len(s)-l:]
 }
 
-// Mid returns the middle of string indicated by variable start and l positions (size of substring)
-// robust bounds handling; negative start/length yield empty; clamp end to len(s); return "" when out of range.
+// Mid returns the middle of string indicated by variable start and l positions (size of substring).
+//
+// Contract: byte-indexed (not rune-indexed). See Left for rationale.
+// Negative start or length yields empty; clamp end to len(s); return "" when out of range.
+// Rule #10 (workspace): preserve observable contracts across minor-version bumps.
 func Mid(s string, start int, l int) string {
 	if l <= 0 || start < 0 {
 		return ""
 	}
 
-	r := []rune(s)
-	if start >= len(r) {
+	if start >= len(s) {
 		return ""
 	}
 
 	end := start + l
-	if end > len(r) {
-		end = len(r)
+	if end > len(s) {
+		end = len(s)
 	}
 
-	return string(r[start:end])
+	return s[start:end]
 }
 
 // Reverse a string

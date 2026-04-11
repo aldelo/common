@@ -106,6 +106,30 @@ retry more residuals) so no downstream behavior is narrowed and rule #10 holds.
   documented in the helper's godoc. AWS reference:
   [BatchWriteItem error-handling guidance](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html#API_BatchWriteItem_Errors).
 
+### Deprecated
+
+- **P0-4** — `crypto.AesCbcEncrypt` / `crypto.AesCbcDecrypt` marked
+  `Deprecated:` in godoc. The CBC helpers pad plaintext with 0x00 bytes on
+  encrypt and strip ALL trailing 0x00 bytes on decrypt
+  (`strings.ReplaceAll(..., NUL, "")`), which silently corrupts any plaintext
+  whose natural last byte is 0x00 — the trailing NUL is indistinguishable
+  from padding and is removed. CBC also lacks authentication, so a tampered
+  ciphertext decrypts without error. The godoc directs callers to the
+  already-existing `crypto.AesGcmEncrypt` / `crypto.AesGcmDecrypt` AEAD pair
+  which preserves arbitrary byte sequences exactly and detects tampering
+  via an authentication tag (NIST SP 800-38D). The CBC functions remain
+  fully callable through the entire v1.x series per workspace rule #10
+  (observable-contract stability); removal is scheduled for v2.0.0. New
+  regression tests in `crypto_test.go`
+  (`TestAesCbc_DeprecationObservableContracts`) pin three contracts:
+  (1) block-aligned plaintext round-trips cleanly, (2) non-block-aligned
+  plaintext without trailing NULs round-trips cleanly, (3) plaintext with
+  a trailing 0x00 byte is CORRUPTED on the round-trip — this BUG is
+  pinned intentionally so a future refactor cannot silently change the
+  observable behavior without forcing a v2.0.0 release. The same test
+  also demonstrates that `AesGcmEncrypt`/`AesGcmDecrypt` preserve the
+  trailing NUL exactly, proving the migration target is correct.
+
 ### Changed — documentation only (observable contracts unchanged)
 
 - **P0-12** — `Float64ToCurrencyString` godoc rewritten. The v1.7.8 docstring
@@ -147,9 +171,12 @@ to a future major release so downstream repos can migrate in one coordinated
 batch. See `_src/docs/repos/common/reviews/deep-review-2026-04-11-release-readiness.md`
 in the workspace for the full list, including:
 
-- **P0-4** — AES-CBC with NUL-byte (non-PKCS#7) padding — AES-GCM sibling will
-  be added in v1.8.0 as an additive API; CBC helpers remain supported until
-  v2.0.0.
+- **P0-4** — Removal of `AesCbcEncrypt` / `AesCbcDecrypt`. The NUL-padding
+  hazard was documented and pinned via deprecation godoc + regression tests
+  in v1.7.9 (see "Deprecated" section above); the already-existing
+  `AesGcmEncrypt` / `AesGcmDecrypt` pair is the migration target for v1.x
+  callers. Function removal is scheduled for v2.0.0 once all 36+ consumer
+  repos have migrated.
 - **P0-5** — RSA envelope (sign-then-encrypt with unkeyed SHA-256 integrity
   tag) — an HMAC-keyed sibling will be added in v1.8.0 as an additive API; the
   existing helpers remain supported until v2.0.0.

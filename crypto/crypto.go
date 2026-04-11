@@ -401,7 +401,29 @@ func AesCfbDecrypt(data string, passphrase string) (string, error) {
 
 // AesCbcEncrypt will encrypt using aes cbc 256 bit,
 // passphrase must be 32 bytes, if over 32 bytes, it be truncated,
-// encrypted data is represented in hex value
+// encrypted data is represented in hex value.
+//
+// Deprecated: AesCbcEncrypt uses NUL-byte padding (0x00) to align plaintext to
+// the AES block size, and its paired AesCbcDecrypt strips ALL trailing NUL
+// bytes from the decrypted output. This causes silent data corruption for any
+// plaintext whose last byte is legitimately 0x00 — the trailing NUL is
+// indistinguishable from padding and is removed on decrypt. CBC also lacks
+// authentication, so a tampered ciphertext decrypts without error and returns
+// attacker-influenced plaintext.
+//
+// Use AesGcmEncrypt / AesGcmDecrypt instead. AES-GCM is an authenticated
+// encryption mode (AEAD) that:
+//   - detects tampering via an authentication tag (decrypt returns an error
+//     on any bit flip),
+//   - requires no padding (so arbitrary byte sequences including embedded or
+//     trailing NUL bytes round-trip exactly), and
+//   - is the current default for symmetric bulk encryption per NIST SP 800-38D.
+//
+// AesCbcEncrypt remains fully supported for the v1.x release series per
+// workspace rule #10 (observable-contract stability across minor versions).
+// Scheduled for removal in v2.0.0. See
+// _src/docs/repos/common/findings/remediation-report-2026-04-11-release-readiness.md
+// P0-4 for the full hazard analysis.
 func AesCbcEncrypt(data string, passphrase string) (string, error) {
 	// ensure data has value
 	if len(data) == 0 {
@@ -455,7 +477,24 @@ func AesCbcEncrypt(data string, passphrase string) (string, error) {
 }
 
 // AesCbcDecrypt will decrypt using aes cbc 256 bit,
-// passphrase must be 32 bytes, if over 32 bytes, it be truncated
+// passphrase must be 32 bytes, if over 32 bytes, it be truncated.
+//
+// Deprecated: AesCbcDecrypt strips ALL trailing NUL bytes (0x00) from the
+// decrypted output via strings.ReplaceAll. This is how AesCbcEncrypt's
+// NUL-padding is removed, but it also removes legitimate trailing NUL bytes
+// that were part of the original plaintext — silent data corruption. CBC
+// additionally lacks authentication, so a tampered or truncated ciphertext
+// decrypts without error and returns attacker-influenced plaintext.
+//
+// Use AesGcmDecrypt (paired with AesGcmEncrypt) instead. AES-GCM is AEAD:
+// it returns an error on any ciphertext tampering and preserves arbitrary
+// byte sequences (including embedded or trailing NULs) exactly.
+//
+// AesCbcDecrypt remains fully supported for the v1.x release series per
+// workspace rule #10 (observable-contract stability across minor versions).
+// Scheduled for removal in v2.0.0. See
+// _src/docs/repos/common/findings/remediation-report-2026-04-11-release-readiness.md
+// P0-4 for the full hazard analysis.
 func AesCbcDecrypt(data string, passphrase string) (string, error) {
 	// ensure data has value
 	if len(data) == 0 {

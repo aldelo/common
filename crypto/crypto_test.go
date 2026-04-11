@@ -207,3 +207,121 @@ func TestMd5_ObservableContractUnchangedByDeprecation(t *testing.T) {
 		}
 	}
 }
+
+// -----------------------------------------------------------------------
+// P0-4 — AES-CBC observable-contract pin + NUL-padding hazard documentation.
+//
+// AesCbcEncrypt / AesCbcDecrypt are deprecated in v1.7.9 (scheduled for
+// removal in v2.0.0) in favor of the already-existing AES-GCM pair which
+// is authenticated (AEAD) and requires no padding. The CBC helpers remain
+// CALLABLE and must produce the same output they always have for the
+// remainder of the v1.x series or downstream consumers break on upgrade.
+//
+// The hazard: AesCbcEncrypt pads plaintext up to the next 16-byte block
+// boundary with 0x00 bytes via util.Padding(..., ascii.NUL), and
+// AesCbcDecrypt strips ALL trailing 0x00 bytes from the decrypted output
+// via strings.ReplaceAll (crypto.go:~530). This means any plaintext whose
+// natural last byte is 0x00 (or any plaintext containing embedded 0x00
+// anywhere, since ReplaceAll is not limited to trailing bytes) will be
+// silently corrupted on the round-trip. The three tests below pin the
+// current behavior so a future "fix" (e.g., someone swapping to PKCS#7
+// padding without coordinating a v2.0.0 release) is caught by the suite
+// rather than by a downstream incident.
+//
+// Rule #10 (observable-contract stability): these tests pin the EXISTING
+// behavior, warts and all. Changing the behavior requires a v2.0.0 major
+// release with all 36+ consumers migrated in one coordinated batch.
+// -----------------------------------------------------------------------
+func TestAesCbc_DeprecationObservableContracts(t *testing.T) {
+	const passphrase = "01234567890123456789012345678901" // 32-byte ASCII
+
+	// Contract A: block-aligned plaintext (no padding path) round-trips cleanly.
+	// This is the "happy path" that the existing TestCryptoRoundtrip_UnicodePassphrase
+	// cbcPlaintext case also covers, repeated here so all P0-4 contracts live in one place.
+	t.Run("block_aligned_roundtrip", func(t *testing.T) {
+		const pt = "hello-cbc-block!" // exactly 16 bytes
+		enc, err := AesCbcEncrypt(pt, passphrase)
+		if err != nil {
+			t.Fatalf("AesCbcEncrypt: %v", err)
+		}
+		dec, err := AesCbcDecrypt(enc, passphrase)
+		if err != nil {
+			t.Fatalf("AesCbcDecrypt: %v", err)
+		}
+		if dec != pt {
+			t.Errorf("block-aligned round-trip:\n got: %q\nwant: %q", dec, pt)
+		}
+	})
+
+	// Contract B: non-block-aligned plaintext WITHOUT trailing 0x00 round-trips
+	// cleanly. AesCbcEncrypt pads with 0x00 bytes; AesCbcDecrypt strips them.
+	// Because the plaintext has no legitimate trailing 0x00, the strip is a
+	// clean no-op and the round-trip is exact.
+	t.Run("non_block_aligned_no_trailing_nul_roundtrip", func(t *testing.T) {
+		const pt = "short" // 5 bytes, padded to 16
+		enc, err := AesCbcEncrypt(pt, passphrase)
+		if err != nil {
+			t.Fatalf("AesCbcEncrypt: %v", err)
+		}
+		dec, err := AesCbcDecrypt(enc, passphrase)
+		if err != nil {
+			t.Fatalf("AesCbcDecrypt: %v", err)
+		}
+		if dec != pt {
+			t.Errorf("non-aligned round-trip:\n got: %q\nwant: %q", dec, pt)
+		}
+	})
+
+	// Contract C: HAZARD PIN — plaintext whose last byte is legitimately 0x00
+	// is CORRUPTED on round-trip because AesCbcDecrypt strips all trailing NULs.
+	// This test pins the BUGGY behavior intentionally. If a future refactor
+	// swaps to PKCS#7 padding, this test will break and force a conscious
+	// decision about whether to coordinate a v2.0.0 release for the fix.
+	//
+	// This is NOT an endorsement of the current behavior — AesCbcEncrypt/Decrypt
+	// are Deprecated: in godoc and callers should migrate to AesGcmEncrypt/Decrypt
+	// which preserve trailing NULs exactly.
+	t.Run("trailing_nul_hazard_pinned", func(t *testing.T) {
+		// Plaintext: 4 bytes "data" + one 0x00 byte at the end. Total 5 bytes,
+		// padded to 16 on encrypt, all trailing NULs stripped on decrypt.
+		pt := "data" + string([]byte{0x00})
+
+		enc, err := AesCbcEncrypt(pt, passphrase)
+		if err != nil {
+			t.Fatalf("AesCbcEncrypt: %v", err)
+		}
+		dec, err := AesCbcDecrypt(enc, passphrase)
+		if err != nil {
+			t.Fatalf("AesCbcDecrypt: %v", err)
+		}
+
+		// The deprecated helper corrupts: the trailing 0x00 is gone.
+		if dec == pt {
+			t.Errorf("AesCbcDecrypt preserved trailing NUL — this would be a "+
+				"behavior CHANGE from v1.7.8 and must be coordinated as a "+
+				"v2.0.0 release. Got %q == plaintext %q unexpectedly.",
+				dec, pt)
+		}
+		if dec != "data" {
+			t.Errorf("AesCbcDecrypt hazard-pin: got %q, want %q (all trailing "+
+				"NULs stripped — deprecated behavior)", dec, "data")
+		}
+
+		// For the migration story: AES-GCM must preserve the exact byte
+		// sequence including the trailing NUL. This is the differential
+		// test that proves the migration target is correct.
+		gcmEnc, err := AesGcmEncrypt(pt, passphrase)
+		if err != nil {
+			t.Fatalf("AesGcmEncrypt: %v", err)
+		}
+		gcmDec, err := AesGcmDecrypt(gcmEnc, passphrase)
+		if err != nil {
+			t.Fatalf("AesGcmDecrypt: %v", err)
+		}
+		if gcmDec != pt {
+			t.Errorf("AesGcm round-trip must preserve trailing NUL exactly "+
+				"(this is the whole point of the migration):\n got: %q\nwant: %q",
+				gcmDec, pt)
+		}
+	})
+}

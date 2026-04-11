@@ -2836,7 +2836,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf(ddbErr.ErrorMessage))
+			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
 		}
 	}()
 
@@ -2873,7 +2873,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 	trace.Capture("PutItem", func() error {
 		if av, err := dynamodbattribute.MarshalMap(item); err != nil {
 			ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (MarshalMap)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		} else {
 			input := &dynamodb.PutItemInput{
 				Item:      av,
@@ -2907,7 +2907,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 
 			if err != nil {
 				ddbErr = d.handleError(err, "DynamoDB PutItem Failed: (PutItem)")
-				return fmt.Errorf(ddbErr.ErrorMessage)
+				return fmt.Errorf("%s", ddbErr.ErrorMessage)
 			} else {
 				return nil
 			}
@@ -3200,7 +3200,7 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf(ddbErr.ErrorMessage))
+			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
 		}
 	}()
 
@@ -3316,7 +3316,7 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 
 		if err != nil {
 			ddbErr = d.handleError(err, "DynamoDB UpdateItem Failed: (UpdateItem)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		} else {
 			return nil
 		}
@@ -3579,7 +3579,7 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf(ddbErr.ErrorMessage))
+			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
 		}
 	}()
 
@@ -3671,7 +3671,7 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 
 		if err != nil {
 			ddbErr = d.handleError(err, "DynamoDB RemoveItemAttribute Failed: (UpdateItem to RemoveItemAttribute)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		} else {
 			return nil
 		}
@@ -3905,7 +3905,7 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf(ddbErr.ErrorMessage))
+			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
 		}
 	}()
 
@@ -3973,7 +3973,7 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 
 		if err != nil {
 			ddbErr = d.handleError(err, "DynamoDB DeleteItem Failed: (DeleteItem)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		} else {
 			return nil
 		}
@@ -4209,7 +4209,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf(ddbErr.ErrorMessage))
+			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
 		}
 	}()
 
@@ -4296,7 +4296,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 		if projSet {
 			if expr, err = expression.NewBuilder().WithProjection(proj).Build(); err != nil {
 				ddbErr = d.handleError(err, "DynamoDB GetItem Failed: (GetItem)")
-				return fmt.Errorf(ddbErr.ErrorMessage)
+				return fmt.Errorf("%s", ddbErr.ErrorMessage)
 			}
 		}
 
@@ -4339,7 +4339,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 		// evaluate result
 		if err != nil {
 			ddbErr = d.handleError(err, "DynamoDB GetItem Failed: (GetItem)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		}
 
 		if result == nil || len(result.Item) == 0 {
@@ -4349,7 +4349,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 
 		if err = dynamodbattribute.UnmarshalMap(result.Item, resultItemPtr); err != nil {
 			ddbErr = d.handleError(err, "DynamoDB GetItem Failed: (Unmarshal)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		} else {
 			return nil
 		}
@@ -4734,7 +4734,7 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf(ddbErr.ErrorMessage))
+			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
 		}
 	}()
 
@@ -4773,7 +4773,7 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 
 		if err != nil {
 			ddbErr = d.handleError(err, "QueryPaginationDataWithTrace Failed: (Filter/Projection Expression Build)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		}
 
 		// build query input params
@@ -4839,7 +4839,7 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 
 		if err != nil {
 			ddbErr = d.handleError(err, "QueryPaginationDataWithTrace Failed: (QueryPaginationDataWithTrace)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		}
 
 		return nil
@@ -5128,7 +5128,7 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf(ddbErr.ErrorMessage))
+			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
 		}
 	}()
 
@@ -5218,7 +5218,7 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 
 		if err != nil {
 			ddbErr = d.handleError(err, "DynamoDB QueryItems Failed (Filter/Projection Expression Build)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		}
 
 		// build query input params
@@ -5304,7 +5304,7 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 
 		if err != nil {
 			ddbErr = d.handleError(err, "DynamoDB QueryItems Failed: (QueryItems)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		}
 
 		if result == nil {
@@ -5314,7 +5314,7 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		// unmarshal result items to target object map
 		if err = dynamodbattribute.UnmarshalListOfMaps(result.Items, resultItemsPtr); err != nil {
 			ddbErr = d.handleError(err, "Dynamo QueryItems Failed: (Unmarshal Result Items)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		} else {
 			return nil
 		}
@@ -6039,7 +6039,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf(ddbErr.ErrorMessage))
+			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
 		}
 	}()
 
@@ -6107,7 +6107,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 
 		if err != nil {
 			ddbErr = d.handleError(err, "DynamoDB ScanItems Failed: (Expression NewBuilder)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		}
 
 		// build query input params
@@ -6164,7 +6164,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 
 		if err != nil {
 			ddbErr = d.handleError(err, "DynamoDB ScanItems Failed: (ScanItems)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		}
 
 		if result == nil {
@@ -6174,7 +6174,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 		// unmarshal result items to target object map
 		if err = dynamodbattribute.UnmarshalListOfMaps(result.Items, resultItemsPtr); err != nil {
 			ddbErr = d.handleError(err, "DynamoDB ScanItems Failed: (Unmarshal Result Items)")
-			return fmt.Errorf(ddbErr.ErrorMessage)
+			return fmt.Errorf("%s", ddbErr.ErrorMessage)
 		} else {
 			return nil
 		}
@@ -6643,7 +6643,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 	defer trace.Close()
 	defer func() {
 		if err != nil {
-			_ = trace.SafeAddError(fmt.Errorf(err.ErrorMessage))
+			_ = trace.SafeAddError(fmt.Errorf("%s", err.ErrorMessage))
 		}
 	}()
 
@@ -6678,7 +6678,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 						successCount = 0
 						unprocessedItems = nil
 						err = d.handleError(e, "DynamoDB BatchWriteItems Failed: (PutItems MarshalMap)")
-						return fmt.Errorf(err.ErrorMessage)
+						return fmt.Errorf("%s", err.ErrorMessage)
 					} else {
 						tableName := d.TableName
 
@@ -6710,7 +6710,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 							successCount = 0
 							unprocessedItems = nil
 							err = d.handleError(e, "DynamoDB BatchWriteItems Failed: (DeleteKeys MarshalMap)")
-							return fmt.Errorf(err.ErrorMessage)
+							return fmt.Errorf("%s", err.ErrorMessage)
 						} else {
 							if m != nil {
 								tableName := d.TableName
@@ -6732,7 +6732,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 								successCount = 0
 								unprocessedItems = nil
 								err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: (DeleteKeys MarshalMap) " + "DeleteKey Marshal Result Object Nil"))
-								return fmt.Errorf(err.ErrorMessage)
+								return fmt.Errorf("%s", err.ErrorMessage)
 							}
 						}
 					}
@@ -6766,7 +6766,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 			successCount = 0
 			unprocessedItems = nil
 			err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Count Must Be 1 to 25 Only"))
-			return fmt.Errorf(err.ErrorMessage)
+			return fmt.Errorf("%s", err.ErrorMessage)
 		}
 
 		// holder of delete and put item write requests
@@ -6830,14 +6830,14 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 			successCount = 0
 			unprocessedItems = nil
 			err = d.handleError(err1, "DynamoDB BatchWriteItems Failed: (BatchWriteItem)")
-			return fmt.Errorf(err.ErrorMessage)
+			return fmt.Errorf("%s", err.ErrorMessage)
 		}
 
 		if result == nil {
 			successCount = 0
 			unprocessedItems = nil
 			err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: (BatchWriteItem) " + "Result Nil"))
-			return fmt.Errorf(err.ErrorMessage)
+			return fmt.Errorf("%s", err.ErrorMessage)
 		}
 
 		// evaluate unprocessed items
@@ -7424,7 +7424,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 			if keysAv, keysErr := searchSet.MarshalSearchKeyValueMaps(); keysErr != nil {
 				notFound = false
 				err = d.handleError(keysErr, "DynamoDB BatchGetItems Failed: (SearchKey Marshal)")
-				return fmt.Errorf(err.ErrorMessage)
+				return fmt.Errorf("%s", err.ErrorMessage)
 			} else {
 				// assign keys to request items
 				k := &dynamodb.KeysAndAttributes{
@@ -7436,7 +7436,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 					if projExpr, projAttr, projErr := searchSet.ProjectedAttributes.BuildProjectionParameters(); projErr != nil {
 						notFound = false
 						err = d.handleError(projErr, "DynamoDB BatchGetItems Failed: (Projecting Attributes)")
-						return fmt.Errorf(err.ErrorMessage)
+						return fmt.Errorf("%s", err.ErrorMessage)
 					} else if projExpr != nil && (projAttr != nil && len(projAttr) > 0) {
 						k.ProjectionExpression = projExpr
 						k.ExpressionAttributeNames = projAttr
@@ -7486,7 +7486,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 			if errCtx := ctx.Err(); errCtx != nil {
 				notFound = false
 				err = d.handleError(errCtx, "DynamoDB BatchGetItems Failed: (Context Canceled Before Request)")
-				return fmt.Errorf(err.ErrorMessage)
+				return fmt.Errorf("%s", err.ErrorMessage)
 			}
 
 			var err1 error
@@ -7494,7 +7494,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 			if err1 != nil {
 				notFound = false
 				err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (BatchGetItem)")
-				return fmt.Errorf(err.ErrorMessage)
+				return fmt.Errorf("%s", err.ErrorMessage)
 			}
 
 			if result != nil && result.Responses != nil {
@@ -7530,7 +7530,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 			case <-ctx.Done():
 				notFound = false
 				err = d.handleError(ctx.Err(), "DynamoDB BatchGetItems Failed: (Context Canceled During Retry Backoff)")
-				return fmt.Errorf(err.ErrorMessage)
+				return fmt.Errorf("%s", err.ErrorMessage)
 			case <-time.After(backoff):
 			}
 
@@ -7559,7 +7559,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 			// if nothing was returned but we have an unprocessed error, propagate it
 			if err != nil {
 				notFound = false
-				return fmt.Errorf(err.ErrorMessage)
+				return fmt.Errorf("%s", err.ErrorMessage)
 			}
 			notFound = true
 			err = nil
@@ -7577,7 +7577,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 				if err1 := dynamodbattribute.UnmarshalListOfMaps(resp, searchSet.ResultItemsSlicePtr); err1 != nil {
 					notFound = false
 					err = d.handleError(err1, "DynamoDB BatchGetItems Failed: (Unmarshal ResultItems)")
-					return fmt.Errorf(err.ErrorMessage)
+					return fmt.Errorf("%s", err.ErrorMessage)
 				} else {
 					// unmarshal successful
 					searchSet.ResultItemsCount = len(resp)
@@ -8735,7 +8735,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 			if keysAv, keysErr := searchSet.MarshalSearchKeyValueMaps(); keysErr != nil {
 				successCount = 0
 				err = d.handleError(keysErr, "DynamoDB TransactionGetItems Failed: (SearchKey Marshal)")
-				return fmt.Errorf(err.ErrorMessage)
+				return fmt.Errorf("%s", err.ErrorMessage)
 			} else {
 				// get projection expression and attribute names
 				var projExpr *string

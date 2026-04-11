@@ -372,7 +372,7 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 			}
 
 			if err := g.bindInput(c, j.AuthenticateBindingType, loginRequestData); err != nil {
-				return nil, fmt.Errorf(jwt.ErrMissingLoginValues.Error() + ": " + err.Error())
+				return nil, fmt.Errorf("%s: %s", jwt.ErrMissingLoginValues.Error(), err.Error())
 			}
 
 			if loggedInCredential := j.AuthenticateHandler(loginRequestData); loggedInCredential != nil {

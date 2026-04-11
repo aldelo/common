@@ -1046,7 +1046,7 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 				o2.Set(reflect.ValueOf(ParseDateTimeCustom(v, timeFormat)))
 			}
 		default:
-			return fmt.Errorf(o2.Type().Name() + " Unhandled [1]")
+			return fmt.Errorf("%s Unhandled [1]", o2.Type().Name())
 		}
 	default:
 		switch o.Interface().(type) {
@@ -1095,7 +1095,7 @@ func ReflectStringToField(o reflect.Value, v string, timeFormat string) error {
 		case nil:
 			return nil
 		default:
-			return fmt.Errorf(o.Type().Name() + " Unhandled [2]")
+			return fmt.Errorf("%s Unhandled [2]", o.Type().Name())
 		}
 	}
 

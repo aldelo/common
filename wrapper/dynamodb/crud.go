@@ -3274,7 +3274,7 @@ func (c *Crud) UpdateGlobalTable(tableName string, createRegions []awsregion.AWS
 
 			if util.LenTrim(m) > 0 {
 				m = "UpdateGlobalTable Needs Clean Up;" + m + "; Clean Up By Manual Delete From AWS DynamoDB Console"
-				return fmt.Errorf(m)
+				return fmt.Errorf("%s", m)
 			} else {
 				return nil
 			}

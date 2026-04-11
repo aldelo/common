@@ -431,7 +431,7 @@ func (g *Gin) RunServer() error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("Web Server '" + g.Name + "' Failed To Start: " + err.Error())
+		return fmt.Errorf("Web Server '%s' Failed To Start: %s", g.Name, err.Error())
 	} else {
 		log.Println("Web Server '" + g.Name + "' Stopped")
 		return nil

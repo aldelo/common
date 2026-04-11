@@ -254,7 +254,7 @@ func (w *WAF2) Connect() error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return fmt.Errorf("Connect to WAF2 Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to WAF2 Failed: (AWS Session Error) Create Custom Http2 Client Errored = %s", httpErr.Error())
 	}
 
 	// establish aws session connection and keep session object in struct
@@ -265,7 +265,7 @@ func (w *WAF2) Connect() error {
 		})
 	if err != nil {
 		// aws session error
-		return fmt.Errorf("Connect To WAF2 Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To WAF2 Failed: (AWS Session Error) %s", err.Error())
 	}
 
 	// aws session obtained

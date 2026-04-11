@@ -56,8 +56,8 @@ func NiceRecoveryWithWriter(f func(c *gin.Context, err interface{}), out io.Writ
 					httpRequest, _ := httputil.DumpRequest(c.Request, false)
 					reset := string([]byte{27, 91, 48, 109})
 					// goErr.Stack() includes the error message, so we don't need to log it separately
-					logger.Printf(fmt.Sprintf("[Recovery] Panic Recovered:\n\n%s\n\n%s%s", 
-						httpRequest, goErr.Stack(), reset))
+					logger.Printf("[Recovery] Panic Recovered:\n\n%s\n\n%s%s",
+						httpRequest, goErr.Stack(), reset)
 				}
 
 				// Call custom handler with the actual error wrapped in a descriptive message

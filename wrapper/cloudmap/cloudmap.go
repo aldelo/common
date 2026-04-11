@@ -395,12 +395,12 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 	}
 
 	if err != nil {
-		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: (Create Action) " + err.Error())
+		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: (Create Action) %s", err.Error())
 		return "", err
 	}
 
 	if output == nil || output.OperationId == nil {
-		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: (Create Action) " + "Output Nil")
+		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: (Create Action) Output Nil")
 		return "", err
 	}
 

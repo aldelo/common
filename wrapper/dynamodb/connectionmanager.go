@@ -37,20 +37,15 @@ func WithShutdownWaitTimeout(d time.Duration) func(*ServiceConnectionManager) {
 	}
 }
 
-// convertAwsContextSafely tries to extract a stdlib context.Context from aws.Context.
-// If not possible, it returns context.Background().
+// convertAwsContextSafely returns a stdlib context.Context from aws.Context.
+// aws.Context is a type alias for context.Context (see aws-sdk-go v1
+// aws/context_1_9.go), so the input can be returned directly; nil is
+// normalized to context.Background().
 func convertAwsContextSafely(awsCtx aws.Context) context.Context {
 	if awsCtx == nil {
 		return context.Background()
 	}
-
-	// Most aws.Context implementations embed context.Context; try a type assertion.
-	if c, ok := awsCtx.(context.Context); ok && c != nil {
-		return c
-	}
-
-	// Fallback: best-effort background context.
-	return context.Background()
+	return awsCtx
 }
 
 func ensureAwsContext(ctx aws.Context) aws.Context {

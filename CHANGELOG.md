@@ -106,6 +106,57 @@ retry more residuals) so no downstream behavior is narrowed and rule #10 holds.
   documented in the helper's godoc. AWS reference:
   [BatchWriteItem error-handling guidance](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html#API_BatchWriteItem_Errors).
 
+### Added — additive siblings (rule #10 compliant)
+
+- **P0-5** — `crypto.RsaAesPublicKeyEncryptAndSignHmac` /
+  `crypto.RsaAesPrivateKeyDecryptAndVerifyHmac`, the additive v1.7.9
+  replacement for the deprecated `RsaAesPublicKeyEncryptAndSign` /
+  `RsaAesPrivateKeyDecryptAndVerify` pair. The V2 pair keeps the same
+  security goals (hybrid RSA-OAEP-SHA256 key wrap + AES-GCM body
+  encryption + sender signature verified by recipient) but fixes two
+  hazards in the V1 envelope format:
+  (1) V1 appended an unkeyed `Sha256(recipientPublicKey, "TPK@2019")`
+  hash whose presence alongside the ciphertext invited readers to
+  mistake it for an integrity tag — it is actually only a
+  recipient-key lookup identifier (see
+  `RsaAesParseTPKHashFromEncryptedPayload`) and any attacker can
+  recompute it. V2 replaces this with a real HMAC-SHA256 tag keyed by
+  the per-envelope 32-byte AES key, computed over
+  `rsaEncryptedAesKey || aesGcmEncryptedBody`, so tampering of either
+  component is detected BEFORE the GCM decrypter is invoked
+  (fail-fast).
+  (2) V1's AES-GCM inner plaintext was the 0x0B (VT) delimited triple
+  `plainText<VT>senderPublicKey<VT>signature`, so any plaintext
+  containing a VT byte silently broke the `strings.Split` parser and
+  rendered the envelope unrecoverable. V2 replaces the VT delimiter
+  with length-prefixed fields (8-char uppercase-hex uint32 length
+  followed by raw bytes per field), so arbitrary byte sequences —
+  including every control byte 0x00..0x1F, leading/trailing NUL, and
+  embedded VT — round-trip exactly.
+  The V2 wire format starts with `<STX>V2<rsaEncryptedAesKey 512
+  hex><aesGcmBody><hmacTag 64 hex><ETX>`. The literal "V2" marker is
+  not valid hex, so a V1 decrypter fed a V2 payload fails its "aes
+  key must be 512 hex chars" check and a V2 decrypter fed a V1
+  payload fails its "first two bytes must be V2" check — V1 and V2
+  payloads are unambiguously distinguishable and never cross-decode.
+  The V1 pair remains fully callable through the entire v1.x series
+  per workspace rule #10 (observable-contract stability); removal is
+  scheduled for v2.0.0 once all 36+ consumers have migrated to the
+  V2 sibling. New regression tests in `crypto_test.go` cover:
+  (A) V2 round-trip with ASCII plaintext,
+  (B) V2 round-trip with a plaintext containing every control byte
+  0x00..0x1F plus leading/trailing NUL and VT — the category of
+  inputs V1 corrupts,
+  (C) V2 round-trip with a ~4 KiB plaintext (length-prefix decoder
+  past trivial sizes),
+  (D) V1/V2 cross-version isolation (each decrypter rejects the
+  other's envelope format),
+  (E) HMAC tamper detection (flipping a byte inside the GCM body
+  triggers an integrity-check failure, not a successful decrypt of
+  corrupted data),
+  (F) signature verification still runs on the V2 path (an envelope
+  signed by sender A but presented as signed by sender B fails).
+
 ### Deprecated
 
 - **P0-4** — `crypto.AesCbcEncrypt` / `crypto.AesCbcDecrypt` marked
@@ -129,6 +180,18 @@ retry more residuals) so no downstream behavior is narrowed and rule #10 holds.
   observable behavior without forcing a v2.0.0 release. The same test
   also demonstrates that `AesGcmEncrypt`/`AesGcmDecrypt` preserve the
   trailing NUL exactly, proving the migration target is correct.
+
+- **P0-5** — `crypto.RsaAesPublicKeyEncryptAndSign` /
+  `crypto.RsaAesPrivateKeyDecryptAndVerify` marked `Deprecated:` in
+  godoc. The V1 envelope format has two hazards documented in full in
+  the "Added — additive siblings" section above: an unkeyed hash that
+  looks like an integrity tag but provides none, and a VT-delimited
+  inner plaintext parser that silently breaks when plaintext contains a
+  VT byte. The godoc directs callers to the new V2 siblings
+  `RsaAesPublicKeyEncryptAndSignHmac` /
+  `RsaAesPrivateKeyDecryptAndVerifyHmac`. The V1 functions remain fully
+  callable through the entire v1.x series per workspace rule #10
+  (observable-contract stability); removal is scheduled for v2.0.0.
 
 ### Changed — documentation only (observable contracts unchanged)
 
@@ -177,9 +240,15 @@ in the workspace for the full list, including:
   `AesGcmEncrypt` / `AesGcmDecrypt` pair is the migration target for v1.x
   callers. Function removal is scheduled for v2.0.0 once all 36+ consumer
   repos have migrated.
-- **P0-5** — RSA envelope (sign-then-encrypt with unkeyed SHA-256 integrity
-  tag) — an HMAC-keyed sibling will be added in v1.8.0 as an additive API; the
-  existing helpers remain supported until v2.0.0.
+- **P0-5** — Removal of `RsaAesPublicKeyEncryptAndSign` /
+  `RsaAesPrivateKeyDecryptAndVerify`. The V1 envelope hazards were
+  documented and the V2 sibling pair
+  (`RsaAesPublicKeyEncryptAndSignHmac` /
+  `RsaAesPrivateKeyDecryptAndVerifyHmac`) was added in v1.7.9 (see
+  "Added — additive siblings" section above); the V1 pair is the
+  migration source and remains callable through the entire v1.x
+  series. Function removal is scheduled for v2.0.0 once all 36+
+  consumer repos have migrated to the V2 pair.
 - **P0-6** — `Md5` helper — will be marked `Deprecated:` in godoc in v1.7.9,
   removed in v2.0.0. Callers must migrate to `Sha256` / `Sha512`.
 - Unreachable `aws-sdk-go` v1 S3 Crypto SDK vulnerabilities `GO-2022-0646` (CBC

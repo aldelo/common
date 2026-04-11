@@ -18,6 +18,7 @@ package crypto
 
 import (
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -324,4 +325,286 @@ func TestAesCbc_DeprecationObservableContracts(t *testing.T) {
 				gcmDec, pt)
 		}
 	})
+}
+
+// -----------------------------------------------------------------------
+// P0-5 — RSA/AES envelope V2 (HMAC-keyed sibling pair) regression suite.
+//
+// RsaAesPublicKeyEncryptAndSignHmac / RsaAesPrivateKeyDecryptAndVerifyHmac
+// are additive siblings to the deprecated V1 pair. The V1 wire format,
+// behavior, and error messages are unchanged per workspace rule #10; the
+// V2 pair is a wholly separate envelope that new callers should migrate
+// to before v2.0.0 (when V1 is scheduled for removal).
+//
+// Coverage goals:
+//
+//	A. Happy path V2 round-trip with an ASCII plaintext.
+//	B. Happy path V2 round-trip with a plaintext containing embedded
+//	   VT (0x0B), NUL (0x00), and other control bytes — the exact
+//	   category of inputs the V1 format corrupts.
+//	C. V2 round-trip with a large plaintext (> 4 KiB) to exercise the
+//	   length-prefix decoder past trivial sizes.
+//	D. Cross-version isolation: a V1 envelope fed to the V2 decrypter
+//	   is rejected (format marker check), and a V2 envelope fed to the
+//	   V1 decrypter is rejected (V1's checks fail on the 'V2' literal).
+//	E. HMAC tamper detection: flipping a single byte of the V2
+//	   envelope body produces an integrity-check failure, not a
+//	   successful decrypt of corrupted data.
+//	F. Signature verification still runs on the V2 path (an envelope
+//	   signed by one sender but presented as signed by another fails).
+//
+// Key generation is slow (~100 ms per 2048-bit RSA keypair); tests share
+// keypairs via package-level sync.Once to keep the suite under a second.
+// -----------------------------------------------------------------------
+
+var (
+	v2TestRecipientOnce sync.Once
+	v2TestRecipientPriv string
+	v2TestRecipientPub  string
+	v2TestSenderPriv    string
+	v2TestSenderPub     string
+)
+
+func v2TestKeys(t *testing.T) (recipPriv, recipPub, senderPriv, senderPub string) {
+	t.Helper()
+	v2TestRecipientOnce.Do(func() {
+		var err error
+		v2TestRecipientPriv, v2TestRecipientPub, err = RsaCreateKey()
+		if err != nil {
+			t.Fatalf("RsaCreateKey(recipient): %v", err)
+		}
+		v2TestSenderPriv, v2TestSenderPub, err = RsaCreateKey()
+		if err != nil {
+			t.Fatalf("RsaCreateKey(sender): %v", err)
+		}
+	})
+	return v2TestRecipientPriv, v2TestRecipientPub, v2TestSenderPriv, v2TestSenderPub
+}
+
+func TestRsaAesHmac_V2RoundTripAsciiPlaintext(t *testing.T) {
+	recipPriv, recipPub, senderPriv, senderPub := v2TestKeys(t)
+
+	const pt = "hello V2 envelope — ASCII sanity check."
+
+	env, err := RsaAesPublicKeyEncryptAndSignHmac(pt, recipPub, senderPub, senderPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPublicKeyEncryptAndSignHmac: %v", err)
+	}
+
+	gotPlain, gotSenderPub, err := RsaAesPrivateKeyDecryptAndVerifyHmac(env, recipPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPrivateKeyDecryptAndVerifyHmac: %v", err)
+	}
+	if gotPlain != pt {
+		t.Errorf("plainText round-trip:\n got: %q\nwant: %q", gotPlain, pt)
+	}
+	if gotSenderPub != senderPub {
+		t.Errorf("senderPublicKey round-trip mismatch — V2 envelope must "+
+			"return the exact sender key that was passed in at encrypt time")
+	}
+}
+
+func TestRsaAesHmac_V2RoundTripControlByteHostile(t *testing.T) {
+	// This is the headline test for P0-5. A plaintext containing embedded
+	// VT (0x0B), NUL (0x00), unit-separator (0x1F), and other control
+	// bytes is EXACTLY what breaks the V1 format's strings.Split(VT)
+	// inner parser. V2 uses length-prefixed fields and must round-trip
+	// every byte exactly. If this test fails, the length-prefix framing
+	// is broken — which would be a ship-gate regression.
+	recipPriv, recipPub, senderPriv, senderPub := v2TestKeys(t)
+
+	// Build a plaintext with every control byte 0x00..0x1F plus a VT
+	// and a NUL specifically at tail and head positions.
+	var hostile []byte
+	hostile = append(hostile, 0x00)           // leading NUL
+	hostile = append(hostile, 0x0B)           // leading VT
+	hostile = append(hostile, []byte("abc")...)
+	for b := byte(0x00); b < 0x20; b++ {
+		hostile = append(hostile, b) // every control byte
+	}
+	hostile = append(hostile, []byte("汉字 😀")...)
+	hostile = append(hostile, 0x0B)           // trailing VT
+	hostile = append(hostile, 0x00)           // trailing NUL
+	pt := string(hostile)
+
+	env, err := RsaAesPublicKeyEncryptAndSignHmac(pt, recipPub, senderPub, senderPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPublicKeyEncryptAndSignHmac: %v", err)
+	}
+
+	gotPlain, _, err := RsaAesPrivateKeyDecryptAndVerifyHmac(env, recipPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPrivateKeyDecryptAndVerifyHmac: %v", err)
+	}
+	if gotPlain != pt {
+		t.Errorf("control-byte-hostile round-trip mismatch — V2 length-"+
+			"prefixed framing must preserve arbitrary bytes exactly:\n"+
+			" got len=%d: %q\nwant len=%d: %q",
+			len(gotPlain), gotPlain, len(pt), pt)
+	}
+}
+
+func TestRsaAesHmac_V2RoundTripLargePlaintext(t *testing.T) {
+	// ~4 KiB plaintext exercises the length-prefix decoder past the
+	// range where a miscoded uint32 shift could accidentally still
+	// work with small values.
+	recipPriv, recipPub, senderPriv, senderPub := v2TestKeys(t)
+
+	pt := strings.Repeat("The quick brown fox jumps over the lazy dog. ", 100) // ~4.5 KiB
+
+	env, err := RsaAesPublicKeyEncryptAndSignHmac(pt, recipPub, senderPub, senderPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPublicKeyEncryptAndSignHmac: %v", err)
+	}
+	gotPlain, _, err := RsaAesPrivateKeyDecryptAndVerifyHmac(env, recipPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPrivateKeyDecryptAndVerifyHmac: %v", err)
+	}
+	if gotPlain != pt {
+		t.Errorf("large-plaintext round-trip mismatch:\n got len=%d\nwant len=%d",
+			len(gotPlain), len(pt))
+	}
+}
+
+func TestRsaAesHmac_V1V2CrossVersionIsolation(t *testing.T) {
+	recipPriv, recipPub, senderPriv, senderPub := v2TestKeys(t)
+
+	// Use a simple ASCII plaintext with NO VT bytes so V1 itself can
+	// encrypt it cleanly.
+	const pt = "cross-version isolation test"
+
+	v1Env, err := RsaAesPublicKeyEncryptAndSign(pt, recipPub, senderPub, senderPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPublicKeyEncryptAndSign (V1): %v", err)
+	}
+
+	v2Env, err := RsaAesPublicKeyEncryptAndSignHmac(pt, recipPub, senderPub, senderPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPublicKeyEncryptAndSignHmac (V2): %v", err)
+	}
+
+	// V1 decrypter MUST reject V2 payload. (V2 starts with "V2" after
+	// STX, and 'V' is not a hex char, so V1's RSA-decrypt of the first
+	// 512 chars fails. The exact error message is not pinned here —
+	// only the fact that an error is returned.)
+	if _, _, err := RsaAesPrivateKeyDecryptAndVerify(v2Env, recipPriv); err == nil {
+		t.Errorf("V1 decrypter accepted V2 payload — cross-version " +
+			"isolation is broken. This must never happen.")
+	}
+
+	// V2 decrypter MUST reject V1 payload. Its format-marker check
+	// fires as soon as STX is stripped and the first two bytes are
+	// examined — they will be hex chars from V1's RSA-wrapped-key
+	// segment, not "V2".
+	if _, _, err := RsaAesPrivateKeyDecryptAndVerifyHmac(v1Env, recipPriv); err == nil {
+		t.Errorf("V2 decrypter accepted V1 payload — cross-version " +
+			"isolation is broken. This must never happen.")
+	}
+}
+
+func TestRsaAesHmac_V2TamperDetection(t *testing.T) {
+	recipPriv, recipPub, senderPriv, senderPub := v2TestKeys(t)
+
+	const pt = "tamper detection test"
+
+	env, err := RsaAesPublicKeyEncryptAndSignHmac(pt, recipPub, senderPub, senderPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPublicKeyEncryptAndSignHmac: %v", err)
+	}
+
+	// Pick a byte deep in the AES-GCM body (well past the 512-char
+	// RSA-wrapped key and inside the ciphertext) and flip it. The
+	// envelope layout is:
+	//   STX(1) + "V2"(2) + rsaKey(512) + body(variable) + hmac(64) + ETX(1)
+	// so STX+V2+rsaKey = 515 bytes. Flip the char at offset 600, which
+	// is guaranteed to be inside the GCM body for any reasonable
+	// plaintext size.
+	if len(env) < 700 {
+		t.Fatalf("envelope unexpectedly short (%d bytes) — test assumption broken", len(env))
+	}
+	tampered := []byte(env)
+	// toggle a hex char: 'a'<->'b', '0'<->'1', etc.
+	switch tampered[600] {
+	case 'a':
+		tampered[600] = 'b'
+	case 'b':
+		tampered[600] = 'a'
+	default:
+		// any other byte: xor low bit so the hex char flips to an
+		// adjacent hex char (if it's hex) or to a non-hex char
+		// (which also fails decode — still a negative result).
+		tampered[600] ^= 0x01
+	}
+
+	_, _, err = RsaAesPrivateKeyDecryptAndVerifyHmac(string(tampered), recipPriv)
+	if err == nil {
+		t.Errorf("tampered envelope decrypted cleanly — HMAC or GCM " +
+			"integrity check failed to detect corruption. This is a " +
+			"security-critical regression.")
+	}
+}
+
+func TestRsaAesHmac_V2SignatureVerificationRunsOnV2Path(t *testing.T) {
+	// Build an envelope signed by senderA, then try to decrypt and
+	// present senderA's key — this should pass. Then tamper with
+	// JUST the sender-public-key field inside the envelope so the
+	// RSA verify step fails against the (still-valid) signature.
+	//
+	// The cleanest way to prove the V2 signature-verify path runs
+	// without hand-crafting a tampered inner plaintext is to use
+	// TWO different sender keypairs and prove that an envelope
+	// signed by senderA cannot be forged to claim senderB signed
+	// it. We do this at the encrypt-API level: re-sign with
+	// senderA's private key but pass senderB's public key as the
+	// purported sender — the decrypt-side RSA verify should then
+	// fail because signatureA does not verify under publicKeyB.
+	//
+	// Strategy: encrypt with sender=A. Then take a SECOND envelope
+	// encrypted with sender=B. The first envelope's signature was
+	// built over plainText using senderA's private key. A third
+	// party who swaps in senderB's public key cannot forge a new
+	// signature (they don't have senderB's private key), so
+	// anything they produce will fail verify. We therefore test
+	// only the positive path (envelope signed and verified) and
+	// trust that the verify call itself is wired up — its error
+	// path is already covered by RsaPublicKeyVerify's own tests.
+	recipPriv, recipPub, senderAPriv, senderAPub := v2TestKeys(t)
+
+	// Generate a second sender keypair for this test.
+	senderBPriv, senderBPub, err := RsaCreateKey()
+	if err != nil {
+		t.Fatalf("RsaCreateKey(senderB): %v", err)
+	}
+	_ = senderBPriv // unused; we never hold B's private key in this test
+
+	const pt = "sig path test"
+
+	// envA: signed by senderA, presented as senderA — must verify.
+	envA, err := RsaAesPublicKeyEncryptAndSignHmac(pt, recipPub, senderAPub, senderAPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPublicKeyEncryptAndSignHmac(A): %v", err)
+	}
+	_, gotSpk, err := RsaAesPrivateKeyDecryptAndVerifyHmac(envA, recipPriv)
+	if err != nil {
+		t.Fatalf("envA decrypt: %v", err)
+	}
+	if gotSpk != senderAPub {
+		t.Errorf("envA returned sender=%q, want %q", gotSpk, senderAPub)
+	}
+
+	// envForged: try to encrypt with senderA's private key but
+	// claim senderB is the sender. This is what an attacker with
+	// access to senderA's private key (but not senderB's) would
+	// try to do. The signature will be valid PKCS1v15 over pt
+	// using senderA's private key, but RsaPublicKeyVerify will
+	// check it against senderB's public key and fail.
+	envForged, err := RsaAesPublicKeyEncryptAndSignHmac(pt, recipPub, senderBPub, senderAPriv)
+	if err != nil {
+		t.Fatalf("RsaAesPublicKeyEncryptAndSignHmac(forged): %v", err)
+	}
+	if _, _, err := RsaAesPrivateKeyDecryptAndVerifyHmac(envForged, recipPriv); err == nil {
+		t.Errorf("forged envelope (signed by A, claiming B) decrypted " +
+			"cleanly — V2 signature verification path is not wired " +
+			"up. Security-critical regression.")
+	}
 }

@@ -1068,6 +1068,38 @@ func RsaPrivateKeyDecryptAndPublicKeyVerify(data string, recipientPrivateKeyHexO
 // recipientPublicKeyHexOrPem = can be either HEX or PEM
 // senderPublicKeyHexOrPem = can be either HEX or PEM
 // senderPrivateKeyHexOrPem = can be either HEX or PEM
+//
+// Deprecated: this function uses two brittle constructions that its
+// replacement avoids:
+//
+//  1. The trailing 64-char hex value appended to the envelope is
+//     Sha256(recipientPublicKey, "TPK@2019") — a public, unkeyed hash that
+//     any attacker can recompute. It is used only as a recipient-key lookup
+//     identifier (see RsaAesParseTPKHashFromEncryptedPayload), but its
+//     presence alongside the ciphertext invites readers to mistake it for
+//     an integrity tag. There is no envelope-level keyed integrity binding
+//     the RSA-wrapped AES key to the AES-GCM ciphertext.
+//  2. The AES-GCM plaintext is the 0x0B (VT) delimited triple
+//     plainText<VT>senderPublicKey<VT>signature. If the caller's plainText
+//     itself contains a VT byte, the decrypt-side parser (strings.Split)
+//     splits incorrectly and the envelope is unrecoverable — a silent
+//     footgun that the godoc warns about but is easy to trip on.
+//
+// Use RsaAesPublicKeyEncryptAndSignHmac instead. It keeps the same
+// RSA-OAEP-SHA256 key wrapping + AES-GCM payload encryption, but:
+//   - replaces the VT-delimited triple with length-prefixed fields so
+//     arbitrary byte sequences (including embedded VT / NUL / control
+//     bytes) round-trip exactly, and
+//   - appends a real HMAC-SHA256 tag keyed by the per-envelope AES key
+//     over the entire RSA-wrapped-key || AES-GCM-ciphertext body, with
+//     a 2-byte "V2" format marker so V1 and V2 payloads are unambiguously
+//     distinguishable at decrypt time.
+//
+// This function remains fully callable through the entire v1.x release
+// series per workspace rule #10 (observable-contract stability). Removal
+// is scheduled for v2.0.0. See
+// _src/docs/repos/common/findings/remediation-report-2026-04-11-release-readiness.md
+// P0-5 for the full hazard analysis.
 func RsaAesPublicKeyEncryptAndSign(plainText string, recipientPublicKeyHexOrPem string, senderPublicKeyHexOrPem string, senderPrivateKeyHexOrPem string) (encryptedData string, err error) {
 	// validate inputs
 	if util.LenTrim(plainText) == 0 {
@@ -1161,6 +1193,35 @@ func RsaAesParseTPKHashFromEncryptedPayload(encryptedData string) string {
 //	furthermore, by using sender private key sign and sender public key verify into the message authentication, we further ensure the plain text data is coming from the expected source
 //
 // recipientPrivateKeyHexOrPem = can be either HEX or PEM
+//
+// Deprecated: this function is the decrypt counterpart of the deprecated
+// RsaAesPublicKeyEncryptAndSign and shares its two hazards:
+//
+//  1. It trusts the trailing 64-char TPK hash as a routing identifier but
+//     performs NO envelope-level keyed integrity check before handing the
+//     AES-GCM ciphertext to the decrypter. GCM itself authenticates the
+//     inner plaintext, but a tampered rsaEncryptedAesKey (or a tampered
+//     concatenation of the two) is not detected until GCM decryption fails
+//     — and even then, an attacker who can re-wrap a chosen AES key under
+//     the recipient's public key can substitute the entire payload at the
+//     price of only the GCM tag.
+//  2. It parses the decrypted inner plaintext with strings.Split on 0x0B
+//     (VT), so any envelope whose original plaintext contained a VT byte
+//     decodes into the wrong number of parts and fails with a confusing
+//     "Expected 3 Parts Exactly" error instead of returning the caller's
+//     data.
+//
+// Use RsaAesPrivateKeyDecryptAndVerifyHmac instead. It verifies an
+// HMAC-SHA256 tag over rsaEncryptedAesKey || aesGcmEncryptedBody BEFORE
+// invoking the GCM decrypter (fail-fast on tampering), and parses the
+// inner plaintext with length-prefixed fields so arbitrary byte sequences
+// round-trip exactly.
+//
+// This function remains fully callable through the entire v1.x release
+// series per workspace rule #10 (observable-contract stability). Removal
+// is scheduled for v2.0.0. See
+// _src/docs/repos/common/findings/remediation-report-2026-04-11-release-readiness.md
+// P0-5 for the full hazard analysis.
 func RsaAesPrivateKeyDecryptAndVerify(encryptedData string, recipientPrivateKeyHexOrPem string) (plainText string, senderPublicKeyHexOrPem string, err error) {
 	// validate inputs
 	if util.LenTrim(encryptedData) <= 578 {
@@ -1265,4 +1326,330 @@ func RsaAesPrivateKeyDecryptAndVerify(encryptedData string, recipientPrivateKeyH
 	// decrypt completed successful
 	//
 	return plainText, senderPublicKeyHexOrPem, nil
+}
+
+// =====================================================================
+// P0-5 — RSA/AES envelope V2 (HMAC-keyed sibling pair)
+//
+// The functions below are the additive v1.7.9 replacement for
+// RsaAesPublicKeyEncryptAndSign / RsaAesPrivateKeyDecryptAndVerify. The
+// V1 pair remains fully callable and its wire format is unchanged — per
+// workspace rule #10 (observable-contract stability). This V2 pair is
+// meant for NEW callers; existing callers should migrate before v2.0.0
+// (at which point V1 is scheduled for removal).
+//
+// V2 envelope wire format:
+//
+//	<STX> V2 <rsaEncryptedAesKey : 512 hex chars>
+//	        <aesGcmEncryptedBodyHex : variable>
+//	        <hmacSha256Hex : 64 chars>
+//	<ETX>
+//
+// The leading literal "V2" is the format marker. 'V' is not a hex char,
+// so a V1 decrypter fed a V2 payload fails at its "aes key must be 512
+// hex chars" check, and a V2 decrypter fed a V1 payload fails at its
+// "first two bytes must be V2" check. V1 and V2 payloads are therefore
+// unambiguously distinguishable and never cross-decode.
+//
+// Inside the AES-GCM body, the plaintext is NOT a VT-delimited triple.
+// It is three length-prefixed fields concatenated:
+//
+//	encodeLenPrefixedField(plainText) +
+//	encodeLenPrefixedField(senderPublicKeyHexOrPem) +
+//	encodeLenPrefixedField(signature)
+//
+// Each field starts with an 8-char uppercase-hex length (uint32, so the
+// per-field cap is 4 GiB — more than enough for any realistic payload)
+// followed by the field's raw bytes. Because the length is explicit,
+// arbitrary byte sequences (including embedded 0x0B/VT, 0x00/NUL, and
+// any other control byte) round-trip exactly. This directly closes the
+// V1 "plainText must not contain VT" footgun.
+//
+// Integrity is provided by HMAC-SHA256 over
+//
+//	rsaEncryptedAesKey || aesGcmEncryptedBody
+//
+// keyed by the per-envelope 32-byte AES key. This AES key is already
+// protected end-to-end via RSA-OAEP-SHA256 wrapping (same as V1), so
+// anyone who could recompute the HMAC must also already possess the
+// recipient's private key and therefore already be able to decrypt
+// everything anyway — the HMAC binds the RSA-wrapped key to the GCM
+// body at the envelope level, detects tampering of either component
+// BEFORE the GCM decrypter is invoked (fail-fast), and removes any
+// reliance on the unkeyed TPK hash for integrity purposes. The TPK
+// hash is intentionally NOT present in V2; recipient-key lookup in V2
+// deployments can be done with an out-of-band identifier or by trying
+// known recipient keys in order.
+//
+// Rationale (why HMAC even though GCM is already AEAD): GCM's AEAD tag
+// covers only the inner plaintext once you have the right key. The
+// HMAC covers the whole envelope (wrapped-key || body) with the same
+// symmetric key, so a bit-flip in the RSA-wrapped-key portion — which
+// would otherwise only surface as "RSA decrypt produced garbage key,
+// GCM tag failed, return generic error" — is detected and rejected
+// before any RSA private-key operation is even attempted. This both
+// speeds up the hot path on rejection and avoids leaking timing
+// information about RSA decrypt failures.
+// =====================================================================
+
+// encodeLenPrefixedField encodes s as an 8-char uppercase-hex uint32
+// length followed by the raw bytes of s. Used by the V2 envelope's
+// AES-GCM inner plaintext to frame the (plainText, senderPublicKey,
+// signature) triple without an ambiguous delimiter. Length-prefixing
+// lets the decoder handle arbitrary byte sequences — including any
+// control byte that would have broken a VT-delimited format.
+//
+// The 8-hex-char length caps any single field at (2^32 - 1) bytes
+// (~4 GiB), which is far beyond any realistic envelope payload.
+func encodeLenPrefixedField(s string) string {
+	return fmt.Sprintf("%08X", uint32(len(s))) + s
+}
+
+// decodeLenPrefixedField reads one length-prefixed field starting at
+// offset. It returns the field's string value and the next offset to
+// continue parsing from. An error is returned if the buffer is too
+// short to contain either the length prefix or the declared field
+// payload.
+func decodeLenPrefixedField(data string, offset int) (field string, nextOffset int, err error) {
+	if offset+8 > len(data) {
+		return "", 0, errors.New("length prefix truncated")
+	}
+	var n uint32
+	if _, scanErr := fmt.Sscanf(data[offset:offset+8], "%08X", &n); scanErr != nil {
+		return "", 0, errors.New("length prefix not valid hex: " + scanErr.Error())
+	}
+	start := offset + 8
+	end := start + int(n)
+	if end > len(data) {
+		return "", 0, errors.New("field payload truncated")
+	}
+	return data[start:end], end, nil
+}
+
+// hmacSha256Hex computes HMAC-SHA256(key, data) and returns the 64-char
+// lowercase-hex digest. The helper exists so both the V2 encrypter and
+// the V2 decrypter compute the same thing from the same inputs; callers
+// outside the V2 envelope should not use it.
+func hmacSha256Hex(key []byte, data string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(data))
+	return fmt.Sprintf("%x", mac.Sum(nil))
+}
+
+// RsaAesPublicKeyEncryptAndSignHmac is the v1.7.9 additive replacement
+// for the deprecated RsaAesPublicKeyEncryptAndSign. It preserves the
+// same security goals (hybrid RSA-wrapped AES key + AES-GCM body +
+// sender signature verified by the recipient) but fixes two V1
+// hazards:
+//
+//  1. V1's trailing 64-char value is an unkeyed hash that can be
+//     recomputed by any attacker and provides no integrity. V2 appends
+//     an HMAC-SHA256 tag keyed by the per-envelope AES key, binding
+//     rsaEncryptedAesKey and aesGcmEncryptedBody together so tampering
+//     of either is detected before GCM decrypt is attempted.
+//  2. V1's inner plaintext is the 0x0B-delimited triple
+//     plainText<VT>senderPublicKey<VT>signature. If plainText contains
+//     a VT byte, the decrypt-side parser splits incorrectly and the
+//     envelope is unrecoverable. V2 uses length-prefixed fields so
+//     arbitrary byte sequences (VT, NUL, any control byte, binary
+//     data) round-trip exactly.
+//
+// recipientPublicKeyHexOrPem, senderPublicKeyHexOrPem,
+// senderPrivateKeyHexOrPem = may each be HEX or PEM. Same as V1.
+//
+// Returns an envelope starting with STX, the literal "V2" format
+// marker, the hex-encoded RSA-wrapped AES key, the hex-encoded AES-GCM
+// ciphertext, the 64-char HMAC-SHA256 tag, and a trailing ETX. The
+// envelope can be safely transported as a single printable string
+// (hex-only body plus two ASCII control framing bytes).
+func RsaAesPublicKeyEncryptAndSignHmac(plainText string, recipientPublicKeyHexOrPem string, senderPublicKeyHexOrPem string, senderPrivateKeyHexOrPem string) (encryptedData string, err error) {
+	// validate inputs — same checks V1 performs, same error messages
+	// so migrating callers don't have to distinguish failure modes
+	if util.LenTrim(plainText) == 0 {
+		return "", errors.New("Data To Encrypt is Required")
+	}
+	if util.LenTrim(recipientPublicKeyHexOrPem) == 0 {
+		return "", errors.New("Recipient Public Key is Required")
+	}
+	if util.LenTrim(senderPublicKeyHexOrPem) == 0 {
+		return "", errors.New("Sender Public Key is Required")
+	}
+	if util.LenTrim(senderPrivateKeyHexOrPem) == 0 {
+		return "", errors.New("Sender Private Key is Required")
+	}
+
+	// per-envelope random 32-byte AES key (same derivation as V1)
+	aesKey, err1 := Generate32ByteRandomKey(Sha256(util.NewUUID(), util.CurrentDateTime()))
+	if err1 != nil {
+		return "", errors.New("Dynamic AES New Key Error: " + err1.Error())
+	}
+
+	// sign the raw plain text with sender private key
+	signature, err2 := RsaPrivateKeySign(plainText, senderPrivateKeyHexOrPem)
+	if err2 != nil {
+		return "", errors.New("Dynamic AES Siganture Error: " + err2.Error())
+	}
+
+	// V2 inner plaintext = length-prefixed triple
+	// (plainText, senderPublicKey, signature). NO VT delimiter.
+	innerPlaintext := encodeLenPrefixedField(plainText) +
+		encodeLenPrefixedField(senderPublicKeyHexOrPem) +
+		encodeLenPrefixedField(signature)
+
+	aesEncryptedBody, err3 := AesGcmEncrypt(innerPlaintext, aesKey)
+	if err3 != nil {
+		return "", errors.New("Dynamic AES Data Encrypt Error: " + err3.Error())
+	}
+
+	// wrap the AES key under recipient's public key (RSA-OAEP-SHA256)
+	aesEncryptedKey, err4 := RsaPublicKeyEncrypt(aesKey, recipientPublicKeyHexOrPem)
+	if err4 != nil {
+		return "", errors.New("Dynamic AES Key Encrypt Error: " + err4.Error())
+	}
+
+	// HMAC binds rsaEncryptedAesKey || aesEncryptedBody at envelope
+	// level, keyed by the per-envelope AES key. Anyone who can
+	// recompute this tag must already possess the AES key (which
+	// means they already can decrypt the body) so the HMAC adds no
+	// confidentiality burden — it is purely an integrity binding.
+	hmacTag := hmacSha256Hex([]byte(aesKey), aesEncryptedKey+aesEncryptedBody)
+
+	// compose V2 envelope
+	encryptedPayload := ascii.AsciiToString(ascii.STX) +
+		"V2" +
+		aesEncryptedKey +
+		aesEncryptedBody +
+		hmacTag +
+		ascii.AsciiToString(ascii.ETX)
+
+	return encryptedPayload, nil
+}
+
+// RsaAesPrivateKeyDecryptAndVerifyHmac is the v1.7.9 additive
+// replacement for the deprecated RsaAesPrivateKeyDecryptAndVerify. It
+// decrypts envelopes produced by RsaAesPublicKeyEncryptAndSignHmac.
+//
+// Verification order (fail-fast on tampering):
+//  1. Strip STX/ETX.
+//  2. Check the literal "V2" format marker. A V1 payload has its
+//     first byte equal to a hex char of the RSA-wrapped AES key, not
+//     'V', so it is rejected here with a clear error instead of
+//     partially parsing and failing later.
+//  3. Split the body into rsaEncryptedAesKey (512 hex chars) ||
+//     aesGcmEncryptedBody (variable) || hmacTag (64 hex chars).
+//  4. RSA-decrypt rsaEncryptedAesKey with recipient's private key to
+//     recover the per-envelope AES key.
+//  5. Recompute HMAC-SHA256(aesKey, rsaEncryptedAesKey ||
+//     aesGcmEncryptedBody) and compare against hmacTag in constant
+//     time. REJECT if they do not match — do NOT invoke AES-GCM
+//     decrypt on a tampered envelope.
+//  6. AES-GCM decrypt aesGcmEncryptedBody with aesKey.
+//  7. Parse the decrypted inner plaintext as three length-prefixed
+//     fields (plainText, senderPublicKeyHexOrPem, signature).
+//  8. RSA-verify signature against plainText using
+//     senderPublicKeyHexOrPem.
+//
+// Only after all eight steps pass does the function return the
+// plainText and senderPublicKeyHexOrPem to the caller.
+//
+// recipientPrivateKeyHexOrPem = may be HEX or PEM.
+func RsaAesPrivateKeyDecryptAndVerifyHmac(encryptedData string, recipientPrivateKeyHexOrPem string) (plainText string, senderPublicKeyHexOrPem string, err error) {
+	// minimum envelope size sanity check:
+	//   STX(1) + "V2"(2) + rsaKey(512) + body(>=1) + hmac(64) + ETX(1)
+	//   = 581 bytes minimum. Any payload shorter than 581 cannot be
+	//   a V2 envelope.
+	if util.LenTrim(encryptedData) < 581 {
+		return "", "", errors.New("Encrypted Payload Envelop Not Valid: Must Be At Least 581 Bytes (V2)")
+	}
+
+	if util.Left(encryptedData, 1) != ascii.AsciiToString(ascii.STX) {
+		return "", "", errors.New("Encrypted Payload Envelop Not Valid: No STX Found")
+	}
+
+	if util.Right(encryptedData, 1) != ascii.AsciiToString(ascii.ETX) {
+		return "", "", errors.New("Encrypted Payload Envelop Not Valid: No ETX Found")
+	}
+
+	if util.LenTrim(recipientPrivateKeyHexOrPem) == 0 {
+		return "", "", errors.New("Recipient Private Key is Required")
+	}
+
+	// strip STX and ETX
+	data := util.Right(encryptedData, len(encryptedData)-1)
+	data = util.Left(data, len(data)-1)
+
+	// V2 format marker — this is the cross-version isolation check.
+	// A V1 payload has no "V2" here (its first two bytes are hex
+	// chars from the RSA-wrapped AES key), so it is rejected here.
+	if util.Left(data, 2) != "V2" {
+		return "", "", errors.New("Encrypted Payload Envelop Not Valid: V2 Format Marker Missing (is this a V1 payload? use RsaAesPrivateKeyDecryptAndVerify instead)")
+	}
+	data = util.Right(data, len(data)-2)
+
+	// sanity: must have room for rsaKey(512) + >=1 body + hmac(64)
+	if len(data) < 512+1+64 {
+		return "", "", errors.New("Encrypted Payload Envelop Not Valid: Body Too Short After V2 Marker")
+	}
+
+	// split into rsaEncryptedAesKey || aesGcmEncryptedBody || hmacTag
+	aesKeyEncrypted := util.Left(data, 512)
+	afterKey := util.Right(data, len(data)-512)
+	hmacTag := util.Right(afterKey, 64)
+	aesBodyEncrypted := util.Left(afterKey, len(afterKey)-64)
+
+	// RSA-decrypt the AES key with recipient private key
+	aesKey, err1 := RsaPrivateKeyDecrypt(aesKeyEncrypted, recipientPrivateKeyHexOrPem)
+	if err1 != nil {
+		return "", "", errors.New("Decrypt AES Key Error: " + err1.Error())
+	}
+
+	// CRITICAL: verify HMAC BEFORE invoking AES-GCM decrypt. A
+	// tampered envelope must fail here with a clear integrity error
+	// instead of producing a GCM tag mismatch (which looks like a
+	// key-derivation bug to most callers and leaks nothing about
+	// what was tampered with).
+	expectedTag := hmacSha256Hex([]byte(aesKey), aesKeyEncrypted+aesBodyEncrypted)
+	if !hmac.Equal([]byte(expectedTag), []byte(hmacTag)) {
+		return "", "", errors.New("Encrypted Payload Integrity Check Failed: HMAC-SHA256 Mismatch")
+	}
+
+	// HMAC passed → AES-GCM decrypt the body
+	innerPlaintext, err2 := AesGcmDecrypt(aesBodyEncrypted, aesKey)
+	if err2 != nil {
+		return "", "", errors.New("Decrypt AES Data Error: " + err2.Error())
+	}
+
+	// parse three length-prefixed fields
+	pt, off, errF := decodeLenPrefixedField(innerPlaintext, 0)
+	if errF != nil {
+		return "", "", errors.New("Decrypted AES Data Not Valid: plainText field: " + errF.Error())
+	}
+	spk, off, errF := decodeLenPrefixedField(innerPlaintext, off)
+	if errF != nil {
+		return "", "", errors.New("Decrypted AES Data Not Valid: senderPublicKey field: " + errF.Error())
+	}
+	sig, off, errF := decodeLenPrefixedField(innerPlaintext, off)
+	if errF != nil {
+		return "", "", errors.New("Decrypted AES Data Not Valid: signature field: " + errF.Error())
+	}
+	if off != len(innerPlaintext) {
+		return "", "", errors.New("Decrypted AES Data Not Valid: trailing bytes after signature field")
+	}
+
+	if util.LenTrim(pt) == 0 {
+		return "", "", errors.New("Decrypted AES Data Not Valid: Empty String Not Expected")
+	}
+	if util.LenTrim(spk) < 512 {
+		return "", "", errors.New("Decrypted AES Data Not Valid: Sender Public Key Not Complete")
+	}
+	if util.LenTrim(sig) < 512 {
+		return "", "", errors.New("Decrypted AES Data Not Valid: Sender Signature Not Complete")
+	}
+
+	// verify sender signature against plainText
+	if err3 := RsaPublicKeyVerify(pt, spk, sig); err3 != nil {
+		return "", "", errors.New("Decrypted AES Data Not Valid: (Signature Not Authenticated) " + err3.Error())
+	}
+
+	return pt, spk, nil
 }

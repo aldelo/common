@@ -95,7 +95,13 @@ func VerifyGoogleReCAPTCHAv2(c *gin.Context, recaptchaResponse string, recaptcha
 	}
 
 	if key, ok := c.Get("google_recaptcha_secret"); ok {
-		if success, _, _, e := util.VerifyGoogleReCAPTCHAv2(recaptchaResponse, key.(string)); e != nil {
+		// P1-5: two-value type assertion — avoid panic if the context
+		// value was set to a non-string type by misconfigured middleware.
+		secret, keyOk := key.(string)
+		if !keyOk {
+			return fmt.Errorf("Google ReCAPTCHA v2 Secret is not a string (got %T)", key)
+		}
+		if success, _, _, e := util.VerifyGoogleReCAPTCHAv2(recaptchaResponse, secret); e != nil {
 			return e
 		} else {
 			if success {

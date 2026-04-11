@@ -268,9 +268,9 @@ func (u *CrudUniqueModel) GetUniqueFieldsFromSource(ddb *DynamoDB, sourcePKValue
 	if e := ddb.GetItemWithRetry(3, result, sourcePKValue, sourceSKValue, ddb.TimeOutDuration(3), aws.Bool(true), "PK", "UniqueFields"); e != nil {
 		return nil, fmt.Errorf("Get Unique Fields From Source Failed: (GetItem) %s", e.Error())
 	} else {
-		if result == nil {
-			return nil, nil
-		} else if result.UniqueFields == nil {
+		// result is new()-allocated on line 266 and thus always non-nil; the only
+		// meaningful "no data" signal is an unpopulated UniqueFields slice.
+		if result.UniqueFields == nil {
 			return nil, nil
 		} else {
 			uniqueFields := make(map[string]*CrudUniqueFieldNameAndIndex)
@@ -1159,13 +1159,10 @@ func (c *Crud) BatchSetEx(
 	} else {
 		// success (may contain unprocessed)
 		if unprocessed != nil && len(unprocessed) > 0 {
-			if failedPuts == nil {
-				failedPuts = make(map[string][]*PkSkValuePair)
-			}
-
-			if failedDeletes == nil {
-				failedDeletes = make(map[string][]*PkSkValuePair)
-			}
+			// failedPuts / failedDeletes are named returns — statically nil here,
+			// so initialize unconditionally.
+			failedPuts = make(map[string][]*PkSkValuePair)
+			failedDeletes = make(map[string][]*PkSkValuePair)
 
 			for _, perTable := range unprocessed {
 				if perTable != nil {

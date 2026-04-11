@@ -335,13 +335,13 @@ func csvValidateCustom(fv string, cfg csvFieldConfig, tagReq string, s reflect.V
 		case "==":
 			valAr := strings.Split(valData, "||")
 			if len(valAr) <= 1 {
-				if strings.ToLower(fv) != strings.ToLower(valData) && (len(fv) > 0 || tagReq == "true") {
+				if !strings.EqualFold(fv, valData) && (len(fv) > 0 || tagReq == "true") {
 					return fmt.Errorf("Validation Failed: Expected To Match '%s', But Received '%s'", valData, fv)
 				}
 			} else {
 				found := false
 				for _, va := range valAr {
-					if strings.ToLower(fv) == strings.ToLower(va) {
+					if strings.EqualFold(fv, va) {
 						found = true
 						break
 					}
@@ -353,13 +353,13 @@ func csvValidateCustom(fv string, cfg csvFieldConfig, tagReq string, s reflect.V
 		case "!=":
 			valAr := strings.Split(valData, "&&")
 			if len(valAr) <= 1 {
-				if strings.ToLower(fv) == strings.ToLower(valData) && (len(fv) > 0 || tagReq == "true") {
+				if strings.EqualFold(fv, valData) && (len(fv) > 0 || tagReq == "true") {
 					return fmt.Errorf("Validation Failed: Expected To Not Match '%s', But Received '%s'", valData, fv)
 				}
 			} else {
 				found := false
 				for _, va := range valAr {
-					if strings.ToLower(fv) == strings.ToLower(va) {
+					if strings.EqualFold(fv, va) {
 						found = true
 						break
 					}
@@ -567,7 +567,7 @@ func csvExtractValue(csvElements []string, cfg csvUnmarshalConfig, prefixProcess
 		if len(v) < len(cfg.outPrefix) {
 			continue
 		}
-		if strings.ToLower(Left(v, len(cfg.outPrefix))) == strings.ToLower(cfg.outPrefix) {
+		if strings.EqualFold(Left(v, len(cfg.outPrefix)), cfg.outPrefix) {
 			if _, ok := prefixProcessedMap[strings.ToLower(cfg.outPrefix)]; ok {
 				continue
 			}
@@ -819,13 +819,13 @@ func csvValidateCustomUnmarshal(csvValue string, cfg csvUnmarshalConfig, s refle
 	case "==":
 		valAr := strings.Split(valData, "||")
 		if len(valAr) <= 1 {
-			if strings.ToLower(csvValue) != strings.ToLower(valData) && (len(csvValue) > 0 || cfg.tagReq == "true") {
+			if !strings.EqualFold(csvValue, valData) && (len(csvValue) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", fieldName, valData, csvValue)
 			}
 		} else {
 			found := false
 			for _, va := range valAr {
-				if strings.ToLower(csvValue) == strings.ToLower(va) {
+				if strings.EqualFold(csvValue, va) {
 					found = true
 					break
 				}
@@ -837,13 +837,13 @@ func csvValidateCustomUnmarshal(csvValue string, cfg csvUnmarshalConfig, s refle
 	case "!=":
 		valAr := strings.Split(valData, "&&")
 		if len(valAr) <= 1 {
-			if strings.ToLower(csvValue) == strings.ToLower(valData) && (len(csvValue) > 0 || cfg.tagReq == "true") {
+			if strings.EqualFold(csvValue, valData) && (len(csvValue) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", fieldName, valData, csvValue)
 			}
 		} else {
 			found := false
 			for _, va := range valAr {
-				if strings.ToLower(csvValue) == strings.ToLower(va) {
+				if strings.EqualFold(csvValue, va) {
 					found = true
 					break
 				}
@@ -1145,13 +1145,13 @@ func jsonValidateCustom(val string, cfg jsonFieldConfig, s reflect.Value, fieldN
 	case "==":
 		valAr := strings.Split(valData, "||")
 		if len(valAr) <= 1 {
-			if strings.ToLower(val) != strings.ToLower(valData) && (len(val) > 0 || cfg.tagReq == "true") {
+			if !strings.EqualFold(val, valData) && (len(val) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Match '%s', But Received '%s'", fieldName, valData, val)
 			}
 		} else {
 			found := false
 			for _, va := range valAr {
-				if strings.ToLower(val) == strings.ToLower(va) {
+				if strings.EqualFold(val, va) {
 					found = true
 					break
 				}
@@ -1163,13 +1163,13 @@ func jsonValidateCustom(val string, cfg jsonFieldConfig, s reflect.Value, fieldN
 	case "!=":
 		valAr := strings.Split(valData, "&&")
 		if len(valAr) <= 1 {
-			if strings.ToLower(val) == strings.ToLower(valData) && (len(val) > 0 || cfg.tagReq == "true") {
+			if strings.EqualFold(val, valData) && (len(val) > 0 || cfg.tagReq == "true") {
 				return fmt.Errorf("%s Validation Failed: Expected To Not Match '%s', But Received '%s'", fieldName, valData, val)
 			}
 		} else {
 			found := false
 			for _, va := range valAr {
-				if strings.ToLower(val) == strings.ToLower(va) {
+				if strings.EqualFold(val, va) {
 					found = true
 					break
 				}

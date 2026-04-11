@@ -749,7 +749,7 @@ func (g *DynamoDBTransactionReads) UnmarshalResultItems(itemResponses []*dynamod
 						skValue = aws.StringValue(skAttr.S)
 					}
 
-					if strings.ToUpper(itemKey) == strings.ToUpper(pkValue+"."+skValue) {
+					if strings.EqualFold(itemKey, pkValue+"."+skValue) {
 						// match
 						ddbResultItemAttributes = append(ddbResultItemAttributes, itemResponse.Item)
 					}
@@ -7374,7 +7374,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 				multiGetRequestResponse[i].PKName = d.PKName
 				multiGetRequestResponse[i].SKName = d.SKName
 			} else {
-				if strings.ToUpper(multiGetRequestResponse[i].TableName) == strings.ToUpper(d.TableName) {
+				if strings.EqualFold(multiGetRequestResponse[i].TableName, d.TableName) {
 					if util.LenTrim(multiGetRequestResponse[i].PKName) == 0 {
 						multiGetRequestResponse[i].PKName = d.PKName
 					}
@@ -7669,7 +7669,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 				multiGetRequestResponse[i].PKName = d.PKName
 				multiGetRequestResponse[i].SKName = d.SKName
 			} else {
-				if strings.ToUpper(multiGetRequestResponse[i].TableName) == strings.ToUpper(d.TableName) {
+				if strings.EqualFold(multiGetRequestResponse[i].TableName, d.TableName) {
 					if util.LenTrim(multiGetRequestResponse[i].PKName) == 0 {
 						multiGetRequestResponse[i].PKName = d.PKName
 					}
@@ -8690,7 +8690,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 				getItems[i].PKName = d.PKName
 				getItems[i].SKName = d.SKName
 			} else {
-				if strings.ToUpper(getItems[i].TableName) == strings.ToUpper(d.TableName) {
+				if strings.EqualFold(getItems[i].TableName, d.TableName) {
 					if util.LenTrim(getItems[i].PKName) == 0 {
 						getItems[i].PKName = d.PKName
 					}
@@ -8920,7 +8920,7 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 				getItems[i].PKName = d.PKName
 				getItems[i].SKName = d.SKName
 			} else {
-				if strings.ToUpper(getItems[i].TableName) == strings.ToUpper(d.TableName) {
+				if strings.EqualFold(getItems[i].TableName, d.TableName) {
 					if util.LenTrim(getItems[i].PKName) == 0 {
 						getItems[i].PKName = d.PKName
 					}

@@ -396,3 +396,66 @@ func TestReplace_EmptyString_Empty(t *testing.T) {
 		t.Fatalf("Replace(\"\", \"x\", \"y\") = %q, want \"\"", got)
 	}
 }
+
+// -----------------------------------------------------------------------
+// ParseKeyValue — strict input validation restored. (P1-9)
+//
+// v1.6.7 rejected: len(s) ≤ 2, multi-char delimiters beyond the first
+// byte, and inputs containing more than one delimiter (via strings.Split
+// full-tokenize with a len != 2 check). HEAD silently accepted all three,
+// producing partial/ambiguous key/val outputs.
+//
+// Restore strict validation. Keep the nil-pointer guard HEAD added —
+// that is a strict safety improvement over v1.6.7 which panicked.
+// -----------------------------------------------------------------------
+
+func TestParseKeyValue_HappyPath_StillWorks(t *testing.T) {
+	var k, v string
+	if err := ParseKeyValue("key=value", "=", &k, &v); err != nil {
+		t.Fatalf("ParseKeyValue(\"key=value\") returned error %v, want nil", err)
+	}
+	if k != "key" || v != "value" {
+		t.Fatalf("ParseKeyValue(\"key=value\") got (%q, %q), want (\"key\", \"value\")", k, v)
+	}
+}
+
+func TestParseKeyValue_ShortInput_Rejected_v167Contract(t *testing.T) {
+	// v1.6.7 rejects anything len(s) <= 2.
+	var k, v string
+	err := ParseKeyValue("a=", "=", &k, &v)
+	if err == nil {
+		t.Fatalf("ParseKeyValue(\"a=\") returned nil, want error (v1.6.7 rejects len <= 2)")
+	}
+}
+
+func TestParseKeyValue_MultipleDelimiters_Rejected_v167Contract(t *testing.T) {
+	// v1.6.7 uses strings.Split (full tokenize) and rejects if parts != 2.
+	// "a=b=c" splits into ["a","b","c"] → error.
+	// HEAD pre-fix uses SplitN(2) and silently accepts, producing k="a", v="b=c".
+	var k, v string
+	err := ParseKeyValue("a=b=c", "=", &k, &v)
+	if err == nil {
+		t.Fatalf("ParseKeyValue(\"a=b=c\") returned nil, want error (v1.6.7 rejects >1 delimiter)")
+	}
+}
+
+func TestParseKeyValue_MultiCharDelimiter_TruncatedToFirstByte_v167Contract(t *testing.T) {
+	// v1.6.7: delimiter = string(delimiter[0]) — uses only first byte.
+	// Example: "a==b" with delimiter "==" becomes delimiter="=" →
+	//          strings.Split("a==b", "=") = ["a","","b"] → parts != 2 → error.
+	// HEAD pre-fix: delimiter stays "==" → split on "==" → ["a","b"] → accepted.
+	var k, v string
+	err := ParseKeyValue("a==b", "==", &k, &v)
+	if err == nil {
+		t.Fatalf("ParseKeyValue(\"a==b\", \"==\") returned nil, want error (v1.6.7 truncates delim to first byte then rejects)")
+	}
+}
+
+func TestParseKeyValue_NilPointerGuard_Preserved(t *testing.T) {
+	// Safety improvement HEAD added over v1.6.7 — do NOT regress this.
+	// v1.6.7 would panic on nil; HEAD returns error. Keep error behavior.
+	err := ParseKeyValue("a=b", "=", nil, nil)
+	if err == nil {
+		t.Fatal("ParseKeyValue with nil pointers returned nil, want error (safety guard must be preserved)")
+	}
+}

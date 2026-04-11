@@ -288,24 +288,37 @@ func SliceStringToCSVString(source []string, spaceAfterComma bool) string {
 // ParseKeyValue will parse the input string using specified delimiter (= is default),
 // result is set in the key and val fields
 func ParseKeyValue(s string, delimiter string, key *string, val *string) error {
-	// guard against nil pointers to avoid panic
+	// Nil-pointer guard — HEAD safety improvement over v1.6.7 which panicked.
+	// Preserved: v1.6.7's panic is not a contract any caller would rely on,
+	// and returning error is strictly safer.
 	if key == nil || val == nil {
 		return fmt.Errorf("Key and Val pointers are required")
 	}
 
-	// allow minimal key/value pairs (e.g., "a=") and avoid over-strict length check
-	if len(delimiter) == 0 {
-		delimiter = "="
+	// v1.6.7 strict validation restored (Rule #10):
+	// (a) len(s) <= 2 rejected
+	// (b) multi-char delimiter truncated to first byte
+	// (c) strings.Split (full tokenize), not SplitN(2) — rejects inputs with
+	//     more than one delimiter occurrence
+	if len(s) <= 2 {
+		*key = ""
+		*val = ""
+		return fmt.Errorf("Source Data Must Exceed 2 Characters")
 	}
 
-	idx := strings.Index(s, delimiter) // single pass lookup to validate presence
-	if idx == -1 {
+	if len(delimiter) == 0 {
+		delimiter = "="
+	} else {
+		delimiter = string(delimiter[0])
+	}
+
+	if !strings.Contains(s, delimiter) {
 		*key = ""
 		*val = ""
 		return fmt.Errorf("Delimiter Not Found in Source Data")
 	}
 
-	parts := strings.SplitN(s, delimiter, 2)
+	parts := strings.Split(s, delimiter)
 	if len(parts) != 2 {
 		*key = ""
 		*val = ""

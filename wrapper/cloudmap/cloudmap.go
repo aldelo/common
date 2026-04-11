@@ -256,13 +256,11 @@ func (sd *CloudMap) toTags(tagsMap map[string]string) (t []*servicediscovery.Tag
 		return
 	}
 
-	if tagsMap != nil {
-		for k, v := range tagsMap {
-			t = append(t, &servicediscovery.Tag{
-				Key:   aws.String(k),
-				Value: aws.String(v),
-			})
-		}
+	for k, v := range tagsMap {
+		t = append(t, &servicediscovery.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
 	}
 	return
 }

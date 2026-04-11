@@ -1134,14 +1134,12 @@ func (c *Crud) BatchSetEx(
 	count := 0
 	outErr := fmt.Errorf("BatchSetEx To Data Store Failed: (Validater 4.1) Combined PutItemsSet and DeleteKeys Exceeds 25 Items Limit")
 
-	if putItemsSet != nil {
-		for _, v := range putItemsSet {
-			if v != nil && v.PutItems != nil {
-				if n, ok := util.ReflectInterfaceSliceLen(v.PutItems); ok {
-					count += n
-					if count > 25 {
-						return 0, nil, nil, outErr
-					}
+	for _, v := range putItemsSet {
+		if v != nil && v.PutItems != nil {
+			if n, ok := util.ReflectInterfaceSliceLen(v.PutItems); ok {
+				count += n
+				if count > 25 {
+					return 0, nil, nil, outErr
 				}
 			}
 		}

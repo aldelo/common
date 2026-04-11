@@ -6743,21 +6743,17 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 		putCount := 0
 		deleteCount := 0
 
-		if putTableItemsAv != nil {
-			// loop thru map to get count
-			for _, v := range putTableItemsAv {
-				if v != nil {
-					putCount += len(v)
-				}
+		// loop thru map to get count
+		for _, v := range putTableItemsAv {
+			if v != nil {
+				putCount += len(v)
 			}
 		}
 
-		if deleteTableKeysAv != nil {
-			// loop thru map to get count
-			for _, v := range deleteTableKeysAv {
-				if v != nil {
-					deleteCount += len(v)
-				}
+		// loop thru map to get count
+		for _, v := range deleteTableKeysAv {
+			if v != nil {
+				deleteCount += len(v)
 			}
 		}
 
@@ -7000,21 +6996,17 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 	putCount := 0
 	deleteCount := 0
 
-	if putTableItemsAv != nil {
-		// loop thru map to get count
-		for _, v := range putTableItemsAv {
-			if v != nil {
-				putCount += len(v)
-			}
+	// loop thru map to get count
+	for _, v := range putTableItemsAv {
+		if v != nil {
+			putCount += len(v)
 		}
 	}
 
-	if deleteTableKeysAv != nil {
-		// loop thru map to get count
-		for _, v := range deleteTableKeysAv {
-			if v != nil {
-				deleteCount += len(v)
-			}
+	// loop thru map to get count
+	for _, v := range deleteTableKeysAv {
+		if v != nil {
+			deleteCount += len(v)
 		}
 	}
 

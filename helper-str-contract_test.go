@@ -353,3 +353,46 @@ func TestSliceStringToCSVString_EmptySlice_ReturnsEmpty(t *testing.T) {
 		t.Fatalf("SliceStringToCSVString([]) = %q, want \"\"", got)
 	}
 }
+
+// -----------------------------------------------------------------------
+// Replace — thin wrapper over strings.Replace(-1), no empty-old guard. (P1-8)
+//
+// NOTE on review wording: the deep-review text labelled this as
+// "guard against old == \"\" changed from panic-safe early-return to
+// unbounded-loop-prone path — fix: restore guard." Reading both sources
+// directly contradicts that:
+//   v1.6.7:  return strings.Replace(s, oldChar, newChar, -1)   // NO guard
+//   HEAD  :  if oldChar == "" { return s }; strings.Replace(...) // ADDED guard
+// Go's strings.Replace with empty old does NOT panic — it inserts newChar
+// between every rune (stdlib defined behavior). So the real contract drift
+// is the opposite of the review's claim: HEAD silently changed the return
+// value for empty-old calls from "inserted between runes" to "unchanged
+// input". Under Rule #10 literal application, the v1.6.7 observable
+// contract must be preserved — which means REMOVING the HEAD guard.
+// -----------------------------------------------------------------------
+
+func TestReplace_NonEmptyOld_NormalPath(t *testing.T) {
+	got := Replace("hello world", "world", "Go")
+	if got != "hello Go" {
+		t.Fatalf("Replace(\"hello world\", \"world\", \"Go\") = %q, want %q", got, "hello Go")
+	}
+}
+
+func TestReplace_EmptyOld_InsertsBetweenRunes_v167Contract(t *testing.T) {
+	// strings.Replace(s, "", new, -1) inserts `new` between every rune
+	// AND at both ends, so "abc" + old="" + new="X" → "XaXbXcX".
+	// HEAD pre-fix returns "abc" because of the added guard. Restore v1.6.7.
+	got := Replace("abc", "", "X")
+	want := "XaXbXcX"
+	if got != want {
+		t.Fatalf("Replace(\"abc\", \"\", \"X\") = %q, want %q (v1.6.7 contract = stdlib strings.Replace)", got, want)
+	}
+}
+
+func TestReplace_EmptyString_Empty(t *testing.T) {
+	// Empty s + non-empty old → no matches → empty result (sanity).
+	got := Replace("", "x", "y")
+	if got != "" {
+		t.Fatalf("Replace(\"\", \"x\", \"y\") = %q, want \"\"", got)
+	}
+}

@@ -155,9 +155,12 @@ func Reverse(s string) string {
 
 // Replace will replace old char with new char and return the replaced string
 func Replace(s string, oldChar string, newChar string) string {
-	if oldChar == "" { // prevent unbounded growth when oldChar is empty
-		return s
-	}
+	// v1.6.7 contract: thin wrapper over strings.Replace(-1) with no
+	// empty-old guard. Go's stdlib strings.Replace(s, "", new, -1)
+	// inserts `new` between every rune — defined, non-panicking behavior.
+	// Rule #10 (workspace): preserve observable contracts. Do NOT short-circuit
+	// empty-old by returning s unchanged; that silently changes the output for
+	// any caller that relied on the stdlib semantics.
 	return strings.Replace(s, oldChar, newChar, -1)
 }
 

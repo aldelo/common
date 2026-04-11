@@ -137,10 +137,10 @@ func (k *PaymentCryptoData) Connect(parentSegment ...*xray.XRayParentSegment) (e
 		k.mu.RUnlock()
 
 		defer func() {
-			_ = seg.Seg.AddMetadata("KDS-AWS-Region", awsRegion)
+			_ = seg.SafeAddMetadata("KDS-AWS-Region", awsRegion)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -255,7 +255,7 @@ func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycr
 		defer func() {
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -312,7 +312,7 @@ func (k *PaymentCryptoData) decrypt(cipherText string, decryptionAttributes *pyc
 		defer func() {
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}

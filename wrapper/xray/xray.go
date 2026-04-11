@@ -583,6 +583,48 @@ func (x *XSegment) Close() {
 	x.Ctx = nil
 }
 
+// SafeAddMetadata attaches metadata to the underlying xray segment only when
+// the wrapper is non-nil AND the segment is ready (Ctx/Seg populated, not closed).
+// It is safe to call on a nil receiver or on a wrapper whose Seg is nil — both
+// cases return nil without panicking. This is the production path for the
+// common pattern `defer func() { seg.SafeAddMetadata(...) }()` which must not
+// panic when tracing is disabled or BeginSegment recovered from an internal
+// xray panic (see NewSegment panic-recovery block).
+func (x *XSegment) SafeAddMetadata(key string, value interface{}) error {
+	if x == nil {
+		return nil
+	}
+
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+
+	if !x._segReady || x.Seg == nil {
+		return nil
+	}
+
+	return x.Seg.AddMetadata(key, value)
+}
+
+// SafeAddError attaches an error to the underlying xray segment only when
+// the wrapper is non-nil AND the segment is ready. It is safe to call on a
+// nil receiver or when Seg is nil — both cases return nil without panicking.
+// This is the production path for the common pattern
+// `defer func() { if err != nil { seg.SafeAddError(err) } }()`.
+func (x *XSegment) SafeAddError(err error) error {
+	if x == nil {
+		return nil
+	}
+
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+
+	if !x._segReady || x.Seg == nil {
+		return nil
+	}
+
+	return x.Seg.AddError(err)
+}
+
 // Capture wraps xray.Capture, by beginning and closing a subsegment with traceName,
 // and synchronously executes the provided executeFunc which contains source application's logic
 //

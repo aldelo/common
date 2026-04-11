@@ -255,9 +255,9 @@ func (s *SQS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("SQS-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-AWS-Region", s.getAwsRegion())
+			_ = seg.SafeAddMetadata("SQS-AWS-Region", s.getAwsRegion())
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -527,11 +527,11 @@ func (s *SQS) GetQueueArnFromQueue(queueUrl string, timeoutDuration ...time.Dura
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-GetQueueArnFromQueue-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-GetQueueArnFromQueue-Result-ARN", arn)
+			_ = seg.SafeAddMetadata("SQS-GetQueueArnFromQueue-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-GetQueueArnFromQueue-Result-ARN", arn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -653,12 +653,12 @@ func (s *SQS) CreateQueue(queueName string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-CreateQueue-QueueName", queueName)
-			_ = seg.Seg.AddMetadata("SQS-CreateQueue-Attributes", attributes)
-			_ = seg.Seg.AddMetadata("SQS-CreateQueue-Result-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-CreateQueue-QueueName", queueName)
+			_ = seg.SafeAddMetadata("SQS-CreateQueue-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SQS-CreateQueue-Result-QueueURL", queueUrl)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -725,12 +725,12 @@ func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (q
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-GetQueueUrl-QueueName", queueName)
-			_ = seg.Seg.AddMetadata("SQS-GetQueueUrl-Result-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("SQS-GetQueueUrl-Result-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-GetQueueUrl-QueueName", queueName)
+			_ = seg.SafeAddMetadata("SQS-GetQueueUrl-Result-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("SQS-GetQueueUrl-Result-QueueURL", queueUrl)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -813,10 +813,10 @@ func (s *SQS) PurgeQueue(queueUrl string, timeOutDuration ...time.Duration) (err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-PurgeQueue-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-PurgeQueue-QueueURL", queueUrl)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -878,10 +878,10 @@ func (s *SQS) DeleteQueue(queueUrl string, timeOutDuration ...time.Duration) (er
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-DeleteQueue-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-DeleteQueue-QueueURL", queueUrl)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -954,14 +954,14 @@ func (s *SQS) ListQueues(queueNamePrefix string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-ListQueues-QueueNamePrefix", queueNamePrefix)
-			_ = seg.Seg.AddMetadata("SQS-ListQueues-NextToken", nextToken)
-			_ = seg.Seg.AddMetadata("SQS-ListQueues-MaxResults", maxResults)
-			_ = seg.Seg.AddMetadata("SQS-ListQueues-Result-QueueUrlsList", queueUrlsList)
-			_ = seg.Seg.AddMetadata("SQS-ListQueues-Result-NextToken", moreQueueUrlsNextToken)
+			_ = seg.SafeAddMetadata("SQS-ListQueues-QueueNamePrefix", queueNamePrefix)
+			_ = seg.SafeAddMetadata("SQS-ListQueues-NextToken", nextToken)
+			_ = seg.SafeAddMetadata("SQS-ListQueues-MaxResults", maxResults)
+			_ = seg.SafeAddMetadata("SQS-ListQueues-Result-QueueUrlsList", queueUrlsList)
+			_ = seg.SafeAddMetadata("SQS-ListQueues-Result-NextToken", moreQueueUrlsNextToken)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1044,14 +1044,14 @@ func (s *SQS) ListDeadLetterSourceQueues(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-NextToken", nextToken)
-			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-MaxResults", maxResults)
-			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-Result-QueueUrlsList", queueUrlsList)
-			_ = seg.Seg.AddMetadata("SQS-ListDeadLetterSourceQueues-Result-NextToken", moreQueueUrlsNextToken)
+			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-NextToken", nextToken)
+			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-MaxResults", maxResults)
+			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-Result-QueueUrlsList", queueUrlsList)
+			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-Result-NextToken", moreQueueUrlsNextToken)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1209,12 +1209,12 @@ func (s *SQS) GetQueueAttributes(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-GetQueueAttributes-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-GetQueueAttributes-AttributeNames", attributeNames)
-			_ = seg.Seg.AddMetadata("SQS-GetQueueAttributes-Result-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SQS-GetQueueAttributes-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-GetQueueAttributes-AttributeNames", attributeNames)
+			_ = seg.SafeAddMetadata("SQS-GetQueueAttributes-Result-Attributes", attributes)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1391,11 +1391,11 @@ func (s *SQS) SetQueueAttributes(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-SetQueueAttributes-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-SetQueueAttributes-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SQS-SetQueueAttributes-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-SetQueueAttributes-Attributes", attributes)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1489,14 +1489,14 @@ func (s *SQS) SendMessage(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-SendMessage-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-SendMessage-MessageBody", messageBody)
-			_ = seg.Seg.AddMetadata("SQS-SendMessage-MessageAttributes", messageAttributes)
-			_ = seg.Seg.AddMetadata("SQS-SendMessage-DelaySeconds", delaySeconds)
-			_ = seg.Seg.AddMetadata("SQS-SendMessage-Result", result)
+			_ = seg.SafeAddMetadata("SQS-SendMessage-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-SendMessage-MessageBody", messageBody)
+			_ = seg.SafeAddMetadata("SQS-SendMessage-MessageAttributes", messageAttributes)
+			_ = seg.SafeAddMetadata("SQS-SendMessage-DelaySeconds", delaySeconds)
+			_ = seg.SafeAddMetadata("SQS-SendMessage-Result", result)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1664,15 +1664,15 @@ func (s *SQS) SendMessageFifo(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-MessageDeduplicationID", messageDeduplicationId)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-MessageGroupID", messageGroupId)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-MessageBody", messageBody)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-MessageAttributes", messageAttributes)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageFifo-Result", result)
+			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-MessageDeduplicationID", messageDeduplicationId)
+			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-MessageGroupID", messageGroupId)
+			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-MessageBody", messageBody)
+			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-MessageAttributes", messageAttributes)
+			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-Result", result)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1763,13 +1763,13 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-SendMessageBatch-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageBatch-MessageEntries", messageEntries)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageBatch-Result-SuccessList", successList)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageBatch-Result-FailedList", failedList)
+			_ = seg.SafeAddMetadata("SQS-SendMessageBatch-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-SendMessageBatch-MessageEntries", messageEntries)
+			_ = seg.SafeAddMetadata("SQS-SendMessageBatch-Result-SuccessList", successList)
+			_ = seg.SafeAddMetadata("SQS-SendMessageBatch-Result-FailedList", failedList)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1900,13 +1900,13 @@ func (s *SQS) SendMessageBatchFifo(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-SendMessageBatchFifo-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageBatchFifo-MessageEntries", messageEntries)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageBatchFifo-Result-SuccessList", successList)
-			_ = seg.Seg.AddMetadata("SQS-SendMessageBatchFifo-Result-FailedList", failedList)
+			_ = seg.SafeAddMetadata("SQS-SendMessageBatchFifo-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-SendMessageBatchFifo-MessageEntries", messageEntries)
+			_ = seg.SafeAddMetadata("SQS-SendMessageBatchFifo-Result-SuccessList", successList)
+			_ = seg.SafeAddMetadata("SQS-SendMessageBatchFifo-Result-FailedList", failedList)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2106,17 +2106,17 @@ func (s *SQS) ReceiveMessage(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-MaxNumberOfMessages", maxNumberOfMessages)
-			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-MessageAttributeNames", messageAttributeNames)
-			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-SystemAttributeNames", systemAttributeNames)
-			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-VisibilityTimeOutSeconds", visibilityTimeOutSeconds)
-			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-WaitTimeSeconds", waitTimeSeconds)
-			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-ReceiveRequestAttemptID", receiveRequestAttemptId)
-			_ = seg.Seg.AddMetadata("SQS-ReceiveMessage-Result-MessagesList", messagesList)
+			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-MaxNumberOfMessages", maxNumberOfMessages)
+			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-MessageAttributeNames", messageAttributeNames)
+			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-SystemAttributeNames", systemAttributeNames)
+			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-VisibilityTimeOutSeconds", visibilityTimeOutSeconds)
+			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-WaitTimeSeconds", waitTimeSeconds)
+			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-ReceiveRequestAttemptID", receiveRequestAttemptId)
+			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-Result-MessagesList", messagesList)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2245,12 +2245,12 @@ func (s *SQS) ChangeMessageVisibility(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibility-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibility-ReceiptHandle", receiptHandle)
-			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibility-VisibilityTimeOutSeconds", visibilityTimeOutSeconds)
+			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibility-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibility-ReceiptHandle", receiptHandle)
+			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibility-VisibilityTimeOutSeconds", visibilityTimeOutSeconds)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2329,13 +2329,13 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibilityBatch-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibilityBatch-MessageEntries", messageEntries)
-			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibilityBatch-Result-SuccessIDsList", successIDsList)
-			_ = seg.Seg.AddMetadata("SQS-ChangeMessageVisibilityBatch-Result-FailedList", failedList)
+			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-MessageEntries", messageEntries)
+			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-Result-SuccessIDsList", successIDsList)
+			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-Result-FailedList", failedList)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2463,11 +2463,11 @@ func (s *SQS) DeleteMessage(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-DeleteMessage-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-DeleteMessage-ReceiptHandle", receiptHandle)
+			_ = seg.SafeAddMetadata("SQS-DeleteMessage-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-DeleteMessage-ReceiptHandle", receiptHandle)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2534,13 +2534,13 @@ func (s *SQS) DeleteMessageBatch(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SQS-DeleteMessageBatch-QueueURL", queueUrl)
-			_ = seg.Seg.AddMetadata("SQS-DeleteMessageBatch-MessageEntries", messageEntries)
-			_ = seg.Seg.AddMetadata("SQS-DeleteMessageBatch-Result-SuccessIDsList", successIDsList)
-			_ = seg.Seg.AddMetadata("SQS-DeleteMessageBatch-Result-FailedList", failedList)
+			_ = seg.SafeAddMetadata("SQS-DeleteMessageBatch-QueueURL", queueUrl)
+			_ = seg.SafeAddMetadata("SQS-DeleteMessageBatch-MessageEntries", messageEntries)
+			_ = seg.SafeAddMetadata("SQS-DeleteMessageBatch-Result-SuccessIDsList", successIDsList)
+			_ = seg.SafeAddMetadata("SQS-DeleteMessageBatch-Result-FailedList", failedList)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}

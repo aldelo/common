@@ -293,12 +293,12 @@ func (s *SNS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("SNS-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-AWS-Region", s.getAwsRegion())
-			_ = seg.Seg.AddMetadata("SNS-SMS-Sender-Name", s.getSMSSenderName())
-			_ = seg.Seg.AddMetadata("SNS-SMS-Transactional", s.getSMSTransactional())
+			_ = seg.SafeAddMetadata("SNS-AWS-Region", s.getAwsRegion())
+			_ = seg.SafeAddMetadata("SNS-SMS-Sender-Name", s.getSMSSenderName())
+			_ = seg.SafeAddMetadata("SNS-SMS-Transactional", s.getSMSTransactional())
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -666,12 +666,12 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-CreateTopic-TopicName", topicName)
-			_ = seg.Seg.AddMetadata("SNS-CreateTopic-Attributes", attributes)
-			_ = seg.Seg.AddMetadata("SNS-CreateTopic-Result-TopicArn", topicArn)
+			_ = seg.SafeAddMetadata("SNS-CreateTopic-TopicName", topicName)
+			_ = seg.SafeAddMetadata("SNS-CreateTopic-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-CreateTopic-Result-TopicArn", topicArn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -737,10 +737,10 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-DeleteTopic-TopicArn", topicArn)
+			_ = seg.SafeAddMetadata("SNS-DeleteTopic-TopicArn", topicArn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -807,12 +807,12 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-ListTopics-NextToken", nextToken)
-			_ = seg.Seg.AddMetadata("SNS-ListTopics-Result-TopicArnsList", topicArnsList)
-			_ = seg.Seg.AddMetadata("SNS-ListTopics-Result-NextToken", moreTopicArnsNextToken)
+			_ = seg.SafeAddMetadata("SNS-ListTopics-NextToken", nextToken)
+			_ = seg.SafeAddMetadata("SNS-ListTopics-Result-TopicArnsList", topicArnsList)
+			_ = seg.SafeAddMetadata("SNS-ListTopics-Result-NextToken", moreTopicArnsNextToken)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -904,11 +904,11 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-GetTopicAttributes-TopicArn", topicArn)
-			_ = seg.Seg.AddMetadata("SNS-GetTopicAttributes-Result-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-GetTopicAttributes-TopicArn", topicArn)
+			_ = seg.SafeAddMetadata("SNS-GetTopicAttributes-Result-Attributes", attributes)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -973,12 +973,12 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-SetTopicAttribute-TopicArn", topicArn)
-			_ = seg.Seg.AddMetadata("SNS-SetTopicAttribute-AttributeName", attributeName)
-			_ = seg.Seg.AddMetadata("SNS-SetTopicAttribute-AttributeValue", attributeValue)
+			_ = seg.SafeAddMetadata("SNS-SetTopicAttribute-TopicArn", topicArn)
+			_ = seg.SafeAddMetadata("SNS-SetTopicAttribute-AttributeName", attributeName)
+			_ = seg.SafeAddMetadata("SNS-SetTopicAttribute-AttributeValue", attributeValue)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1132,14 +1132,14 @@ func (s *SNS) Subscribe(topicArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-Subscribe-TopicArn", topicArn)
-			_ = seg.Seg.AddMetadata("SNS-Subscribe-Protocol", protocol)
-			_ = seg.Seg.AddMetadata("SNS-Subscribe-Endpoint", endPoint)
-			_ = seg.Seg.AddMetadata("SNS-Subscribe-Attributes", attributes)
-			_ = seg.Seg.AddMetadata("SNS-Subscribe-Result-SubscriptionArn", subscriptionArn)
+			_ = seg.SafeAddMetadata("SNS-Subscribe-TopicArn", topicArn)
+			_ = seg.SafeAddMetadata("SNS-Subscribe-Protocol", protocol)
+			_ = seg.SafeAddMetadata("SNS-Subscribe-Endpoint", endPoint)
+			_ = seg.SafeAddMetadata("SNS-Subscribe-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-Subscribe-Result-SubscriptionArn", subscriptionArn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1221,10 +1221,10 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-Unsubscribe-SubscriptionArn", subscriptionArn)
+			_ = seg.SafeAddMetadata("SNS-Unsubscribe-SubscriptionArn", subscriptionArn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1298,12 +1298,12 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-ConfirmSubscription-TopicArn", topicArn)
-			_ = seg.Seg.AddMetadata("SNS-ConfirmSubscription-Token", token)
-			_ = seg.Seg.AddMetadata("SNS-ConfirmSubscription-Result-SubscriptionArn", subscriptionArn)
+			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-TopicArn", topicArn)
+			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-Token", token)
+			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-Result-SubscriptionArn", subscriptionArn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1379,12 +1379,12 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-ListSubscriptions-NextToken", nextToken)
-			_ = seg.Seg.AddMetadata("SNS-ListSubscriptions-Result-SubscriptionsList", subscriptionsList)
-			_ = seg.Seg.AddMetadata("SNS-ListSubscriptions-Result-NextToken", moreSubscriptionsNextToken)
+			_ = seg.SafeAddMetadata("SNS-ListSubscriptions-NextToken", nextToken)
+			_ = seg.SafeAddMetadata("SNS-ListSubscriptions-Result-SubscriptionsList", subscriptionsList)
+			_ = seg.SafeAddMetadata("SNS-ListSubscriptions-Result-NextToken", moreSubscriptionsNextToken)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1470,13 +1470,13 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-ListSubscriptionsByTopic-TopicArn", topicArn)
-			_ = seg.Seg.AddMetadata("SNS-ListSubscriptionsByTopic-NextToken", nextToken)
-			_ = seg.Seg.AddMetadata("SNS-ListSubscriptionsByTopic-Result-SubscriptionsList", subscriptionsList)
-			_ = seg.Seg.AddMetadata("SNS-ListSubscriptionsByTopic-Result-NextToken", moreSubscriptionsNextToken)
+			_ = seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-TopicArn", topicArn)
+			_ = seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-NextToken", nextToken)
+			_ = seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-Result-SubscriptionsList", subscriptionsList)
+			_ = seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-Result-NextToken", moreSubscriptionsNextToken)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1584,11 +1584,11 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-GetSubscriptionAttributes-SubscriptionArn", subscriptionArn)
-			_ = seg.Seg.AddMetadata("SNS-GetSubscriptionAttributes-Result-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-GetSubscriptionAttributes-SubscriptionArn", subscriptionArn)
+			_ = seg.SafeAddMetadata("SNS-GetSubscriptionAttributes-Result-Attributes", attributes)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1653,12 +1653,12 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-SetSubscriptionAttribute-SubscriptionArn", subscriptionArn)
-			_ = seg.Seg.AddMetadata("SNS-SetSubscriptionAttribute-AttributeName", attributeName)
-			_ = seg.Seg.AddMetadata("SNS-SetSubscriptionAttribute-AttributeValue", attributeValue)
+			_ = seg.SafeAddMetadata("SNS-SetSubscriptionAttribute-SubscriptionArn", subscriptionArn)
+			_ = seg.SafeAddMetadata("SNS-SetSubscriptionAttribute-AttributeName", attributeName)
+			_ = seg.SafeAddMetadata("SNS-SetSubscriptionAttribute-AttributeValue", attributeValue)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1767,15 +1767,15 @@ func (s *SNS) Publish(topicArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-Publish-TopicArn", topicArn)
-			_ = seg.Seg.AddMetadata("SNS-Publish-TargetArn", targetArn)
-			_ = seg.Seg.AddMetadata("SNS-Publish-Message", message)
-			_ = seg.Seg.AddMetadata("SNS-Publish-Subject", subject)
-			_ = seg.Seg.AddMetadata("SNS-Publish-Attributes", attributes)
-			_ = seg.Seg.AddMetadata("SNS-Publish-Result-MessageID", messageId)
+			_ = seg.SafeAddMetadata("SNS-Publish-TopicArn", topicArn)
+			_ = seg.SafeAddMetadata("SNS-Publish-TargetArn", targetArn)
+			_ = seg.SafeAddMetadata("SNS-Publish-Message", message)
+			_ = seg.SafeAddMetadata("SNS-Publish-Subject", subject)
+			_ = seg.SafeAddMetadata("SNS-Publish-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-Publish-Result-MessageID", messageId)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1910,12 +1910,12 @@ func (s *SNS) SendSMS(phoneNumber string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-SendSMS-Phone", phoneNumber)
-			_ = seg.Seg.AddMetadata("SNS-SendSMS-Message", message)
-			_ = seg.Seg.AddMetadata("SNS-SendSMS-Result-MessageID", messageId)
+			_ = seg.SafeAddMetadata("SNS-SendSMS-Phone", phoneNumber)
+			_ = seg.SafeAddMetadata("SNS-SendSMS-Message", message)
+			_ = seg.SafeAddMetadata("SNS-SendSMS-Result-MessageID", messageId)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2035,10 +2035,10 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-OptInPhoneNumber-Phone", phoneNumber)
+			_ = seg.SafeAddMetadata("SNS-OptInPhoneNumber-Phone", phoneNumber)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2109,11 +2109,11 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Phone", phoneNumber)
-			_ = seg.Seg.AddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Result-OptedOut", optedOut)
+			_ = seg.SafeAddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Phone", phoneNumber)
+			_ = seg.SafeAddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Result-OptedOut", optedOut)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2188,12 +2188,12 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-ListPhoneNumbersOptedOut-NextToken", nextToken)
-			_ = seg.Seg.AddMetadata("SNS-ListPhoneNumbersOptedOut-Result-PhonesList", phonesList)
-			_ = seg.Seg.AddMetadata("SNS-ListPhoneNumbersOptedOut-Result-NextToken", morePhonesNextToken)
+			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-NextToken", nextToken)
+			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-PhonesList", phonesList)
+			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-NextToken", morePhonesNextToken)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2297,13 +2297,13 @@ func (s *SNS) CreatePlatformApplication(name string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-CreatePlatformApplication-Name", name)
-			_ = seg.Seg.AddMetadata("SNS-CreatePlatformApplication-Platform", platform)
-			_ = seg.Seg.AddMetadata("SNS-CreatePlatformApplication-Attributes", attributes)
-			_ = seg.Seg.AddMetadata("SNS-CreatePlatformApplication-Result-PlatformApplicationArn", platformApplicationArn)
+			_ = seg.SafeAddMetadata("SNS-CreatePlatformApplication-Name", name)
+			_ = seg.SafeAddMetadata("SNS-CreatePlatformApplication-Platform", platform)
+			_ = seg.SafeAddMetadata("SNS-CreatePlatformApplication-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-CreatePlatformApplication-Result-PlatformApplicationArn", platformApplicationArn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2381,10 +2381,10 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-DeletePlatformApplication-PlatformApplicationArn", platformApplicationArn)
+			_ = seg.SafeAddMetadata("SNS-DeletePlatformApplication-PlatformApplicationArn", platformApplicationArn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2451,12 +2451,12 @@ func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-ListPlatformApplications-NextToken", nextToken)
-			_ = seg.Seg.AddMetadata("SNS-ListPlatformApplications-Result-PlatformApplicationArnsList", platformApplicationArnsList)
-			_ = seg.Seg.AddMetadata("SNS-ListPlatformApplications-Result-NextToken", moreAppArnsNextToken)
+			_ = seg.SafeAddMetadata("SNS-ListPlatformApplications-NextToken", nextToken)
+			_ = seg.SafeAddMetadata("SNS-ListPlatformApplications-Result-PlatformApplicationArnsList", platformApplicationArnsList)
+			_ = seg.SafeAddMetadata("SNS-ListPlatformApplications-Result-NextToken", moreAppArnsNextToken)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2531,11 +2531,11 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-GetPlatformApplicationAttributes-PlatformApplicationArn", platformApplicationArn)
-			_ = seg.Seg.AddMetadata("SNS-GetPlatformApplicationAttributes-Result-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-GetPlatformApplicationAttributes-PlatformApplicationArn", platformApplicationArn)
+			_ = seg.SafeAddMetadata("SNS-GetPlatformApplicationAttributes-Result-Attributes", attributes)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2599,11 +2599,11 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-SetPlatformApplicationAttributes-PlatformApplicationArn", platformApplicationArn)
-			_ = seg.Seg.AddMetadata("SNS-SetPlatformApplicationAttributes-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-SetPlatformApplicationAttributes-PlatformApplicationArn", platformApplicationArn)
+			_ = seg.SafeAddMetadata("SNS-SetPlatformApplicationAttributes-Attributes", attributes)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2684,13 +2684,13 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-CreatePlatformEndpoint-PlatformApplicationArn", platformApplicationArn)
-			_ = seg.Seg.AddMetadata("SNS-CreatePlatformEndpoint-Token", token)
-			_ = seg.Seg.AddMetadata("SNS-CreatePlatformEndpoint-CustomUserData", customUserData)
-			_ = seg.Seg.AddMetadata("SNS-CreatePlatformEndpoint-Result-EndpointArn", endpointArn)
+			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-PlatformApplicationArn", platformApplicationArn)
+			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-Token", token)
+			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-CustomUserData", customUserData)
+			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-Result-EndpointArn", endpointArn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2771,10 +2771,10 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-DeletePlatformEndpoint-EndpointArn", endpointArn)
+			_ = seg.SafeAddMetadata("SNS-DeletePlatformEndpoint-EndpointArn", endpointArn)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2844,13 +2844,13 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-ListEndpointsByPlatformApplication-PlatformApplicationArn", platformApplicationArn)
-			_ = seg.Seg.AddMetadata("SNS-ListEndpointsByPlatformApplication-NextToken", nextToken)
-			_ = seg.Seg.AddMetadata("SNS-ListEndpointsByPlatformApplication-Result-EndpointArnsList", endpointArnsList)
-			_ = seg.Seg.AddMetadata("SNS-ListEndpointsByPlatformApplication-Result-NextToken", moreEndpointArnsNextToken)
+			_ = seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-PlatformApplicationArn", platformApplicationArn)
+			_ = seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-NextToken", nextToken)
+			_ = seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-Result-EndpointArnsList", endpointArnsList)
+			_ = seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-Result-NextToken", moreEndpointArnsNextToken)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -2943,11 +2943,11 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-GetPlatformEndpointAttributes-EndpointArn", endpointArn)
-			_ = seg.Seg.AddMetadata("SNS-GetPlatformEndpointAttributes-Result-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-GetPlatformEndpointAttributes-EndpointArn", endpointArn)
+			_ = seg.SafeAddMetadata("SNS-GetPlatformEndpointAttributes-Result-Attributes", attributes)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -3011,11 +3011,11 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SNS-SetPlatformEndpointAttributes-EndpointArn", endpointArn)
-			_ = seg.Seg.AddMetadata("SNS-SetPlatformEndpointAttributes-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-SetPlatformEndpointAttributes-EndpointArn", endpointArn)
+			_ = seg.SafeAddMetadata("SNS-SetPlatformEndpointAttributes-Attributes", attributes)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}

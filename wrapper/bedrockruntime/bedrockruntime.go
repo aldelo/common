@@ -118,10 +118,10 @@ func (s *BedrockRuntime) Connect(parentSegment ...*xray.XRayParentSegment) (err 
 		seg := xray.NewSegment("BedrockRuntime-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("BedrockRuntime-AWS-Region", awsRegionSnap)
+			_ = seg.SafeAddMetadata("BedrockRuntime-AWS-Region", awsRegionSnap)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -225,10 +225,10 @@ func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (respon
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("BedrockRuntime-InvokeModel-ResponseBody", responseBody)
+			_ = seg.SafeAddMetadata("BedrockRuntime-InvokeModel-ResponseBody", responseBody)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}

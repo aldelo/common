@@ -175,10 +175,10 @@ func (s *Textract) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 		seg := xray.NewSegment("Textract-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Textract-AWS-Region", s.getAwsRegion())
+			_ = seg.SafeAddMetadata("Textract-AWS-Region", s.getAwsRegion())
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -279,10 +279,10 @@ func (s *Textract) AnalyzeID(data []byte) (doc *types.IdentityDocument, err erro
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Textract-AnalyzeID-IdentityFields", doc)
+			_ = seg.SafeAddMetadata("Textract-AnalyzeID-IdentityFields", doc)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -355,10 +355,10 @@ func (s *Textract) DetectDocumentText(data []byte) (blocks []types.Block, err er
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Textract-DetectDocumentText-DetectedBlocks", blocks)
+			_ = seg.SafeAddMetadata("Textract-DetectDocumentText-DetectedBlocks", blocks)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}

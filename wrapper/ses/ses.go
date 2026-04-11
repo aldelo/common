@@ -212,10 +212,10 @@ func (s *SES) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("SES-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-AWS-Region", awsRegionSnap)
+			_ = seg.SafeAddMetadata("SES-AWS-Region", awsRegionSnap)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -685,10 +685,10 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-GetSendQuota-Result-SendQuota", sq)
+			_ = seg.SafeAddMetadata("SES-GetSendQuota-Result-SendQuota", sq)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -752,16 +752,16 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 		defer seg.Close()
 		defer func() {
 			if email != nil {
-				_ = seg.Seg.AddMetadata("SES-SendEmail-Email-From", email.From)
-				_ = seg.Seg.AddMetadata("SES-SendEmail-Email-To", email.To)
-				_ = seg.Seg.AddMetadata("SES-SendEmail-Email-Subject", email.Subject)
-				_ = seg.Seg.AddMetadata("SES-SendEmail-Result-MessageID", messageId)
+				_ = seg.SafeAddMetadata("SES-SendEmail-Email-From", email.From)
+				_ = seg.SafeAddMetadata("SES-SendEmail-Email-To", email.To)
+				_ = seg.SafeAddMetadata("SES-SendEmail-Email-Subject", email.Subject)
+				_ = seg.SafeAddMetadata("SES-SendEmail-Result-MessageID", messageId)
 			} else {
-				_ = seg.Seg.AddMetadata("SES-SendEmail-Email-Fail", "Email Object Nil")
+				_ = seg.SafeAddMetadata("SES-SendEmail-Email-Fail", "Email Object Nil")
 			}
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -850,18 +850,18 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 		defer seg.Close()
 		defer func() {
 			if email != nil {
-				_ = seg.Seg.AddMetadata("SES-SendRawEmail-Email-From", email.From)
-				_ = seg.Seg.AddMetadata("SES-SendRawEmail-Email-To", email.To)
-				_ = seg.Seg.AddMetadata("SES-SendRawEmail-Email-Subject", email.Subject)
-				_ = seg.Seg.AddMetadata("SES-SendRawEmail-Email-Attachment-FileName", attachmentFileName)
-				_ = seg.Seg.AddMetadata("SES-SendRawEmail-Email-Attachment-ContentType", attachmentContentType)
-				_ = seg.Seg.AddMetadata("SES-SendRawEmail-Result-MessageID", messageId)
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-From", email.From)
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-To", email.To)
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Subject", email.Subject)
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Attachment-FileName", attachmentFileName)
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Attachment-ContentType", attachmentContentType)
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Result-MessageID", messageId)
 			} else {
-				_ = seg.Seg.AddMetadata("SES-SendRawEmail-Email-Fail", "Email Object Nil")
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Fail", "Email Object Nil")
 			}
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -989,13 +989,13 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-CreateTemplate-TemplateName", templateName)
-			_ = seg.Seg.AddMetadata("SES-CreateTemplate-SubjectPart", subjectPart)
-			_ = seg.Seg.AddMetadata("SES-CreateTemplate-TextPart", textPart)
-			_ = seg.Seg.AddMetadata("SES-CreateTemplate-HtmlPart", htmlPart)
+			_ = seg.SafeAddMetadata("SES-CreateTemplate-TemplateName", templateName)
+			_ = seg.SafeAddMetadata("SES-CreateTemplate-SubjectPart", subjectPart)
+			_ = seg.SafeAddMetadata("SES-CreateTemplate-TextPart", textPart)
+			_ = seg.SafeAddMetadata("SES-CreateTemplate-HtmlPart", htmlPart)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1093,13 +1093,13 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-UpdateTemplate-TemplateName", templateName)
-			_ = seg.Seg.AddMetadata("SES-UpdateTemplate-SubjectPart", subjectPart)
-			_ = seg.Seg.AddMetadata("SES-UpdateTemplate-TextPart", textPart)
-			_ = seg.Seg.AddMetadata("SES-UpdateTemplate-HtmlPart", htmlPart)
+			_ = seg.SafeAddMetadata("SES-UpdateTemplate-TemplateName", templateName)
+			_ = seg.SafeAddMetadata("SES-UpdateTemplate-SubjectPart", subjectPart)
+			_ = seg.SafeAddMetadata("SES-UpdateTemplate-TextPart", textPart)
+			_ = seg.SafeAddMetadata("SES-UpdateTemplate-HtmlPart", htmlPart)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1184,10 +1184,10 @@ func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Durati
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-DeleteTemplate-TemplateName", templateName)
+			_ = seg.SafeAddMetadata("SES-DeleteTemplate-TemplateName", templateName)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1280,20 +1280,20 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-SendTemplateEmail-Email-From", senderEmail)
-			_ = seg.Seg.AddMetadata("SES-SendTemplateEmail-Email-ReturnPath", returnPath)
-			_ = seg.Seg.AddMetadata("SES-SendTemplateEmail-Email-ReplyTo", replyTo)
-			_ = seg.Seg.AddMetadata("SES-SendTemplateEmail-TemplateName", templateName)
+			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-From", senderEmail)
+			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReturnPath", returnPath)
+			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReplyTo", replyTo)
+			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-TemplateName", templateName)
 
 			if emailTarget != nil {
-				_ = seg.Seg.AddMetadata("SES-SendTemplateEmail-Email-To", emailTarget.To)
-				_ = seg.Seg.AddMetadata("SES-SendTemplateEmail-Result-MessageID", messageId)
+				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-To", emailTarget.To)
+				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Result-MessageID", messageId)
 			} else {
-				_ = seg.Seg.AddMetadata("SES-SendTemplateEmail-Email-Fail", "Email Target Nil")
+				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-Fail", "Email Target Nil")
 			}
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1453,16 +1453,16 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-SendBulkTemplateEmail-Email-From", senderEmail)
-			_ = seg.Seg.AddMetadata("SES-SendBulkTemplateEmail-ReturnPath", returnPath)
-			_ = seg.Seg.AddMetadata("SES-SendBulkTemplateEmail-ReplyTo", replyTo)
-			_ = seg.Seg.AddMetadata("SES-SendBulkTemplateEmail-TemplateName", templateName)
-			_ = seg.Seg.AddMetadata("SES-SendBulkTemplateEmail-DefaultTemplateDataJson", defaultTemplateDataJson)
-			_ = seg.Seg.AddMetadata("SES-SendBulkTemplateEmail-EmailTargetList-Count", len(emailTargetList))
-			_ = seg.Seg.AddMetadata("SES-SendBulkTemplateEmail-Result-FailCount", failedCount)
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-Email-From", senderEmail)
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReturnPath", returnPath)
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReplyTo", replyTo)
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-TemplateName", templateName)
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-DefaultTemplateDataJson", defaultTemplateDataJson)
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-EmailTargetList-Count", len(emailTargetList))
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-Result-FailCount", failedCount)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1640,15 +1640,15 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateName", templateName)
-			_ = seg.Seg.AddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateSubject", templateSubject)
-			_ = seg.Seg.AddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateContent", templateContent)
-			_ = seg.Seg.AddMetadata("SES-CreateCustomVerificationEmailTemplate-Email-From", fromEmailAddress)
-			_ = seg.Seg.AddMetadata("SES-CreateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL)
-			_ = seg.Seg.AddMetadata("SES-CreateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL)
+			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateName", templateName)
+			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateSubject", templateSubject)
+			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateContent", templateContent)
+			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Email-From", fromEmailAddress)
+			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL)
+			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1753,15 +1753,15 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateName", templateName)
-			_ = seg.Seg.AddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateSubject", templateSubject)
-			_ = seg.Seg.AddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateContent", templateContent)
-			_ = seg.Seg.AddMetadata("SES-UpdateCustomVerificationEmailTemplate-Email-From", fromEmailAddress)
-			_ = seg.Seg.AddMetadata("SES-UpdateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL)
-			_ = seg.Seg.AddMetadata("SES-UpdateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL)
+			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateName", templateName)
+			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateSubject", templateSubject)
+			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateContent", templateContent)
+			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Email-From", fromEmailAddress)
+			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL)
+			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1855,10 +1855,10 @@ func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOut
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-DeleteCustomVerificationEmailTemplate-TemplateName", templateName)
+			_ = seg.SafeAddMetadata("SES-DeleteCustomVerificationEmailTemplate-TemplateName", templateName)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}
@@ -1921,12 +1921,12 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("SES-SendCustomVerificationEmail-TemplateName", templateName)
-			_ = seg.Seg.AddMetadata("SES-SendCustomVerificationEmail-Email-To", toEmailAddress)
-			_ = seg.Seg.AddMetadata("SES-SendCustomVerificationEmail-Result-MessageID", messageId)
+			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-TemplateName", templateName)
+			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-Email-To", toEmailAddress)
+			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-Result-MessageID", messageId)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 	}

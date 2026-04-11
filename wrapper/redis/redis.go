@@ -219,11 +219,11 @@ func (r *Redis) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("Redis-Connect", r._parentSegment)
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Writer-Endpoint", r.AwsRedisWriterEndpoint)
-			_ = seg.Seg.AddMetadata("Redis-Reader-Endpoint", r.AwsRedisReaderEndpoint)
+			_ = seg.SafeAddMetadata("Redis-Writer-Endpoint", r.AwsRedisWriterEndpoint)
+			_ = seg.SafeAddMetadata("Redis-Reader-Endpoint", r.AwsRedisReaderEndpoint)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -1339,18 +1339,18 @@ func (r *Redis) SetBase(key string, val interface{}, setCondition redissetcondit
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Set-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-Set-Value", val)
-			_ = seg.Seg.AddMetadata("Redis-Set-Condition", setCondition.Caption())
+			_ = seg.SafeAddMetadata("Redis-Set-Key", key)
+			_ = seg.SafeAddMetadata("Redis-Set-Value", val)
+			_ = seg.SafeAddMetadata("Redis-Set-Condition", setCondition.Caption())
 
 			if len(expires) > 0 {
-				_ = seg.Seg.AddMetadata("Redis-Set-Expire-Seconds", expires[0].Seconds())
+				_ = seg.SafeAddMetadata("Redis-Set-Expire-Seconds", expires[0].Seconds())
 			} else {
-				_ = seg.Seg.AddMetadata("Redis-Set-Expire-Seconds", "Not Defined")
+				_ = seg.SafeAddMetadata("Redis-Set-Expire-Seconds", "Not Defined")
 			}
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -1501,12 +1501,12 @@ func (r *Redis) GetBase(key string) (cmd *redis.StringCmd, notFound bool, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Get-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-Get-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-Get-Value-Cmd", cmd)
+			_ = seg.SafeAddMetadata("Redis-Get-Key", key)
+			_ = seg.SafeAddMetadata("Redis-Get-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-Get-Value-Cmd", cmd)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -1772,13 +1772,13 @@ func (r *Redis) GetSet(key string, val string) (oldValue string, notFound bool, 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GetSet-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GetSet-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-GetSet-Old_Value", oldValue)
-			_ = seg.Seg.AddMetadata("Redis-GetSet-New-Value", val)
+			_ = seg.SafeAddMetadata("Redis-GetSet-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GetSet-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-GetSet-Old_Value", oldValue)
+			_ = seg.SafeAddMetadata("Redis-GetSet-New-Value", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -1830,10 +1830,10 @@ func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-MSet-KeyValueMap", kvMap)
+			_ = seg.SafeAddMetadata("Redis-MSet-KeyValueMap", kvMap)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -1900,12 +1900,12 @@ func (r *Redis) MGet(key ...string) (results []interface{}, notFound bool, err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-MGet-Keys", key)
-			_ = seg.Seg.AddMetadata("Redis-MGet-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-MGet-Results", results)
+			_ = seg.SafeAddMetadata("Redis-MGet-Keys", key)
+			_ = seg.SafeAddMetadata("Redis-MGet-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-MGet-Results", results)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -1953,12 +1953,12 @@ func (r *Redis) SetRange(key string, offset int64, val string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SetRange-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SetRange-Offset", offset)
-			_ = seg.Seg.AddMetadata("Redis-SetRange-Value", val)
+			_ = seg.SafeAddMetadata("Redis-SetRange-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SetRange-Offset", offset)
+			_ = seg.SafeAddMetadata("Redis-SetRange-Value", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2011,13 +2011,13 @@ func (r *Redis) GetRange(key string, start int64, end int64) (val string, notFou
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GetRange-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GetRange-Start-End", util.Int64ToString(start)+"-"+util.Int64ToString(end))
-			_ = seg.Seg.AddMetadata("Redis-GetRange-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-GetRange-Value", val)
+			_ = seg.SafeAddMetadata("Redis-GetRange-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GetRange-Start-End", util.Int64ToString(start)+"-"+util.Int64ToString(end))
+			_ = seg.SafeAddMetadata("Redis-GetRange-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-GetRange-Value", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2073,20 +2073,20 @@ func (r *Redis) Int64AddOrReduce(key string, val int64, isReduce ...bool) (newVa
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Int64AddOrReduce-Key", key)
+			_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-Key", key)
 
 			if len(isReduce) > 0 {
-				_ = seg.Seg.AddMetadata("Redis-Int64AddOrReduce-IsReduce", isReduce[0])
+				_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-IsReduce", isReduce[0])
 			} else {
-				_ = seg.Seg.AddMetadata("Redis-Int64AddOrReduce-IsReduce", "false")
+				_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-IsReduce", "false")
 			}
 
-			_ = seg.Seg.AddMetadata("Redis-Int64AddOrReduce-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-Int64AddOrReduce-Old-Value", val)
-			_ = seg.Seg.AddMetadata("Redis-Int64AddOrReduce-New-Value", newVal)
+			_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-Old-Value", val)
+			_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-New-Value", newVal)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2163,13 +2163,13 @@ func (r *Redis) Float64AddOrReduce(key string, val float64) (newVal float64, not
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Float64AddOrReduce-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-Float64AddOrReduce-Value", val)
-			_ = seg.Seg.AddMetadata("Redis-Float64AddOrReduce-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-Float64AddOrReduce-Result-NewValue", newVal)
+			_ = seg.SafeAddMetadata("Redis-Float64AddOrReduce-Key", key)
+			_ = seg.SafeAddMetadata("Redis-Float64AddOrReduce-Value", val)
+			_ = seg.SafeAddMetadata("Redis-Float64AddOrReduce-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-Float64AddOrReduce-Result-NewValue", newVal)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2213,11 +2213,11 @@ func (r *Redis) PFAdd(key string, elements ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-PFAdd-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-PFAdd-Elements", elements)
+			_ = seg.SafeAddMetadata("Redis-PFAdd-Key", key)
+			_ = seg.SafeAddMetadata("Redis-PFAdd-Elements", elements)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2262,12 +2262,12 @@ func (r *Redis) PFCount(key ...string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-PFCount-Keys", key)
-			_ = seg.Seg.AddMetadata("Redis-PFCount-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-PFCount-Result-Count", val)
+			_ = seg.SafeAddMetadata("Redis-PFCount-Keys", key)
+			_ = seg.SafeAddMetadata("Redis-PFCount-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-PFCount-Result-Count", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2306,11 +2306,11 @@ func (r *Redis) PFMerge(destKey string, sourceKey ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-PFMerge-DestKey", destKey)
-			_ = seg.Seg.AddMetadata("Redis-PFMerge-SourceKeys", sourceKey)
+			_ = seg.SafeAddMetadata("Redis-PFMerge-DestKey", destKey)
+			_ = seg.SafeAddMetadata("Redis-PFMerge-SourceKeys", sourceKey)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2358,11 +2358,11 @@ func (r *Redis) Exists(key ...string) (foundCount int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Exists-Keys", key)
-			_ = seg.Seg.AddMetadata("Redis-Exists-Result-Count", foundCount)
+			_ = seg.SafeAddMetadata("Redis-Exists-Keys", key)
+			_ = seg.SafeAddMetadata("Redis-Exists-Result-Count", foundCount)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2404,12 +2404,12 @@ func (r *Redis) StrLen(key string) (length int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-StrLen-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-StrLen-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-StrLen-Result-Len", length)
+			_ = seg.SafeAddMetadata("Redis-StrLen-Key", key)
+			_ = seg.SafeAddMetadata("Redis-StrLen-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-StrLen-Result-Len", length)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2461,11 +2461,11 @@ func (r *Redis) Append(key string, valToAppend string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Append-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-Append-Value", valToAppend)
+			_ = seg.SafeAddMetadata("Redis-Append-Key", key)
+			_ = seg.SafeAddMetadata("Redis-Append-Value", valToAppend)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2505,11 +2505,11 @@ func (r *Redis) Del(key ...string) (deletedCount int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Del-Keys", key)
-			_ = seg.Seg.AddMetadata("Redis-Del-Result-Deleted-Count", deletedCount)
+			_ = seg.SafeAddMetadata("Redis-Del-Keys", key)
+			_ = seg.SafeAddMetadata("Redis-Del-Result-Deleted-Count", deletedCount)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2549,11 +2549,11 @@ func (r *Redis) Unlink(key ...string) (unlinkedCount int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Unlink-Keys", key)
-			_ = seg.Seg.AddMetadata("Redis-Unlink-Result-Unlinked-Count", unlinkedCount)
+			_ = seg.SafeAddMetadata("Redis-Unlink-Keys", key)
+			_ = seg.SafeAddMetadata("Redis-Unlink-Result-Unlinked-Count", unlinkedCount)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2604,12 +2604,12 @@ func (b *BIT) SetBit(key string, offset int64, bitValue bool) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SetBit-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SetBit-Offset", offset)
-			_ = seg.Seg.AddMetadata("Redis-SetBit-Bit-Value", bitValue)
+			_ = seg.SafeAddMetadata("Redis-SetBit-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SetBit-Offset", offset)
+			_ = seg.SafeAddMetadata("Redis-SetBit-Bit-Value", bitValue)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2670,12 +2670,12 @@ func (b *BIT) GetBit(key string, offset int64) (val int, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GetBit-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GetBit-Offset", offset)
-			_ = seg.Seg.AddMetadata("Redis-GetBit-Result", val)
+			_ = seg.SafeAddMetadata("Redis-GetBit-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GetBit-Offset", offset)
+			_ = seg.SafeAddMetadata("Redis-GetBit-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2730,13 +2730,13 @@ func (b *BIT) BitCount(key string, offsetFrom int64, offsetTo int64) (valCount i
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-BitCount-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-BitCount-Offset-From", offsetFrom)
-			_ = seg.Seg.AddMetadata("Redis-BitCount-Offset-To", offsetTo)
-			_ = seg.Seg.AddMetadata("Redis-BitCount-Result-Count", valCount)
+			_ = seg.SafeAddMetadata("Redis-BitCount-Key", key)
+			_ = seg.SafeAddMetadata("Redis-BitCount-Offset-From", offsetFrom)
+			_ = seg.SafeAddMetadata("Redis-BitCount-Offset-To", offsetTo)
+			_ = seg.SafeAddMetadata("Redis-BitCount-Result-Count", valCount)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2799,12 +2799,12 @@ func (b *BIT) BitField(key string, args ...interface{}) (valBits []int64, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-BitField-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-BitField-Input-Args", args)
-			_ = seg.Seg.AddMetadata("Redis-BitField-Input-Result", valBits)
+			_ = seg.SafeAddMetadata("Redis-BitField-Key", key)
+			_ = seg.SafeAddMetadata("Redis-BitField-Input-Args", args)
+			_ = seg.SafeAddMetadata("Redis-BitField-Input-Result", valBits)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2873,12 +2873,12 @@ func (b *BIT) BitOp(keyDest string, bitOpType redisbitop.RedisBitop, keySource .
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-BitOp-KeyDest", keyDest)
-			_ = seg.Seg.AddMetadata("Redis-BitOp-OpType", bitOpType)
-			_ = seg.Seg.AddMetadata("Redis-BitOp-KeySource", keySource)
+			_ = seg.SafeAddMetadata("Redis-BitOp-KeyDest", keyDest)
+			_ = seg.SafeAddMetadata("Redis-BitOp-OpType", bitOpType)
+			_ = seg.SafeAddMetadata("Redis-BitOp-KeySource", keySource)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -2964,13 +2964,13 @@ func (b *BIT) BitPos(key string, bitValue int64, startPosition ...int64) (valPos
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-BitPos-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-BitPos-BitValue", bitValue)
-			_ = seg.Seg.AddMetadata("Redis-BitPos-Start-Position", startPosition)
-			_ = seg.Seg.AddMetadata("Redis-BitPos-Result-Position", valPosition)
+			_ = seg.SafeAddMetadata("Redis-BitPos-Key", key)
+			_ = seg.SafeAddMetadata("Redis-BitPos-BitValue", bitValue)
+			_ = seg.SafeAddMetadata("Redis-BitPos-Start-Position", startPosition)
+			_ = seg.SafeAddMetadata("Redis-BitPos-Result-Position", valPosition)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3030,12 +3030,12 @@ func (l *LIST) LSet(key string, index int64, value interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LSet-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-LSet-Index", index)
-			_ = seg.Seg.AddMetadata("Redis-LSet-value", value)
+			_ = seg.SafeAddMetadata("Redis-LSet-Key", key)
+			_ = seg.SafeAddMetadata("Redis-LSet-Index", index)
+			_ = seg.SafeAddMetadata("Redis-LSet-value", value)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3084,13 +3084,13 @@ func (l *LIST) LInsert(key string, bBefore bool, pivot interface{}, value interf
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LInsert-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-LInsert-Insert-Before", bBefore)
-			_ = seg.Seg.AddMetadata("Redis-LInsert-Pivot-Element", pivot)
-			_ = seg.Seg.AddMetadata("Redis-LInsert-Insert-Value", value)
+			_ = seg.SafeAddMetadata("Redis-LInsert-Key", key)
+			_ = seg.SafeAddMetadata("Redis-LInsert-Insert-Before", bBefore)
+			_ = seg.SafeAddMetadata("Redis-LInsert-Pivot-Element", pivot)
+			_ = seg.SafeAddMetadata("Redis-LInsert-Insert-Value", value)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3157,12 +3157,12 @@ func (l *LIST) LPush(key string, keyMustExist bool, value ...interface{}) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LPush-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-LPush-Key-Must-Exist", keyMustExist)
-			_ = seg.Seg.AddMetadata("Redis-LPush-Values", value)
+			_ = seg.SafeAddMetadata("Redis-LPush-Key", key)
+			_ = seg.SafeAddMetadata("Redis-LPush-Key-Must-Exist", keyMustExist)
+			_ = seg.SafeAddMetadata("Redis-LPush-Values", value)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3230,12 +3230,12 @@ func (l *LIST) RPush(key string, keyMustExist bool, value ...interface{}) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-RPush-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-RPush-Key-Must-Exist", keyMustExist)
-			_ = seg.Seg.AddMetadata("Redis-RPush-Values", value)
+			_ = seg.SafeAddMetadata("Redis-RPush-Key", key)
+			_ = seg.SafeAddMetadata("Redis-RPush-Key-Must-Exist", keyMustExist)
+			_ = seg.SafeAddMetadata("Redis-RPush-Values", value)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3297,13 +3297,13 @@ func (l *LIST) LPop(key string, outputDataType redisdatatype.RedisDataType, outp
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LPop-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-LPop-Output-Data-Type", outputDataType)
-			_ = seg.Seg.AddMetadata("Redis-LPop-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-LPop-Output-Object", outputObjectPtr)
+			_ = seg.SafeAddMetadata("Redis-LPop-Key", key)
+			_ = seg.SafeAddMetadata("Redis-LPop-Output-Data-Type", outputDataType)
+			_ = seg.SafeAddMetadata("Redis-LPop-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-LPop-Output-Object", outputObjectPtr)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3356,13 +3356,13 @@ func (l *LIST) RPop(key string, outputDataType redisdatatype.RedisDataType, outp
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-RPop-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-RPop-Output-Data-Type", outputDataType)
-			_ = seg.Seg.AddMetadata("Redis-RPop-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-RPop-Output-Object", outputObjectPtr)
+			_ = seg.SafeAddMetadata("Redis-RPop-Key", key)
+			_ = seg.SafeAddMetadata("Redis-RPop-Output-Data-Type", outputDataType)
+			_ = seg.SafeAddMetadata("Redis-RPop-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-RPop-Output-Object", outputObjectPtr)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3416,14 +3416,14 @@ func (l *LIST) RPopLPush(keySource string, keyDest string, outputDataType redisd
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-RPopLPush-KeySource", keySource)
-			_ = seg.Seg.AddMetadata("Redis-RPopLPush-KeyDest", keyDest)
-			_ = seg.Seg.AddMetadata("Redis-RPopLPush-Output-Data-Type", outputDataType)
-			_ = seg.Seg.AddMetadata("Redis-RPopLPush-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-RPopLPush-Output-Object", outputObjectPtr)
+			_ = seg.SafeAddMetadata("Redis-RPopLPush-KeySource", keySource)
+			_ = seg.SafeAddMetadata("Redis-RPopLPush-KeyDest", keyDest)
+			_ = seg.SafeAddMetadata("Redis-RPopLPush-Output-Data-Type", outputDataType)
+			_ = seg.SafeAddMetadata("Redis-RPopLPush-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-RPopLPush-Output-Object", outputObjectPtr)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3488,14 +3488,14 @@ func (l *LIST) LIndex(key string, index int64, outputDataType redisdatatype.Redi
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LIndex-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-LIndex-Index", index)
-			_ = seg.Seg.AddMetadata("Redis-LIndex-Output-Data-Type", outputDataType)
-			_ = seg.Seg.AddMetadata("Redis-LIndex-Output-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-LIndex-Output-Object", outputObjectPtr)
+			_ = seg.SafeAddMetadata("Redis-LIndex-Key", key)
+			_ = seg.SafeAddMetadata("Redis-LIndex-Index", index)
+			_ = seg.SafeAddMetadata("Redis-LIndex-Output-Data-Type", outputDataType)
+			_ = seg.SafeAddMetadata("Redis-LIndex-Output-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-LIndex-Output-Object", outputObjectPtr)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3550,12 +3550,12 @@ func (l *LIST) LLen(key string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LLen-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-LLen-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-LLen-Result", val)
+			_ = seg.SafeAddMetadata("Redis-LLen-Key", key)
+			_ = seg.SafeAddMetadata("Redis-LLen-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-LLen-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3612,14 +3612,14 @@ func (l *LIST) LRange(key string, start int64, stop int64) (outputSlice []string
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LRange-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-LRange-Start", start)
-			_ = seg.Seg.AddMetadata("Redis-LRange-Stop", stop)
-			_ = seg.Seg.AddMetadata("Redis-LRange-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-LRange-Result", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-LRange-Key", key)
+			_ = seg.SafeAddMetadata("Redis-LRange-Start", start)
+			_ = seg.SafeAddMetadata("Redis-LRange-Stop", stop)
+			_ = seg.SafeAddMetadata("Redis-LRange-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-LRange-Result", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3682,12 +3682,12 @@ func (l *LIST) LRem(key string, count int64, value interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LRem-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-LRem-Count", count)
-			_ = seg.Seg.AddMetadata("Redis-LRem-Value", value)
+			_ = seg.SafeAddMetadata("Redis-LRem-Key", key)
+			_ = seg.SafeAddMetadata("Redis-LRem-Count", count)
+			_ = seg.SafeAddMetadata("Redis-LRem-Value", value)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3751,12 +3751,12 @@ func (l *LIST) LTrim(key string, start int64, stop int64) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LTrim-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-LTrim-Start", start)
-			_ = seg.Seg.AddMetadata("Redis-LTrim-Stop", stop)
+			_ = seg.SafeAddMetadata("Redis-LTrim-Key", key)
+			_ = seg.SafeAddMetadata("Redis-LTrim-Start", start)
+			_ = seg.SafeAddMetadata("Redis-LTrim-Stop", stop)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3813,12 +3813,12 @@ func (h *HASH) HExists(key string, field string) (valExists bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HExists-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HExists-Field", field)
-			_ = seg.Seg.AddMetadata("Redis-HExists-Result-Exists", valExists)
+			_ = seg.SafeAddMetadata("Redis-HExists-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HExists-Field", field)
+			_ = seg.SafeAddMetadata("Redis-HExists-Result-Exists", valExists)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3869,12 +3869,12 @@ func (h *HASH) HLen(key string) (valLen int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HLen-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HLen-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-HLen-Result-Length", valLen)
+			_ = seg.SafeAddMetadata("Redis-HLen-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HLen-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-HLen-Result-Length", valLen)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3923,11 +3923,11 @@ func (h *HASH) HSet(key string, value ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HSet-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HSet-Values", value)
+			_ = seg.SafeAddMetadata("Redis-HSet-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HSet-Values", value)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -3985,12 +3985,12 @@ func (h *HASH) HSetNX(key string, field string, value interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HSetNX-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HSetNX-Field", field)
-			_ = seg.Seg.AddMetadata("Redis-HSetNX-Value", value)
+			_ = seg.SafeAddMetadata("Redis-HSetNX-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HSetNX-Field", field)
+			_ = seg.SafeAddMetadata("Redis-HSetNX-Value", value)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4059,14 +4059,14 @@ func (h *HASH) HGet(key string, field string, outputDataType redisdatatype.Redis
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HGet-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HGet-Field", field)
-			_ = seg.Seg.AddMetadata("Redis-HGet-Output-Data-Type", outputDataType)
-			_ = seg.Seg.AddMetadata("Redis-HGet-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-HGet-Output-Object", outputObjectPtr)
+			_ = seg.SafeAddMetadata("Redis-HGet-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HGet-Field", field)
+			_ = seg.SafeAddMetadata("Redis-HGet-Output-Data-Type", outputDataType)
+			_ = seg.SafeAddMetadata("Redis-HGet-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-HGet-Output-Object", outputObjectPtr)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4124,12 +4124,12 @@ func (h *HASH) HGetAll(key string) (outputMap map[string]string, notFound bool, 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HGetAll-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HGetAll-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-HGetAll-Result", outputMap)
+			_ = seg.SafeAddMetadata("Redis-HGetAll-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HGetAll-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-HGetAll-Result", outputMap)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4177,11 +4177,11 @@ func (h *HASH) HMSet(key string, value ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HMSet-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HMSet-Values", value)
+			_ = seg.SafeAddMetadata("Redis-HMSet-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HMSet-Values", value)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4245,13 +4245,13 @@ func (h *HASH) HMGet(key string, field ...string) (outputSlice []interface{}, no
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HMGet-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HMGet-Fields", field)
-			_ = seg.Seg.AddMetadata("Redis-HMGet-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-HMGet-Result", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-HMGet-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HMGet-Fields", field)
+			_ = seg.SafeAddMetadata("Redis-HMGet-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-HMGet-Result", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4304,12 +4304,12 @@ func (h *HASH) HDel(key string, field ...string) (deletedCount int64, err error)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HDel-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HDel-Fields", field)
-			_ = seg.Seg.AddMetadata("Redis-HDel-Result-Deleted-Count", deletedCount)
+			_ = seg.SafeAddMetadata("Redis-HDel-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HDel-Fields", field)
+			_ = seg.SafeAddMetadata("Redis-HDel-Result-Deleted-Count", deletedCount)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4362,12 +4362,12 @@ func (h *HASH) HKeys(key string) (outputSlice []string, notFound bool, err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HKeys-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HKeys-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-HKeys-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-HKeys-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HKeys-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-HKeys-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4413,12 +4413,12 @@ func (h *HASH) HVals(key string) (outputSlice []string, notFound bool, err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HVals-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HVals-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-HVals-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-HVals-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HVals-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-HVals-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4480,15 +4480,15 @@ func (h *HASH) HScan(key string, cursor uint64, match string, count int64) (outp
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HScan-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HScan-Cursor", cursor)
-			_ = seg.Seg.AddMetadata("Redis-HScan-Match", match)
-			_ = seg.Seg.AddMetadata("Redis-HScan-Count", count)
-			_ = seg.Seg.AddMetadata("Redis-HScan-Result-Keys", outputKeys)
-			_ = seg.Seg.AddMetadata("Redis-HScan-Result-Cursor", outputCursor)
+			_ = seg.SafeAddMetadata("Redis-HScan-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HScan-Cursor", cursor)
+			_ = seg.SafeAddMetadata("Redis-HScan-Match", match)
+			_ = seg.SafeAddMetadata("Redis-HScan-Count", count)
+			_ = seg.SafeAddMetadata("Redis-HScan-Result-Keys", outputKeys)
+			_ = seg.SafeAddMetadata("Redis-HScan-Result-Cursor", outputCursor)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4558,12 +4558,12 @@ func (h *HASH) HIncrBy(key string, field string, incrValue int64) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HIncrBy-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HIncrBy-Field", field)
-			_ = seg.Seg.AddMetadata("Redis-HIncrBy-Increment-Value", incrValue)
+			_ = seg.SafeAddMetadata("Redis-HIncrBy-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HIncrBy-Field", field)
+			_ = seg.SafeAddMetadata("Redis-HIncrBy-Increment-Value", incrValue)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4629,12 +4629,12 @@ func (h *HASH) HIncrByFloat(key string, field string, incrValue float64) (err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-HIncrByFloat-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-HIncrByFloat-Field", field)
-			_ = seg.Seg.AddMetadata("Redis-HIncrByFloat-Increment-Value", incrValue)
+			_ = seg.SafeAddMetadata("Redis-HIncrByFloat-Key", key)
+			_ = seg.SafeAddMetadata("Redis-HIncrByFloat-Field", field)
+			_ = seg.SafeAddMetadata("Redis-HIncrByFloat-Increment-Value", incrValue)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4704,11 +4704,11 @@ func (s *SET) SAdd(key string, member ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SAdd-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SAdd-Members", member)
+			_ = seg.SafeAddMetadata("Redis-SAdd-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SAdd-Members", member)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4761,12 +4761,12 @@ func (s *SET) SCard(key string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SCard-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SCard-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SCard-Result-Count", val)
+			_ = seg.SafeAddMetadata("Redis-SCard-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SCard-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SCard-Result-Count", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4819,12 +4819,12 @@ func (s *SET) SDiff(key ...string) (outputSlice []string, notFound bool, err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SDiff-Keys", key)
-			_ = seg.Seg.AddMetadata("Redis-SDiff-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SDiff-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-SDiff-Keys", key)
+			_ = seg.SafeAddMetadata("Redis-SDiff-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SDiff-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4886,11 +4886,11 @@ func (s *SET) SDiffStore(keyDest string, keySource ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SDiffStore-KeyDest", keyDest)
-			_ = seg.Seg.AddMetadata("Redis-SDiffStore-KeySources", keySource)
+			_ = seg.SafeAddMetadata("Redis-SDiffStore-KeyDest", keyDest)
+			_ = seg.SafeAddMetadata("Redis-SDiffStore-KeySources", keySource)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -4956,12 +4956,12 @@ func (s *SET) SInter(key ...string) (outputSlice []string, notFound bool, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SInter-Keys", key)
-			_ = seg.Seg.AddMetadata("Redis-SInter-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SInter-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-SInter-Keys", key)
+			_ = seg.SafeAddMetadata("Redis-SInter-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SInter-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5023,11 +5023,11 @@ func (s *SET) SInterStore(keyDest string, keySource ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SInterStore-KeyDest", keyDest)
-			_ = seg.Seg.AddMetadata("Redis-SInterStore-KeySources", keySource)
+			_ = seg.SafeAddMetadata("Redis-SInterStore-KeyDest", keyDest)
+			_ = seg.SafeAddMetadata("Redis-SInterStore-KeySources", keySource)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5085,12 +5085,12 @@ func (s *SET) SIsMember(key string, member interface{}) (val bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SIsMember-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SIsMember-Member", member)
-			_ = seg.Seg.AddMetadata("Redis-SIsMember-Result-IsMember", val)
+			_ = seg.SafeAddMetadata("Redis-SIsMember-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SIsMember-Member", member)
+			_ = seg.SafeAddMetadata("Redis-SIsMember-Result-IsMember", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5139,12 +5139,12 @@ func (s *SET) SMembers(key string) (outputSlice []string, notFound bool, err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SMember-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SMember-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SMember-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-SMember-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SMember-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SMember-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5189,12 +5189,12 @@ func (s *SET) SMembersMap(key string) (outputMap map[string]struct{}, notFound b
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SMembersMap-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SMembersMap-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SMembersMap-Result", outputMap)
+			_ = seg.SafeAddMetadata("Redis-SMembersMap-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SMembersMap-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SMembersMap-Result", outputMap)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5256,15 +5256,15 @@ func (s *SET) SScan(key string, cursor uint64, match string, count int64) (outpu
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SScan-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SScan-Cursor", cursor)
-			_ = seg.Seg.AddMetadata("Redis-SScan-Match", match)
-			_ = seg.Seg.AddMetadata("Redis-SScan-Count", count)
-			_ = seg.Seg.AddMetadata("Redis-SScan-Result-Keys", outputKeys)
-			_ = seg.Seg.AddMetadata("Redis-SScan-Result-Cursor", outputCursor)
+			_ = seg.SafeAddMetadata("Redis-SScan-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SScan-Cursor", cursor)
+			_ = seg.SafeAddMetadata("Redis-SScan-Match", match)
+			_ = seg.SafeAddMetadata("Redis-SScan-Count", count)
+			_ = seg.SafeAddMetadata("Redis-SScan-Result-Keys", outputKeys)
+			_ = seg.SafeAddMetadata("Redis-SScan-Result-Cursor", outputCursor)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5330,13 +5330,13 @@ func (s *SET) SRandMember(key string, outputDataType redisdatatype.RedisDataType
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SRandMember-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SRandMember-Output-Data-Type", outputDataType)
-			_ = seg.Seg.AddMetadata("Redis-SRandMember-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SRandMember-Output-Object", outputObjectPtr)
+			_ = seg.SafeAddMetadata("Redis-SRandMember-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SRandMember-Output-Data-Type", outputDataType)
+			_ = seg.SafeAddMetadata("Redis-SRandMember-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SRandMember-Output-Object", outputObjectPtr)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5392,13 +5392,13 @@ func (s *SET) SRandMemberN(key string, count int64) (outputSlice []string, notFo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SRandMemberN-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SRandMemberN-Count", count)
-			_ = seg.Seg.AddMetadata("Redis-SRandMemberN-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SRandMemberN-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-SRandMemberN-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SRandMemberN-Count", count)
+			_ = seg.SafeAddMetadata("Redis-SRandMemberN-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SRandMemberN-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5454,11 +5454,11 @@ func (s *SET) SRem(key string, member ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SRem-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SRem-Members", member)
+			_ = seg.SafeAddMetadata("Redis-SRem-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SRem-Members", member)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5519,12 +5519,12 @@ func (s *SET) SMove(keySource string, keyDest string, member interface{}) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SMove-KeySource", keySource)
-			_ = seg.Seg.AddMetadata("Redis-SMove-KeyDest", keyDest)
-			_ = seg.Seg.AddMetadata("Redis-SMove-Member", member)
+			_ = seg.SafeAddMetadata("Redis-SMove-KeySource", keySource)
+			_ = seg.SafeAddMetadata("Redis-SMove-KeyDest", keyDest)
+			_ = seg.SafeAddMetadata("Redis-SMove-Member", member)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5596,13 +5596,13 @@ func (s *SET) SPop(key string, outputDataType redisdatatype.RedisDataType, outpu
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SPop-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SPop-Output-Data-Type", outputDataType)
-			_ = seg.Seg.AddMetadata("Redis-SPop-Output-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SPop-Output-Object", outputObjectPtr)
+			_ = seg.SafeAddMetadata("Redis-SPop-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SPop-Output-Data-Type", outputDataType)
+			_ = seg.SafeAddMetadata("Redis-SPop-Output-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SPop-Output-Object", outputObjectPtr)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5658,13 +5658,13 @@ func (s *SET) SPopN(key string, count int64) (outputSlice []string, notFound boo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SPopN-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-SPopN-Count", count)
-			_ = seg.Seg.AddMetadata("Redis-SPopN-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SPopN-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-SPopN-Key", key)
+			_ = seg.SafeAddMetadata("Redis-SPopN-Count", count)
+			_ = seg.SafeAddMetadata("Redis-SPopN-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SPopN-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5724,12 +5724,12 @@ func (s *SET) SUnion(key ...string) (outputSlice []string, notFound bool, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SUnion-Keys", key)
-			_ = seg.Seg.AddMetadata("Redis-SUnion-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SUnion-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-SUnion-Keys", key)
+			_ = seg.SafeAddMetadata("Redis-SUnion-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SUnion-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5791,11 +5791,11 @@ func (s *SET) SUnionStore(keyDest string, keySource ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SUnionStore-KeyDest", keyDest)
-			_ = seg.Seg.AddMetadata("Redis-SUnionStore-KeySources", keySource)
+			_ = seg.SafeAddMetadata("Redis-SUnionStore-KeyDest", keyDest)
+			_ = seg.SafeAddMetadata("Redis-SUnionStore-KeySources", keySource)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5870,13 +5870,13 @@ func (z *SORTED_SET) ZAdd(key string, setCondition redissetcondition.RedisSetCon
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZAdd-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZAdd-Condition", setCondition)
-			_ = seg.Seg.AddMetadata("Redis-ZAdd-Get-Changed", getChanged)
-			_ = seg.Seg.AddMetadata("Redis-ZAdd-Member", member)
+			_ = seg.SafeAddMetadata("Redis-ZAdd-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZAdd-Condition", setCondition)
+			_ = seg.SafeAddMetadata("Redis-ZAdd-Get-Changed", getChanged)
+			_ = seg.SafeAddMetadata("Redis-ZAdd-Member", member)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -5966,12 +5966,12 @@ func (z *SORTED_SET) ZCard(key string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZCard-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZCard-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZCard-Not-Result-Count", val)
+			_ = seg.SafeAddMetadata("Redis-ZCard-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZCard-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZCard-Not-Result-Count", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6016,14 +6016,14 @@ func (z *SORTED_SET) ZCount(key string, min string, max string) (val int64, notF
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZCount-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZCount-Min", min)
-			_ = seg.Seg.AddMetadata("Redis-ZCount-Max", max)
-			_ = seg.Seg.AddMetadata("Redis-ZCount-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZCount-Result-Count", val)
+			_ = seg.SafeAddMetadata("Redis-ZCount-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZCount-Min", min)
+			_ = seg.SafeAddMetadata("Redis-ZCount-Max", max)
+			_ = seg.SafeAddMetadata("Redis-ZCount-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZCount-Result-Count", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6078,12 +6078,12 @@ func (z *SORTED_SET) ZIncr(key string, setCondition redissetcondition.RedisSetCo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZIncr-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZIncr-Condition", setCondition)
-			_ = seg.Seg.AddMetadata("Redis-ZIncr-Member", member)
+			_ = seg.SafeAddMetadata("Redis-ZIncr-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZIncr-Condition", setCondition)
+			_ = seg.SafeAddMetadata("Redis-ZIncr-Member", member)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6161,12 +6161,12 @@ func (z *SORTED_SET) ZIncrBy(key string, increment float64, member string) (err 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZIncrBy-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZIncrBy-Increment", increment)
-			_ = seg.Seg.AddMetadata("Redis-ZIncrBy-Member", member)
+			_ = seg.SafeAddMetadata("Redis-ZIncrBy-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZIncrBy-Increment", increment)
+			_ = seg.SafeAddMetadata("Redis-ZIncrBy-Member", member)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6239,11 +6239,11 @@ func (z *SORTED_SET) ZInterStore(keyDest string, store *redis.ZStore) (err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZInterStore-KeyDest", keyDest)
-			_ = seg.Seg.AddMetadata("Redis-ZInterStore-Input-Args", store)
+			_ = seg.SafeAddMetadata("Redis-ZInterStore-KeyDest", keyDest)
+			_ = seg.SafeAddMetadata("Redis-ZInterStore-Input-Args", store)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6301,14 +6301,14 @@ func (z *SORTED_SET) ZLexCount(key string, min string, max string) (val int64, n
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZLexCount-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZLexCount-Min", min)
-			_ = seg.Seg.AddMetadata("Redis-ZLexCount-Max", max)
-			_ = seg.Seg.AddMetadata("Redis-ZLexCount-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZLexCount-Result", val)
+			_ = seg.SafeAddMetadata("Redis-ZLexCount-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZLexCount-Min", min)
+			_ = seg.SafeAddMetadata("Redis-ZLexCount-Max", max)
+			_ = seg.SafeAddMetadata("Redis-ZLexCount-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZLexCount-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6363,13 +6363,13 @@ func (z *SORTED_SET) ZPopMax(key string, count ...int64) (outputSlice []redis.Z,
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZPopMax-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZPopMax-Count", count)
-			_ = seg.Seg.AddMetadata("Redis-ZPopMax-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZPopMax-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-ZPopMax-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZPopMax-Count", count)
+			_ = seg.SafeAddMetadata("Redis-ZPopMax-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZPopMax-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6425,13 +6425,13 @@ func (z *SORTED_SET) ZPopMin(key string, count ...int64) (outputSlice []redis.Z,
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZPopMin-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZPopMin-Count", count)
-			_ = seg.Seg.AddMetadata("Redis-ZPopMin-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZPopMin-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-ZPopMin-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZPopMin-Count", count)
+			_ = seg.SafeAddMetadata("Redis-ZPopMin-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZPopMin-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6491,14 +6491,14 @@ func (z *SORTED_SET) ZRange(key string, start int64, stop int64) (outputSlice []
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRange-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRange-Start", start)
-			_ = seg.Seg.AddMetadata("Redis-ZRange-Stop", stop)
-			_ = seg.Seg.AddMetadata("Redis-ZRange-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZRange-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-ZRange-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRange-Start", start)
+			_ = seg.SafeAddMetadata("Redis-ZRange-Stop", stop)
+			_ = seg.SafeAddMetadata("Redis-ZRange-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZRange-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6549,13 +6549,13 @@ func (z *SORTED_SET) ZRangeByLex(key string, opt *redis.ZRangeBy) (outputSlice [
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByLex-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByLex-Input-Args", opt)
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByLex-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByLex-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByLex-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByLex-Input-Args", opt)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByLex-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByLex-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6605,13 +6605,13 @@ func (z *SORTED_SET) ZRangeByScore(key string, opt *redis.ZRangeBy) (outputSlice
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByScore-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByScore-Input-Args", opt)
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByScore-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByScore-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByScore-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByScore-Input-Args", opt)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByScore-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByScore-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6662,13 +6662,13 @@ func (z *SORTED_SET) ZRangeByScoreWithScores(key string, opt *redis.ZRangeBy) (o
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByScoreWithScores-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByScoreWithScores-Input-Args", opt)
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByScoreWithScores-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZRangeByScoreWithScores-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Input-Args", opt)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6719,13 +6719,13 @@ func (z *SORTED_SET) ZRank(key string, member string) (val int64, notFound bool,
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRank-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRank-Member", member)
-			_ = seg.Seg.AddMetadata("Redis-ZRank-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZRank-Result", val)
+			_ = seg.SafeAddMetadata("Redis-ZRank-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRank-Member", member)
+			_ = seg.SafeAddMetadata("Redis-ZRank-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZRank-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6778,11 +6778,11 @@ func (z *SORTED_SET) ZRem(key string, member ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRem-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRem-Members", member)
+			_ = seg.SafeAddMetadata("Redis-ZRem-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRem-Members", member)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6834,12 +6834,12 @@ func (z *SORTED_SET) ZRemRangeByLex(key string, min string, max string) (err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRemRangeByLex-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRemRangeByLex-Min", min)
-			_ = seg.Seg.AddMetadata("Redis-ZRemRangeByLex-Max", max)
+			_ = seg.SafeAddMetadata("Redis-ZRemRangeByLex-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRemRangeByLex-Min", min)
+			_ = seg.SafeAddMetadata("Redis-ZRemRangeByLex-Max", max)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6892,12 +6892,12 @@ func (z *SORTED_SET) ZRemRangeByScore(key string, min string, max string) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRemRangeByScore-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRemRangeByScore-Min", min)
-			_ = seg.Seg.AddMetadata("Redis-ZRemRangeByScore-Max", max)
+			_ = seg.SafeAddMetadata("Redis-ZRemRangeByScore-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRemRangeByScore-Min", min)
+			_ = seg.SafeAddMetadata("Redis-ZRemRangeByScore-Max", max)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -6953,12 +6953,12 @@ func (z *SORTED_SET) ZRemRangeByRank(key string, start int64, stop int64) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRemRangeByRank-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRemRangeByRank-Start", start)
-			_ = seg.Seg.AddMetadata("Redis-ZRemRangeByRank-Stop", stop)
+			_ = seg.SafeAddMetadata("Redis-ZRemRangeByRank-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRemRangeByRank-Start", start)
+			_ = seg.SafeAddMetadata("Redis-ZRemRangeByRank-Stop", stop)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7008,14 +7008,14 @@ func (z *SORTED_SET) ZRevRange(key string, start int64, stop int64) (outputSlice
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRevRange-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRange-Start", start)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRange-Stop", stop)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRange-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRange-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-ZRevRange-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRevRange-Start", start)
+			_ = seg.SafeAddMetadata("Redis-ZRevRange-Stop", stop)
+			_ = seg.SafeAddMetadata("Redis-ZRevRange-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZRevRange-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7064,14 +7064,14 @@ func (z *SORTED_SET) ZRevRangeWithScores(key string, start int64, stop int64) (o
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRevRangeWithScores-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRangeWithScores-Start", start)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRangeWithScores-Stop", stop)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRangeWithScores-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRangeWithScores-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Start", start)
+			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Stop", stop)
+			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7120,13 +7120,13 @@ func (z *SORTED_SET) ZRevRangeByScoreWithScores(key string, opt *redis.ZRangeBy)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRevRangeByScoreWithScores-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRangeByScoreWithScores-Input-Args", opt)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRangeByScoreWithScores-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRangeByScoreWithScores-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Input-Args", opt)
+			_ = seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7179,13 +7179,13 @@ func (z *SORTED_SET) ZRevRank(key string, member string) (val int64, notFound bo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZRevRank-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRank-Member", member)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRank-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZRevRank-Result-Rank", val)
+			_ = seg.SafeAddMetadata("Redis-ZRevRank-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZRevRank-Member", member)
+			_ = seg.SafeAddMetadata("Redis-ZRevRank-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZRevRank-Result-Rank", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7253,15 +7253,15 @@ func (z *SORTED_SET) ZScan(key string, cursor uint64, match string, count int64)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZScan-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZScan-Cursor", cursor)
-			_ = seg.Seg.AddMetadata("Redis-ZScan-Match", match)
-			_ = seg.Seg.AddMetadata("Redis-ZScan-Count", count)
-			_ = seg.Seg.AddMetadata("Redis-ZScan-Result-Keys", outputKeys)
-			_ = seg.Seg.AddMetadata("Redis-ZScan-Result-Cursor", outputCursor)
+			_ = seg.SafeAddMetadata("Redis-ZScan-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZScan-Cursor", cursor)
+			_ = seg.SafeAddMetadata("Redis-ZScan-Match", match)
+			_ = seg.SafeAddMetadata("Redis-ZScan-Count", count)
+			_ = seg.SafeAddMetadata("Redis-ZScan-Result-Keys", outputKeys)
+			_ = seg.SafeAddMetadata("Redis-ZScan-Result-Cursor", outputCursor)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7328,13 +7328,13 @@ func (z *SORTED_SET) ZScore(key string, member string) (val float64, notFound bo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZScore-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ZScore-Member", member)
-			_ = seg.Seg.AddMetadata("Redis-ZScore-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ZScore-Result", val)
+			_ = seg.SafeAddMetadata("Redis-ZScore-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ZScore-Member", member)
+			_ = seg.SafeAddMetadata("Redis-ZScore-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ZScore-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7387,11 +7387,11 @@ func (z *SORTED_SET) ZUnionStore(keyDest string, store *redis.ZStore) (err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ZUnionStore-KeyDest", keyDest)
-			_ = seg.Seg.AddMetadata("Redis-ZUnionStore-Input-Keys", store)
+			_ = seg.SafeAddMetadata("Redis-ZUnionStore-KeyDest", keyDest)
+			_ = seg.SafeAddMetadata("Redis-ZUnionStore-Input-Keys", store)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7454,11 +7454,11 @@ func (g *GEO) GeoAdd(key string, geoLocation *redis.GeoLocation) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GeoAdd-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GeoAdd-Location", geoLocation)
+			_ = seg.SafeAddMetadata("Redis-GeoAdd-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GeoAdd-Location", geoLocation)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7517,15 +7517,15 @@ func (g *GEO) GeoDist(key string, member1 string, member2 string, unit redisradi
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GeoDist-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GeoDist-Member1", member1)
-			_ = seg.Seg.AddMetadata("Redis-GeoDist-Member2", member2)
-			_ = seg.Seg.AddMetadata("Redis-GeoDist-Radius-Unit", unit)
-			_ = seg.Seg.AddMetadata("Redis-GeoDist-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-GeoDist-Result-Distance", valDist)
+			_ = seg.SafeAddMetadata("Redis-GeoDist-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GeoDist-Member1", member1)
+			_ = seg.SafeAddMetadata("Redis-GeoDist-Member2", member2)
+			_ = seg.SafeAddMetadata("Redis-GeoDist-Radius-Unit", unit)
+			_ = seg.SafeAddMetadata("Redis-GeoDist-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-GeoDist-Result-Distance", valDist)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7585,13 +7585,13 @@ func (g *GEO) GeoHash(key string, member ...string) (geoHashSlice []string, notF
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GeoHash-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GeoHash-Members", member)
-			_ = seg.Seg.AddMetadata("Redis-GeoHash-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-GeoHash-Result-Positions", geoHashSlice)
+			_ = seg.SafeAddMetadata("Redis-GeoHash-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GeoHash-Members", member)
+			_ = seg.SafeAddMetadata("Redis-GeoHash-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-GeoHash-Result-Positions", geoHashSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7641,12 +7641,12 @@ func (g *GEO) GeoPos(key string, member ...string) (cmd *redis.GeoPosCmd, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GeoPos-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GeoPos-Members", member)
-			_ = seg.Seg.AddMetadata("Redis-GeoPos-Result-Position", cmd)
+			_ = seg.SafeAddMetadata("Redis-GeoPos-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GeoPos-Members", member)
+			_ = seg.SafeAddMetadata("Redis-GeoPos-Result-Position", cmd)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7711,14 +7711,14 @@ func (g *GEO) GeoRadius(key string, longitude float64, latitude float64, query *
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GeoRadius-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadius-Longitude", longitude)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadius-Latitude", latitude)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadius-Query", query)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadius-Result-Location", cmd)
+			_ = seg.SafeAddMetadata("Redis-GeoRadius-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GeoRadius-Longitude", longitude)
+			_ = seg.SafeAddMetadata("Redis-GeoRadius-Latitude", latitude)
+			_ = seg.SafeAddMetadata("Redis-GeoRadius-Query", query)
+			_ = seg.SafeAddMetadata("Redis-GeoRadius-Result-Location", cmd)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7845,13 +7845,13 @@ func (g *GEO) GeoRadiusStore(key string, longitude float64, latitude float64, qu
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusStore-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusStore-Longitude", longitude)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusStore-Latitude", latitude)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusStore-Query", query)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusStore-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusStore-Longitude", longitude)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusStore-Latitude", latitude)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusStore-Query", query)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -7930,13 +7930,13 @@ func (g *GEO) GeoRadiusByMember(key string, member string, query *redis.GeoRadiu
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusByMember-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusByMember-Member", member)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusByMember-Query", query)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusByMember-Result-Location", cmd)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMember-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMember-Member", member)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMember-Query", query)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMember-Result-Location", cmd)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8023,12 +8023,12 @@ func (g *GEO) GeoRadiusByMemberStore(key string, member string, query *redis.Geo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusByMemberStore-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusByMemberStore-Member", member)
-			_ = seg.Seg.AddMetadata("Redis-GeoRadiusByMemberStore-Query", query)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMemberStore-Key", key)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMemberStore-Member", member)
+			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMemberStore-Query", query)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8110,12 +8110,12 @@ func (x *STREAM) XAck(stream string, group string, id ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XAck-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XAck-Group", group)
-			_ = seg.Seg.AddMetadata("Redis-XAck-IDs", id)
+			_ = seg.SafeAddMetadata("Redis-XAck-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XAck-Group", group)
+			_ = seg.SafeAddMetadata("Redis-XAck-IDs", id)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8173,10 +8173,10 @@ func (x *STREAM) XAdd(addArgs *redis.XAddArgs) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XAdd-Input-Args", addArgs)
+			_ = seg.SafeAddMetadata("Redis-XAdd-Input-Args", addArgs)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8228,12 +8228,12 @@ func (x *STREAM) XClaim(claimArgs *redis.XClaimArgs) (valMessages []redis.XMessa
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XClaim-Input-Args", claimArgs)
-			_ = seg.Seg.AddMetadata("Redis-XClaim-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XClaim-Results", valMessages)
+			_ = seg.SafeAddMetadata("Redis-XClaim-Input-Args", claimArgs)
+			_ = seg.SafeAddMetadata("Redis-XClaim-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XClaim-Results", valMessages)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8280,12 +8280,12 @@ func (x *STREAM) XClaimJustID(claimArgs *redis.XClaimArgs) (outputSlice []string
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XClaimJustID-Input-Args", claimArgs)
-			_ = seg.Seg.AddMetadata("Redis-XClaimJustID-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XClaimJustID-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-XClaimJustID-Input-Args", claimArgs)
+			_ = seg.SafeAddMetadata("Redis-XClaimJustID-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XClaimJustID-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8331,11 +8331,11 @@ func (x *STREAM) XDel(stream string, id ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XDel-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XDel-IDs", id)
+			_ = seg.SafeAddMetadata("Redis-XDel-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XDel-IDs", id)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8384,12 +8384,12 @@ func (x *STREAM) XGroupCreate(stream string, group string, start string) (err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XGroupCreate-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XGroupCreate-Group", group)
-			_ = seg.Seg.AddMetadata("Redis-XGroupCreate-Start", start)
+			_ = seg.SafeAddMetadata("Redis-XGroupCreate-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XGroupCreate-Group", group)
+			_ = seg.SafeAddMetadata("Redis-XGroupCreate-Start", start)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8442,12 +8442,12 @@ func (x *STREAM) XGroupCreateMkStream(stream string, group string, start string)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XGroupCreateMkStream-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XGroupCreateMkStream-Group", group)
-			_ = seg.Seg.AddMetadata("Redis-XGroupCreateMkStream-Start", start)
+			_ = seg.SafeAddMetadata("Redis-XGroupCreateMkStream-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XGroupCreateMkStream-Group", group)
+			_ = seg.SafeAddMetadata("Redis-XGroupCreateMkStream-Start", start)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8500,12 +8500,12 @@ func (x *STREAM) XGroupDelConsumer(stream string, group string, consumer string)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XGroupDelConsumer-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XGroupDelConsumer-Group", group)
-			_ = seg.Seg.AddMetadata("Redis-XGroupDelConsumer-Consumer", consumer)
+			_ = seg.SafeAddMetadata("Redis-XGroupDelConsumer-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XGroupDelConsumer-Group", group)
+			_ = seg.SafeAddMetadata("Redis-XGroupDelConsumer-Consumer", consumer)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8558,11 +8558,11 @@ func (x *STREAM) XGroupDestroy(stream string, group string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XGroupDestroy-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XGroupDestroy-Group", group)
+			_ = seg.SafeAddMetadata("Redis-XGroupDestroy-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XGroupDestroy-Group", group)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8613,12 +8613,12 @@ func (x *STREAM) XGroupSetID(stream string, group string, start string) (err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XGroupSetID-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XGroupSetID-Group", group)
-			_ = seg.Seg.AddMetadata("Redis-XGroupSetID-Start", start)
+			_ = seg.SafeAddMetadata("Redis-XGroupSetID-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XGroupSetID-Group", group)
+			_ = seg.SafeAddMetadata("Redis-XGroupSetID-Start", start)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8673,12 +8673,12 @@ func (x *STREAM) XInfoGroups(key string) (outputSlice []redis.XInfoGroup, notFou
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XInfoGroups-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-XInfoGroups-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XInfoGroups-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-XInfoGroups-Key", key)
+			_ = seg.SafeAddMetadata("Redis-XInfoGroups-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XInfoGroups-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8723,12 +8723,12 @@ func (x *STREAM) XLen(stream string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XLen-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XLen-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XLen-Result", val)
+			_ = seg.SafeAddMetadata("Redis-XLen-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XLen-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XLen-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8773,13 +8773,13 @@ func (x *STREAM) XPending(stream string, group string) (val *redis.XPending, not
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XPending-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XPending-Group", group)
-			_ = seg.Seg.AddMetadata("Redis-XPending-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XPending-Results", val)
+			_ = seg.SafeAddMetadata("Redis-XPending-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XPending-Group", group)
+			_ = seg.SafeAddMetadata("Redis-XPending-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XPending-Results", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8828,12 +8828,12 @@ func (x *STREAM) XPendingExt(pendingArgs *redis.XPendingExtArgs) (outputSlice []
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XPendingExt-Input-Args", pendingArgs)
-			_ = seg.Seg.AddMetadata("Redis-XPendingExt-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XPendingExt-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-XPendingExt-Input-Args", pendingArgs)
+			_ = seg.SafeAddMetadata("Redis-XPendingExt-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XPendingExt-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8880,21 +8880,21 @@ func (x *STREAM) XRange(stream string, start string, stop string, count ...int64
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XRange-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XRange-Start", start)
-			_ = seg.Seg.AddMetadata("Redis-XRange-Stop", stop)
+			_ = seg.SafeAddMetadata("Redis-XRange-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XRange-Start", start)
+			_ = seg.SafeAddMetadata("Redis-XRange-Stop", stop)
 
 			if len(count) > 0 {
-				_ = seg.Seg.AddMetadata("Redis-XRange-Limit-Count", count[0])
+				_ = seg.SafeAddMetadata("Redis-XRange-Limit-Count", count[0])
 			} else {
-				_ = seg.Seg.AddMetadata("Redis-XRange-Limit-Count", "None")
+				_ = seg.SafeAddMetadata("Redis-XRange-Limit-Count", "None")
 			}
 
-			_ = seg.Seg.AddMetadata("Redis-XRange-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XRange-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-XRange-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XRange-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -8958,21 +8958,21 @@ func (x *STREAM) XRevRange(stream string, start string, stop string, count ...in
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XRevRange-Stream", stream)
-			_ = seg.Seg.AddMetadata("Redis-XRevRange-Start", start)
-			_ = seg.Seg.AddMetadata("Redis-XRevRange-Stop", stop)
+			_ = seg.SafeAddMetadata("Redis-XRevRange-Stream", stream)
+			_ = seg.SafeAddMetadata("Redis-XRevRange-Start", start)
+			_ = seg.SafeAddMetadata("Redis-XRevRange-Stop", stop)
 
 			if len(count) > 0 {
-				_ = seg.Seg.AddMetadata("Redis-XRevRange-Limit-Count", count[0])
+				_ = seg.SafeAddMetadata("Redis-XRevRange-Limit-Count", count[0])
 			} else {
-				_ = seg.Seg.AddMetadata("Redis-XRevRange-Limit-Count", "None")
+				_ = seg.SafeAddMetadata("Redis-XRevRange-Limit-Count", "None")
 			}
 
-			_ = seg.Seg.AddMetadata("Redis-XRevRange-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XRevRange-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-XRevRange-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XRevRange-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9035,12 +9035,12 @@ func (x *STREAM) XRead(readArgs *redis.XReadArgs) (outputSlice []redis.XStream, 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XRead-Input-Args", readArgs)
-			_ = seg.Seg.AddMetadata("Redis-XRead-Input-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XRead-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-XRead-Input-Args", readArgs)
+			_ = seg.SafeAddMetadata("Redis-XRead-Input-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XRead-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9086,12 +9086,12 @@ func (x *STREAM) XReadStreams(stream ...string) (outputSlice []redis.XStream, no
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XReadStreams-Streams", stream)
-			_ = seg.Seg.AddMetadata("Redis-XReadStreams-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XReadStreams-Results", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-XReadStreams-Streams", stream)
+			_ = seg.SafeAddMetadata("Redis-XReadStreams-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XReadStreams-Results", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9136,12 +9136,12 @@ func (x *STREAM) XReadGroup(readGroupArgs *redis.XReadGroupArgs) (outputSlice []
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XReadGroup-ReadGroup", readGroupArgs)
-			_ = seg.Seg.AddMetadata("Redis-XReadGroup-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-XReadGroup-Result", outputSlice)
+			_ = seg.SafeAddMetadata("Redis-XReadGroup-ReadGroup", readGroupArgs)
+			_ = seg.SafeAddMetadata("Redis-XReadGroup-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-XReadGroup-Result", outputSlice)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9186,11 +9186,11 @@ func (x *STREAM) XTrim(key string, maxLen int64) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XTrim-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-XTrim-MaxLen", maxLen)
+			_ = seg.SafeAddMetadata("Redis-XTrim-Key", key)
+			_ = seg.SafeAddMetadata("Redis-XTrim-MaxLen", maxLen)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9240,11 +9240,11 @@ func (x *STREAM) XTrimApprox(key string, maxLen int64) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-XTrimApprox-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-XTrimApprox-MaxLen", maxLen)
+			_ = seg.SafeAddMetadata("Redis-XTrimApprox-Key", key)
+			_ = seg.SafeAddMetadata("Redis-XTrimApprox-MaxLen", maxLen)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9314,10 +9314,10 @@ func (ps *PUBSUB) PSubscribe(channel ...string) (psObj *redis.PubSub, err error)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-PSubscribe-Channels", channel)
+			_ = seg.SafeAddMetadata("Redis-PSubscribe-Channels", channel)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9376,10 +9376,10 @@ func (ps *PUBSUB) Subscribe(channel ...string) (psObj *redis.PubSub, err error) 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Subscribe-Channels", channel)
+			_ = seg.SafeAddMetadata("Redis-Subscribe-Channels", channel)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9427,12 +9427,12 @@ func (ps *PUBSUB) Publish(channel string, message interface{}) (valReceived int6
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Publish-Channel", channel)
-			_ = seg.Seg.AddMetadata("Redis-Publish-Message", message)
-			_ = seg.Seg.AddMetadata("Redis-Publish-Received-Clients-Count", valReceived)
+			_ = seg.SafeAddMetadata("Redis-Publish-Channel", channel)
+			_ = seg.SafeAddMetadata("Redis-Publish-Message", message)
+			_ = seg.SafeAddMetadata("Redis-Publish-Received-Clients-Count", valReceived)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9486,11 +9486,11 @@ func (ps *PUBSUB) PubSubChannels(pattern string) (valChannels []string, err erro
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-PubSubChannels-Pattern", pattern)
-			_ = seg.Seg.AddMetadata("Redis-PubSubChannels-Result", valChannels)
+			_ = seg.SafeAddMetadata("Redis-PubSubChannels-Pattern", pattern)
+			_ = seg.SafeAddMetadata("Redis-PubSubChannels-Result", valChannels)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9544,10 +9544,10 @@ func (ps *PUBSUB) PubSubNumPat() (valPatterns int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-PubSubNumPat-Result", valPatterns)
+			_ = seg.SafeAddMetadata("Redis-PubSubNumPat-Result", valPatterns)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9590,11 +9590,11 @@ func (ps *PUBSUB) PubSubNumSub(channel ...string) (val map[string]int64, err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-PubSubNumSub-Channels", channel)
-			_ = seg.Seg.AddMetadata("Redis-PubSubNumSub-Result", val)
+			_ = seg.SafeAddMetadata("Redis-PubSubNumSub-Channels", channel)
+			_ = seg.SafeAddMetadata("Redis-PubSubNumSub-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9644,10 +9644,10 @@ func (p *PIPELINE) Pipeline() (result redis.Pipeliner, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Pipeline-Result", result)
+			_ = seg.SafeAddMetadata("Redis-Pipeline-Result", result)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9687,10 +9687,10 @@ func (p *PIPELINE) Pipelined(fn func(redis.Pipeliner) error) (result []redis.Cmd
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Pipelined-Result", result)
+			_ = seg.SafeAddMetadata("Redis-Pipelined-Result", result)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9730,10 +9730,10 @@ func (p *PIPELINE) TxPipeline() (result redis.Pipeliner, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-TxPipeline-Result", result)
+			_ = seg.SafeAddMetadata("Redis-TxPipeline-Result", result)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9773,10 +9773,10 @@ func (p *PIPELINE) TxPipelined(fn func(redis.Pipeliner) error) (result []redis.C
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-TxPipelined-Result", result)
+			_ = seg.SafeAddMetadata("Redis-TxPipelined-Result", result)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9821,17 +9821,17 @@ func (t *TTL) TTL(key string, bGetMilliseconds bool) (valTTL int64, notFound boo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-TTL-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-TTL-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-TTL-Key", key)
+			_ = seg.SafeAddMetadata("Redis-TTL-Not-Found", notFound)
 
 			if bGetMilliseconds {
-				_ = seg.Seg.AddMetadata("Redis-TTL-Remainder-Milliseconds", valTTL)
+				_ = seg.SafeAddMetadata("Redis-TTL-Remainder-Milliseconds", valTTL)
 			} else {
-				_ = seg.Seg.AddMetadata("Redis-TTL-Remainder-Seconds", valTTL)
+				_ = seg.SafeAddMetadata("Redis-TTL-Remainder-Seconds", valTTL)
 			}
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9909,16 +9909,16 @@ func (t *TTL) Expire(key string, bSetMilliseconds bool, expireValue time.Duratio
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Expire-Key", key)
+			_ = seg.SafeAddMetadata("Redis-Expire-Key", key)
 
 			if bSetMilliseconds {
-				_ = seg.Seg.AddMetadata("Redis-Expire-Milliseconds", expireValue.Milliseconds())
+				_ = seg.SafeAddMetadata("Redis-Expire-Milliseconds", expireValue.Milliseconds())
 			} else {
-				_ = seg.Seg.AddMetadata("Redis-Expire-Seconds", expireValue.Seconds())
+				_ = seg.SafeAddMetadata("Redis-Expire-Seconds", expireValue.Seconds())
 			}
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -9988,11 +9988,11 @@ func (t *TTL) ExpireAt(key string, expireTime time.Time) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ExpireAt-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ExpireAt-Expire-Time", expireTime)
+			_ = seg.SafeAddMetadata("Redis-ExpireAt-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ExpireAt-Expire-Time", expireTime)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10055,10 +10055,10 @@ func (t *TTL) Touch(key ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Touch-Keys", key)
+			_ = seg.SafeAddMetadata("Redis-Touch-Keys", key)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10115,10 +10115,10 @@ func (t *TTL) Persist(key string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Persist-Key", key)
+			_ = seg.SafeAddMetadata("Redis-Persist-Key", key)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10181,7 +10181,7 @@ func (u *UTILS) Ping() (err error) {
 		defer seg.Close()
 		defer func() {
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10224,10 +10224,10 @@ func (u *UTILS) DBSize() (val int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-DBSize-Result", val)
+			_ = seg.SafeAddMetadata("Redis-DBSize-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10269,10 +10269,10 @@ func (u *UTILS) Time() (val time.Time, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Time-Result", val)
+			_ = seg.SafeAddMetadata("Redis-Time-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10314,10 +10314,10 @@ func (u *UTILS) LastSave() (val time.Time, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-LastSave-Result", val)
+			_ = seg.SafeAddMetadata("Redis-LastSave-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10365,11 +10365,11 @@ func (u *UTILS) Type(key string) (val rediskeytype.RedisKeyType, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Type-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-Type-Result", val)
+			_ = seg.SafeAddMetadata("Redis-Type-Key", key)
+			_ = seg.SafeAddMetadata("Redis-Type-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10437,12 +10437,12 @@ func (u *UTILS) ObjectEncoding(key string) (val string, notFound bool, err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ObjectEncoding-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ObjectEncoding-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ObjectEncoding-Result", val)
+			_ = seg.SafeAddMetadata("Redis-ObjectEncoding-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ObjectEncoding-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ObjectEncoding-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10487,12 +10487,12 @@ func (u *UTILS) ObjectIdleTime(key string) (val time.Duration, notFound bool, er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ObjectIdleTime-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ObjectIdleTime-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ObjectIdleTime-Result-Seconds", val.Seconds())
+			_ = seg.SafeAddMetadata("Redis-ObjectIdleTime-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ObjectIdleTime-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ObjectIdleTime-Result-Seconds", val.Seconds())
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10537,12 +10537,12 @@ func (u *UTILS) ObjectRefCount(key string) (val int64, notFound bool, err error)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-ObjectRefCount-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-ObjectRefCount-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-ObjectRefCount-Result", val)
+			_ = seg.SafeAddMetadata("Redis-ObjectRefCount-Key", key)
+			_ = seg.SafeAddMetadata("Redis-ObjectRefCount-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-ObjectRefCount-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10604,14 +10604,14 @@ func (u *UTILS) Scan(cursor uint64, match string, count int64) (keys []string, r
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Scan-Match", match)
-			_ = seg.Seg.AddMetadata("Redis-Scan-Scan-Cursor", cursor)
-			_ = seg.Seg.AddMetadata("Redis-Scan-Scan-Count", count)
-			_ = seg.Seg.AddMetadata("Redis-Scan-Result-Cursor", resultCursor)
-			_ = seg.Seg.AddMetadata("Redis-Scan-Keys-Found", keys)
+			_ = seg.SafeAddMetadata("Redis-Scan-Match", match)
+			_ = seg.SafeAddMetadata("Redis-Scan-Scan-Cursor", cursor)
+			_ = seg.SafeAddMetadata("Redis-Scan-Scan-Count", count)
+			_ = seg.SafeAddMetadata("Redis-Scan-Result-Cursor", resultCursor)
+			_ = seg.SafeAddMetadata("Redis-Scan-Keys-Found", keys)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10683,12 +10683,12 @@ func (u *UTILS) Keys(match string) (valKeys []string, notFound bool, err error) 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Keys-Match", match)
-			_ = seg.Seg.AddMetadata("Redis-Keys-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-Keys-Keys-Found", valKeys)
+			_ = seg.SafeAddMetadata("Redis-Keys-Match", match)
+			_ = seg.SafeAddMetadata("Redis-Keys-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-Keys-Keys-Found", valKeys)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10747,10 +10747,10 @@ func (u *UTILS) RandomKey() (val string, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-RandomKey-Result", val)
+			_ = seg.SafeAddMetadata("Redis-RandomKey-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10794,11 +10794,11 @@ func (u *UTILS) Rename(keyOriginal string, keyNew string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Rename-OriginalKey", keyOriginal)
-			_ = seg.Seg.AddMetadata("Redis-Rename-NewKey", keyNew)
+			_ = seg.SafeAddMetadata("Redis-Rename-OriginalKey", keyOriginal)
+			_ = seg.SafeAddMetadata("Redis-Rename-NewKey", keyNew)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10850,11 +10850,11 @@ func (u *UTILS) RenameNX(keyOriginal string, keyNew string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-RenameNX-OriginalKey", keyOriginal)
-			_ = seg.Seg.AddMetadata("Redis-RenameNX-NewKey", keyNew)
+			_ = seg.SafeAddMetadata("Redis-RenameNX-OriginalKey", keyOriginal)
+			_ = seg.SafeAddMetadata("Redis-RenameNX-NewKey", keyNew)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10917,13 +10917,13 @@ func (u *UTILS) Sort(key string, sortPattern *redis.Sort) (val []string, notFoun
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-Sort-Key", key)
-			_ = seg.Seg.AddMetadata("Redis-Sort-SortPattern", sortPattern)
-			_ = seg.Seg.AddMetadata("Redis-Sort-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-Sort-Result", val)
+			_ = seg.SafeAddMetadata("Redis-Sort-Key", key)
+			_ = seg.SafeAddMetadata("Redis-Sort-SortPattern", sortPattern)
+			_ = seg.SafeAddMetadata("Redis-Sort-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-Sort-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -10974,13 +10974,13 @@ func (u *UTILS) SortInterfaces(keyToSort string, sortPattern *redis.Sort) (val [
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SortInterfaces-SortKey", keyToSort)
-			_ = seg.Seg.AddMetadata("Redis-SortInterfaces-SortPattern", sortPattern)
-			_ = seg.Seg.AddMetadata("Redis-SortInterfaces-Not-Found", notFound)
-			_ = seg.Seg.AddMetadata("Redis-SortInterfaces-Result", val)
+			_ = seg.SafeAddMetadata("Redis-SortInterfaces-SortKey", keyToSort)
+			_ = seg.SafeAddMetadata("Redis-SortInterfaces-SortPattern", sortPattern)
+			_ = seg.SafeAddMetadata("Redis-SortInterfaces-Not-Found", notFound)
+			_ = seg.SafeAddMetadata("Redis-SortInterfaces-Result", val)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 
@@ -11031,12 +11031,12 @@ func (u *UTILS) SortStore(keyToSort string, keyToStore string, sortPattern *redi
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.Seg.AddMetadata("Redis-SortStore-SortKey", keyToSort)
-			_ = seg.Seg.AddMetadata("Redis-SortStore-SortPattern", sortPattern)
-			_ = seg.Seg.AddMetadata("Redis-SortStore-StoreKey", keyToStore)
+			_ = seg.SafeAddMetadata("Redis-SortStore-SortKey", keyToSort)
+			_ = seg.SafeAddMetadata("Redis-SortStore-SortPattern", sortPattern)
+			_ = seg.SafeAddMetadata("Redis-SortStore-StoreKey", keyToStore)
 
 			if err != nil {
-				_ = seg.Seg.AddError(err)
+				_ = seg.SafeAddError(err)
 			}
 		}()
 

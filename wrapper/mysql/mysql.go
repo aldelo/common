@@ -250,7 +250,7 @@ func (t *MySqlTransaction) Commit() (err error) {
 				return
 			}
 			if err != nil {
-				_ = t._xrayTxSeg.Seg.AddError(err)
+				_ = t._xrayTxSeg.SafeAddError(err)
 			}
 			if t.closed {
 				t._xrayTxSeg.Close()
@@ -275,7 +275,7 @@ func (t *MySqlTransaction) Commit() (err error) {
 	if err = t.parent.Ping(); err != nil {
 		// ping failed - close xray segment
 		if t._xrayTxSeg != nil {
-			_ = t._xrayTxSeg.Seg.AddError(err)
+			_ = t._xrayTxSeg.SafeAddError(err)
 			t._xrayTxSeg.Close()
 			t._xrayTxSeg = nil
 		}
@@ -315,7 +315,7 @@ func (t *MySqlTransaction) Commit() (err error) {
 			if e := t.tx.Commit(); e != nil {
 				// on commit error, return error, don't close off transaction
 				err = fmt.Errorf("MySql Commit Transaction Failed, %s", e)
-				_ = subSeg.Seg.AddError(err)
+				_ = subSeg.SafeAddError(err)
 				return err
 			} else {
 				// transaction commit success
@@ -350,7 +350,7 @@ func (t *MySqlTransaction) Rollback() (err error) {
 				return
 			}
 			if err != nil {
-				_ = t._xrayTxSeg.Seg.AddError(err)
+				_ = t._xrayTxSeg.SafeAddError(err)
 			}
 			t._xrayTxSeg.Close()
 		}()
@@ -373,7 +373,7 @@ func (t *MySqlTransaction) Rollback() (err error) {
 	if err = t.parent.Ping(); err != nil {
 		// ping failed - close xray segment
 		if t._xrayTxSeg != nil {
-			_ = t._xrayTxSeg.Seg.AddError(err)
+			_ = t._xrayTxSeg.SafeAddError(err)
 			t._xrayTxSeg.Close()
 			t._xrayTxSeg = nil
 		}
@@ -398,7 +398,7 @@ func (t *MySqlTransaction) Rollback() (err error) {
 		subSeg.Capture("Rollback-Transaction-Do", func() error {
 			if e := t.tx.Rollback(); e != nil {
 				err = fmt.Errorf("MySql Rollback Transaction Failed, %s", e)
-				_ = subSeg.Seg.AddError(err)
+				_ = subSeg.SafeAddError(err)
 				return err
 			} else {
 				return nil
@@ -656,17 +656,17 @@ func (svr *MySql) openWithXRay() (err error) {
 	trace := xray.NewSegment("MySql-Open-Entry", parentSeg)
 	defer trace.Close()
 	defer func() {
-		_ = trace.Seg.AddMetadata("DB-Host", svr.Host)
-		_ = trace.Seg.AddMetadata("DB-Database", svr.Database)
-		_ = trace.Seg.AddMetadata("DB-UserName", svr.UserName)
-		_ = trace.Seg.AddMetadata("DB-Charset", svr.Charset)
-		_ = trace.Seg.AddMetadata("DB-Collation", svr.Collation)
-		_ = trace.Seg.AddMetadata("DB-ConnectTimeout", svr.ConnectTimeout)
-		_ = trace.Seg.AddMetadata("DB-ReadTimeout", svr.ReadTimeout)
-		_ = trace.Seg.AddMetadata("DB-WriteTimeout", svr.WriteTimeout)
+		_ = trace.SafeAddMetadata("DB-Host", svr.Host)
+		_ = trace.SafeAddMetadata("DB-Database", svr.Database)
+		_ = trace.SafeAddMetadata("DB-UserName", svr.UserName)
+		_ = trace.SafeAddMetadata("DB-Charset", svr.Charset)
+		_ = trace.SafeAddMetadata("DB-Collation", svr.Collation)
+		_ = trace.SafeAddMetadata("DB-ConnectTimeout", svr.ConnectTimeout)
+		_ = trace.SafeAddMetadata("DB-ReadTimeout", svr.ReadTimeout)
+		_ = trace.SafeAddMetadata("DB-WriteTimeout", svr.WriteTimeout)
 
 		if err != nil {
-			_ = trace.Seg.AddError(err)
+			_ = trace.SafeAddError(err)
 		}
 	}()
 
@@ -719,7 +719,7 @@ func (svr *MySql) openWithXRay() (err error) {
 	defer subTrace.Close()
 	defer func() {
 		if err != nil {
-			_ = subTrace.Seg.AddError(err)
+			_ = subTrace.SafeAddError(err)
 		}
 	}()
 
@@ -815,10 +815,10 @@ func (svr *MySql) Ping() (err error) {
 		trace := xray.NewSegment("MySql-Ping", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("Ping-Timestamp-UTC", time.Now().UTC())
+			_ = trace.SafeAddMetadata("Ping-Timestamp-UTC", time.Now().UTC())
 
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -881,8 +881,8 @@ func (svr *MySql) Begin() (*MySqlTransaction, error) {
 
 		if tx, err := db.BeginTxx(subXSeg.Ctx, &sql.TxOptions{Isolation: 0, ReadOnly: false}); err != nil {
 			// begin failed
-			_ = subXSeg.Seg.AddError(err)
-			_ = xseg.Seg.AddError(err)
+			_ = subXSeg.SafeAddError(err)
+			_ = xseg.SafeAddError(err)
 			subXSeg.Close()
 			xseg.Close()
 			return nil, err
@@ -953,11 +953,11 @@ func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interfa
 		trace := xray.NewSegment("MySql-Select-GetStructSlice", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", query)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Struct-Slice-Result", dest)
+			_ = trace.SafeAddMetadata("SQL-Query", query)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Struct-Slice-Result", dest)
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -1016,11 +1016,11 @@ func (t *MySqlTransaction) GetStructSlice(dest interface{}, query string, args .
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetStructSlice")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Struct-Slice-Result", dest)
+			_ = subTrace.SafeAddMetadata("SQL-Query", query)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Struct-Slice-Result", dest)
 			if err != nil {
-				_ = subTrace.Seg.AddError(err)
+				_ = subTrace.SafeAddError(err)
 			}
 		}()
 
@@ -1076,11 +1076,11 @@ func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{})
 		trace := xray.NewSegment("MySql-Select-GetStruct", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", query)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Struct-Result", dest)
+			_ = trace.SafeAddMetadata("SQL-Query", query)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Struct-Result", dest)
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -1135,11 +1135,11 @@ func (t *MySqlTransaction) GetStruct(dest interface{}, query string, args ...int
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetStruct")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Struct-Result", dest)
+			_ = subTrace.SafeAddMetadata("SQL-Query", query)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Struct-Result", dest)
 			if err != nil {
-				_ = subTrace.Seg.AddError(err)
+				_ = subTrace.SafeAddError(err)
 			}
 		}()
 
@@ -1211,11 +1211,11 @@ func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sq
 		trace := xray.NewSegment("MySql-Select-GetRowsByOrdinalParams", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", query)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Rows-Result", rows)
+			_ = trace.SafeAddMetadata("SQL-Query", query)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Rows-Result", rows)
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -1280,11 +1280,11 @@ func (t *MySqlTransaction) GetRowsByOrdinalParams(query string, args ...interfac
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetRowsByOrdinalParams")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Rows-Result", rows)
+			_ = subTrace.SafeAddMetadata("SQL-Query", query)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Rows-Result", rows)
 			if err != nil {
-				_ = subTrace.Seg.AddError(err)
+				_ = subTrace.SafeAddError(err)
 			}
 		}()
 
@@ -1360,11 +1360,11 @@ func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface
 		trace := xray.NewSegment("MySql-Select-GetRowsByNamedMapParam", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", query)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Rows-Result", rows)
+			_ = trace.SafeAddMetadata("SQL-Query", query)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Rows-Result", rows)
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -1439,11 +1439,11 @@ func (t *MySqlTransaction) GetRowsByNamedMapParam(query string, args map[string]
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetRowsByNamedMapParam")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Rows-Result", rows)
+			_ = subTrace.SafeAddMetadata("SQL-Query", query)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Rows-Result", rows)
 			if err != nil {
-				_ = subTrace.Seg.AddError(err)
+				_ = subTrace.SafeAddError(err)
 			}
 		}()
 
@@ -1515,11 +1515,11 @@ func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Ro
 		trace := xray.NewSegment("MySql-Select-GetRowsByStructParam", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", query)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Rows-Result", rows)
+			_ = trace.SafeAddMetadata("SQL-Query", query)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Rows-Result", rows)
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -1590,11 +1590,11 @@ func (t *MySqlTransaction) GetRowsByStructParam(query string, args interface{}) 
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetRowsByStructParam")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Rows-Result", rows)
+			_ = subTrace.SafeAddMetadata("SQL-Query", query)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Rows-Result", rows)
 			if err != nil {
-				_ = subTrace.Seg.AddError(err)
+				_ = subTrace.SafeAddError(err)
 			}
 		}()
 
@@ -1688,7 +1688,7 @@ func (svr *MySql) ScanSlice(rows *sqlx.Rows, dest *[]interface{}) (endOfRows boo
 		defer trace.Close()
 		defer func() {
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -1808,7 +1808,7 @@ func (svr *MySql) ScanStruct(rows *sqlx.Rows, dest interface{}) (endOfRows bool,
 		defer trace.Close()
 		defer func() {
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -1902,11 +1902,11 @@ func (svr *MySql) GetSingleRow(query string, args ...interface{}) (*sqlx.Row, er
 		trace := xray.NewSegment("MySql-Select-GetSingleRow", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", query)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Row-Result", row)
+			_ = trace.SafeAddMetadata("SQL-Query", query)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Row-Result", row)
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -1977,11 +1977,11 @@ func (t *MySqlTransaction) GetSingleRow(query string, args ...interface{}) (*sql
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetSingleRow")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Row-Result", row)
+			_ = subTrace.SafeAddMetadata("SQL-Query", query)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Row-Result", row)
 			if err != nil {
-				_ = subTrace.Seg.AddError(err)
+				_ = subTrace.SafeAddError(err)
 			}
 		}()
 
@@ -2072,7 +2072,7 @@ func (svr *MySql) ScanSliceByRow(row *sqlx.Row, dest *[]interface{}) (notFound b
 		defer trace.Close()
 		defer func() {
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -2165,7 +2165,7 @@ func (svr *MySql) ScanStructByRow(row *sqlx.Row, dest interface{}) (notFound boo
 		defer trace.Close()
 		defer func() {
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -2254,7 +2254,7 @@ func (svr *MySql) ScanColumnsByRow(row *sqlx.Row, dest ...interface{}) (notFound
 		defer trace.Close()
 		defer func() {
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -2329,11 +2329,11 @@ func (svr *MySql) GetScalarString(query string, args ...interface{}) (retVal str
 		trace := xray.NewSegment("MySql-Select-GetScalarString", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", query)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Row-Result", row)
+			_ = trace.SafeAddMetadata("SQL-Query", query)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Row-Result", row)
 			if retErr != nil {
-				_ = trace.Seg.AddError(retErr)
+				_ = trace.SafeAddError(retErr)
 			}
 		}()
 
@@ -2405,11 +2405,11 @@ func (t *MySqlTransaction) GetScalarString(query string, args ...interface{}) (r
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetScalarString")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Row-Result", row)
+			_ = subTrace.SafeAddMetadata("SQL-Query", query)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Row-Result", row)
 			if retErr != nil {
-				_ = subTrace.Seg.AddError(retErr)
+				_ = subTrace.SafeAddError(retErr)
 			}
 		}()
 
@@ -2482,11 +2482,11 @@ func (svr *MySql) GetScalarNullString(query string, args ...interface{}) (retVal
 		trace := xray.NewSegment("MySql-Select-GetScalarNullString", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", query)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Row-Result", row)
+			_ = trace.SafeAddMetadata("SQL-Query", query)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Row-Result", row)
 			if retErr != nil {
-				_ = trace.Seg.AddError(retErr)
+				_ = trace.SafeAddError(retErr)
 			}
 		}()
 
@@ -2559,11 +2559,11 @@ func (t *MySqlTransaction) GetScalarNullString(query string, args ...interface{}
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Select-GetScalarNullString")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", query)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Row-Result", row)
+			_ = subTrace.SafeAddMetadata("SQL-Query", query)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Row-Result", row)
 			if retErr != nil {
-				_ = subTrace.Seg.AddError(retErr)
+				_ = subTrace.SafeAddError(retErr)
 			}
 		}()
 
@@ -2651,11 +2651,11 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 		trace := xray.NewSegment("MySql-Exec-ExecByOrdinalParams", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Exec-Result", result)
+			_ = trace.SafeAddMetadata("SQL-Query", actionQuery)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Exec-Result", result)
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -2740,11 +2740,11 @@ func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...inter
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Exec-ExecByOrdinalParams")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", actionQuery)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Exec-Result", result)
+			_ = subTrace.SafeAddMetadata("SQL-Query", actionQuery)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Exec-Result", result)
 			if err != nil {
-				_ = subTrace.Seg.AddError(err)
+				_ = subTrace.SafeAddError(err)
 			}
 		}()
 
@@ -2840,11 +2840,11 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 		trace := xray.NewSegment("MySql-Exec-ExecByNamedMapParam", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Exec-Result", result)
+			_ = trace.SafeAddMetadata("SQL-Query", actionQuery)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Exec-Result", result)
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -2939,11 +2939,11 @@ func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[stri
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Exec-ExecByNamedMapParam")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", actionQuery)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Exec-Result", result)
+			_ = subTrace.SafeAddMetadata("SQL-Query", actionQuery)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Exec-Result", result)
 			if err != nil {
-				_ = subTrace.Seg.AddError(err)
+				_ = subTrace.SafeAddError(err)
 			}
 		}()
 
@@ -3035,11 +3035,11 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 		trace := xray.NewSegment("MySql-Exec-ExecByStructParam", parentSeg)
 		defer trace.Close()
 		defer func() {
-			_ = trace.Seg.AddMetadata("SQL-Query", actionQuery)
-			_ = trace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = trace.Seg.AddMetadata("Exec-Result", result)
+			_ = trace.SafeAddMetadata("SQL-Query", actionQuery)
+			_ = trace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = trace.SafeAddMetadata("Exec-Result", result)
 			if err != nil {
-				_ = trace.Seg.AddError(err)
+				_ = trace.SafeAddError(err)
 			}
 		}()
 
@@ -3129,11 +3129,11 @@ func (t *MySqlTransaction) ExecByStructParam(actionQuery string, args interface{
 		subTrace := t._xrayTxSeg.NewSubSegment("Transaction-Exec-ExecByStructParam")
 		defer subTrace.Close()
 		defer func() {
-			_ = subTrace.Seg.AddMetadata("SQL-Query", actionQuery)
-			_ = subTrace.Seg.AddMetadata("SQL-Param-Values", args)
-			_ = subTrace.Seg.AddMetadata("Exec-Result", result)
+			_ = subTrace.SafeAddMetadata("SQL-Query", actionQuery)
+			_ = subTrace.SafeAddMetadata("SQL-Param-Values", args)
+			_ = subTrace.SafeAddMetadata("Exec-Result", result)
 			if err != nil {
-				_ = subTrace.Seg.AddError(err)
+				_ = subTrace.SafeAddError(err)
 			}
 		}()
 

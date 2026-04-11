@@ -160,10 +160,10 @@ func (sd *CloudMap) Connect(parentSegment ...*xray.XRayParentSegment) (err error
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-AWS-Region", awsRegionSnap)
+				_ = seg.SafeAddMetadata("Cloudmap-AWS-Region", awsRegionSnap)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -324,12 +324,12 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-CreateHttpNamespace-Name", name)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreateHttpNamespace-CreatorRequestID", creatorRequestId)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreateHttpNamespace-Result-OperationID", operationId)
+				_ = seg.SafeAddMetadata("Cloudmap-CreateHttpNamespace-Name", name)
+				_ = seg.SafeAddMetadata("Cloudmap-CreateHttpNamespace-CreatorRequestID", creatorRequestId)
+				_ = seg.SafeAddMetadata("Cloudmap-CreateHttpNamespace-Result-OperationID", operationId)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -453,13 +453,13 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-CreatePrivateDnsNamespace-Name", name)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreatePrivateDnsNamespace-CreatorRequestID", creatorRequestId)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreatePrivateDnsNamespace-VPC", vpc)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreatePrivateDnsNamespace-Result-OperationID", operationId)
+				_ = seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-Name", name)
+				_ = seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-CreatorRequestID", creatorRequestId)
+				_ = seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-VPC", vpc)
+				_ = seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-Result-OperationID", operationId)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -587,12 +587,12 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-CreatePublicDnsNamespace-Name", name)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreatePublicDnsNamespace-CreatorRequestID", creatorRequestId)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreatePublicDnsNamespace-Result-OperationID", operationId)
+				_ = seg.SafeAddMetadata("Cloudmap-CreatePublicDnsNamespace-Name", name)
+				_ = seg.SafeAddMetadata("Cloudmap-CreatePublicDnsNamespace-CreatorRequestID", creatorRequestId)
+				_ = seg.SafeAddMetadata("Cloudmap-CreatePublicDnsNamespace-Result-OperationID", operationId)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -702,11 +702,11 @@ func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Dur
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-GetNamespace-NamespaceID", namespaceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetNamespace-Result-NamespaceObject", namespace)
+				_ = seg.SafeAddMetadata("Cloudmap-GetNamespace-NamespaceID", namespaceId)
+				_ = seg.SafeAddMetadata("Cloudmap-GetNamespace-Result-NamespaceObject", namespace)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -799,14 +799,14 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespaces-Filter", filter)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespaces-Max-Results", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespaces-Next-Token", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespaces-Result-Namespaces", namespaces)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespaces-Result-Next-Token", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Filter", filter)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Max-Results", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Next-Token", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Result-Namespaces", namespaces)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Result-Next-Token", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -944,14 +944,14 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespacesPages-Filter", filter)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespacesPages-Max-Results", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespacesPages-Next-Token", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespacesPages-Result-Namespaces", namespaces)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListNamespacesPages-Result-Next-Token", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Filter", filter)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Max-Results", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Next-Token", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Result-Namespaces", namespaces)
+				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Result-Next-Token", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -1080,11 +1080,11 @@ func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-DeleteNamespace-NamespaceID", namespaceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-DeleteNamespace-Result-OperationID", operationId)
+				_ = seg.SafeAddMetadata("Cloudmap-DeleteNamespace-NamespaceID", namespaceId)
+				_ = seg.SafeAddMetadata("Cloudmap-DeleteNamespace-Result-OperationID", operationId)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -1190,15 +1190,15 @@ func (sd *CloudMap) CreateService(name string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-CreateService-ServiceName", name)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreateService-CreatorRequestID", creatorRequestId)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreateService-NamespaceID", namespaceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreateService-DNSConf", dnsConf)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreateService-HealthCheckConf", healthCheckConf)
-				_ = seg.Seg.AddMetadata("Cloudmap-CreateService-Result-ServiceObject", service)
+				_ = seg.SafeAddMetadata("Cloudmap-CreateService-ServiceName", name)
+				_ = seg.SafeAddMetadata("Cloudmap-CreateService-CreatorRequestID", creatorRequestId)
+				_ = seg.SafeAddMetadata("Cloudmap-CreateService-NamespaceID", namespaceId)
+				_ = seg.SafeAddMetadata("Cloudmap-CreateService-DNSConf", dnsConf)
+				_ = seg.SafeAddMetadata("Cloudmap-CreateService-HealthCheckConf", healthCheckConf)
+				_ = seg.SafeAddMetadata("Cloudmap-CreateService-Result-ServiceObject", service)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -1435,14 +1435,14 @@ func (sd *CloudMap) UpdateService(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-UpdateService-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-UpdateService-DNSConfUpdate", dnsConfUpdate)
-				_ = seg.Seg.AddMetadata("Cloudmap-UpdateService-HealthCheckConfUpdate", healthCheckConfUpdate)
-				_ = seg.Seg.AddMetadata("Cloudmap-UpdateService-DescriptionUpdate", descriptionUpdate)
-				_ = seg.Seg.AddMetadata("Cloudmap-UpdateService-Result-OperationID", operationId)
+				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-DNSConfUpdate", dnsConfUpdate)
+				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-HealthCheckConfUpdate", healthCheckConfUpdate)
+				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-DescriptionUpdate", descriptionUpdate)
+				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-Result-OperationID", operationId)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -1615,11 +1615,11 @@ func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duratio
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-GetService-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetService-Result-Service", service)
+				_ = seg.SafeAddMetadata("Cloudmap-GetService-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-GetService-Result-Service", service)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -1707,14 +1707,14 @@ func (sd *CloudMap) ListServices(filter []string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServices-Filter", filter)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServices-MaxResults", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServices-NextToken", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServices-Result-Services", services)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServices-Result-NextToken", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServices-Filter", filter)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServices-MaxResults", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServices-NextToken", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServices-Result-Services", services)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServices-Result-NextToken", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -1852,14 +1852,14 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServicesPages-Filter", filter)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServicesPages-MaxResults", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServicesPages-NextToken", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServicesPages-Result-Services", services)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListServicesPages-Result-NextToken", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-Filter", filter)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-MaxResults", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-NextToken", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-Result-Services", services)
+				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-Result-NextToken", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -1995,10 +1995,10 @@ func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Dura
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-DeleteService-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-DeleteService-ServiceID", serviceId)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -2122,14 +2122,14 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-RegisterInstance-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-RegisterInstance-InstanceID", instanceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-RegisterInstance-CreatorRequestID", creatorRequestId)
-				_ = seg.Seg.AddMetadata("Cloudmap-RegisterInstance-Attributes", attributes)
-				_ = seg.Seg.AddMetadata("Cloudmap-RegisterInstance-Result-OperationID", operationId)
+				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-InstanceID", instanceId)
+				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-CreatorRequestID", creatorRequestId)
+				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-Attributes", attributes)
+				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-Result-OperationID", operationId)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -2253,12 +2253,12 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-InstanceID", instanceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-IsHealthy", isHealthy)
+				_ = seg.SafeAddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-InstanceID", instanceId)
+				_ = seg.SafeAddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-IsHealthy", isHealthy)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -2357,12 +2357,12 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-DeregisterInstance-InstanceID", instanceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-DeregisterInstance-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-DeregisterInstance-Result-OperationID", operationId)
+				_ = seg.SafeAddMetadata("Cloudmap-DeregisterInstance-InstanceID", instanceId)
+				_ = seg.SafeAddMetadata("Cloudmap-DeregisterInstance-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-DeregisterInstance-Result-OperationID", operationId)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -2457,12 +2457,12 @@ func (sd *CloudMap) GetInstance(instanceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstance-InstanceID", instanceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstance-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstance-Result-Instance", instance)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstance-InstanceID", instanceId)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstance-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstance-Result-Instance", instance)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -2567,15 +2567,15 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatus-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatus-InstanceIDs", instanceIds)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatus-MaxResults", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatus-NextToken", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatus-Result-Status", status)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatus-Result-NextToken", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-InstanceIDs", instanceIds)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-MaxResults", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-NextToken", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-Result-Status", status)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-Result-NextToken", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -2703,15 +2703,15 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatusPages-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatusPages-InstanceIDs", instanceIds)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatusPages-MaxResults", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatusPages-NextToken", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatusPages-Result-Status", status)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetInstancesHealthStatusPages-Result-NextToken", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-InstanceIDs", instanceIds)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-MaxResults", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-NextToken", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-Result-Status", status)
+				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-Result-NextToken", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -2843,15 +2843,15 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-DiscoverInstances-NamespaceName", namespaceName)
-				_ = seg.Seg.AddMetadata("Cloudmap-DiscoverInstances-ServiceName", serviceName)
-				_ = seg.Seg.AddMetadata("Cloudmap-DiscoverInstances-IsHealthy", isHealthy)
-				_ = seg.Seg.AddMetadata("Cloudmap-DiscoverInstances-QueryParameters", queryParameters)
-				_ = seg.Seg.AddMetadata("Cloudmap-DiscoverInstances-MaxResults", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-DiscoverInstances-Result-Instances", instances)
+				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-NamespaceName", namespaceName)
+				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-ServiceName", serviceName)
+				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-IsHealthy", isHealthy)
+				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-QueryParameters", queryParameters)
+				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-MaxResults", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-Result-Instances", instances)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -2972,14 +2972,14 @@ func (sd *CloudMap) ListInstances(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstances-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstances-MaxResults", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstances-NextToken", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstances-Result-Instances", instances)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstances-Result-NextToken", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-MaxResults", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-NextToken", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-Result-Instances", instances)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-Result-NextToken", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -3097,14 +3097,14 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstancesPages-ServiceID", serviceId)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstancesPages-MaxResults", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstancesPages-NextToken", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstancesPages-Result-Instances", instances)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListInstancesPages-Result-NextToken", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-ServiceID", serviceId)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-MaxResults", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-NextToken", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-Result-Instances", instances)
+				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-Result-NextToken", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -3215,11 +3215,11 @@ func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Dur
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-GetOperation-OperationID", operationId)
-				_ = seg.Seg.AddMetadata("Cloudmap-GetOperation-Result-Operation", operation)
+				_ = seg.SafeAddMetadata("Cloudmap-GetOperation-OperationID", operationId)
+				_ = seg.SafeAddMetadata("Cloudmap-GetOperation-Result-Operation", operation)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -3316,14 +3316,14 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperations-Filter", filter)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperations-MaxResults", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperations-NextToken", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperations-Result-Operations", operations)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperations-Result-NextToken", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-Filter", filter)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-MaxResults", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-NextToken", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-Result-Operations", operations)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-Result-NextToken", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()
@@ -3509,14 +3509,14 @@ func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperation
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperationsPages-Filter", filter)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperationsPages-MaxResults", maxResults)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperationsPages-NextToken", nextToken)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperationsPages-Result-Operations", operations)
-				_ = seg.Seg.AddMetadata("Cloudmap-ListOperationsPages-Result-NextToken", moreNextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-Filter", filter)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-MaxResults", maxResults)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-NextToken", nextToken)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-Result-Operations", operations)
+				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-Result-NextToken", moreNextToken)
 
 				if err != nil {
-					_ = seg.Seg.AddError(err)
+					_ = seg.SafeAddError(err)
 				}
 			}
 		}()

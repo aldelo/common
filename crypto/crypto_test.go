@@ -141,3 +141,69 @@ func TestCryptoRoundtrip_UnicodePassphrase(t *testing.T) {
 		})
 	}
 }
+
+// -----------------------------------------------------------------------
+// P0-6 — Md5 helper: observable contract pin + deprecation call-site test.
+//
+// Md5 is deprecated in v1.7.9 (scheduled for removal in v2.0.0) but must
+// remain CALLABLE and must produce the same output it has always produced
+// for the remainder of the v1.x series, or downstream consumers that
+// still call it will break on upgrade.
+//
+// The godoc on Md5 has been rewritten to warn callers away from every
+// security use (passwords, signatures, tokens), but the test below
+// locks the hex-digest-uppercase format as the observable contract.
+// -----------------------------------------------------------------------
+func TestMd5_ObservableContractUnchangedByDeprecation(t *testing.T) {
+	// Fixed vectors derived from RFC 1321 / standard test inputs fed
+	// through the existing Md5(data, salt) signature.
+	//
+	// The MD5 digest of "abc" is 900150983cd24fb0d6963f7d28e17f72; the
+	// Md5 helper upper-cases and formats with %X. We also verify that a
+	// non-empty salt changes the digest (simple differential test) and
+	// that the function is deterministic across calls.
+	const (
+		input        = "abc"
+		wantEmptyAlt = "900150983CD24FB0D6963F7D28E17F72"
+	)
+
+	// Contract 1: empty salt, known digest, uppercase hex.
+	if got := Md5(input, ""); got != wantEmptyAlt {
+		t.Errorf("Md5(%q, \"\") = %q, want %q — deprecated helper must "+
+			"remain callable and produce the same digest it always has "+
+			"through the entire v1.x series",
+			input, got, wantEmptyAlt)
+	}
+
+	// Contract 2: non-empty salt produces a different digest.
+	// (This is the bare-minimum sanity check that salt is actually
+	// concatenated; it does NOT endorse MD5+salt as a password-hashing
+	// construction, which the deprecation godoc explicitly forbids.)
+	if salted := Md5(input, "salt"); salted == wantEmptyAlt {
+		t.Errorf("Md5 ignored salt parameter: Md5(%q, %q) == Md5(%q, \"\")",
+			input, "salt", input)
+	}
+
+	// Contract 3: deterministic — two consecutive calls return the
+	// same value.
+	a := Md5(input, "salt")
+	b := Md5(input, "salt")
+	if a != b {
+		t.Errorf("Md5 non-deterministic: %q vs %q", a, b)
+	}
+
+	// Contract 4: 32-character uppercase hex digest. Any format change
+	// (lowercase, base64, prefixing, truncation) would break downstream
+	// consumers and therefore must be a v2.0.0 change.
+	if len(a) != 32 {
+		t.Errorf("Md5 digest length = %d, want 32", len(a))
+	}
+	for _, r := range a {
+		isHex := (r >= '0' && r <= '9') || (r >= 'A' && r <= 'F')
+		if !isHex {
+			t.Errorf("Md5 digest %q contains non-uppercase-hex rune %q",
+				a, r)
+			break
+		}
+	}
+}

@@ -90,7 +90,30 @@ func FnvHashDigit(data string, digitLimit int) int {
 // MD5 HELPERS
 // ================================================================================================================
 
-// Md5 hashing
+// Md5 hashes the given data+salt with the MD5 algorithm and returns the
+// uppercase hex digest.
+//
+// Deprecated: MD5 is cryptographically broken. It is vulnerable to
+// collision attacks (Wang & Yu, 2005; chosen-prefix attacks since 2008)
+// and must NOT be used for:
+//
+//   - password hashing (use [PasswordHash], which wraps bcrypt)
+//   - digital signatures or any integrity check where an attacker may
+//     influence the input (use [Sha256] or [Sha512])
+//   - security tokens, session IDs, or anything that must be
+//     unforgeable (use [Sha256] / [Sha512] with a keyed HMAC, or a
+//     CSPRNG)
+//
+// The only remaining safe use is non-security checksums (e.g., a cache
+// key that protects against accidental corruption, not malicious input).
+// If you need a non-cryptographic hash for that purpose, prefer a
+// dedicated one such as xxhash or fnv.
+//
+// This function remains callable in v1.x for backward compatibility and
+// will be removed in v2.0.0. Consumers are expected to migrate to
+// [Sha256] or [Sha512] before the v2.0.0 cut. See CHANGELOG.md and the
+// "Compatibility and Stability" section of README.md for the migration
+// policy.
 func Md5(data string, salt string) string {
 	b := []byte(data + salt)
 	return fmt.Sprintf("%X", md5.Sum(b))

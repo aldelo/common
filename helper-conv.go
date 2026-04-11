@@ -415,7 +415,18 @@ func Float64ToFixedString(f float64, decimals int) string {
 }
 
 // Float64ToCurrencyString converts float64 to string with exactly 2 decimal places.
-// Use for monetary amounts (payment fields, transaction amounts, prices).
+//
+// Use ONLY for DISPLAY formatting of an already-computed amount (e.g., rendering
+// a total on a receipt or in a UI field). Do NOT use float64 for monetary
+// ARITHMETIC — float64 is IEEE-754 binary floating point and accumulates rounding
+// errors over repeated addition, subtraction, multiplication, or division. The
+// same monetary total reached via different paths (e.g., sum-of-line-items vs.
+// subtotal+tax) may produce values that fail == comparison. Use int64 cents or
+// github.com/shopspring/decimal for monetary arithmetic, and call this helper
+// only at the final render step.
+//
+// Example safe use:  fmt.Println(Float64ToCurrencyString(cents.ToFloat64()))
+// Example UNSAFE use: amt := 0.1 + 0.2; Float64ToCurrencyString(amt) // "0.30" hides 0.30000000000000004
 func Float64ToCurrencyString(f float64) string {
 	return fmt.Sprintf("%.2f", f)
 }

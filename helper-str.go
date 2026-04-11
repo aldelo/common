@@ -211,30 +211,19 @@ func PadX(data string, totalSize int, padRight ...bool) string {
 // if nothing is found, blank is returned,
 // index = -1 returns last index
 func SplitString(source string, delimiter string, index int) string {
-	if len(delimiter) == 0 { // guard empty delimiter to avoid unexpected split behavior
-		return ""
-	}
-
-	if !strings.Contains(source, delimiter) { // honor contract—return blank when delimiter not found
-		return ""
-	}
-
+	// v1.6.7 contract preserved: any negative index means "last element";
+	// delimiter-not-found is handled naturally by strings.Split returning [source];
+	// empty delimiter splits source into its runes (Go's strings.Split behavior).
 	ar := strings.Split(source, delimiter)
 
-	if len(ar) == 0 {
-		return ""
-	}
+	if len(ar) > 0 {
+		if index <= -1 {
+			return ar[len(ar)-1]
+		}
 
-	// honor the contract strictly: only -1 means "last element"
-	if index == -1 {
-		return ar[len(ar)-1]
-	}
-	if index < -1 {
-		return ""
-	}
-
-	if len(ar) > index {
-		return ar[index]
+		if len(ar) > index {
+			return ar[index]
+		}
 	}
 
 	return ""
@@ -463,7 +452,9 @@ func IsHexOnly(s string) bool {
 // require non-empty input and anchor regex to full string
 func IsNumericIntOnly(s string) bool {
 	if len(s) == 0 {
-		return false
+		// v1.6.7 contract preserved: empty string is treated as "numeric only"
+		// (digit-strip of empty input leaves empty, passing the legacy len==0 check).
+		return true
 	}
 
 	exp, err := regexp.Compile("^[0-9]+$")
@@ -598,8 +589,11 @@ func Base64UrlEncode(data string) string {
 // Base64UrlDecode will decode given data from base 64 url encoded string
 func Base64UrlDecode(data string) (string, error) {
 	clean := stripBase64Whitespace(data)
-	if len(clean) == 0 { // reject empty input instead of silently returning empty
-		return "", fmt.Errorf("base64url data is required")
+	if len(clean) == 0 {
+		// v1.6.7 contract preserved: empty input returns empty string without error.
+		// Go's base64.URLEncoding.DecodeString("") also returned ([]byte{}, nil),
+		// so consumers checking `if err != nil` on optional inputs still work.
+		return "", nil
 	}
 
 	padded := clean

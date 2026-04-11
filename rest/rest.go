@@ -498,7 +498,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	// unmarshal bytes to protobuf object
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
-	
+
 			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
@@ -602,7 +602,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	// unmarshal response bytes into protobuf object message
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
-	
+
 			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
@@ -706,7 +706,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	// unmarshal response bytes into protobuf object message
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
-	
+
 			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}
@@ -797,7 +797,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	// unmarshal bytes to protobuf object
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
-	
+
 			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
 		}
 	}

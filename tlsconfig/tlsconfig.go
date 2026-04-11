@@ -174,7 +174,7 @@ func _stringSliceExtractUnique(strSlice []string) (result []string) {
 		// Use map for O(n) deduplication instead of O(n²)
 		seen := make(map[string]struct{}, len(strSlice))
 		result = make([]string, 0, len(strSlice))
-		
+
 		for _, v := range strSlice {
 			lowerV := strings.ToLower(v)
 			if _, exists := seen[lowerV]; !exists {

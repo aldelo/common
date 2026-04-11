@@ -50,7 +50,7 @@ func NiceRecoveryWithWriter(f func(c *gin.Context, err interface{}), out io.Writ
 			if err := recover(); err != nil {
 				// Capture full stack trace for debugging
 				goErr := errors.Wrap(err, 3)
-				
+
 				if logger != nil {
 					// Log panic details including HTTP request and stack trace
 					httpRequest, _ := httputil.DumpRequest(c.Request, false)

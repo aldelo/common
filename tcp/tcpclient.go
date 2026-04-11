@@ -29,13 +29,13 @@ import (
 
 // TCP client configuration constants
 const (
-	maxPortNumber                = 65535 // Maximum TCP port number (valid range: 1-65535)
-	defaultReadBufferSize        = 1024  // Default read buffer size in bytes
-	defaultReaderYieldDuration   = 25    // Default reader loop yield time in milliseconds
-	maxReaderYieldDuration       = 1000  // Maximum reader yield time in milliseconds
-	defaultReadDeadlineDuration  = 1000  // Default read timeout in milliseconds
-	minReadDeadlineDuration      = 250   // Minimum read timeout in milliseconds
-	maxReadDeadlineDuration      = 5000  // Maximum read timeout in milliseconds
+	maxPortNumber               = 65535 // Maximum TCP port number (valid range: 1-65535)
+	defaultReadBufferSize       = 1024  // Default read buffer size in bytes
+	defaultReaderYieldDuration  = 25    // Default reader loop yield time in milliseconds
+	maxReaderYieldDuration      = 1000  // Maximum reader yield time in milliseconds
+	defaultReadDeadlineDuration = 1000  // Default read timeout in milliseconds
+	minReadDeadlineDuration     = 250   // Minimum read timeout in milliseconds
+	maxReadDeadlineDuration     = 5000  // Maximum read timeout in milliseconds
 )
 
 // TCPClient defines tcp client connection struct

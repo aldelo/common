@@ -122,10 +122,10 @@ type Redis struct {
 // connectionSnapshot captures the connection state under a read lock,
 // so that callers can safely use cnWriter/cnReader without racing against Connect/Disconnect.
 type redisConnSnapshot struct {
-	ready          bool
-	writer         *redis.Client
-	reader         *redis.Client
-	parentSegment  *xray.XRayParentSegment
+	ready         bool
+	writer        *redis.Client
+	reader        *redis.Client
+	parentSegment *xray.XRayParentSegment
 }
 
 func (r *Redis) connSnapshot() redisConnSnapshot {

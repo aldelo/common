@@ -61,18 +61,26 @@ func LenTrim(s string) int {
 }
 
 // NextFixedLength calculates the next fixed length total block size.
-// handle blockSize <= 0 safely and fix exact-multiple off-by-one.
+//
+// Contract: uses (len(data)/blockSize + 1) * blockSize — ALWAYS advances
+// to the next block, even when the input is exactly aligned. This is the
+// PKCS#7-compatible padding behavior required by CBC-mode crypto and TCP
+// framing helpers: an aligned 16-byte input with blockSize=16 MUST return
+// 32, not 16, so a full padding block is reserved.
+//
+// Uses byte length (not rune count) — matches v1.6.7 semantics and the
+// byte-oriented callers (AES block boundaries are byte-based, not rune-based).
+//
+// Safety guard: returns 0 if blockSize <= 0 (v1.6.7 would panic on divide
+// by zero; the guard is stricter but preserves byte semantics for any
+// legal caller).
+//
+// Rule #10 (workspace): preserve observable contracts across minor-version bumps.
 func NextFixedLength(data string, blockSize int) int {
 	if blockSize <= 0 {
 		return 0
 	}
-
-	n := utf8.RuneCountInString(data) //use rune count to align with other rune-aware helpers
-	if n == 0 {
-		return blockSize
-	}
-
-	blocks := (n + blockSize - 1) / blockSize
+	blocks := (len(data) / blockSize) + 1
 	return blocks * blockSize
 }
 

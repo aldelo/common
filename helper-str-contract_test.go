@@ -238,3 +238,56 @@ func TestBase64StdDecode_WhitespaceOnly_ReturnsEmptyNilError(t *testing.T) {
 		t.Fatalf("Base64StdDecode(whitespace) = %q, want \"\"", got)
 	}
 }
+
+// -----------------------------------------------------------------------
+// Is*Only validators — empty input must return true (vacuously satisfies
+// "contains only X"). (P1-2)
+//
+// Flipped in HEAD to return false, which breaks validation chains that
+// pre-filter empty optional fields. The sibling IsNumericIntOnly was
+// already restored to true in commit 43e842c; these four were missed.
+// -----------------------------------------------------------------------
+
+func TestIsAlphanumericOnly_EmptyReturnsTrue(t *testing.T) {
+	if !IsAlphanumericOnly("") {
+		t.Fatalf("IsAlphanumericOnly(\"\") = false, want true (v1.6.7 contract)")
+	}
+}
+
+func TestIsAlphanumericAndSpaceOnly_EmptyReturnsTrue(t *testing.T) {
+	if !IsAlphanumericAndSpaceOnly("") {
+		t.Fatalf("IsAlphanumericAndSpaceOnly(\"\") = false, want true (v1.6.7 contract)")
+	}
+}
+
+func TestIsHexOnly_EmptyReturnsTrue(t *testing.T) {
+	if !IsHexOnly("") {
+		t.Fatalf("IsHexOnly(\"\") = false, want true (v1.6.7 contract)")
+	}
+}
+
+func TestIsBase64Only_EmptyReturnsTrue(t *testing.T) {
+	if !IsBase64Only("") {
+		t.Fatalf("IsBase64Only(\"\") = false, want true (v1.6.7 contract)")
+	}
+}
+
+// Positive-path guard: the fix must NOT break valid-input behavior.
+
+func TestIsAlphanumericOnly_PositivePathStillWorks(t *testing.T) {
+	if !IsAlphanumericOnly("abc123") {
+		t.Fatal("IsAlphanumericOnly(\"abc123\") = false, want true")
+	}
+	if IsAlphanumericOnly("abc 123") {
+		t.Fatal("IsAlphanumericOnly(\"abc 123\") = true, want false (space not allowed)")
+	}
+}
+
+func TestIsHexOnly_PositivePathStillWorks(t *testing.T) {
+	if !IsHexOnly("deadBEEF") {
+		t.Fatal("IsHexOnly(\"deadBEEF\") = false, want true")
+	}
+	if IsHexOnly("xyz") {
+		t.Fatal("IsHexOnly(\"xyz\") = true, want false")
+	}
+}

@@ -396,10 +396,10 @@ func ExtractByRegex(s string, regexStr string) (string, error) {
 // ================================================================================================================
 
 // IsAlphanumericOnly checks if the input string is A-Z, a-z, and 0-9 only
-// require non-empty input and anchor regex to full string
+// v1.6.7 contract: empty string vacuously satisfies "contains only X" → returns true.
 func IsAlphanumericOnly(s string) bool {
 	if len(s) == 0 {
-		return false
+		return true
 	}
 
 	exp, err := regexp.Compile("^[A-Za-z0-9]+$")
@@ -411,10 +411,10 @@ func IsAlphanumericOnly(s string) bool {
 }
 
 // IsAlphanumericAndSpaceOnly checks if the input string is A-Z, a-z, 0-9, and space
-// require non-empty input and anchor regex to full string
+// v1.6.7 contract: empty string vacuously satisfies "contains only X" → returns true.
 func IsAlphanumericAndSpaceOnly(s string) bool {
 	if len(s) == 0 {
-		return false
+		return true
 	}
 
 	exp, err := regexp.Compile("^[A-Za-z0-9 ]+$")
@@ -426,11 +426,11 @@ func IsAlphanumericAndSpaceOnly(s string) bool {
 }
 
 // IsBase64Only checks if the input string is a-z, A-Z, 0-9, +, /, =
-// require non-empty input and anchor regex to full string
+// v1.6.7 contract: empty string vacuously satisfies "contains only X" → returns true.
 func IsBase64Only(s string) bool {
 	clean := stripBase64Whitespace(s) // validate after whitespace removal
 	if len(clean) == 0 {
-		return false
+		return true
 	}
 
 	// FReject impossible base64 lengths (len % 4 == 1); pad only valid short cases.
@@ -459,10 +459,10 @@ func IsBase64Only(s string) bool {
 }
 
 // IsHexOnly checks if the input string is a-f, A-F, 0-9
-// require non-empty input and anchor regex to full string
+// v1.6.7 contract: empty string vacuously satisfies "contains only X" → returns true.
 func IsHexOnly(s string) bool {
 	if len(s) == 0 {
-		return false
+		return true
 	}
 
 	exp, err := regexp.Compile("^[A-Fa-f0-9]+$")

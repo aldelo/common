@@ -404,6 +404,22 @@ func Float64ToString(f float64) string {
 	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
+// Float64ToFixedString converts float64 to string with exact number of decimal places.
+// Use this instead of Float64ToString when the output format matters for stored data
+// (DynamoDB keys, GSI sort keys, comparison values).
+func Float64ToFixedString(f float64, decimals int) string {
+	if decimals < 0 {
+		decimals = 0
+	}
+	return fmt.Sprintf("%.*f", decimals, f)
+}
+
+// Float64ToCurrencyString converts float64 to string with exactly 2 decimal places.
+// Use for monetary amounts (payment fields, transaction amounts, prices).
+func Float64ToCurrencyString(f float64) string {
+	return fmt.Sprintf("%.2f", f)
+}
+
 // Float64PtrToFloat64 returns 0 if nil, otherwise actual float64 value.
 func Float64PtrToFloat64(f *float64) float64 {
 	if f == nil {

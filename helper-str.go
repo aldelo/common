@@ -46,10 +46,18 @@ func isNilInterface(v interface{}) bool {
 	}
 }
 
-// LenTrim returns length of space trimmed string s
+// LenTrim returns length of space trimmed string s.
+//
+// Contract: returns the BYTE length (not rune count) of the trimmed string.
+// This matches the v1.6.7 observable contract that 36+ downstream repos rely
+// on — most critically crypto/crypto.go, which uses byte-length sizing for
+// AES key derivation and padding.
+//
+// Rule #10 (workspace): preserve observable contracts across minor-version
+// bumps. For rune-count semantics, use utf8.RuneCountInString directly at
+// the call site.
 func LenTrim(s string) int {
-	trimmed := strings.TrimSpace(s)        // avoid double-trimming and reuse
-	return utf8.RuneCountInString(trimmed) // count runes, not bytes, for correct Unicode length
+	return len(strings.TrimSpace(s))
 }
 
 // NextFixedLength calculates the next fixed length total block size.

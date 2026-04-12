@@ -79,14 +79,10 @@ func (s *TCPServer) Serve() (err error) {
 		s._mux.Unlock()
 		return fmt.Errorf("TCP Server Already Serving, Use Close() To Stop")
 	}
-	s._mux.Unlock()
-
 	if s.Port == 0 || s.Port > maxPortNumber {
+		s._mux.Unlock()
 		return fmt.Errorf("TCP Server Listening Port Must Be 1 - %d", maxPortNumber)
 	}
-
-	// Initialize maps if nil (defensive programming)
-	s._mux.Lock()
 	if s._clients == nil {
 		s._clients = make(map[string]net.Conn)
 	}

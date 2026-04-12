@@ -193,6 +193,9 @@ func (scm *ServiceConnectionManager) shutdown() {
 		// bounded wait with warning/early exit if desired
 		if scm.shutdownWaitTimeout > 0 {
 			done := make(chan struct{})
+			timeout := time.NewTimer(scm.shutdownWaitTimeout)
+			defer timeout.Stop()
+
 			go func() {
 				scm.wg.Wait()
 				close(done)
@@ -201,9 +204,13 @@ func (scm *ServiceConnectionManager) shutdown() {
 			select {
 			case <-done:
 				log.Printf("ServiceConnectionManager.shutdown: all operations completed")
-			case <-time.After(scm.shutdownWaitTimeout):
+			case <-timeout.C:
 				log.Printf("ServiceConnectionManager.shutdown: timeout waiting for operations after %s; %d still active",
 					scm.shutdownWaitTimeout, scm.GetCurrentLoad())
+				// NOTE: the waiter goroutine above will exit once all tracked
+				// operations finish (wg counter hits zero). On timeout, it is
+				// NOT leaked indefinitely — it simply outlives this function
+				// call until the remaining operations complete.
 				return
 			}
 		} else {

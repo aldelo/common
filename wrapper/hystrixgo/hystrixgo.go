@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/afex/hystrix-go/hystrix"
@@ -60,6 +61,7 @@ type CircuitBreaker struct {
 	//
 	// local state variables
 	//
+	mu            sync.Mutex
 	streamHandler *hystrix.StreamHandler
 	httpServer    *http.Server
 }
@@ -596,6 +598,9 @@ func (c *CircuitBreaker) StartStreamHttpServer(port ...int) error {
 		return errors.New("CircuitBreaker StartStreamHttpServer Failed: CircuitBreaker receiver is nil")
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.streamHandler == nil {
 		c.streamHandler = hystrix.NewStreamHandler()
 		c.streamHandler.Start()
@@ -622,6 +627,9 @@ func (c *CircuitBreaker) StopStreamHttpServer() {
 	if c == nil {
 		return
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	if c.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

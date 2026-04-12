@@ -737,7 +737,14 @@ func (x *XSegment) Capture(traceName string, executeFunc func() error, traceData
 // note = do not manually call Capture within goroutine to ensure segment is flushed properly
 //
 // traceName = descriptive name for the tracing session being tracked
-// executeFunc = custom logic to execute within capture tracing context (context is segment context)
+// executeFunc = custom logic to execute within capture tracing context (context is segment context).
+//
+//	WARNING: executeFunc runs in an unmanaged goroutine with no timeout.
+//	If executeFunc blocks indefinitely, the goroutine leaks and is never
+//	reclaimed. Callers MUST ensure executeFunc respects context cancellation
+//	or has its own internal timeout. Redesign with context propagation is
+//	planned for v2.0.0.
+//
 // traceData = optional additional data to add to the trace (meta, annotation, error)
 func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, traceData ...*XTraceData) <-chan error {
 	errCh := make(chan error, 1) // buffered so sender won't block

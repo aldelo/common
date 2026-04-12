@@ -108,7 +108,15 @@ const MaxBatchWriteItems = 25
 // DynamoDB Error Struct
 // =====================================================================================================================
 
-// DynamoDBError struct contains special status info including error and retry advise
+// DynamoDBError struct contains special status info including error and retry advise.
+//
+// WARNING: When SuppressError is true and retries are exhausted, *WithRetry methods
+// return nil error even though the write did not land. Callers MUST NOT interpret
+// nil error as confirmation of a successful write when SuppressError is enabled.
+// This applies to ProvisionedThroughputExceededException and InternalServerError
+// responses from DynamoDB. For payment or order-critical writes, callers should
+// either set SuppressError to false or implement their own verification after the
+// call returns. Redesign of this contract is planned for v2.0.0.
 type DynamoDBError struct {
 	ErrorMessage  string
 	SuppressError bool
@@ -575,12 +583,16 @@ func (w *DynamoDBTransactionWrites) LoadPutItems() interface{} {
 	}
 
 	if w.PutItemsSet == nil {
+		w.allPutItemsMutex.Lock()
 		w.allPutItems = nil
+		w.allPutItemsMutex.Unlock()
 		return nil
 	}
 
 	if len(w.PutItemsSet) <= 0 {
+		w.allPutItemsMutex.Lock()
 		w.allPutItems = nil
+		w.allPutItemsMutex.Unlock()
 		return nil
 	}
 

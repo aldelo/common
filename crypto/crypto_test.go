@@ -608,3 +608,55 @@ func TestRsaAesHmac_V2SignatureVerificationRunsOnV2Path(t *testing.T) {
 			"up. Security-critical regression.")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// P2-6: Negative-input tests for V2 HMAC encrypt/decrypt pair.
+// These verify that bad inputs produce clear errors rather than panics
+// or silent corruption.
+// ---------------------------------------------------------------------------
+
+func TestRsaAesHmac_V2EmptyPlaintext(t *testing.T) {
+	// The V2 encrypt function rejects empty plaintext. Verify it returns
+	// a clear error rather than panicking or producing a corrupt envelope.
+	_, recipPub, senderPriv, senderPub := v2TestKeys(t)
+
+	_, err := RsaAesPublicKeyEncryptAndSignHmac("", recipPub, senderPub, senderPriv)
+	if err == nil {
+		t.Fatal("encrypt with empty plaintext must return an error")
+	}
+}
+
+func TestRsaAesHmac_V2DecryptMalformedEnvelope(t *testing.T) {
+	recipPriv, _, _, _ := v2TestKeys(t)
+
+	malformed := []string{
+		"",                          // empty
+		"hello",                     // too short, no framing
+		"\x02V2\x03",               // STX+V2+ETX but no body
+		"\x02V2" + strings.Repeat("ab", 256) + "\x03", // right framing, too short for HMAC
+	}
+
+	for i, bad := range malformed {
+		_, _, err := RsaAesPrivateKeyDecryptAndVerifyHmac(bad, recipPriv)
+		if err == nil {
+			t.Errorf("malformed[%d] (%d bytes) decrypted without error — must fail", i, len(bad))
+		}
+	}
+}
+
+func TestRsaAesHmac_V2EncryptMissingKeys(t *testing.T) {
+	_, recipPub, senderPriv, senderPub := v2TestKeys(t)
+
+	// Empty recipient public key
+	if _, err := RsaAesPublicKeyEncryptAndSignHmac("test", "", senderPub, senderPriv); err == nil {
+		t.Error("encrypt with empty recipientPublicKey must fail")
+	}
+	// Empty sender public key
+	if _, err := RsaAesPublicKeyEncryptAndSignHmac("test", recipPub, "", senderPriv); err == nil {
+		t.Error("encrypt with empty senderPublicKey must fail")
+	}
+	// Empty sender private key
+	if _, err := RsaAesPublicKeyEncryptAndSignHmac("test", recipPub, senderPub, ""); err == nil {
+		t.Error("encrypt with empty senderPrivateKey must fail")
+	}
+}

@@ -49,7 +49,7 @@ regression test in `helper-str-contract_test.go`.
 - **P1-1** — `Base64StdDecode("")` restored to return `("", nil)` (was erroring).
 - **P1-2** — `Is*Only` family (`IsAlphanumericOnly`, `IsAlphabeticOnly`,
   `IsNumericIntOnly`, `IsAlphanumericAndPunctuationOnly`) restored to return
-  `false` for empty input (was returning `true`).
+  `true` for empty input (was returning `false`).
 - **P1-7** — `SliceStringToCSVString` restored to dumb-join contract (no quoting).
 - **P1-8** — `Replace` restored to stdlib-passthrough contract.
 - **P1-9** — `ParseKeyValue` restored to strict v1.6.7 validation.

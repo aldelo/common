@@ -562,9 +562,9 @@ func AppendHmac(encryptedData string, key string) (string, error) {
 		return "", errors.New("Data is Required")
 	}
 
-	// ensure key is 32 bytes
+	// ensure key is at least 32 bytes
 	if len(key) < 32 {
-		return "", errors.New("Key Must Be 32 Bytes")
+		return "", errors.New("Key Must Be At Least 32 Bytes")
 	}
 
 	data := []byte(encryptedData)
@@ -593,9 +593,9 @@ func ValidateHmac(encryptedDataWithHmac string, key string) (string, error) {
 		return "", errors.New("Data with HMAC is Required")
 	}
 
-	// ensure key is 32 bytes
+	// ensure key is at least 32 bytes
 	if len(key) < 32 {
-		return "", errors.New("Key Must Be 32 Bytes")
+		return "", errors.New("Key Must Be At Least 32 Bytes")
 	}
 
 	// cut the key to 32 bytes only

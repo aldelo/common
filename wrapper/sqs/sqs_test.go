@@ -11,6 +11,7 @@ package sqs
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -24,10 +25,24 @@ const (
 	testQueueName      = "test-queue"
 )
 
+// localstackAvailable returns true if LocalStack is reachable on port 4566.
+func localstackAvailable() bool {
+	conn, err := net.DialTimeout("tcp", "localhost:4566", 2*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
 // newTestSQS creates an SQS struct configured for LocalStack and calls Connect.
 // It sets required env vars, skips the test if LocalStack is unreachable.
 func newTestSQS(t *testing.T) *SQS {
 	t.Helper()
+
+	if !localstackAvailable() {
+		t.Skip("LocalStack not available at localhost:4566")
+	}
 
 	os.Setenv("AWS_ACCESS_KEY_ID", "test")
 	os.Setenv("AWS_SECRET_ACCESS_KEY", "test")

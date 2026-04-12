@@ -12,6 +12,7 @@ package s3
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -24,10 +25,24 @@ const (
 	testBucket         = "test-bucket"
 )
 
+// localstackAvailable returns true if LocalStack is reachable on port 4566.
+func localstackAvailable() bool {
+	conn, err := net.DialTimeout("tcp", "localhost:4566", 2*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
 // newTestS3 creates an S3 struct configured for LocalStack and calls Connect.
 // It sets required env vars, skips the test if LocalStack is unreachable.
 func newTestS3(t *testing.T) *S3 {
 	t.Helper()
+
+	if !localstackAvailable() {
+		t.Skip("LocalStack not available at localhost:4566")
+	}
 
 	os.Setenv("AWS_ACCESS_KEY_ID", "test")
 	os.Setenv("AWS_SECRET_ACCESS_KEY", "test")

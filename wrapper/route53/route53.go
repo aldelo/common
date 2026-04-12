@@ -63,6 +63,9 @@ type Route53 struct {
 	// custom http2 client options
 	HttpOptions *awshttp2.HttpClientSettings
 
+	// optional: override AWS endpoint URL for testing (e.g., LocalStack)
+	CustomEndpoint string
+
 	// store aws session object
 	sess *session.Session
 
@@ -152,10 +155,15 @@ func (r *Route53) connectInternal() error {
 	}
 
 	// establish aws session connection and keep session object in struct
-	if sess, err := session.NewSession(
-		&aws.Config{
-			HTTPClient: httpCli,
-		}); err != nil {
+	cfg := &aws.Config{
+		HTTPClient: httpCli,
+	}
+
+	if len(r.CustomEndpoint) > 0 {
+		cfg.Endpoint = aws.String(r.CustomEndpoint)
+	}
+
+	if sess, err := session.NewSession(cfg); err != nil {
 		// aws session error
 		return errors.New("Connect To Route53 Failed: (AWS Session Error) " + err.Error())
 	} else {

@@ -79,6 +79,9 @@ type SES struct {
 	// define configuration set to use if any
 	ConfigurationSetName string
 
+	// optional: override AWS endpoint URL for testing (e.g., LocalStack)
+	CustomEndpoint string
+
 	// store ses client object
 	sesClient *ses.SES
 
@@ -261,11 +264,20 @@ func (s *SES) connectInternal() error {
 	}
 
 	// establish aws session connection and keep session object in struct
-	sess, err := session.NewSession(
-		&aws.Config{
-			Region:     aws.String(region.Key()),
-			HTTPClient: httpCli,
-		})
+	cfg := &aws.Config{
+		Region:     aws.String(region.Key()),
+		HTTPClient: httpCli,
+	}
+
+	s.mu.RLock()
+	customEP := s.CustomEndpoint
+	s.mu.RUnlock()
+
+	if len(customEP) > 0 {
+		cfg.Endpoint = aws.String(customEP)
+	}
+
+	sess, err := session.NewSession(cfg)
 	if err != nil {
 		// aws session error
 		return errors.New("Connect To SES Failed: (AWS Session Error) " + err.Error())

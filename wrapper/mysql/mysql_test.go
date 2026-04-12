@@ -17,6 +17,7 @@ package mysql
  */
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -987,5 +988,512 @@ func TestGetDsn_ValidationOrder(t *testing.T) {
 		if err.Error() != step.wantErr {
 			t.Errorf("error = %q, want %q", err.Error(), step.wantErr)
 		}
+	}
+}
+
+// =====================================================================
+// Integration Tests (require live MySQL 8.0 on localhost:3306)
+// =====================================================================
+
+// testMySqlConn creates a connected MySql instance for integration tests.
+// Skips the test if MySQL is not reachable.
+func testMySqlConn(t *testing.T) *MySql {
+	t.Helper()
+	svr := &MySql{
+		UserName: "root",
+		Password: "testpass",
+		Host:     "localhost",
+		Port:     3306,
+		Database: "testdb",
+	}
+	if err := svr.Open(); err != nil {
+		t.Skipf("MySQL not available: %v", err)
+	}
+	t.Cleanup(func() { svr.Close() })
+	return svr
+}
+
+// testTableName returns a unique table name based on the test name to avoid collisions.
+func testTableName(t *testing.T) string {
+	t.Helper()
+	// Replace slashes and spaces with underscores for subtest-safe table names
+	name := strings.ReplaceAll(t.Name(), "/", "_")
+	name = strings.ReplaceAll(name, " ", "_")
+	// MySQL table names limited; keep it reasonable
+	if len(name) > 50 {
+		name = name[:50]
+	}
+	return "inttest_" + name
+}
+
+// testItem is a simple struct for marshalling DB rows via sqlx db tags.
+type testItem struct {
+	ID   int    `db:"id"`
+	Name string `db:"name"`
+}
+
+func TestMySQL_Integration_OpenPingClose(t *testing.T) {
+	svr := testMySqlConn(t)
+
+	// Ping should succeed immediately after Open (within the 90-second cache window
+	// Ping has, but Open already called Ping internally, so this verifies the
+	// "MySQL Server Not Connected" path is not hit).
+	if err := svr.Ping(); err != nil {
+		t.Fatalf("Ping() after Open failed: %v", err)
+	}
+
+	// Close then verify Ping returns error
+	if err := svr.Close(); err != nil {
+		t.Fatalf("Close() failed: %v", err)
+	}
+
+	err := svr.Ping()
+	if err == nil {
+		t.Fatal("Ping() after Close should return error, got nil")
+	}
+	if !strings.Contains(err.Error(), "Not Connected") {
+		t.Errorf("Ping() after Close error = %q, want 'Not Connected'", err)
+	}
+}
+
+func TestMySQL_Integration_ReopenAfterClose(t *testing.T) {
+	svr := &MySql{
+		UserName: "root",
+		Password: "testpass",
+		Host:     "localhost",
+		Port:     3306,
+		Database: "testdb",
+	}
+	if err := svr.Open(); err != nil {
+		t.Skipf("MySQL not available: %v", err)
+	}
+
+	// Close
+	if err := svr.Close(); err != nil {
+		t.Fatalf("first Close() failed: %v", err)
+	}
+
+	// Re-open
+	if err := svr.Open(); err != nil {
+		t.Fatalf("re-Open() after Close failed: %v", err)
+	}
+	t.Cleanup(func() { svr.Close() })
+
+	if err := svr.Ping(); err != nil {
+		t.Fatalf("Ping() after re-Open failed: %v", err)
+	}
+}
+
+func TestMySQL_Integration_GetDsnFromOpenedConn(t *testing.T) {
+	svr := testMySqlConn(t)
+
+	dsn, err := svr.GetDsn()
+	if err != nil {
+		t.Fatalf("GetDsn() error = %v", err)
+	}
+
+	// Verify the DSN encodes the connection parameters we set
+	wantParts := []string{
+		"root:testpass@(localhost:3306)/testdb",
+		"charset=utf8mb4",
+		"collation=utf8mb4_general_ci",
+		"parseTime=true",
+	}
+
+	for _, part := range wantParts {
+		if !strings.Contains(dsn, part) {
+			t.Errorf("GetDsn() = %q, missing expected substring %q", dsn, part)
+		}
+	}
+}
+
+func TestMySQL_Integration_ExecAndGetStruct(t *testing.T) {
+	svr := testMySqlConn(t)
+	tbl := testTableName(t)
+	t.Cleanup(func() {
+		svr.ExecByOrdinalParams(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tbl))
+	})
+
+	// CREATE TABLE
+	createSQL := fmt.Sprintf("CREATE TABLE `%s` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)", tbl)
+	res := svr.ExecByOrdinalParams(createSQL)
+	if res.Err != nil {
+		t.Fatalf("CREATE TABLE failed: %v", res.Err)
+	}
+
+	// INSERT
+	insertSQL := fmt.Sprintf("INSERT INTO `%s` (name) VALUES (?)", tbl)
+	res = svr.ExecByOrdinalParams(insertSQL, "alice")
+	if res.Err != nil {
+		t.Fatalf("INSERT failed: %v", res.Err)
+	}
+	if res.RowsAffected != 1 {
+		t.Errorf("INSERT RowsAffected = %d, want 1", res.RowsAffected)
+	}
+	if res.NewlyInsertedID < 1 {
+		t.Errorf("INSERT NewlyInsertedID = %d, want >= 1", res.NewlyInsertedID)
+	}
+
+	// GetStruct — retrieve the inserted row
+	var item testItem
+	selectSQL := fmt.Sprintf("SELECT id, name FROM `%s` WHERE name = ?", tbl)
+	notFound, err := svr.GetStruct(&item, selectSQL, "alice")
+	if err != nil {
+		t.Fatalf("GetStruct() error = %v", err)
+	}
+	if notFound {
+		t.Fatal("GetStruct() returned notFound = true, expected row")
+	}
+	if item.Name != "alice" {
+		t.Errorf("GetStruct() name = %q, want %q", item.Name, "alice")
+	}
+	if item.ID < 1 {
+		t.Errorf("GetStruct() id = %d, want >= 1", item.ID)
+	}
+}
+
+func TestMySQL_Integration_GetStructSlice(t *testing.T) {
+	svr := testMySqlConn(t)
+	tbl := testTableName(t)
+	t.Cleanup(func() {
+		svr.ExecByOrdinalParams(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tbl))
+	})
+
+	// Setup
+	svr.ExecByOrdinalParams(fmt.Sprintf("CREATE TABLE `%s` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)", tbl))
+	svr.ExecByOrdinalParams(fmt.Sprintf("INSERT INTO `%s` (name) VALUES (?), (?), (?)", tbl), "bob", "carol", "dave")
+
+	// GetStructSlice
+	var items []testItem
+	selectSQL := fmt.Sprintf("SELECT id, name FROM `%s` ORDER BY name ASC", tbl)
+	notFound, err := svr.GetStructSlice(&items, selectSQL)
+	if err != nil {
+		t.Fatalf("GetStructSlice() error = %v", err)
+	}
+	if notFound {
+		t.Fatal("GetStructSlice() returned notFound = true, expected rows")
+	}
+	if len(items) != 3 {
+		t.Fatalf("GetStructSlice() returned %d rows, want 3", len(items))
+	}
+	wantNames := []string{"bob", "carol", "dave"}
+	for i, want := range wantNames {
+		if items[i].Name != want {
+			t.Errorf("items[%d].Name = %q, want %q", i, items[i].Name, want)
+		}
+	}
+}
+
+func TestMySQL_Integration_GetStructSlice_NotFound(t *testing.T) {
+	svr := testMySqlConn(t)
+	tbl := testTableName(t)
+	t.Cleanup(func() {
+		svr.ExecByOrdinalParams(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tbl))
+	})
+
+	svr.ExecByOrdinalParams(fmt.Sprintf("CREATE TABLE `%s` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)", tbl))
+
+	// Query empty table — GetStructSlice returns empty slice, not notFound
+	var items []testItem
+	selectSQL := fmt.Sprintf("SELECT id, name FROM `%s`", tbl)
+	notFound, err := svr.GetStructSlice(&items, selectSQL)
+	if err != nil {
+		t.Fatalf("GetStructSlice() on empty table error = %v", err)
+	}
+	// sqlx.Select does not return sql.ErrNoRows for empty results; it returns empty slice
+	if notFound {
+		// This is acceptable behavior — just document it
+		t.Logf("GetStructSlice() returned notFound=true for empty table (no rows)")
+	}
+	if !notFound && len(items) != 0 {
+		t.Errorf("GetStructSlice() returned %d items for empty table, expected 0", len(items))
+	}
+}
+
+func TestMySQL_Integration_GetSingleRow_ScanColumnsByRow(t *testing.T) {
+	svr := testMySqlConn(t)
+	tbl := testTableName(t)
+	t.Cleanup(func() {
+		svr.ExecByOrdinalParams(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tbl))
+	})
+
+	svr.ExecByOrdinalParams(fmt.Sprintf("CREATE TABLE `%s` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)", tbl))
+	svr.ExecByOrdinalParams(fmt.Sprintf("INSERT INTO `%s` (name) VALUES (?)", tbl), "eve")
+
+	// GetSingleRow
+	selectSQL := fmt.Sprintf("SELECT id, name FROM `%s` WHERE name = ?", tbl)
+	row, err := svr.GetSingleRow(selectSQL, "eve")
+	if err != nil {
+		t.Fatalf("GetSingleRow() error = %v", err)
+	}
+	if row == nil {
+		t.Fatal("GetSingleRow() returned nil row, expected data")
+	}
+
+	// ScanColumnsByRow
+	var id int
+	var name string
+	notFound, err := svr.ScanColumnsByRow(row, &id, &name)
+	if err != nil {
+		t.Fatalf("ScanColumnsByRow() error = %v", err)
+	}
+	if notFound {
+		t.Fatal("ScanColumnsByRow() notFound = true, expected data")
+	}
+	if name != "eve" {
+		t.Errorf("ScanColumnsByRow() name = %q, want %q", name, "eve")
+	}
+	if id < 1 {
+		t.Errorf("ScanColumnsByRow() id = %d, want >= 1", id)
+	}
+}
+
+func TestMySQL_Integration_GetScalarString(t *testing.T) {
+	svr := testMySqlConn(t)
+	tbl := testTableName(t)
+	t.Cleanup(func() {
+		svr.ExecByOrdinalParams(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tbl))
+	})
+
+	svr.ExecByOrdinalParams(fmt.Sprintf("CREATE TABLE `%s` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)", tbl))
+	svr.ExecByOrdinalParams(fmt.Sprintf("INSERT INTO `%s` (name) VALUES (?)", tbl), "frank")
+
+	// GetScalarString — returns first column of first row as string
+	selectSQL := fmt.Sprintf("SELECT name FROM `%s` WHERE id = ?", tbl)
+	val, notFound, err := svr.GetScalarString(selectSQL, 1)
+	if err != nil {
+		t.Fatalf("GetScalarString() error = %v", err)
+	}
+	if notFound {
+		t.Fatal("GetScalarString() notFound = true, expected value")
+	}
+	if val != "frank" {
+		t.Errorf("GetScalarString() = %q, want %q", val, "frank")
+	}
+
+	// GetScalarString — not found case
+	val2, notFound2, err2 := svr.GetScalarString(selectSQL, 9999)
+	if err2 != nil {
+		t.Fatalf("GetScalarString() not-found case error = %v", err2)
+	}
+	if !notFound2 {
+		t.Errorf("GetScalarString() notFound = false for non-existent row, val = %q", val2)
+	}
+}
+
+func TestMySQL_Integration_GetRowsByOrdinalParams(t *testing.T) {
+	svr := testMySqlConn(t)
+	tbl := testTableName(t)
+	t.Cleanup(func() {
+		svr.ExecByOrdinalParams(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tbl))
+	})
+
+	svr.ExecByOrdinalParams(fmt.Sprintf("CREATE TABLE `%s` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)", tbl))
+	svr.ExecByOrdinalParams(fmt.Sprintf("INSERT INTO `%s` (name) VALUES (?), (?)", tbl), "grace", "heidi")
+
+	selectSQL := fmt.Sprintf("SELECT id, name FROM `%s` ORDER BY name ASC", tbl)
+	rows, err := svr.GetRowsByOrdinalParams(selectSQL)
+	if err != nil {
+		t.Fatalf("GetRowsByOrdinalParams() error = %v", err)
+	}
+	if rows == nil {
+		t.Fatal("GetRowsByOrdinalParams() returned nil rows")
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var id int
+		var name string
+		if scanErr := rows.Scan(&id, &name); scanErr != nil {
+			t.Fatalf("rows.Scan() error = %v", scanErr)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows iteration error = %v", err)
+	}
+
+	if len(names) != 2 {
+		t.Fatalf("got %d rows, want 2", len(names))
+	}
+	if names[0] != "grace" || names[1] != "heidi" {
+		t.Errorf("rows = %v, want [grace heidi]", names)
+	}
+}
+
+func TestMySQL_Integration_Transaction_Commit(t *testing.T) {
+	svr := testMySqlConn(t)
+	tbl := testTableName(t)
+	t.Cleanup(func() {
+		svr.ExecByOrdinalParams(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tbl))
+	})
+
+	svr.ExecByOrdinalParams(fmt.Sprintf("CREATE TABLE `%s` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)", tbl))
+
+	// Begin transaction
+	tx, err := svr.Begin()
+	if err != nil {
+		t.Fatalf("Begin() error = %v", err)
+	}
+
+	// INSERT within transaction
+	insertSQL := fmt.Sprintf("INSERT INTO `%s` (name) VALUES (?)", tbl)
+	txRes := tx.ExecByOrdinalParams(insertSQL, "tx_commit_row")
+	if txRes.Err != nil {
+		t.Fatalf("tx.ExecByOrdinalParams() error = %v", txRes.Err)
+	}
+
+	// Commit
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit() error = %v", err)
+	}
+
+	// Verify row exists after commit
+	val, notFound, err := svr.GetScalarString(fmt.Sprintf("SELECT name FROM `%s` WHERE name = ?", tbl), "tx_commit_row")
+	if err != nil {
+		t.Fatalf("verification query error = %v", err)
+	}
+	if notFound {
+		t.Fatal("committed row not found after Commit()")
+	}
+	if val != "tx_commit_row" {
+		t.Errorf("committed row name = %q, want %q", val, "tx_commit_row")
+	}
+}
+
+func TestMySQL_Integration_Transaction_Rollback(t *testing.T) {
+	svr := testMySqlConn(t)
+	tbl := testTableName(t)
+	t.Cleanup(func() {
+		svr.ExecByOrdinalParams(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tbl))
+	})
+
+	svr.ExecByOrdinalParams(fmt.Sprintf("CREATE TABLE `%s` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)", tbl))
+
+	// Begin transaction
+	tx, err := svr.Begin()
+	if err != nil {
+		t.Fatalf("Begin() error = %v", err)
+	}
+
+	// INSERT within transaction
+	insertSQL := fmt.Sprintf("INSERT INTO `%s` (name) VALUES (?)", tbl)
+	txRes := tx.ExecByOrdinalParams(insertSQL, "tx_rollback_row")
+	if txRes.Err != nil {
+		t.Fatalf("tx.ExecByOrdinalParams() error = %v", txRes.Err)
+	}
+
+	// Rollback
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback() error = %v", err)
+	}
+
+	// Verify row does NOT exist after rollback
+	_, notFound, err := svr.GetScalarString(fmt.Sprintf("SELECT name FROM `%s` WHERE name = ?", tbl), "tx_rollback_row")
+	if err != nil {
+		t.Fatalf("verification query error = %v", err)
+	}
+	if !notFound {
+		t.Fatal("rolled-back row should not exist, but was found")
+	}
+}
+
+func TestMySQL_Integration_ExecOnClosedConnection(t *testing.T) {
+	svr := &MySql{
+		UserName: "root",
+		Password: "testpass",
+		Host:     "localhost",
+		Port:     3306,
+		Database: "testdb",
+	}
+	if err := svr.Open(); err != nil {
+		t.Skipf("MySQL not available: %v", err)
+	}
+
+	// Close the connection first
+	if err := svr.Close(); err != nil {
+		t.Fatalf("Close() failed: %v", err)
+	}
+
+	// ExecByOrdinalParams should fail on closed connection
+	res := svr.ExecByOrdinalParams("SELECT 1")
+	if res.Err == nil {
+		t.Fatal("ExecByOrdinalParams on closed connection should return error")
+	}
+	if !strings.Contains(res.Err.Error(), "Not Connected") {
+		t.Errorf("error = %q, want containing 'Not Connected'", res.Err)
+	}
+}
+
+func TestMySQL_Integration_QueryNonExistentTable(t *testing.T) {
+	svr := testMySqlConn(t)
+
+	// Query a table that does not exist
+	var items []testItem
+	_, err := svr.GetStructSlice(&items, "SELECT id, name FROM nonexistent_table_xyz_999")
+	if err == nil {
+		t.Fatal("query on non-existent table should return error, got nil")
+	}
+	// MySQL error should mention the table doesn't exist
+	if !strings.Contains(strings.ToLower(err.Error()), "doesn't exist") && !strings.Contains(strings.ToLower(err.Error()), "not exist") {
+		t.Logf("query error (non-existent table) = %q (accepted as non-nil error)", err)
+	}
+}
+
+func TestMySQL_Integration_OpenWrongCredentials(t *testing.T) {
+	svr := &MySql{
+		UserName: "root",
+		Password: "WRONG_PASSWORD_XYZ",
+		Host:     "localhost",
+		Port:     3306,
+		Database: "testdb",
+	}
+
+	err := svr.Open()
+	if err == nil {
+		// If MySQL allows empty-auth or something unexpected, clean up
+		svr.Close()
+		t.Fatal("Open() with wrong password should return error, got nil")
+	}
+	// Expect an access-denied type error
+	errLower := strings.ToLower(err.Error())
+	if !strings.Contains(errLower, "access denied") && !strings.Contains(errLower, "denied") {
+		t.Logf("Open() wrong-creds error = %q (accepted as non-nil error)", err)
+	}
+}
+
+func TestMySQL_Integration_ExecByNamedMapParam(t *testing.T) {
+	svr := testMySqlConn(t)
+	tbl := testTableName(t)
+	t.Cleanup(func() {
+		svr.ExecByOrdinalParams(fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tbl))
+	})
+
+	svr.ExecByOrdinalParams(fmt.Sprintf("CREATE TABLE `%s` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)", tbl))
+
+	// INSERT using named map param
+	insertSQL := fmt.Sprintf("INSERT INTO `%s` (name) VALUES (:name)", tbl)
+	params := map[string]interface{}{
+		"name": "named_param_test",
+	}
+	res := svr.ExecByNamedMapParam(insertSQL, params)
+	if res.Err != nil {
+		t.Fatalf("ExecByNamedMapParam() error = %v", res.Err)
+	}
+	if res.RowsAffected != 1 {
+		t.Errorf("ExecByNamedMapParam() RowsAffected = %d, want 1", res.RowsAffected)
+	}
+
+	// Verify the row
+	val, notFound, err := svr.GetScalarString(fmt.Sprintf("SELECT name FROM `%s` WHERE name = ?", tbl), "named_param_test")
+	if err != nil {
+		t.Fatalf("verification error = %v", err)
+	}
+	if notFound {
+		t.Fatal("named-param inserted row not found")
+	}
+	if val != "named_param_test" {
+		t.Errorf("verification value = %q, want %q", val, "named_param_test")
 	}
 }

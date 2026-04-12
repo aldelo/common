@@ -73,6 +73,9 @@ type SQS struct {
 	// custom http2 client options
 	HttpOptions *awshttp2.HttpClientSettings
 
+	// optional: override AWS endpoint URL for testing (e.g., LocalStack)
+	CustomEndpoint string
+
 	// store SQS client object
 	sqsClient *awssqs.SQS
 
@@ -305,11 +308,20 @@ func (s *SQS) connectInternal() error {
 	}
 
 	// establish aws session connection
-	if sess, err := session.NewSession(
-		&aws.Config{
-			Region:     aws.String(s.getAwsRegion().Key()),
-			HTTPClient: httpCli,
-		}); err != nil {
+	cfg := &aws.Config{
+		Region:     aws.String(s.getAwsRegion().Key()),
+		HTTPClient: httpCli,
+	}
+
+	s.mu.RLock()
+	customEP := s.CustomEndpoint
+	s.mu.RUnlock()
+
+	if len(customEP) > 0 {
+		cfg.Endpoint = aws.String(customEP)
+	}
+
+	if sess, err := session.NewSession(cfg); err != nil {
 		// aws session error
 		return errors.New("Connect to SQS Failed: (AWS Session Error) " + err.Error())
 	} else {

@@ -75,6 +75,9 @@ type S3 struct {
 	// bucket name
 	BucketName string
 
+	// optional: override AWS endpoint URL for testing (e.g., LocalStack)
+	CustomEndpoint string
+
 	// store aws session object
 	sess *session.Session
 
@@ -206,11 +209,17 @@ func (s *S3) connectInternal() error {
 	}
 
 	// establish aws session connection and keep session object in struct
-	if sess, err := session.NewSession(
-		&aws.Config{
-			Region:     aws.String(s.AwsRegion.Key()),
-			HTTPClient: httpCli,
-		}); err != nil {
+	cfg := &aws.Config{
+		Region:     aws.String(s.AwsRegion.Key()),
+		HTTPClient: httpCli,
+	}
+
+	if len(s.CustomEndpoint) > 0 {
+		cfg.Endpoint = aws.String(s.CustomEndpoint)
+		cfg.S3ForcePathStyle = aws.Bool(true)
+	}
+
+	if sess, err := session.NewSession(cfg); err != nil {
 		// aws session error
 		return errors.New("Connect To S3 Failed: (AWS Session Error) " + err.Error())
 	} else {

@@ -605,7 +605,12 @@ func (w *DynamoDBTransactionWrites) LoadPutItems() interface{} {
 				if allPutItems == nil {
 					allPutItems = putItemsSet.PutItems
 				} else {
-					allPutItems, _ = util.ReflectAppendSlices(allPutItems, putItemsSet.PutItems)
+					merged, mergeErr := util.ReflectAppendSlices(allPutItems, putItemsSet.PutItems)
+					if mergeErr != nil {
+						log.Printf("WARNING: DynamoDBTransactionWrites.LoadPutItems: ReflectAppendSlices failed — items from this PutItemsSet will be OMITTED from the transaction: %v", mergeErr)
+					} else {
+						allPutItems = merged
+					}
 				}
 			}
 		}
@@ -6799,7 +6804,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 		}
 
 		totalCount := putCount + deleteCount
-		if totalCount <= 0 || totalCount > 25 {
+		if totalCount <= 0 || totalCount > MaxBatchWriteItems {
 			successCount = 0
 			unprocessedItems = nil
 			err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Count Must Be 1 to 25 Only"))
@@ -7052,7 +7057,7 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 	}
 
 	totalCount := putCount + deleteCount
-	if totalCount <= 0 || totalCount > 25 {
+	if totalCount <= 0 || totalCount > MaxBatchWriteItems {
 		successCount = 0
 		unprocessedItems = nil
 		err = d.handleError(errors.New("DynamoDB BatchWriteItems Failed: " + "PutItems and DeleteKeys Count Must Be 1 to 25 Only"))

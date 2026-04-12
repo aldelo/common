@@ -97,18 +97,8 @@ func TestFloat64ToCurrencyString_DisplayHidesPathDependentTotals(t *testing.T) {
 	// Path B: one line item of $0.30.
 	pathB := floatNoFold(0.30)
 
-	// On IEEE-754 float64 these two paths do NOT produce bit-identical values.
-	// If the platform ever starts producing equal values, the hazard the godoc
-	// warns about has disappeared for this input — the test then documents
-	// that it no longer triggers instead of silently passing.
-	if pathA == pathB {
-		t.Skipf("path-dependent drift not observable for this input on this "+
-			"platform: pathA=%v pathB=%v — hazard remains real for other "+
-			"inputs, this particular demonstration is platform-neutralized",
-			pathA, pathB)
-	}
-
-	// Display is indistinguishable — the receipt shows the same dollar amount.
+	// Display contract: both paths must format identically regardless of
+	// whether the underlying float64 bits differ. This check always runs.
 	dispA := Float64ToCurrencyString(pathA)
 	dispB := Float64ToCurrencyString(pathB)
 	if dispA != dispB {
@@ -116,6 +106,16 @@ func TestFloat64ToCurrencyString_DisplayHidesPathDependentTotals(t *testing.T) {
 			"these ever differ, the godoc 'sum-of-line-items vs. subtotal+tax' "+
 			"example at helper-conv.go:423-424 is wrong",
 			dispA, dispB)
+	}
+
+	// Informational: verify that bit-level drift exists for this input.
+	// On IEEE-754 float64, 0.1+0.1+0.1 != 0.3 because intermediate rounding
+	// differs. If a platform ever makes them equal, the display contract above
+	// is still verified — we just log the anomaly.
+	if pathA == pathB {
+		t.Logf("note: path-dependent drift not observable for this input — "+
+			"pathA=%v pathB=%v — display contract still verified above",
+			pathA, pathB)
 	}
 }
 

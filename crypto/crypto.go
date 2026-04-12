@@ -171,7 +171,12 @@ func PasswordVerify(password string, hash string) (bool, error) {
 
 // AesGcmEncrypt will encrypt using aes gcm 256 bit,
 // passphrase must be 32 bytes, if over 32 bytes, it be truncated,
-// encrypted data is represented in hex value
+// encrypted data is represented in hex value.
+//
+// IMPORTANT: passphrase MUST be a high-entropy 32-byte key (e.g., output of a
+// cryptographic random generator), NOT a human-memorizable password. For
+// password-based encryption, derive the key via scrypt or argon2id first.
+// This function uses raw byte-slice truncation, not a key derivation function.
 func AesGcmEncrypt(data string, passphrase string) (string, error) {
 	// ensure data has value
 	if len(data) == 0 {
@@ -228,7 +233,12 @@ func AesGcmEncrypt(data string, passphrase string) (string, error) {
 }
 
 // AesGcmDecrypt will decrypt using aes gcm 256 bit,
-// passphrase must be 32 bytes, if over 32 bytes, it be truncated
+// passphrase must be 32 bytes, if over 32 bytes, it be truncated.
+//
+// IMPORTANT: passphrase MUST be a high-entropy 32-byte key (e.g., output of a
+// cryptographic random generator), NOT a human-memorizable password. For
+// password-based encryption, derive the key via scrypt or argon2id first.
+// This function uses raw byte-slice truncation, not a key derivation function.
 func AesGcmDecrypt(data string, passphrase string) (string, error) {
 	// ensure data has value
 	if len(data) == 0 {
@@ -295,9 +305,17 @@ func AesGcmDecrypt(data string, passphrase string) (string, error) {
 // AES-CFB HELPERS
 // ================================================================================================================
 
+// Deprecated: AesCfbEncrypt uses CFB mode which is an unauthenticated stream cipher.
+// An attacker who can modify ciphertext can produce controlled plaintext changes
+// (bit-flipping attack) without detection. Use AesGcmEncrypt instead, which provides
+// both confidentiality and authentication (AEAD). The CFB functions remain callable
+// through the entire v1.x series per workspace rule #10; removal is scheduled for v2.0.0.
+//
 // AesCfbEncrypt will encrypt using aes cfb 256 bit,
 // passphrase must be 32 bytes, if over 32 bytes, it be truncated,
-// encrypted data is represented in hex value
+// encrypted data is represented in hex value.
+//
+// IMPORTANT: passphrase MUST be a high-entropy 32-byte key, NOT a password.
 func AesCfbEncrypt(data string, passphrase string) (string, error) {
 	// ensure data has value
 	if len(data) == 0 {
@@ -342,8 +360,13 @@ func AesCfbEncrypt(data string, passphrase string) (string, error) {
 	return util.ByteToHex(cipherText), nil
 }
 
+// Deprecated: AesCfbDecrypt uses CFB mode which is an unauthenticated stream cipher.
+// See AesCfbEncrypt for details. Use AesGcmDecrypt instead.
+//
 // AesCfbDecrypt will decrypt using aes cfb 256 bit,
-// passphrase must be 32 bytes, if over 32 bytes, it be truncated
+// passphrase must be 32 bytes, if over 32 bytes, it be truncated.
+//
+// IMPORTANT: passphrase MUST be a high-entropy 32-byte key, NOT a password.
 func AesCfbDecrypt(data string, passphrase string) (string, error) {
 	// ensure data has value
 	if len(data) == 0 {
@@ -554,8 +577,11 @@ func AesCbcDecrypt(data string, passphrase string) (string, error) {
 // ================================================================================================================
 
 // AppendHmac will calculate the hmac for the given encrypted data based on the given key,
-// and append the Hmac to the end of the encrypted data and return the newly assembled encrypted data with hmac
-// key must be 32 bytes
+// and append the Hmac to the end of the encrypted data and return the newly assembled encrypted data with hmac.
+//
+// IMPORTANT: key MUST be a high-entropy 32-byte key (e.g., the AES key used to encrypt
+// the data), NOT a human-memorizable password. This function uses raw byte-slice
+// truncation, not a key derivation function.
 func AppendHmac(encryptedData string, key string) (string, error) {
 	// ensure data has value
 	if len(encryptedData) == 0 {
@@ -586,7 +612,11 @@ func AppendHmac(encryptedData string, key string) (string, error) {
 
 // ValidateHmac will verify if the appended hmac validates against the message based on the given key,
 // and parse the hmac out and return the actual message if hmac validation succeeds,
-// if hmac validation fails, then blank is returned and the error contains the failure reason
+// if hmac validation fails, then blank is returned and the error contains the failure reason.
+//
+// IMPORTANT: key MUST be a high-entropy 32-byte key (e.g., the AES key used to encrypt
+// the data), NOT a human-memorizable password. This function uses raw byte-slice
+// truncation, not a key derivation function.
 func ValidateHmac(encryptedDataWithHmac string, key string) (string, error) {
 	// ensure data has value
 	if len(encryptedDataWithHmac) <= 64 { // hex is 2x the byte, so 32 normally is now 64

@@ -363,21 +363,21 @@ var (
 	v2TestRecipientPub  string
 	v2TestSenderPriv    string
 	v2TestSenderPub     string
+	v2TestKeyErr        error // stored here so t.Fatalf is called outside sync.Once closure
 )
 
 func v2TestKeys(t *testing.T) (recipPriv, recipPub, senderPriv, senderPub string) {
 	t.Helper()
 	v2TestRecipientOnce.Do(func() {
-		var err error
-		v2TestRecipientPriv, v2TestRecipientPub, err = RsaCreateKey()
-		if err != nil {
-			t.Fatalf("RsaCreateKey(recipient): %v", err)
+		v2TestRecipientPriv, v2TestRecipientPub, v2TestKeyErr = RsaCreateKey()
+		if v2TestKeyErr != nil {
+			return
 		}
-		v2TestSenderPriv, v2TestSenderPub, err = RsaCreateKey()
-		if err != nil {
-			t.Fatalf("RsaCreateKey(sender): %v", err)
-		}
+		v2TestSenderPriv, v2TestSenderPub, v2TestKeyErr = RsaCreateKey()
 	})
+	if v2TestKeyErr != nil {
+		t.Fatalf("v2TestKeys setup: %v", v2TestKeyErr)
+	}
 	return v2TestRecipientPriv, v2TestRecipientPub, v2TestSenderPriv, v2TestSenderPub
 }
 
@@ -659,4 +659,73 @@ func TestRsaAesHmac_V2EncryptMissingKeys(t *testing.T) {
 	if _, err := RsaAesPublicKeyEncryptAndSignHmac("test", recipPub, senderPub, ""); err == nil {
 		t.Error("encrypt with empty senderPrivateKey must fail")
 	}
+}
+
+// -----------------------------------------------------------------------
+// P3-D — AES-CFB negative tests: wrong passphrase, empty data, truncated
+// ciphertext. The happy-path round-trip is covered in TestAesRoundTrip_*
+// above; these verify that error paths behave correctly and don't panic.
+// -----------------------------------------------------------------------
+
+func TestAesCfb_WrongPassphrase(t *testing.T) {
+	key1 := "12345678901234567890123456789012" // 32 bytes
+	key2 := "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456" // different 32 bytes
+
+	enc, err := AesCfbEncrypt("secret payload", key1)
+	if err != nil {
+		t.Fatalf("AesCfbEncrypt: %v", err)
+	}
+
+	// Decrypt with wrong key must NOT return original plaintext.
+	// CFB is unauthenticated so it won't error — it returns garbage.
+	dec, err := AesCfbDecrypt(enc, key2)
+	if err != nil {
+		t.Fatalf("AesCfbDecrypt with wrong key should not error (unauthenticated): %v", err)
+	}
+	if dec == "secret payload" {
+		t.Error("decrypting with wrong passphrase must not return original plaintext")
+	}
+}
+
+func TestAesCfb_EmptyData(t *testing.T) {
+	key := "12345678901234567890123456789012"
+
+	// Encrypt empty string must fail (explicit guard in AesCfbEncrypt)
+	if _, err := AesCfbEncrypt("", key); err == nil {
+		t.Error("AesCfbEncrypt with empty data must return error")
+	}
+
+	// Decrypt empty string must fail (explicit guard in AesCfbDecrypt)
+	if _, err := AesCfbDecrypt("", key); err == nil {
+		t.Error("AesCfbDecrypt with empty data must return error")
+	}
+}
+
+func TestAesCfb_ShortPassphrase(t *testing.T) {
+	// Passphrase < 32 bytes must fail
+	if _, err := AesCfbEncrypt("test data", "short"); err == nil {
+		t.Error("AesCfbEncrypt with short passphrase must return error")
+	}
+	if _, err := AesCfbDecrypt("deadbeef", "short"); err == nil {
+		t.Error("AesCfbDecrypt with short passphrase must return error")
+	}
+}
+
+func TestAesCfb_TruncatedCiphertext(t *testing.T) {
+	key := "12345678901234567890123456789012"
+
+	enc, err := AesCfbEncrypt("hello world — CFB truncation test", key)
+	if err != nil {
+		t.Fatalf("AesCfbEncrypt: %v", err)
+	}
+
+	// Truncate to less than one AES block (32 hex chars = 16 bytes = aes.BlockSize).
+	// The IV alone is 16 bytes (32 hex chars); anything shorter means no IV can be
+	// extracted, which should either error or produce garbage — never panic.
+	truncated := enc[:20] // 10 bytes in hex — shorter than IV
+
+	// Must not panic. Whether it errors or returns garbage is implementation-defined
+	// for an unauthenticated cipher, but it must not crash.
+	_, decErr := AesCfbDecrypt(truncated, key)
+	_ = decErr // error is acceptable; panic is not
 }

@@ -256,19 +256,38 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 
 	// For non-addressable slice values (the typical value-type input case
 	// e.g. SliceDeleteElement([]int{1,2,3}, -1)), we need a settable Value
-	// before any reflect.Set / reflect.Value.Slice assignments below.
+	// before any reflect.Set / reflect.Value.Slice assignments below AND
+	// we must operate on a fresh backing array so the later Swapper call
+	// does not mutate the caller's backing storage.
 	//
-	// reflect.MakeSlice alone does NOT produce a settable Value -- the
-	// returned Value wraps a fresh slice but has no addressable backing,
-	// so calling .Set() on it still panics with
-	//   "reflect: reflect.Value.Set using unaddressable value".
+	// Two orthogonal problems to solve at once:
 	//
-	// The canonical trick is reflect.New(t).Elem(): allocate a *T (which
-	// is addressable), deref it, and the resulting T-Value is settable.
-	// We then copy the input's header into the new settable slot.
+	// 1. Panic avoidance (P0-13 / v1.7.10): reflect.Swapper and the later
+	//    v.Set(...) calls require a settable Value. A plain
+	//    reflect.ValueOf([]int{...}) is NOT settable, so we must wrap it
+	//    in reflect.New(t).Elem() which allocates an addressable *T and
+	//    returns the dereferenced, settable T.
+	//
+	// 2. Caller-mutation avoidance (CMN-C1 / v1.7.11): a slice is a header
+	//    (data-ptr + len + cap). reflect.Value.Set on a slice copies the
+	//    header only, not the backing array. If we Set(v) directly, our
+	//    settable wrapper shares the caller's backing pointer, and the
+	//    subsequent Swapper mutates the caller's memory -- silently
+	//    regressing the v1.7.8 contract.
+	//
+	// The fix is to allocate fresh backing via MakeSlice, copy the
+	// caller's elements into it, and THEN set the settable wrapper to
+	// point at the fresh backing (not the caller's):
 	if !v.CanSet() {
+		// Fresh backing array, same element type, same length.
+		n := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		reflect.Copy(n, v)
+		// Settable wrapper so later v.Set(...) calls do not panic.
+		// settable.Set(n) header-copies n's data pointer (which now
+		// points at the fresh backing), so Swapper below operates on
+		// our memory, not the caller's.
 		settable := reflect.New(v.Type()).Elem()
-		settable.Set(v)
+		settable.Set(n)
 		v = settable
 	}
 

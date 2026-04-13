@@ -260,3 +260,112 @@ func TestSliceDeleteElement_StructSlice(t *testing.T) {
 		}
 	}
 }
+
+// -----------------------------------------------------------------------
+// CMN-C1 / CMN-C2 regression tests — caller-backing mutation via named variables
+// -----------------------------------------------------------------------
+//
+// The v1.7.8 contract: SliceDeleteElement on a VALUE-form slice returns
+// a new slice with fresh backing and does NOT mutate the caller's slice.
+// v1.7.10 silently regressed this (reflect.New(t).Elem() + Set copies
+// only the header, so Swapper operated on caller memory).
+//
+// The prior test suite used inline literal arguments exclusively
+// (`SliceDeleteElement([]int{1,2,3}, 0)`), which made mutation
+// unobservable by construction. These tests pin the contract against a
+// NAMED local variable so a future regression is caught the moment it
+// lands.
+
+func TestSliceDeleteElement_ValueSlice_DoesNotMutateCaller_Int(t *testing.T) {
+	original := []int{10, 20, 30, 40}
+	snapshot := append([]int(nil), original...)
+
+	_ = SliceDeleteElement(original, 1)
+
+	if !reflect.DeepEqual(original, snapshot) {
+		t.Errorf("caller's backing array was mutated:\n  got:  %v\n  want: %v",
+			original, snapshot)
+	}
+}
+
+func TestSliceDeleteElement_ValueSlice_DoesNotMutateCaller_String(t *testing.T) {
+	original := []string{"alpha", "bravo", "charlie", "delta"}
+	snapshot := append([]string(nil), original...)
+
+	_ = SliceDeleteElement(original, 0)
+
+	if !reflect.DeepEqual(original, snapshot) {
+		t.Errorf("caller's backing array was mutated:\n  got:  %v\n  want: %v",
+			original, snapshot)
+	}
+}
+
+func TestSliceDeleteElement_ValueSlice_DoesNotMutateCaller_Struct(t *testing.T) {
+	type Item struct {
+		ID   int
+		Name string
+	}
+	original := []Item{
+		{ID: 1, Name: "a"},
+		{ID: 2, Name: "b"},
+		{ID: 3, Name: "c"},
+		{ID: 4, Name: "d"},
+	}
+	snapshot := append([]Item(nil), original...)
+
+	_ = SliceDeleteElement(original, 2)
+
+	if !reflect.DeepEqual(original, snapshot) {
+		t.Errorf("caller's backing array was mutated:\n  got:  %v\n  want: %v",
+			original, snapshot)
+	}
+}
+
+func TestSliceDeleteElement_ValueSlice_DoesNotMutateCaller_NegativeIndex(t *testing.T) {
+	// Negative index path — ensure MakeSlice branch fires on neg-idx too.
+	original := []int{100, 200, 300, 400, 500}
+	snapshot := append([]int(nil), original...)
+
+	_ = SliceDeleteElement(original, -2)
+
+	if !reflect.DeepEqual(original, snapshot) {
+		t.Errorf("caller's backing array was mutated on neg-idx path:\n  got:  %v\n  want: %v",
+			original, snapshot)
+	}
+}
+
+func TestSliceDeleteElement_ValueSlice_ResultBackingIsDisjoint(t *testing.T) {
+	// Stronger invariant: mutating the RESULT must not affect the caller.
+	original := []int{1, 2, 3, 4, 5}
+	snapshot := append([]int(nil), original...)
+
+	got := SliceDeleteElement(original, 0)
+	out := got.([]int)
+
+	// Stomp every element of the result.
+	for i := range out {
+		out[i] = -999
+	}
+
+	if !reflect.DeepEqual(original, snapshot) {
+		t.Errorf("stomping result mutated caller's backing array:\n  got:  %v\n  want: %v",
+			original, snapshot)
+	}
+}
+
+func TestSliceDeleteElement_PointerSlice_StillMutatesInPlace(t *testing.T) {
+	// Pointer-form callers deliberately expect in-place mutation — this
+	// is the documented contract from the godoc. The CMN-C1 fix must NOT
+	// break this path.
+	in := []int{1, 2, 3, 4}
+	_ = SliceDeleteElement(&in, 0)
+
+	if len(in) != 3 {
+		t.Errorf("pointer-form did not mutate caller in place: len(in)=%d want 3", len(in))
+	}
+	// Element at index 0 was swapped with last (4) then trimmed,
+	// so remaining multiset should be {2,3,4} (order not preserved).
+	if !intSetEqual(in, []int{2, 3, 4}) {
+		t.Errorf("pointer-form multiset wrong: got %v want {2,3,4}", in)
+	}
+}

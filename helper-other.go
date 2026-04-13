@@ -254,11 +254,22 @@ func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interf
 		return slice // return original input instead of nil to avoid silent unexpected nil
 	}
 
-	// for non-addressable slice values, work on a settable copy to avoid reflect.Set panic
+	// For non-addressable slice values (the typical value-type input case
+	// e.g. SliceDeleteElement([]int{1,2,3}, -1)), we need a settable Value
+	// before any reflect.Set / reflect.Value.Slice assignments below.
+	//
+	// reflect.MakeSlice alone does NOT produce a settable Value -- the
+	// returned Value wraps a fresh slice but has no addressable backing,
+	// so calling .Set() on it still panics with
+	//   "reflect: reflect.Value.Set using unaddressable value".
+	//
+	// The canonical trick is reflect.New(t).Elem(): allocate a *T (which
+	// is addressable), deref it, and the resulting T-Value is settable.
+	// We then copy the input's header into the new settable slot.
 	if !v.CanSet() {
-		tmp := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
-		reflect.Copy(tmp, v)
-		v = tmp
+		settable := reflect.New(v.Type()).Elem()
+		settable.Set(v)
+		v = settable
 	}
 
 	length := v.Len()

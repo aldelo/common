@@ -58,6 +58,20 @@ regression test in `helper-str-contract_test.go`.
 
 ### Fixed — error handling and safety
 
+- **P0-13** — `SliceDeleteElement`: fixed `reflect: reflect.Value.Set using
+  unaddressable value` panic on value-type slice inputs (the most common call
+  pattern, e.g. `SliceDeleteElement([]int{1,2,3}, -1)`). The "settable copy"
+  fallback introduced in `af0d217` used `reflect.MakeSlice`, which does NOT
+  produce an addressable `Value` — so the downstream `v.Set(v.Slice(...))` still
+  panicked. Replaced with the canonical `reflect.New(v.Type()).Elem()` trick
+  (allocate a `*T`, dereference to get a settable `T`-Value, copy the input
+  header into it). The documented negative-index contract (`-1` removes last,
+  `-2` removes 2nd-last, etc.) now actually works. Added 17 unit tests in the
+  new `helper-other_test.go` covering value slice / pointer slice / nil / empty /
+  single element / out-of-bounds positive+negative / struct slices — previously
+  `SliceDeleteElement` had **zero** tests, which is how the bug shipped.
+  Rule #10: observable contract is what the godoc promises, not what the buggy
+  implementation happened to do.
 - **P1-4** — `wrapper/xray`, `wrapper/cloudmap`, `wrapper/dynamodb`: added
   nil-guards on `xray.seg.Seg` field accesses (1322 sites combined). Prevents
   nil-deref panics when X-Ray is disabled via `AWS_XRAY_SDK_DISABLED=TRUE`.

@@ -14,6 +14,42 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ## [Unreleased]
 
+## [v1.7.10] — 2026-04-13
+
+Patch release. Single fix for a `SliceDeleteElement` panic that shipped in
+v1.7.0–v1.7.9 and was discovered after `v1.7.9` was already tagged on origin.
+Since published Git tags are immutable for downstream Go module consumers
+(the Go module proxy caches tag-to-commit hashes — moving a published tag
+causes `go.sum` checksum mismatches across every consumer), this fix is
+delivered as a new patch release rather than retagging v1.7.9.
+
+### Fixed — error handling and safety
+
+- **P0-13** — `SliceDeleteElement`: fixed `reflect: reflect.Value.Set using
+  unaddressable value` panic on value-type slice inputs (the most common call
+  pattern, e.g. `SliceDeleteElement([]int{1,2,3}, -1)`). The "settable copy"
+  fallback introduced in `af0d217` used `reflect.MakeSlice`, which does NOT
+  produce an addressable `Value` — so the downstream `v.Set(v.Slice(...))` still
+  panicked. Replaced with the canonical `reflect.New(v.Type()).Elem()` trick
+  (allocate a `*T`, dereference to get a settable `T`-Value, copy the input
+  header into it). The documented negative-index contract (`-1` removes last,
+  `-2` removes 2nd-last, etc.) now actually works. Added 17 unit tests in the
+  new `helper-other_test.go` covering value slice / pointer slice / nil / empty /
+  single element / out-of-bounds positive+negative / struct slices — previously
+  `SliceDeleteElement` had **zero** tests, which is how the bug shipped.
+  Rule #10: observable contract is what the godoc promises, not what the buggy
+  implementation happened to do.
+
+### Consumer impact
+
+- All 36+ downstream repos pinned at `v1.7.9` should bump to `v1.7.10`. The
+  fix is a strict bug fix (panic → correct return) with no API changes; bumping
+  is safe under workspace rule #10.
+- `connector` (the first consumer to bump) tracked the panic via its
+  `service/service_test.go::TestSliceDeleteFunc` test, which was temporarily
+  skipped pending this release. Once `connector/go.mod` is bumped to v1.7.10,
+  that skip can be removed.
+
 ## [v1.7.9] — 2026-04-11
 
 Release-readiness remediation pass. Primary themes: restoring observable
@@ -58,20 +94,6 @@ regression test in `helper-str-contract_test.go`.
 
 ### Fixed — error handling and safety
 
-- **P0-13** — `SliceDeleteElement`: fixed `reflect: reflect.Value.Set using
-  unaddressable value` panic on value-type slice inputs (the most common call
-  pattern, e.g. `SliceDeleteElement([]int{1,2,3}, -1)`). The "settable copy"
-  fallback introduced in `af0d217` used `reflect.MakeSlice`, which does NOT
-  produce an addressable `Value` — so the downstream `v.Set(v.Slice(...))` still
-  panicked. Replaced with the canonical `reflect.New(v.Type()).Elem()` trick
-  (allocate a `*T`, dereference to get a settable `T`-Value, copy the input
-  header into it). The documented negative-index contract (`-1` removes last,
-  `-2` removes 2nd-last, etc.) now actually works. Added 17 unit tests in the
-  new `helper-other_test.go` covering value slice / pointer slice / nil / empty /
-  single element / out-of-bounds positive+negative / struct slices — previously
-  `SliceDeleteElement` had **zero** tests, which is how the bug shipped.
-  Rule #10: observable contract is what the godoc promises, not what the buggy
-  implementation happened to do.
 - **P1-4** — `wrapper/xray`, `wrapper/cloudmap`, `wrapper/dynamodb`: added
   nil-guards on `xray.seg.Seg` field accesses (1322 sites combined). Prevents
   nil-deref panics when X-Ray is disabled via `AWS_XRAY_SDK_DISABLED=TRUE`.

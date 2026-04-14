@@ -219,6 +219,38 @@ func SliceSeekElement(slice []interface{}, filterFunc func(input interface{}, fi
 //	  positive / negative number out of bound = returns original slice unchanged
 //
 // if resultSlice is nil, then no slice remain
+//
+// CALLER CONTRACT — the return value is authoritative; do NOT reuse the input slice.
+//
+// For the VALUE-type input form (e.g. SliceDeleteElement(s, i) where s is a plain
+// []T, not *[]T), the returned slice points at a FRESH backing array that is
+// disjoint from the caller's `s`. The caller's `s` header is unchanged — it still
+// has its original length and still points at its original (now-stale) backing
+// array whose last element may have been the one "removed" (the algorithm
+// swap-with-last-then-trims, so the element at `s[len(s)-1]` is not necessarily
+// the value that was removed). Continuing to read from `s` after the call is a
+// bug: you will observe stale data, and from Go's perspective the slice looks
+// valid so the compiler cannot warn you.
+//
+// Idiomatic usage — ALWAYS reassign the return value back to the input variable:
+//
+//	s = util.SliceDeleteElement(s, i).([]T)     // value-type form
+//
+// For the POINTER input form (SliceDeleteElement(&s, i)), the function also
+// mutates `s` in place via reflect, so reading `s` after the call is safe and
+// will observe the trimmed result. Even in that case, reassigning the (identical)
+// return value is the recommended pattern for consistency — it keeps callers
+// correct if the input form is later refactored from *[]T to []T.
+//
+// Rationale (CMN-C1, v1.7.11): prior to the fresh-backing-array fix, the value
+// form of this helper left a stale element on the caller's backing storage at
+// the (old) `len-1` position. A caller that kept using `s` after the call could
+// see that stale element through an aliasing slice header. The current fix
+// eliminates the aliasing by allocating fresh backing, but that means the
+// caller's unchanged `s` header now refers to memory that the helper never
+// touched — which looks correct element-by-element but is one element too long
+// and still contains the "removed" element somewhere. The only safe pattern is
+// to discard `s` and use the returned slice.
 func SliceDeleteElement(slice interface{}, removalIndex int) (resultSlice interface{}) {
 	// protect against nil / invalid inputs before reflection
 	if slice == nil {

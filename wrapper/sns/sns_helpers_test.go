@@ -19,6 +19,9 @@ package sns
 import (
 	"strings"
 	"testing"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/sns"
 )
 
 // ---------------------------------------------------------------------------
@@ -289,6 +292,70 @@ func TestSmsLength(t *testing.T) {
 			}
 			if limit != tt.wantLimit {
 				t.Errorf("smsLength(%q) limit = %d, want %d", tt.name, limit, tt.wantLimit)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// sortedAttributeKeys — F4 pass-3 contrarian xray-metadata redaction
+// ---------------------------------------------------------------------------
+
+func TestSortedAttributeKeys(t *testing.T) {
+	tests := []struct {
+		name  string
+		input map[string]*sns.MessageAttributeValue
+		want  string
+	}{
+		{
+			name:  "nil map returns empty string",
+			input: nil,
+			want:  "",
+		},
+		{
+			name:  "empty map returns empty string",
+			input: map[string]*sns.MessageAttributeValue{},
+			want:  "",
+		},
+		{
+			name: "single key returns that key",
+			input: map[string]*sns.MessageAttributeValue{
+				"priority": {DataType: aws.String("String"), StringValue: aws.String("high")},
+			},
+			want: "priority",
+		},
+		{
+			name: "multiple keys returned in sorted order",
+			input: map[string]*sns.MessageAttributeValue{
+				"zeta":   {DataType: aws.String("String"), StringValue: aws.String("VALUE_ZETA_XYZ")},
+				"alpha":  {DataType: aws.String("String"), StringValue: aws.String("VALUE_ALPHA_XYZ")},
+				"middle": {DataType: aws.String("String"), StringValue: aws.String("VALUE_MIDDLE_XYZ")},
+			},
+			want: "alpha,middle,zeta",
+		},
+		{
+			name: "values are never exposed in output",
+			input: map[string]*sns.MessageAttributeValue{
+				"token": {DataType: aws.String("String"), StringValue: aws.String("SECRET_BEARER_abcdef123")},
+				"pii":   {DataType: aws.String("String"), StringValue: aws.String("ssn:123-45-6789")},
+			},
+			want: "pii,token",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sortedAttributeKeys(tt.input)
+			if got != tt.want {
+				t.Errorf("sortedAttributeKeys = %q, want %q", got, tt.want)
+			}
+			// Paranoid check — no attribute value should ever leak through.
+			for _, v := range tt.input {
+				if v != nil && v.StringValue != nil && *v.StringValue != "" &&
+					strings.Contains(got, *v.StringValue) {
+					t.Errorf("sortedAttributeKeys leaked value %q in output %q",
+						*v.StringValue, got)
+				}
 			}
 		})
 	}

@@ -44,6 +44,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1767,11 +1768,19 @@ func (s *SNS) Publish(topicArn string,
 
 		defer seg.Close()
 		defer func() {
+			// F4 (pass-3 contrarian, 2026-04-14): xray segment metadata is
+			// a PII-exposure surface. Publish may carry arbitrary payloads
+			// (including PII or credentials) and arbitrary attribute
+			// values. Record only length-plus-key-list so traces never
+			// contain raw message bodies or attribute values.
+			// Observable contract change per workspace rule #10 — prior
+			// consumers saw full message/attributes; now see length +
+			// sorted key list. No known alarm depends on metadata content.
 			_ = seg.SafeAddMetadata("SNS-Publish-TopicArn", topicArn)
 			_ = seg.SafeAddMetadata("SNS-Publish-TargetArn", targetArn)
-			_ = seg.SafeAddMetadata("SNS-Publish-Message", message)
+			_ = seg.SafeAddMetadata("SNS-Publish-Message-Length", len(message))
 			_ = seg.SafeAddMetadata("SNS-Publish-Subject", subject)
-			_ = seg.SafeAddMetadata("SNS-Publish-Attributes", attributes)
+			_ = seg.SafeAddMetadata("SNS-Publish-Attribute-Keys", sortedAttributeKeys(attributes))
 			_ = seg.SafeAddMetadata("SNS-Publish-Result-MessageID", messageId)
 
 			if err != nil {
@@ -1910,8 +1919,16 @@ func (s *SNS) SendSMS(phoneNumber string,
 
 		defer seg.Close()
 		defer func() {
+			// F5 (pass-3 contrarian, 2026-04-14): SMS bodies commonly
+			// carry OTP / MFA codes and other auth secrets that MUST
+			// NOT land in xray metadata. Record length only — never
+			// the content. Phone number is retained as the delivery
+			// destination (required for operational debugging); if
+			// downstream tooling needs stronger phone redaction it
+			// can be layered in the xray sanitizer. See finding F5
+			// for the full rationale.
 			_ = seg.SafeAddMetadata("SNS-SendSMS-Phone", phoneNumber)
-			_ = seg.SafeAddMetadata("SNS-SendSMS-Message", message)
+			_ = seg.SafeAddMetadata("SNS-SendSMS-Message-Length", len(message))
 			_ = seg.SafeAddMetadata("SNS-SendSMS-Result-MessageID", messageId)
 
 			if err != nil {
@@ -3064,4 +3081,26 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 	} else {
 		return nil
 	}
+}
+
+// sortedAttributeKeys returns the keys of an SNS message-attribute map
+// as a deterministic comma-separated string suitable for xray segment
+// metadata (F4 pass-3 contrarian redaction).
+//
+// Only keys are returned — attribute values are deliberately omitted
+// because consumers may pass PII, credentials, or routing tokens as
+// attribute values, none of which should land in trace storage. The
+// key list remains useful for operational debugging (verifying which
+// filter-policy attributes were sent) without the exposure surface of
+// the values. Empty or nil input returns the empty string.
+func sortedAttributeKeys(attributes map[string]*sns.MessageAttributeValue) string {
+	if len(attributes) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(attributes))
+	for k := range attributes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
 }

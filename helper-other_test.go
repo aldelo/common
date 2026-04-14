@@ -369,3 +369,147 @@ func TestSliceDeleteElement_PointerSlice_StillMutatesInPlace(t *testing.T) {
 		t.Errorf("pointer-form multiset wrong: got %v want {2,3,4}", in)
 	}
 }
+
+// -----------------------------------------------------------------------
+// Unicode / rune boundary coverage (C1-004)
+// -----------------------------------------------------------------------
+//
+// Close a gap in the pre-existing test matrix: none of the prior cases
+// exercised the helper with elements whose in-memory representation is
+// a multi-byte UTF-8 sequence (for []string) or a supplementary-plane
+// rune (for []rune). The reflect path in SliceDeleteElement operates at
+// the element level, not the byte level, so it *should* be indifferent
+// to the element's internal encoding — but "should" is not "proven".
+//
+// This test pins the element-level contract: for every boundary
+// position (0, middle, len-1), deleting a multi-byte element yields a
+// result whose remaining elements exactly match the expected multiset,
+// with no mis-slicing at byte boundaries and no rune corruption.
+//
+// Scope: []string (Go strings are already rune-opaque byte sequences,
+// so this catches any accidental byte-level handling in the helper)
+// and []rune (each element is a full int32 code point, including
+// supplementary-plane values above U+FFFF). []byte is intentionally
+// NOT covered here — it is semantically a byte buffer, not a Unicode
+// sequence, and the existing int/string/struct tests already prove
+// primitive-slice handling.
+
+// strSetEqual compares two []string as multisets — order does not matter.
+// SliceDeleteElement's swap-with-last algorithm does not preserve order.
+func strSetEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aa := append([]string(nil), a...)
+	bb := append([]string(nil), b...)
+	sort.Strings(aa)
+	sort.Strings(bb)
+	return reflect.DeepEqual(aa, bb)
+}
+
+// runeSetEqual compares two []rune as multisets — order does not matter.
+func runeSetEqual(a, b []rune) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aa := append([]rune(nil), a...)
+	bb := append([]rune(nil), b...)
+	sort.Slice(aa, func(i, j int) bool { return aa[i] < aa[j] })
+	sort.Slice(bb, func(i, j int) bool { return bb[i] < bb[j] })
+	return reflect.DeepEqual(aa, bb)
+}
+
+func TestSliceDeleteElement_UnicodeBoundary(t *testing.T) {
+	// 4-byte UTF-8 characters (supplementary-plane code points):
+	//   "🚀" U+1F680 ROCKET              — 4 bytes in UTF-8
+	//   "𝕏" U+1D54F MATH DOUBLE-STRUCK X — 4 bytes in UTF-8
+	//   "你" U+4F60  CJK                  — 3 bytes in UTF-8
+	//   "é" U+00E9  LATIN SMALL E ACUTE  — 2 bytes in UTF-8
+	// Mixed widths ensure any byte-level indexing bug would surface as a
+	// length mismatch or a corrupted string in the result.
+	original := []string{"🚀", "𝕏", "你", "é", "ascii"}
+
+	type tc struct {
+		name   string
+		idx    int
+		remain []string // expected remaining multiset
+	}
+	cases := []tc{
+		{"first", 0, []string{"𝕏", "你", "é", "ascii"}},
+		{"middle", 2, []string{"🚀", "𝕏", "é", "ascii"}},
+		{"last", len(original) - 1, []string{"🚀", "𝕏", "你", "é"}},
+		{"neg_one_last", -1, []string{"🚀", "𝕏", "你", "é"}},
+	}
+
+	for _, c := range cases {
+		t.Run("string_"+c.name, func(t *testing.T) {
+			// Fresh copy per sub-test so one deletion does not affect the next.
+			in := append([]string(nil), original...)
+			got := SliceDeleteElement(in, c.idx)
+			out, ok := got.([]string)
+			if !ok {
+				t.Fatalf("expected []string, got %T", got)
+			}
+			if len(out) != len(c.remain) {
+				t.Fatalf("length mismatch: got %d want %d (got=%v)", len(out), len(c.remain), out)
+			}
+			if !strSetEqual(out, c.remain) {
+				t.Errorf("multiset mismatch:\n  got:  %v\n  want: %v", out, c.remain)
+			}
+			// Defensive: verify every returned element is still a valid,
+			// non-truncated string by confirming it round-trips through []rune.
+			for i, s := range out {
+				rs := []rune(s)
+				if string(rs) != s {
+					t.Errorf("result[%d] failed string<->rune round trip: %q", i, s)
+				}
+			}
+		})
+	}
+
+	// []rune form: supplementary-plane code points. Each element is a
+	// single int32, so this test proves the helper treats rune slices
+	// element-wise (it should — it's a reflect.Slice path, not a byte path).
+	//
+	//   U+1F680 ROCKET              (0x1F680)
+	//   U+1D54F MATH DOUBLE-STRUCK X (0x1D54F)
+	//   U+4F60  你                   (0x4F60)
+	//   U+00E9  é                    (0x00E9)
+	//   U+0041  A                    (0x0041)
+	runeOriginal := []rune{0x1F680, 0x1D54F, 0x4F60, 0x00E9, 0x0041}
+
+	runeCases := []struct {
+		name   string
+		idx    int
+		remain []rune
+	}{
+		{"first", 0, []rune{0x1D54F, 0x4F60, 0x00E9, 0x0041}},
+		{"middle", 2, []rune{0x1F680, 0x1D54F, 0x00E9, 0x0041}},
+		{"last", len(runeOriginal) - 1, []rune{0x1F680, 0x1D54F, 0x4F60, 0x00E9}},
+		{"neg_one_last", -1, []rune{0x1F680, 0x1D54F, 0x4F60, 0x00E9}},
+	}
+
+	for _, c := range runeCases {
+		t.Run("rune_"+c.name, func(t *testing.T) {
+			in := append([]rune(nil), runeOriginal...)
+			got := SliceDeleteElement(in, c.idx)
+			out, ok := got.([]rune)
+			if !ok {
+				t.Fatalf("expected []rune, got %T", got)
+			}
+			if len(out) != len(c.remain) {
+				t.Fatalf("length mismatch: got %d want %d (got=%v)", len(out), len(c.remain), out)
+			}
+			if !runeSetEqual(out, c.remain) {
+				t.Errorf("multiset mismatch:\n  got:  %v\n  want: %v", out, c.remain)
+			}
+			// Every returned rune must still be a valid supplementary-plane
+			// code point — no truncation to BMP, no sign mangling.
+			for i, r := range out {
+				if r < 0 {
+					t.Errorf("result[%d] rune went negative: %d", i, r)
+				}
+			}
+		})
+	}
+}

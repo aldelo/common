@@ -1613,6 +1613,21 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 // EncryptWithDataKeyAes256 will encrypt plainText using cipherKey that was generated via GenerateDataKeyAes256()
 //
 // cipherKey = encrypted data key in hex (must use KMS CMK to decrypt such key)
+//
+// Plaintext-handling caveat (F6 pass-3 contrarian, 2026-04-14):
+// This helper converts the KMS plaintext data key to a Go string via
+// string(dataKeyOutput.Plaintext) to pass it to crypto.AesGcmEncrypt.
+// The string() conversion copies the bytes onto the Go heap as an
+// immutable string header. The subsequent dataKeyOutput.SetPlaintext(
+// []byte{}) call zeros only the AWS SDK's backing slice; it CANNOT
+// reach the heap string copy, which lives until the Go garbage
+// collector runs and reclaims the memory (after which the bytes may
+// still sit on a freed page until overwritten). Treat this as
+// best-effort scrubbing — the plaintext data key is exposed in
+// process memory for the window between the string() conversion and
+// GC, and heap scanners or core dumps during that window will see it.
+// Callers that need stronger guarantees must use a []byte-based
+// AEAD API that never converts to string (not currently exposed).
 func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (cipherText string, err error) {
 	if k == nil {
 		return "", errors.New("KMS receiver is nil")
@@ -1700,9 +1715,16 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 	}
 
 	// perform encryption action using decrypted plaintext data key
+	//
+	// F6 caveat: string(dataKeyOutput.Plaintext) copies the data key
+	// bytes onto the Go heap as an immutable string. The SetPlaintext
+	// call below zeros only the AWS SDK's backing slice — the heap
+	// copy lives until GC. See function godoc for the full caveat.
 	buf, e := crypto.AesGcmEncrypt(plainText, string(dataKeyOutput.Plaintext))
 
-	// clean up data key from memory immediately
+	// best-effort scrub: zero the SDK-owned slice. Does NOT reach the
+	// string heap copy created on the preceding line — that copy is
+	// immutable and lives until GC.
 	dataKeyOutput.SetPlaintext([]byte{})
 	dataKeyOutput = nil
 
@@ -1721,6 +1743,14 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 // DecryptWithDataKeyAes256 will decrypt cipherText using cipherKey that was generated via GenerateDataKeyAes256()
 //
 // cipherKey = encrypted data key in hex (must use KMS CMK to decrypt such key)
+//
+// Plaintext-handling caveat (F6 pass-3 contrarian, 2026-04-14):
+// Same caveat as EncryptWithDataKeyAes256 — the string() conversion
+// of the KMS plaintext data key creates an immutable heap copy that
+// the subsequent SetPlaintext([]byte{}) call cannot zero. Treat the
+// data key as exposed in process memory from the string() call
+// until GC. See EncryptWithDataKeyAes256 godoc for the full
+// discussion.
 func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (plainText string, err error) {
 	if k == nil {
 		return "", errors.New("KMS receiver is nil")
@@ -1808,9 +1838,16 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	}
 
 	// perform decryption action using decrypted plaintext data key
+	//
+	// F6 caveat: string(dataKeyOutput.Plaintext) copies the data key
+	// bytes onto the Go heap as an immutable string. The SetPlaintext
+	// call below zeros only the AWS SDK's backing slice — the heap
+	// copy lives until GC. See function godoc for the full caveat.
 	buf, e := crypto.AesGcmDecrypt(cipherText, string(dataKeyOutput.Plaintext))
 
-	// clean up data key from memory immediately
+	// best-effort scrub: zero the SDK-owned slice. Does NOT reach the
+	// string heap copy created on the preceding line — that copy is
+	// immutable and lives until GC.
 	dataKeyOutput.SetPlaintext([]byte{})
 	dataKeyOutput = nil
 

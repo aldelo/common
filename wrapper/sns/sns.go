@@ -280,23 +280,38 @@ func validateE164Phone(phone string) error {
 // last-4-subscriber. Last-4 is still sufficient for correlating "did
 // this device get the SMS?" during an incident.
 //
-// Edge cases: inputs shorter than 7 characters (which would not
-// validate as E.164 anyway — the mask needs "+X" + middle + "NNNN") are
-// returned verbatim. Anything without a "+" prefix is also returned
-// verbatim since it cannot be interpreted as E.164 in the first place.
-// A 7-char input leaves exactly one digit masked ("+1*3456"), which is
-// the minimum useful output.
+// Edge cases: inputs shorter than 7 runes (which would not validate as
+// E.164 anyway — the mask needs "+X" + middle + "NNNN") are returned
+// verbatim. Anything without a "+" prefix is also returned verbatim
+// since it cannot be interpreted as E.164 in the first place. A 7-rune
+// input leaves exactly one rune masked ("+1*3456"), which is the
+// minimum useful output.
+//
+// SP-010 pass-5 A1-F4 (2026-04-15): the helper walks the input as
+// runes, not bytes. The prior byte-slice form (phone[:2],
+// phone[len(phone)-4:]) was incidentally correct only because valid
+// E.164 is ASCII. maskPhoneForXray is called from deferred xray-emit
+// closures which fire regardless of whether validateE164Phone accepted
+// or rejected the input, so a non-ASCII string CAN reach the helper in
+// practice. Byte-slicing such an input would split a rune mid-codepoint
+// and emit invalid UTF-8 bytes into xray metadata, which downstream
+// xray sanitizers may escape as U+FFFD or reject outright. Walking as
+// runes eliminates the class at the cost of one []rune allocation per
+// call — the helper is not on a measured hot path, so the allocation
+// is immaterial.
 func maskPhoneForXray(phone string) string {
 	// E.164 is always "+<country><subscriber>"; keep the leading "+"
-	// plus the country code's first digit (head = 2 chars) and the
-	// final 4 subscriber digits (tail = 4 chars), replace the rest
+	// plus the country code's first digit (head = 2 runes) and the
+	// final 4 subscriber digits (tail = 4 runes), replace the rest
 	// with asterisks. Length threshold 7 = len(head) + len(tail) + 1.
-	if len(phone) < 7 || phone[0] != '+' {
+	runes := []rune(phone)
+	if len(runes) < 7 || runes[0] != '+' {
 		return phone
 	}
-	head := phone[:2]
-	tail := phone[len(phone)-4:]
-	return head + strings.Repeat("*", len(phone)-len(head)-len(tail)) + tail
+	const headLen, tailLen = 2, 4
+	head := string(runes[:headLen])
+	tail := string(runes[len(runes)-tailLen:])
+	return head + strings.Repeat("*", len(runes)-headLen-tailLen) + tail
 }
 
 // validateSenderID enforces AWS rules: 3-11 alphanumeric chars, at least one letter.

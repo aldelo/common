@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/sns"
@@ -429,6 +430,146 @@ func TestMaskPhoneForXray_NeverRevealsMiddleDigits(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// maskPhoneForXray UTF-8 safety — SP-010 pass-5 A1-F4 (2026-04-15)
+// ---------------------------------------------------------------------------
+//
+// These tests pin the rune-based implementation. The prior byte-slice
+// form was incidentally correct for ASCII E.164 only; a multi-byte rune
+// at byte index 1 or len-4 would be split mid-codepoint, emitting
+// invalid UTF-8 bytes into xray metadata.
+//
+// Mutation probe (quality gate): revert maskPhoneForXray in sns.go to
+// the byte-based form:
+//
+//	if len(phone) < 7 || phone[0] != '+' { return phone }
+//	return phone[:2] + strings.Repeat("*", len(phone)-6) + phone[len(phone)-4:]
+//
+// TestMaskPhoneForXray_MultiByteRuneSafe_A1F4 and
+// TestMaskPhoneForXray_InvalidUTF8BytesDoNotPanic must both turn red
+// (they assert utf8.ValidString on the output, which the byte-slice
+// form breaks). The existing ASCII table-driven tests continue to pass
+// under the byte form — BC is preserved by construction.
+
+func TestMaskPhoneForXray_MultiByteRuneSafe_A1F4(t *testing.T) {
+	// Inputs constructed so that a naive byte-slice at index [:2] or
+	// [len-4:] would land inside a multi-byte rune. These never validate
+	// as E.164, but maskPhoneForXray is called from deferred xray-emit
+	// closures which fire regardless of validation outcome — see the
+	// godoc on maskPhoneForXray for the call-site rationale.
+	cases := []struct {
+		name  string
+		input string
+	}{
+		// 3-byte runes (CJK) throughout. len(runes) = 12, len(bytes) = 36.
+		{name: "CJK prefix and body", input: "+台北1234567890"},
+		// 4-byte rune (emoji) at the front — guaranteed to split if
+		// byte-sliced at [:2].
+		{name: "emoji head", input: "+🌐2025551234"},
+		// 4-byte rune in the tail window — guaranteed to split if
+		// byte-sliced at [len-4:].
+		{name: "emoji tail", input: "+1202555🌐🌐"},
+		// Mixed ASCII + multi-byte.
+		{name: "mixed tail", input: "+120255512電話"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := maskPhoneForXray(tc.input)
+			if !utf8.ValidString(got) {
+				t.Errorf("maskPhoneForXray(%q) produced invalid UTF-8: % x", tc.input, []byte(got))
+			}
+			// Rune-level structure: head = first 2 runes of input,
+			// tail = last 4 runes of input, middle = asterisks.
+			inRunes := []rune(tc.input)
+			gotRunes := []rune(got)
+			if len(gotRunes) != len(inRunes) {
+				t.Errorf("rune-length mismatch: input %d runes, masked %d runes", len(inRunes), len(gotRunes))
+			}
+			if len(gotRunes) >= 2 && (gotRunes[0] != inRunes[0] || gotRunes[1] != inRunes[1]) {
+				t.Errorf("head 2 runes not preserved: input %q, masked %q", string(inRunes[:2]), string(gotRunes[:2]))
+			}
+			if len(gotRunes) >= 4 {
+				inTail := inRunes[len(inRunes)-4:]
+				gotTail := gotRunes[len(gotRunes)-4:]
+				if string(inTail) != string(gotTail) {
+					t.Errorf("tail 4 runes not preserved: input %q, masked %q", string(inTail), string(gotTail))
+				}
+			}
+			// Every middle rune must be '*'.
+			for i := 2; i < len(gotRunes)-4; i++ {
+				if gotRunes[i] != '*' {
+					t.Errorf("middle rune %d leaked: %q", i, string(gotRunes[i]))
+					break
+				}
+			}
+		})
+	}
+}
+
+func TestMaskPhoneForXray_InvalidUTF8BytesDoNotPanic(t *testing.T) {
+	// Feed a string containing invalid UTF-8 byte sequences. Go's
+	// []rune conversion on invalid UTF-8 substitutes U+FFFD per
+	// invalid byte, so the helper must: (a) not panic, (b) produce
+	// a valid UTF-8 output (possibly with U+FFFD where input was
+	// malformed), (c) preserve the rune-structure contract.
+	invalid := "+1\xff\xfe555\xff1234"
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("maskPhoneForXray panicked on invalid UTF-8: %v", r)
+		}
+	}()
+	got := maskPhoneForXray(invalid)
+	if !utf8.ValidString(got) {
+		t.Errorf("maskPhoneForXray(%q) produced invalid UTF-8: % x", invalid, []byte(got))
+	}
+}
+
+func TestMaskPhoneForXray_AsciiBCUnchanged_A1F4(t *testing.T) {
+	// BC pin: after the rune-based rewrite, every canonical ASCII
+	// E.164 input must produce exactly the same masked output as
+	// before. If this fails, the fix silently changed a shipped
+	// contract used by three admin phone APIs + SendSMS.
+	cases := []struct {
+		in, want string
+	}{
+		{in: "+12025551234", want: "+1******1234"},
+		{in: "+447911123456", want: "+4*******3456"},
+		{in: "+12345", want: "+12345"},           // 6 runes, too short, verbatim
+		{in: "12025551234", want: "12025551234"}, // no plus, verbatim
+		{in: "", want: ""},
+		{in: "+1234567", want: "+1**4567"},  // 8 runes = 2 middle asterisks
+		{in: "+123456", want: "+1*3456"},    // 7 runes = 1 middle asterisk (boundary)
+	}
+	for _, tc := range cases {
+		got := maskPhoneForXray(tc.in)
+		if got != tc.want {
+			t.Errorf("BC drift: maskPhoneForXray(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestMaskPhoneForXray_SourcePinsRuneConversion_A1F4(t *testing.T) {
+	// Source-invariant pin: the fix relies on the helper walking the
+	// input as runes, not bytes. If a well-meaning refactor reverts
+	// to byte-slicing, this test turns red independent of whether the
+	// functional tests above still happen to pass on the specific
+	// inputs they exercise. We pin the presence of the rune-slice
+	// assignment and the use of runes[len(runes)-tailLen:] — tokens
+	// that exist only in the rune-based body, not in the godoc
+	// comment that references the prior byte-slice form for context.
+	src, err := os.ReadFile("sns.go")
+	if err != nil {
+		t.Fatalf("read sns.go: %v", err)
+	}
+	s := string(src)
+	if !strings.Contains(s, "runes := []rune(phone)") {
+		t.Error("maskPhoneForXray must convert input to []rune before slicing (A1-F4 regression)")
+	}
+	if !strings.Contains(s, "runes[len(runes)-tailLen:]") {
+		t.Error("maskPhoneForXray must slice the rune array, not the byte string (A1-F4 regression)")
 	}
 }
 

@@ -52,6 +52,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	util "github.com/aldelo/common"
@@ -120,7 +121,23 @@ type KMS struct {
 	sess *session.Session
 
 	// store kms client object
-	kmsClient *kms.KMS
+	//
+	// SP-008 P1-COMMON-KMS-01 (2026-04-15): published via atomic.Pointer
+	// so that readers can load the current client lock-free on the hot
+	// path. Writers (setSessionAndClient / Disconnect) still take k.mu to
+	// keep `sess` publication strictly ordered with the client swap, but
+	// every reader that only needs the client now does a single acquire
+	// Load instead of an RLock/RUnlock pair. Migrating the field into
+	// the type system also prevents a future refactor from silently
+	// reintroducing a torn-read hazard by adding a new method that reads
+	// `k.kmsClient` unlocked — the compiler forces every access to go
+	// through Load/Store, so the invariant is no longer "remember to
+	// take the lock" but "the field literally can't be read any other
+	// way". Torn reads were benign on amd64 but theoretically observable
+	// on arm64 under the pre-fix plain-pointer scheme; the go memory
+	// model does not guarantee pointer-write atomicity without explicit
+	// synchronization.
+	kmsClient atomic.Pointer[kms.KMS]
 
 	_parentSegment *xray.XRayParentSegment
 
@@ -128,18 +145,28 @@ type KMS struct {
 }
 
 // internal helpers for safe access
+//
+// SP-008 P1-COMMON-KMS-01 (2026-04-15): setSessionAndClient keeps k.mu
+// held over BOTH sess and kmsClient mutation so a concurrent reader that
+// takes a multi-field snapshot (client + parentSeg + key name under one
+// RLock) cannot observe a half-applied reconfigure. The atomic.Store
+// happens inside the lock — this is still strictly faster than the old
+// scheme for pure readers (they no longer need to enter the lock at
+// all), and safer for multi-field readers (single happens-before edge).
 func (k *KMS) setSessionAndClient(sess *session.Session, cli *kms.KMS) {
 	k.mu.Lock()
 	k.sess = sess
-	k.kmsClient = cli
+	k.kmsClient.Store(cli)
 	k.mu.Unlock()
 }
 
+// getClient returns the current KMS client published by the most recent
+// setSessionAndClient (i.e. by Connect or Disconnect). It is lock-free —
+// the atomic.Pointer.Load is an acquire-load that pairs with the
+// release-store inside setSessionAndClient, giving every reader a
+// well-defined happens-before on the pointer's publication.
 func (k *KMS) getClient() (*kms.KMS, error) {
-	k.mu.RLock()
-	cli := k.kmsClient
-	k.mu.RUnlock()
-
+	cli := k.kmsClient.Load()
 	if cli == nil {
 		return nil, errors.New("KMS Client is Required")
 	}
@@ -322,8 +349,16 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 	// between getter calls could surface stale client + new key name
 	// (or vice versa). The xray defer closure now reads the captured
 	// `aesKeyName` local instead of calling k.getAesKeyName() again.
+	//
+	// SP-008 P1-COMMON-KMS-01 (2026-04-15): kmsClient is now lock-free
+	// via atomic.Pointer, but the snapshot of (cli, aesKeyName,
+	// parentSeg) still needs the RLock to be cross-field consistent
+	// against a concurrent reconfigure. The Store inside
+	// setSessionAndClient happens under k.mu, so taking the RLock here
+	// gives us a release/acquire pair that pins all three fields to the
+	// same publication generation.
 	k.mu.RLock()
-	cli := k.kmsClient
+	cli := k.kmsClient.Load()
 	aesKeyName := k.AesKmsKeyName
 	parentSeg := k._parentSegment
 	k.mu.RUnlock()
@@ -499,8 +534,12 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 	// replaces 3 independent getter RLock pairs and closes the torn-read
 	// hazard where a mid-call config update could surface stale client +
 	// new key name (or vice versa). See EncryptViaCmkAes256 for rationale.
+	// SP-008 P1-COMMON-KMS-01 (2026-04-15): kmsClient loaded lock-free via
+	// atomic.Pointer; the RLock still pins (aesKeyName, parentSeg) to the
+	// same publication generation as the client (writer stores under
+	// k.mu, so RLock + Load observes a consistent snapshot).
 	k.mu.RLock()
-	cli := k.kmsClient
+	cli := k.kmsClient.Load()
 	aesKeyName := k.AesKmsKeyName
 	parentSeg := k._parentSegment
 	k.mu.RUnlock()
@@ -967,8 +1006,12 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 	// replaces 3 independent getter RLock pairs and closes the torn-read
 	// hazard where a mid-call config update could surface stale client +
 	// new key name (or vice versa). See EncryptViaCmkAes256 for rationale.
+	// SP-008 P1-COMMON-KMS-01 (2026-04-15): kmsClient loaded lock-free via
+	// atomic.Pointer; the RLock still pins (rsaKeyName, parentSeg) to the
+	// same publication generation as the client (writer stores under
+	// k.mu, so RLock + Load observes a consistent snapshot).
 	k.mu.RLock()
-	cli := k.kmsClient
+	cli := k.kmsClient.Load()
 	rsaKeyName := k.RsaKmsKeyName
 	parentSeg := k._parentSegment
 	k.mu.RUnlock()
@@ -1201,8 +1244,12 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	// replaces 3 independent getter RLock pairs and closes the torn-read
 	// hazard where a mid-call config update could surface stale client +
 	// new key name (or vice versa). See EncryptViaCmkAes256 for rationale.
+	// SP-008 P1-COMMON-KMS-01 (2026-04-15): kmsClient loaded lock-free via
+	// atomic.Pointer; the RLock still pins (rsaKeyName, parentSeg) to the
+	// same publication generation as the client (writer stores under
+	// k.mu, so RLock + Load observes a consistent snapshot).
 	k.mu.RLock()
-	cli := k.kmsClient
+	cli := k.kmsClient.Load()
 	rsaKeyName := k.RsaKmsKeyName
 	parentSeg := k._parentSegment
 	k.mu.RUnlock()

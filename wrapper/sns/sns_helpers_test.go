@@ -683,6 +683,78 @@ func TestEnsureSNSCtx_NilSegCtxWithCallerTimeout_FallsBackToBackground(t *testin
 	}
 }
 
+// SP-010 pass-5 A1-F5 (2026-04-15) — Gap 3.2.
+//
+// The agent-1 P3 finding specified the exact arguments
+// `ensureSNSCtx(nil, false, []time.Duration{50*time.Millisecond})` as
+// the reachability probe for the branch-1 nil-segCtx defensive guard.
+// TestEnsureSNSCtx_NilSegCtxWithCallerTimeout_FallsBackToBackground
+// covers the same guard via (segCtxSet=true, segCtx=nil) — same branch,
+// same guard line, but a different flag permutation. This test adds
+// the letter of the finding (segCtxSet=false) so the guard is exercised
+// under BOTH permutations that can legally reach it: a future caller
+// that never sets the xray-segment flag AND passes nil (the flag is
+// correctly unset, segCtx happens to be nil because of a caller-side
+// construction bug) would otherwise be untested.
+//
+// Mutation probe (quality gate): remove the `if parent == nil` fallback
+// lines 111-113 in sns.go:
+//
+//	if len(timeOutDuration) > 0 {
+//	    return context.WithTimeout(segCtx, timeOutDuration[0])
+//	}
+//
+// Both TestEnsureSNSCtx_NilSegCtx* tests must then panic with
+// "nil Context" because context.WithTimeout(nil, ...) does not tolerate
+// a nil parent. The panic surfaces as a test failure via the defer
+// recover() block. Restore the guard, re-run — both tests green. This
+// confirms the regression guards exercise the causal guard, not some
+// unrelated postcondition.
+
+func TestEnsureSNSCtx_NilSegCtxFalse_WithCallerTimeout_A1F5(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("ensureSNSCtx(nil, false, [50ms]) panicked: %v — nil-segCtx guard must fall back to Background (A1-F5 regression)", r)
+		}
+	}()
+
+	got, cancel := ensureSNSCtx(nil, false, []time.Duration{50 * time.Millisecond})
+	defer cancel()
+
+	deadline, ok := got.Deadline()
+	if !ok {
+		t.Fatal("branch-1 with nil segCtx + caller timeout must still return a ctx with deadline")
+	}
+	until := time.Until(deadline)
+	if until <= 0 || until > 100*time.Millisecond {
+		t.Errorf("caller timeout 50ms expected, got %v", until)
+	}
+}
+
+func TestEnsureSNSCtx_NilGuard_SourcePin_A1F5(t *testing.T) {
+	// Source-invariant pin: branch 1 of ensureSNSCtx MUST contain a
+	// nil-segCtx fallback to context.Background so a future refactor
+	// that 'trusts the caller' and removes the guard is caught at
+	// test-time, not at the first panic under the hypothetical caller
+	// that finding A1-F5 documents.
+	src, err := os.ReadFile("sns.go")
+	if err != nil {
+		t.Fatalf("read sns.go: %v", err)
+	}
+	s := string(src)
+	// The guard tokens are specific to this function body — they do
+	// not appear in the godoc comment block.
+	if !strings.Contains(s, "parent := segCtx") {
+		t.Error("ensureSNSCtx branch-1 must alias segCtx to a local parent variable before nil-check (A1-F5 regression)")
+	}
+	if !strings.Contains(s, "if parent == nil") {
+		t.Error("ensureSNSCtx branch-1 must guard nil parent before context.WithTimeout (A1-F5 regression)")
+	}
+	if !strings.Contains(s, "parent = context.Background()") {
+		t.Error("ensureSNSCtx branch-1 must fall back to context.Background when segCtx is nil (A1-F5 regression)")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // SendSMS xray phone PII mask — SP-010 pass-5 A1-F3 (2026-04-15)
 // ---------------------------------------------------------------------------

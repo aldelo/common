@@ -14,6 +14,123 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ## [Unreleased]
 
+## [v1.8.0] — 2026-04-15
+
+Minor release. Primary themes: **coordinated `go 1.26.2` baseline bump**
+(the `go` directive in `go.mod` moves from `1.24.1` → `1.26.2` so the
+security toolchain pin from v1.7.9 is now also the declared language
+level); hardening of observability helpers in `wrapper/xray`, `wrapper/kms`,
+and `wrapper/sns` against nil / torn-read / hung-endpoint failure modes;
+and changelog-level callouts for the SNS F4/F5 xray metadata-key rename
+shipped in v1.7.9 that external downstream observability tooling may still
+be matching on.
+
+This is a **coordinated-bump release** — per workspace rule #10, the `go`
+directive move is not silent: all 38 workspace consumer repos are expected
+to bump their own `go` directive to `1.26.2` and their `common` pin to
+`v1.8.0` in the same wave. No observable helper contract in this release
+has changed from `v1.7.10`.
+
+### Changed — language baseline (coordinated bump)
+
+- **GOMOD-F1** — `go` directive in `common/go.mod` moved from `1.24.1` to
+  `1.26.2`. The `toolchain` directive (pinned to `go1.26.2` in v1.7.9 to
+  pick up the `GO-2026-4865` `html/template` fix) is now joined by the
+  matching `go` directive, so consumers no longer get the "toolchain
+  newer than go directive" mismatch. Every downstream repo that pins
+  `common` must bump to `go 1.26.2` in the same wave. Existing
+  `github.com/aldelo/connector` is the reference consumer for the sweep
+  pattern.
+
+### Added — defensive timeout defaults (SP-008 P2-CMN-2 / P2-CMN-3)
+
+- **P2-CMN-2** — `wrapper/kms/kms.go`: all `Encrypt*` / `Decrypt*` /
+  `ReEncrypt*` / `GetRSAPublicKey` / `Sign*` / `Verify*` SDK call sites
+  now funnel through a new internal `ensureKMSCtx(segCtx)` helper that
+  applies a **default 30-second deadline** when the xray-derived ctx is
+  nil and the caller passed no deadline of its own. Previously a hung
+  AWS KMS endpoint could block the caller indefinitely when xray was
+  disabled. The helper preserves any existing deadline verbatim — only
+  the "no deadline at all" case is defaulted.
+- **P2-CMN-3** — `wrapper/sns/sns.go`: `Publish` / `SendSMS` now use the
+  matching `ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)` helper.
+  When `timeOutDuration` is empty AND the xray-derived ctx is unset,
+  a 30-second default deadline is applied. Existing callers that pass
+  an explicit `timeOutDuration` see **zero** behavioral change.
+
+### Changed — nil / torn-read hardening (SP-008 P1, P3-CMN-3)
+
+- **P1 KMS godoc (P1 fix-up from deep-review-2026-04-15)** — `EncryptViaCmkAes256`
+  and surrounding KMS methods now accurately describe the AWS SDK
+  pointer-reassignment semantics (the xray segment ctx *may* be replaced
+  by the SDK during retries, so callers must not assume the ctx they
+  passed is the one the deferred closure observes). The previous godoc
+  described an older pre-retry internal pattern that no longer holds.
+- **P3-CMN-3** — `wrapper/kms/kms.go`: the four hot-path methods
+  `EncryptViaCmkAes256`, `DecryptViaCmkAes256`, `EncryptViaCmkRsa2048`,
+  and `DecryptViaCmkRsa2048` now take a **single `RLock` snapshot** of
+  `kmsClient` / `AesKmsKeyName` (or `RsaKmsKeyName`) / `_parentSegment`
+  at function entry instead of 3 independent getter `RLock` pairs. This
+  closes a torn-read hazard where a concurrent `SetKmsClient(...)`
+  between getter calls could surface a new client paired with an old
+  key name (or vice versa). The xray defer closure now references the
+  captured local key-name, so metadata annotations always reflect the
+  value actually used for the KMS call. Inline `cli == nil` check
+  replaces `k.getClient()`'s error-returning form — the error message
+  normalizes to `"KMS CMK Failed: KMS Client is Required"` to match the
+  existing `"Required"` validation wording. No observable contract
+  change from v1.7.10.
+
+### Fixed — minor style (SP-008 P3-CMN-2)
+
+- **P3-CMN-2** — `wrapper/sns/sns.go`: two `len([]byte(s))` idioms
+  (lines 1818 and 2732 in v1.7.10 addressing) replaced with plain
+  `len(message)`. The Go compiler already optimizes `len([]byte(s))`
+  to zero allocations since Go 1.5, so this is **pure readability**
+  with no behavioral or performance change.
+
+### Observable-contract migration notice (SP-008 P2-CMN-1)
+
+**External xray observability tooling outside the 38-repo workspace may
+match on SNS Publish/SendSMS metadata keys.** v1.7.9 renamed these keys
+(originally to stop leaking PII through xray segment dumps):
+
+| v1.7.8 key (removed in v1.7.9) | v1.7.9+ key |
+|---|---|
+| `SNS-Publish-Message` | `SNS-Publish-Message-Length` |
+| `SNS-Publish-Attributes` | `SNS-Publish-Attribute-Keys` |
+| `SNS-SendSMS-Message` | `SNS-SendSMS-Message-Length` |
+
+The **values** also changed: the old `*-Message` keys emitted the full
+payload; the new `*-Message-Length` keys emit the byte length, and the
+new `*-Attribute-Keys` key emits a sorted, comma-joined list of
+attribute names (never values). Any downstream xray dashboard, alarm,
+or log query matching on the old keys must migrate before bumping past
+`v1.7.8`. Cross-repo grep across the 38-workspace-repo set returned
+zero matches, so this notice is primarily for external operators whose
+repos are not visible from the workspace.
+
+### Fixed — cosmetic (SP-008 P3-CMN-1)
+
+- **P3-CMN-1** — commit `6fc1625` v1.7.10 subject line said
+  `SliceElementAtIndex`; the test and fix both target
+  `SliceDeleteElement`. The commit body is correct. Noted here per rule
+  #10 ("do not amend pushed commits") — no code change, changelog record
+  only.
+
+### Consumer impact
+
+- Every downstream repo MUST bump **both** the `common` pin
+  (`v1.7.10` → `v1.8.0`) **AND** the `go` directive (`1.24.1` → `1.26.2`)
+  in the same commit. Bumping only one produces a build-tree diagnostic
+  for half the workspace. The coordinated sweep wave for the 38-workspace
+  repos is tracked in
+  `_src/docs/plans/2026-04-15__pass3-f4f7-pushed__checkpoint.md`.
+- No helper observable contract changed. All fixes are nil-guard /
+  timeout / readability / documentation / internal-locking. The release
+  is bumped to **minor** (not patch) solely because the `go` directive
+  move is a coordinated, caller-observable change.
+
 ## [v1.7.10] — 2026-04-13
 
 Patch release. Single fix for a `SliceDeleteElement` panic that shipped in

@@ -68,6 +68,55 @@ import (
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
 
+// defaultSNSCallTimeout bounds any single SNS SDK call that would
+// otherwise have no deadline.
+//
+// SP-008 P2-CMN-3 (2026-04-15): Publish and SendSMS previously fell
+// into `client.Publish(input)` when the caller supplied no
+// timeOutDuration and xray was disabled. That path uses
+// context.Background() internally, so a hung AWS endpoint could block
+// the caller indefinitely. 30s matches the KMS default (see
+// wrapper/kms/kms.go defaultKMSCallTimeout): long enough for any
+// legitimate SNS publish to complete (real-world P99 is <2s) and
+// short enough to fail fast when the endpoint is unreachable.
+const defaultSNSCallTimeout = 30 * time.Second
+
+// ensureSNSCtx normalizes the (segCtx, segCtxSet, timeOutDuration)
+// trilemma into a single bounded context. Precedence:
+//  1. If timeOutDuration is set, the caller-supplied timeout wins
+//     (context is derived from segCtx so xray parents stay attached).
+//  2. Else if segCtxSet (xray active), the xray segment ctx is
+//     returned as-is with a no-op cancel.
+//  3. Else a fresh context.Background() is wrapped in
+//     WithTimeout(defaultSNSCallTimeout) so unsupervised calls cannot
+//     block indefinitely on a hung AWS endpoint.
+//
+// Callers MUST invoke the returned cancel before returning from the
+// enclosing method (use defer or an explicit call after the SDK
+// invocation). The no-op cancel in case (2) keeps call-site shape
+// uniform.
+func ensureSNSCtx(segCtx context.Context, segCtxSet bool, timeOutDuration []time.Duration) (context.Context, context.CancelFunc) {
+	// SP-008 re-eval follow-up (2026-04-15): defensive nil-segCtx guard
+	// for case 1. Every current caller passes a non-nil segCtx derived
+	// from ensureSegCtx/segment, but the signature accepts plain
+	// context.Context, so "trust the caller" is fragile: a future caller
+	// that constructs a partial SNS wrapper state with no xray parent
+	// could legally pass nil + a non-empty timeOutDuration, at which
+	// point context.WithTimeout(nil, ...) panics. Fall back to Background
+	// so the deadline still applies and the call-site shape stays uniform.
+	if len(timeOutDuration) > 0 {
+		parent := segCtx
+		if parent == nil {
+			parent = context.Background()
+		}
+		return context.WithTimeout(parent, timeOutDuration[0])
+	}
+	if segCtxSet && segCtx != nil {
+		return segCtx, func() {}
+	}
+	return context.WithTimeout(context.Background(), defaultSNSCallTimeout)
+}
+
 // ================================================================================================================
 // STRUCTS
 // ================================================================================================================
@@ -1815,7 +1864,9 @@ func (s *SNS) Publish(topicArn string,
 	}
 
 	const maxSNSMessageBytes = 256 * 1024
-	if len([]byte(message)) > maxSNSMessageBytes {
+	// SP-008 P3-CMN-2: len(s) on a Go string returns byte count directly
+	// without the []byte allocation — avoids copying up to 256KiB per call.
+	if len(message) > maxSNSMessageBytes {
 		err = fmt.Errorf("Publish Failed: message exceeds %d bytes SNS limit", maxSNSMessageBytes)
 		return "", err
 	}
@@ -1852,18 +1903,12 @@ func (s *SNS) Publish(topicArn string,
 	// perform action
 	var output *sns.PublishOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.PublishWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.PublishWithContext(segCtx, input)
-		} else {
-			output, err = client.Publish(input)
-		}
-	}
+	// SP-008 P2-CMN-3: always bound via ensureSNSCtx. The helper picks
+	// caller timeout > xray ctx > default 30s timeout so no Publish
+	// can block forever on a hung AWS endpoint.
+	pubCtx, pubCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.PublishWithContext(pubCtx, input)
+	pubCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2011,18 +2056,12 @@ func (s *SNS) SendSMS(phoneNumber string,
 	// perform action
 	var output *sns.PublishOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.PublishWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.PublishWithContext(segCtx, input)
-		} else {
-			output, err = client.Publish(input)
-		}
-	}
+	// SP-008 P2-CMN-3: always bound via ensureSNSCtx. The helper picks
+	// caller timeout > xray ctx > default 30s timeout so no Publish
+	// can block forever on a hung AWS endpoint.
+	pubCtx, pubCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.PublishWithContext(pubCtx, input)
+	pubCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2729,7 +2768,8 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 		return "", err
 	}
 
-	if util.LenTrim(customUserData) > 0 && len([]byte(customUserData)) > 2048 {
+	// SP-008 P3-CMN-2: len(s) avoids the []byte copy allocation.
+	if util.LenTrim(customUserData) > 0 && len(customUserData) > 2048 {
 		err = errors.New("CreatePlatformEndpoint Failed: CustomUserData must be < 2KB")
 		return "", err
 	}

@@ -52,6 +52,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	util "github.com/aldelo/common"
 	"github.com/aldelo/common/crypto"
@@ -63,6 +64,37 @@ import (
 	"github.com/aws/aws-sdk-go/service/kms"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
+
+// defaultKMSCallTimeout bounds the duration of any single KMS SDK call
+// that the wrapper would otherwise invoke without a deadline.
+//
+// SP-008 P2-CMN-2 (2026-04-15): every KMS wrapper method previously
+// branched on `segCtx == nil` and called the no-context SDK method
+// (cli.Encrypt, cli.Decrypt, cli.Sign, ...) on the nil path. Those
+// methods use context.Background() internally, which means a hung AWS
+// endpoint could block the caller indefinitely — the wrapper had no
+// default upper bound unless the application had xray enabled (which
+// provided segCtx via seg.Ctx) or passed its own deadline. 30s was
+// chosen to be long enough for any legitimate KMS operation (the
+// heaviest are CreateKey/ScheduleKeyDeletion, which usually complete
+// in <2s) and short enough to fail fast when AWS is unreachable.
+const defaultKMSCallTimeout = 30 * time.Second
+
+// ensureKMSCtx normalizes segCtx into a context suitable for every
+// cli.*WithContext SDK call in this package. If segCtx is non-nil
+// (the xray-enabled path populates it from seg.Ctx) it is returned
+// as-is with a no-op cancel; if segCtx is nil we mint a fresh
+// context.Background() wrapped in WithTimeout(defaultKMSCallTimeout)
+// so the caller always has an upper bound. Callers MUST invoke the
+// returned cancel function before returning from the enclosing method
+// (defer or call explicitly after the SDK call returns). Passing the
+// no-op cancel through to callers keeps the call-site shape uniform.
+func ensureKMSCtx(segCtx context.Context) (context.Context, context.CancelFunc) {
+	if segCtx != nil {
+		return segCtx, func() {}
+	}
+	return context.WithTimeout(context.Background(), defaultKMSCallTimeout)
+}
 
 // ================================================================================================================
 // STRUCTS
@@ -281,14 +313,29 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-EncryptViaCmkAes256", k.getParentSegment())
+	// SP-008 P3-CMN-3 (2026-04-15): hoist config reads into a single
+	// RLock block at function entry. The prior form invoked
+	// getParentSegment / getAesKeyName / getClient / getAesKeyName as
+	// 4 independent RLock pairs per call (~40 ns overhead, 0 allocs).
+	// Snapshotting once eliminates three of those RLock pairs and also
+	// removes the torn-read hazard where a mid-call config update
+	// between getter calls could surface stale client + new key name
+	// (or vice versa). The xray defer closure now reads the captured
+	// `aesKeyName` local instead of calling k.getAesKeyName() again.
+	k.mu.RLock()
+	cli := k.kmsClient
+	aesKeyName := k.AesKmsKeyName
+	parentSeg := k._parentSegment
+	k.mu.RUnlock()
+
+	seg := xray.NewSegmentNullable("KMS-EncryptViaCmkAes256", parentSeg)
 
 	if seg != nil {
 		segCtx = seg.Ctx
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-AES-KMS-KeyName", k.getAesKeyName())
+			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-AES-KMS-KeyName", aesKeyName)
 			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-PlainText-Length", len(plainText))
 			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-Result-CipherText-Length", len(cipherText))
 
@@ -299,13 +346,11 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 	}
 
 	// validate
-	cli, cliErr := k.getClient()
-	if cliErr != nil {
-		err = errors.New("EncryptViaCmkAes256 with KMS CMK Failed: " + cliErr.Error())
+	if cli == nil {
+		err = errors.New("EncryptViaCmkAes256 with KMS CMK Failed: " + "KMS Client is Required")
 		return "", err
 	}
 
-	aesKeyName := k.getAesKeyName()
 	if len(aesKeyName) <= 0 {
 		err = errors.New("EncryptViaCmkAes256 with KMS CMK Failed: " + "AES KMS Key Name is Required")
 		return "", err
@@ -323,20 +368,17 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 	var encryptedOutput *kms.EncryptOutput
 	var e error
 
-	if segCtx == nil {
-		encryptedOutput, e = cli.Encrypt(&kms.EncryptInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil so a hung endpoint cannot block
+	// the caller indefinitely.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	encryptedOutput, e = cli.EncryptWithContext(kmsCtx,
+		&kms.EncryptInput{
 			EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
 			KeyId:               aws.String(keyId),
 			Plaintext:           []byte(plainText),
 		})
-	} else {
-		encryptedOutput, e = cli.EncryptWithContext(segCtx,
-			&kms.EncryptInput{
-				EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				KeyId:               aws.String(keyId),
-				Plaintext:           []byte(plainText),
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("EncryptViaCmkAes256 with KMS CMK Failed: (Symmetric Encrypt) " + e.Error())
@@ -418,24 +460,18 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 	var reEncryptOutput *kms.ReEncryptOutput
 	var e error
 
-	if segCtx == nil {
-		reEncryptOutput, e = cli.ReEncrypt(&kms.ReEncryptInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	reEncryptOutput, e = cli.ReEncryptWithContext(kmsCtx,
+		&kms.ReEncryptInput{
 			SourceEncryptionAlgorithm:      aws.String("SYMMETRIC_DEFAULT"),
 			SourceKeyId:                    aws.String(keyId),
 			DestinationEncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
 			DestinationKeyId:               aws.String("alias/" + targetKmsKeyName),
 			CiphertextBlob:                 cipherBytes,
 		})
-	} else {
-		reEncryptOutput, e = cli.ReEncryptWithContext(segCtx,
-			&kms.ReEncryptInput{
-				SourceEncryptionAlgorithm:      aws.String("SYMMETRIC_DEFAULT"),
-				SourceKeyId:                    aws.String(keyId),
-				DestinationEncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				DestinationKeyId:               aws.String("alias/" + targetKmsKeyName),
-				CiphertextBlob:                 cipherBytes,
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("ReEncryptViaCmkAes256 with KMS CMK Failed: (Symmetric ReEncrypt) " + e.Error())
@@ -458,17 +494,28 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 	if k == nil {
 		return "", errors.New("KMS receiver is nil")
 	}
+
+	// SP-008 P3-CMN-3 (2026-04-15): single RLock snapshot at function entry
+	// replaces 3 independent getter RLock pairs and closes the torn-read
+	// hazard where a mid-call config update could surface stale client +
+	// new key name (or vice versa). See EncryptViaCmkAes256 for rationale.
+	k.mu.RLock()
+	cli := k.kmsClient
+	aesKeyName := k.AesKmsKeyName
+	parentSeg := k._parentSegment
+	k.mu.RUnlock()
+
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-DecryptViaCmkAes256", k.getParentSegment())
+	seg := xray.NewSegmentNullable("KMS-DecryptViaCmkAes256", parentSeg)
 
 	if seg != nil {
 		segCtx = seg.Ctx
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-AES-KMS-KeyName", k.getAesKeyName())
+			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-AES-KMS-KeyName", aesKeyName)
 			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-CipherText-Length", len(cipherText))
 			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-Result-PlainText-Length", len(plainText))
 
@@ -479,13 +526,11 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 	}
 
 	// validate
-	cli, cliErr := k.getClient()
-	if cliErr != nil {
-		err = errors.New("DecryptViaCmkAes256 with KMS CMK Failed: " + cliErr.Error())
+	if cli == nil {
+		err = errors.New("DecryptViaCmkAes256 with KMS CMK Failed: " + "KMS Client is Required")
 		return "", err
 	}
 
-	aesKeyName := k.getAesKeyName()
 	if len(aesKeyName) <= 0 {
 		err = errors.New("DecryptViaCmkAes256 with KMS CMK Failed: " + "AES KMS Key Name is Required")
 		return "", err
@@ -509,20 +554,16 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 	var decryptedOutput *kms.DecryptOutput
 	var e error
 
-	if segCtx == nil {
-		decryptedOutput, e = cli.Decrypt(&kms.DecryptInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	decryptedOutput, e = cli.DecryptWithContext(kmsCtx,
+		&kms.DecryptInput{
 			EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
 			KeyId:               aws.String(keyId),
 			CiphertextBlob:      cipherBytes,
 		})
-	} else {
-		decryptedOutput, e = cli.DecryptWithContext(segCtx,
-			&kms.DecryptInput{
-				EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				KeyId:               aws.String(keyId),
-				CiphertextBlob:      cipherBytes,
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("DecryptViaCmkAes256 with KMS CMK Failed: (Symmetric Decrypt) " + e.Error())
@@ -652,21 +693,16 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 
 	var e error
 
-	if segCtx == nil {
-		encryptedOutput, e = cli.CreateKey(&kms.CreateKeyInput{
-			Description: aws.String("Common RSA 2048 Key Creation"),
-			KeySpec:     aws.String(kms.KeySpecRsa2048),
-			KeyUsage:    aws.String(kms.KeyUsageTypeEncryptDecrypt),
-			Policy:      aws.String(string(keyPolicyJSON)),
-		})
-	} else {
-		encryptedOutput, e = cli.CreateKeyWithContext(segCtx, &kms.CreateKeyInput{
-			Description: aws.String("Common RSA 2048 Key Creation"),
-			KeySpec:     aws.String(kms.KeySpecRsa2048),
-			KeyUsage:    aws.String(kms.KeyUsageTypeEncryptDecrypt),
-			Policy:      aws.String(string(keyPolicyJSON)),
-		})
-	}
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	encryptedOutput, e = cli.CreateKeyWithContext(kmsCtx, &kms.CreateKeyInput{
+		Description: aws.String("Common RSA 2048 Key Creation"),
+		KeySpec:     aws.String(kms.KeySpecRsa2048),
+		KeyUsage:    aws.String(kms.KeyUsageTypeEncryptDecrypt),
+		Policy:      aws.String(string(keyPolicyJSON)),
+	})
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("GenerateEncryptionDecryptionKeyRsa2048 with KMS CMK Failed: (RSA Key Create Fail) " + e.Error())
@@ -737,21 +773,16 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 
 	var e error
 
-	if segCtx == nil {
-		encryptedOutput, e = cli.CreateKey(&kms.CreateKeyInput{
-			Description: aws.String("Common RSA 2048 Key Creation"),
-			KeySpec:     aws.String(kms.KeySpecRsa2048),
-			KeyUsage:    aws.String(kms.KeyUsageTypeSignVerify),
-			Policy:      aws.String(string(keyPolicyJSON)),
-		})
-	} else {
-		encryptedOutput, e = cli.CreateKeyWithContext(segCtx, &kms.CreateKeyInput{
-			Description: aws.String("Common RSA 2048 Key Creation"),
-			KeySpec:     aws.String(kms.KeySpecRsa2048),
-			KeyUsage:    aws.String(kms.KeyUsageTypeSignVerify),
-			Policy:      aws.String(string(keyPolicyJSON)),
-		})
-	}
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	encryptedOutput, e = cli.CreateKeyWithContext(kmsCtx, &kms.CreateKeyInput{
+		Description: aws.String("Common RSA 2048 Key Creation"),
+		KeySpec:     aws.String(kms.KeySpecRsa2048),
+		KeyUsage:    aws.String(kms.KeyUsageTypeSignVerify),
+		Policy:      aws.String(string(keyPolicyJSON)),
+	})
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: (RSA Key Create Fail) " + e.Error())
@@ -840,17 +871,14 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 
 	var e error
 
-	if segCtx == nil {
-		output, e = cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
-			KeyId:               keyId,
-			PendingWindowInDays: aws.Int64(PendingWindowInDays),
-		})
-	} else {
-		output, e = cli.ScheduleKeyDeletionWithContext(segCtx, &kms.ScheduleKeyDeletionInput{
-			KeyId:               keyId,
-			PendingWindowInDays: aws.Int64(PendingWindowInDays),
-		})
-	}
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	output, e = cli.ScheduleKeyDeletionWithContext(kmsCtx, &kms.ScheduleKeyDeletionInput{
+		KeyId:               keyId,
+		PendingWindowInDays: aws.Int64(PendingWindowInDays),
+	})
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
@@ -907,17 +935,14 @@ func (k *KMS) KeyDeleteWithArnID(arn string, PendingWindowInDays int64) (output 
 
 	var e error
 
-	if segCtx == nil {
-		output, e = cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
-			KeyId:               aws.String(arn),
-			PendingWindowInDays: aws.Int64(PendingWindowInDays),
-		})
-	} else {
-		output, e = cli.ScheduleKeyDeletionWithContext(segCtx, &kms.ScheduleKeyDeletionInput{
-			KeyId:               aws.String(arn),
-			PendingWindowInDays: aws.Int64(PendingWindowInDays),
-		})
-	}
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	output, e = cli.ScheduleKeyDeletionWithContext(kmsCtx, &kms.ScheduleKeyDeletionInput{
+		KeyId:               aws.String(arn),
+		PendingWindowInDays: aws.Int64(PendingWindowInDays),
+	})
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("KeyDeleteWithArnID with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
@@ -937,17 +962,28 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 	if k == nil {
 		return "", errors.New("KMS receiver is nil")
 	}
+
+	// SP-008 P3-CMN-3 (2026-04-15): single RLock snapshot at function entry
+	// replaces 3 independent getter RLock pairs and closes the torn-read
+	// hazard where a mid-call config update could surface stale client +
+	// new key name (or vice versa). See EncryptViaCmkAes256 for rationale.
+	k.mu.RLock()
+	cli := k.kmsClient
+	rsaKeyName := k.RsaKmsKeyName
+	parentSeg := k._parentSegment
+	k.mu.RUnlock()
+
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-EncryptViaCmkRsa2048", k.getParentSegment())
+	seg := xray.NewSegmentNullable("KMS-EncryptViaCmkRsa2048", parentSeg)
 
 	if seg != nil {
 		segCtx = seg.Ctx
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-RSA-KMS-KeyName", k.getRsaKeyName())
+			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-RSA-KMS-KeyName", rsaKeyName)
 			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-PlainText-Length", len(plainText))
 			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-Result-CipherText-Length", len(cipherText))
 
@@ -958,13 +994,11 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 	}
 
 	// validate
-	cli, cliErr := k.getClient()
-	if cliErr != nil {
-		err = errors.New("EncryptViaCmkRsa2048 with KMS CMK Failed: " + cliErr.Error())
+	if cli == nil {
+		err = errors.New("EncryptViaCmkRsa2048 with KMS CMK Failed: " + "KMS Client is Required")
 		return "", err
 	}
 
-	rsaKeyName := k.getRsaKeyName()
 	if len(rsaKeyName) <= 0 {
 		err = errors.New("EncryptViaCmkRsa2048 with KMS CMK Failed: " + "RSA KMS Key Name is Required")
 		return "", err
@@ -987,20 +1021,16 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 	var encryptedOutput *kms.EncryptOutput
 	var e error
 
-	if segCtx == nil {
-		encryptedOutput, e = cli.Encrypt(&kms.EncryptInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	encryptedOutput, e = cli.EncryptWithContext(kmsCtx,
+		&kms.EncryptInput{
 			EncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
 			KeyId:               aws.String(keyId),
 			Plaintext:           []byte(plainText),
 		})
-	} else {
-		encryptedOutput, e = cli.EncryptWithContext(segCtx,
-			&kms.EncryptInput{
-				EncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-				KeyId:               aws.String(keyId),
-				Plaintext:           []byte(plainText),
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("EncryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric Encrypt) " + e.Error())
@@ -1052,15 +1082,13 @@ func (k *KMS) GetRSAPublicKey(alias string) (output *kms.GetPublicKeyOutput, err
 
 	aliasName := "alias/" + alias // Change to your desired alias name
 
-	if segCtx == nil {
-		output, err = cli.GetPublicKey(&kms.GetPublicKeyInput{
-			KeyId: aws.String(aliasName),
-		})
-	} else {
-		output, err = cli.GetPublicKeyWithContext(segCtx, &kms.GetPublicKeyInput{
-			KeyId: aws.String(aliasName),
-		})
-	}
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	output, err = cli.GetPublicKeyWithContext(kmsCtx, &kms.GetPublicKeyInput{
+		KeyId: aws.String(aliasName),
+	})
+	kmsCancel()
 
 	if err != nil {
 		return nil, fmt.Errorf("GetRSAPublicKey with KMS CMK Failed: (RSA GetPublicKey Fail) %w", err)
@@ -1134,24 +1162,18 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 	var reEncryptOutput *kms.ReEncryptOutput
 	var e error
 
-	if segCtx == nil {
-		reEncryptOutput, e = cli.ReEncrypt(&kms.ReEncryptInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	reEncryptOutput, e = cli.ReEncryptWithContext(kmsCtx,
+		&kms.ReEncryptInput{
 			SourceEncryptionAlgorithm:      aws.String("RSAES_OAEP_SHA_256"),
 			SourceKeyId:                    aws.String(keyId),
 			DestinationEncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
 			DestinationKeyId:               aws.String("alias/" + targetKmsKeyName),
 			CiphertextBlob:                 cipherBytes,
 		})
-	} else {
-		reEncryptOutput, e = cli.ReEncryptWithContext(segCtx,
-			&kms.ReEncryptInput{
-				SourceEncryptionAlgorithm:      aws.String("RSAES_OAEP_SHA_256"),
-				SourceKeyId:                    aws.String(keyId),
-				DestinationEncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-				DestinationKeyId:               aws.String("alias/" + targetKmsKeyName),
-				CiphertextBlob:                 cipherBytes,
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("ReEncryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric ReEncrypt) " + e.Error())
@@ -1174,17 +1196,28 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	if k == nil {
 		return "", errors.New("KMS receiver is nil")
 	}
+
+	// SP-008 P3-CMN-3 (2026-04-15): single RLock snapshot at function entry
+	// replaces 3 independent getter RLock pairs and closes the torn-read
+	// hazard where a mid-call config update could surface stale client +
+	// new key name (or vice versa). See EncryptViaCmkAes256 for rationale.
+	k.mu.RLock()
+	cli := k.kmsClient
+	rsaKeyName := k.RsaKmsKeyName
+	parentSeg := k._parentSegment
+	k.mu.RUnlock()
+
 	var segCtx context.Context
 	segCtx = nil
 
-	seg := xray.NewSegmentNullable("KMS-DecryptViaCmkRsa2048", k.getParentSegment())
+	seg := xray.NewSegmentNullable("KMS-DecryptViaCmkRsa2048", parentSeg)
 
 	if seg != nil {
 		segCtx = seg.Ctx
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-RSA-KMS-KeyName", k.getRsaKeyName())
+			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-RSA-KMS-KeyName", rsaKeyName)
 			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-CipherText-Length", len(cipherText))
 			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-Result-PlainText-Length", len(plainText))
 
@@ -1195,13 +1228,11 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	}
 
 	// validate
-	cli, cliErr := k.getClient()
-	if cliErr != nil {
-		err = errors.New("DecryptViaCmkRsa2048 with KMS CMK Failed: " + cliErr.Error())
+	if cli == nil {
+		err = errors.New("DecryptViaCmkRsa2048 with KMS CMK Failed: " + "KMS Client is Required")
 		return "", err
 	}
 
-	rsaKeyName := k.getRsaKeyName()
 	if len(rsaKeyName) <= 0 {
 		err = errors.New("DecryptViaCmkRsa2048 with KMS CMK Failed: " + "RSA KMS Key Name is Required")
 		return "", err
@@ -1225,20 +1256,16 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	var decryptedOutput *kms.DecryptOutput
 	var e error
 
-	if segCtx == nil {
-		decryptedOutput, e = cli.Decrypt(&kms.DecryptInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	decryptedOutput, e = cli.DecryptWithContext(kmsCtx,
+		&kms.DecryptInput{
 			EncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
 			KeyId:               aws.String(keyId),
 			CiphertextBlob:      cipherBytes,
 		})
-	} else {
-		decryptedOutput, e = cli.DecryptWithContext(segCtx,
-			&kms.DecryptInput{
-				EncryptionAlgorithm: aws.String("RSAES_OAEP_SHA_256"),
-				KeyId:               aws.String(keyId),
-				CiphertextBlob:      cipherBytes,
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("DecryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric Decrypt) " + e.Error())
@@ -1316,20 +1343,16 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 	var decryptedOutput *kms.DecryptOutput
 	var e error
 
-	if segCtx == nil {
-		decryptedOutput, e = cli.Decrypt(&kms.DecryptInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	decryptedOutput, e = cli.DecryptWithContext(kmsCtx,
+		&kms.DecryptInput{
 			EncryptionAlgorithm: aws.String(encryptionAlgorithm),
 			KeyId:               aws.String(keyId),
 			CiphertextBlob:      cipherBytes,
 		})
-	} else {
-		decryptedOutput, e = cli.DecryptWithContext(segCtx,
-			&kms.DecryptInput{
-				EncryptionAlgorithm: aws.String(encryptionAlgorithm),
-				KeyId:               aws.String(keyId),
-				CiphertextBlob:      cipherBytes,
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: (Asymmetric Decrypt) " + e.Error())
@@ -1400,22 +1423,17 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 	var signOutput *kms.SignOutput
 	var e error
 
-	if segCtx == nil {
-		signOutput, e = cli.Sign(&kms.SignInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	signOutput, e = cli.SignWithContext(kmsCtx,
+		&kms.SignInput{
 			KeyId:            aws.String(keyId),
 			SigningAlgorithm: aws.String("RSASSA_PKCS1_V1_5_SHA_256"),
 			MessageType:      aws.String("RAW"),
 			Message:          []byte(dataToSign),
 		})
-	} else {
-		signOutput, e = cli.SignWithContext(segCtx,
-			&kms.SignInput{
-				KeyId:            aws.String(keyId),
-				SigningAlgorithm: aws.String("RSASSA_PKCS1_V1_5_SHA_256"),
-				MessageType:      aws.String("RAW"),
-				Message:          []byte(dataToSign),
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("SignViaCmkRsa2048 with KMS Failed: (Sign Action) " + e.Error())
@@ -1500,24 +1518,18 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 	var verifyOutput *kms.VerifyOutput
 	var e error
 
-	if segCtx == nil {
-		verifyOutput, e = cli.Verify(&kms.VerifyInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	verifyOutput, e = cli.VerifyWithContext(kmsCtx,
+		&kms.VerifyInput{
 			KeyId:            aws.String(keyId),
 			SigningAlgorithm: aws.String("RSASSA_PKCS1_V1_5_SHA_256"),
 			MessageType:      aws.String("RAW"),
 			Message:          []byte(dataToVerify),
 			Signature:        signatureBytes,
 		})
-	} else {
-		verifyOutput, e = cli.VerifyWithContext(segCtx,
-			&kms.VerifyInput{
-				KeyId:            aws.String(keyId),
-				SigningAlgorithm: aws.String("RSASSA_PKCS1_V1_5_SHA_256"),
-				MessageType:      aws.String("RAW"),
-				Message:          []byte(dataToVerify),
-				Signature:        signatureBytes,
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("VerifyViaCmkRsa2048 with KMS Failed: (Verify Action) " + e.Error())
@@ -1589,11 +1601,11 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 	var dataKeyOutput *kms.GenerateDataKeyWithoutPlaintextOutput
 	var e error
 
-	if segCtx == nil {
-		dataKeyOutput, e = cli.GenerateDataKeyWithoutPlaintext(&dataKeyInput)
-	} else {
-		dataKeyOutput, e = cli.GenerateDataKeyWithoutPlaintextWithContext(segCtx, &dataKeyInput)
-	}
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	dataKeyOutput, e = cli.GenerateDataKeyWithoutPlaintextWithContext(kmsCtx, &dataKeyInput)
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("GenerateDataKeyAes256 with KMS Failed: (Gen Data Key) " + e.Error())
@@ -1708,20 +1720,16 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 	var dataKeyOutput *kms.DecryptOutput
 	var e error
 
-	if segCtx == nil {
-		dataKeyOutput, e = cli.Decrypt(&kms.DecryptInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	dataKeyOutput, e = cli.DecryptWithContext(kmsCtx,
+		&kms.DecryptInput{
 			EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
 			KeyId:               aws.String(keyId),
 			CiphertextBlob:      cipherBytes,
 		})
-	} else {
-		dataKeyOutput, e = cli.DecryptWithContext(segCtx,
-			&kms.DecryptInput{
-				EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				KeyId:               aws.String(keyId),
-				CiphertextBlob:      cipherBytes,
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("EncryptWithDataKeyAes256 with KMS Failed: (Decrypt Data Key) " + e.Error())
@@ -1846,20 +1854,16 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	var dataKeyOutput *kms.DecryptOutput
 	var e error
 
-	if segCtx == nil {
-		dataKeyOutput, e = cli.Decrypt(&kms.DecryptInput{
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	kmsCtx, kmsCancel := ensureKMSCtx(segCtx)
+	dataKeyOutput, e = cli.DecryptWithContext(kmsCtx,
+		&kms.DecryptInput{
 			EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
 			KeyId:               aws.String(keyId),
 			CiphertextBlob:      cipherBytes,
 		})
-	} else {
-		dataKeyOutput, e = cli.DecryptWithContext(segCtx,
-			&kms.DecryptInput{
-				EncryptionAlgorithm: aws.String("SYMMETRIC_DEFAULT"),
-				KeyId:               aws.String(keyId),
-				CiphertextBlob:      cipherBytes,
-			})
-	}
+	kmsCancel()
 
 	if e != nil {
 		err = errors.New("DecryptWithDataKeyAes256 with KMS Failed: (Decrypt Data Key) " + e.Error())

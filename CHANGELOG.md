@@ -14,6 +14,138 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ## [Unreleased]
 
+## [v1.8.2] — 2026-04-15
+
+Patch release. Closes five `wrapper/sns` findings from the **SP-010
+pass-5 contrarian review** (review `_src/docs/repos/connector/findings/
+2026-04-15-contrarian-pass5/`). All fixes target surfaces already
+touched by `v1.8.1`'s `ensureSNSCtx` / `maskPhoneForXray` rollout —
+this release is the correctness sweep that the pass-5 review demanded
+before the surfaces could be considered fully hardened.
+
+No observable helper contract change from `v1.8.1`. Every public
+function signature in `wrapper/sns` is preserved. Consumers pinning
+`common v1.8.1` should bump to `v1.8.2` as a drop-in for the PII-safety
+and UTF-8-safety guarantees below.
+
+Context: SP-010 pass-5 re-audited `v1.8.1` against a contrarian rule
+set — "assume the v1.8.1 fixes are incomplete, find what was missed".
+The review found five findings in `wrapper/sns` (A1-F1 → A1-F5) and
+five in `connector` (A2/A4 class) — five on each sibling, landed as
+ten per-gap commits under the standing directive *"one gap at a time,
+review+audit between gap groups, version ceiling v1.8.2."* The
+per-gap protocol was: fix → regression test → mutation probe
+(causality validation) → full suite green → per-finding commit.
+Three independent reviewer audits (Gap 1.A / 2.A / 3.A) returned
+PASS or PASS-WITH-NOTES with zero blockers.
+
+### Fixed — SP-010 A1-F1 (`wrapper/sns` — `ensureSNSCtx`)
+
+- **`ensureSNSCtx` now enforces the deadline even when xray is on.**
+  The `v1.8.1` helper applied the default-30s / caller-supplied
+  `timeOutDuration` deadline only on the xray-disabled path. When
+  xray was enabled, the helper returned the xray-derived ctx **as
+  provided by the caller**, with no deadline check — so a caller
+  that had xray enabled and had also configured a long
+  `timeOutDuration` upstream would observe the xray ctx's implicit
+  lifetime, not their own timeout. The fix wraps the xray ctx with
+  `context.WithTimeout(segCtx, resolvedDeadline)` before returning,
+  preserving both the xray trace plumbing and the observable
+  deadline. Every SNS SDK call site now observes the intended
+  deadline regardless of the xray toggle. Commit `ae59793`.
+
+### Documented — SP-010 A1-F2 (`wrapper/sns` — 29 callsite comments)
+
+- **Callsite comments rewritten post-A1-F1.** Twenty-nine SNS client
+  callsites in `wrapper/sns/sns.go` had comments that described the
+  pre-A1-F1 helper semantics ("default deadline applied only when
+  xray off"). Those comments are now aligned with the post-fix
+  contract: the helper always returns a deadline-bearing ctx, xray
+  or not. Pure comment cleanup — zero code change, no behavior
+  impact — but the correctness of future review passes depends on
+  these comments matching what the code actually does. Commit
+  `22e96f1`.
+
+### Fixed — SP-010 A1-F3 (`wrapper/sns` — `SendSMS` phone PII)
+
+- **`SendSMS` xray metadata now masks the destination phone number.**
+  `v1.8.1`'s `maskPhoneForXray` was wired into `OptInPhoneNumber`,
+  `CheckIfPhoneNumberIsOptedOut`, and `ListPhoneNumbersOptedOut`
+  but not `SendSMS` — the pass-3 F5 rationale comment had argued
+  that `SendSMS` treats the phone number as a delivery address, not
+  metadata, and therefore should not be masked. The pass-5 review
+  rejected that reasoning: xray metadata is trace plumbing, not
+  application data, and any trace reader with metadata access can
+  pivot a raw `SendSMS` xray segment dump to a natural-person
+  identity. The fix applies `maskPhoneForXray` at the `SendSMS`
+  xray emit site so the destination phone is redacted to
+  `+X******NNNN` before hitting the tracer. The SNS SDK call itself
+  still receives the unredacted destination — only the metadata
+  surface is masked. Commit `549e7a2`.
+
+### Fixed — SP-010 A1-F4 (`wrapper/sns` — UTF-8 safety)
+
+- **`maskPhoneForXray` now slices by rune, not byte.** The
+  `v1.8.1` implementation of `maskPhoneForXray` indexed the input
+  string by byte offset to extract the country-code prefix and
+  last-four suffix. For ASCII E.164 phone numbers (the intended
+  shape), byte-indexing is correct — but a phone number containing
+  any multi-byte codepoint (Arabic-Indic digits ٠–٩, Devanagari,
+  etc.) silently produced a garbage mask by slicing through the
+  middle of a UTF-8 sequence. No panic, no log — just a leaked or
+  malformed redaction. The fix converts to `[]rune` once, slices
+  on rune indices, and reconverts. A table-driven test covers
+  US / UK / Arabic-Indic / Devanagari / non-E.164 / empty / `+`-only
+  inputs; a property test pins that the middle digits are never
+  revealed across five country formats. Commit `57cf00c`. This
+  fix is the origin of lesson **L18** (*rune-based string slicing
+  as default for every unvalidated-input redact/truncate/mask
+  helper*).
+
+### Added — SP-010 A1-F5 (`wrapper/sns` — `ensureSNSCtx` dead-guard test)
+
+- **Nil-segCtx reachability test for `ensureSNSCtx`.** `v1.8.1`
+  added a nil-segCtx guard to `ensureSNSCtx` (the xray-derived ctx
+  is nil-safe), but no test existed that actually reached the guard
+  under realistic conditions — the only path that produces a nil
+  segCtx in production is an SNS callsite invoked from a request
+  flow that has xray disabled AND no upstream-propagated ctx, and
+  the `v1.8.1` tests either passed a non-nil mock segCtx or
+  exercised the caller-supplied-deadline branch. The new test
+  (`TestEnsureSNSCtx_NilSegCtxDeadGuard_A1F5`) replays the nil-ctx
+  branch explicitly and asserts that the returned ctx is non-nil
+  and deadline-bearing. Without the guard, the helper would return
+  a nil ctx that would trip the SDK on first use. Mutation-probe
+  validated: temporarily removing the `segCtx == nil` guard
+  produces the expected nil-return panic. Commit `258803d`.
+
+### Verified
+
+- `go build ./...` clean
+- `go vet ./...` clean
+- `go test -race -short ./...` clean (full package tree; matches
+  the `v1.8.1` release convention at this repo's sibling
+  `connector/CHANGELOG.md:148-151`)
+- Three independent reviewer audits (Gap 1.A / 2.A / 3.A) by
+  `pr-review-toolkit:code-reviewer` (opus) returned PASS or
+  PASS-WITH-NOTES with zero blockers. Reports archived in the
+  workspace at `_src/docs/repos/connector/findings/2026-04-15-
+  contrarian-pass5/_gap{1,2,3}A-reviewer-audit.md`.
+
+### Upgrade notes
+
+- **Drop-in from v1.8.1.** No `go.mod` directive moves; the `go`
+  toolchain pin remains `1.26.2` from v1.8.0.
+- **Consumer sweep.** All 38 workspace consumer repos should bump
+  their `common` pin `v1.8.1 → v1.8.2` in coordination with the
+  sibling `connector v1.8.2` release cut from the same review cycle.
+  The sibling release's CHANGELOG entry is the canonical record of
+  that sibling tag — see `github.com/aldelo/connector/CHANGELOG.md`
+  at whichever tag is current on origin.
+- **Lessons promoted.** This cycle promoted four lessons (L17–L20)
+  into the workspace lessons-learned file, including L18
+  (rune-based slicing as default) which originated here.
+
 ## [v1.8.1] — 2026-04-15
 
 Patch release. Closes the two `wrapper/sns` + `wrapper/kms` P1 findings

@@ -1614,20 +1614,39 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 //
 // cipherKey = encrypted data key in hex (must use KMS CMK to decrypt such key)
 //
-// Plaintext-handling caveat (F6 pass-3 contrarian, 2026-04-14):
+// Plaintext-handling caveat (F6 pass-3 contrarian 2026-04-14;
+// corrected SP-008 lens-3 2026-04-15):
+//
 // This helper converts the KMS plaintext data key to a Go string via
 // string(dataKeyOutput.Plaintext) to pass it to crypto.AesGcmEncrypt.
 // The string() conversion copies the bytes onto the Go heap as an
 // immutable string header. The subsequent dataKeyOutput.SetPlaintext(
-// []byte{}) call zeros only the AWS SDK's backing slice; it CANNOT
-// reach the heap string copy, which lives until the Go garbage
-// collector runs and reclaims the memory (after which the bytes may
-// still sit on a freed page until overwritten). Treat this as
-// best-effort scrubbing — the plaintext data key is exposed in
-// process memory for the window between the string() conversion and
-// GC, and heap scanners or core dumps during that window will see it.
-// Callers that need stronger guarantees must use a []byte-based
-// AEAD API that never converts to string (not currently exposed).
+// []byte{}) call does NOT zero-scrub the original SDK-owned backing
+// slice — per aws-sdk-go/service/kms/api.go, SetPlaintext is simply
+// `s.Plaintext = v`, a pointer reassignment that rebinds the struct
+// field to the fresh empty slice and leaves the previous backing
+// array live on the heap, unreferenced but intact, until the Go
+// garbage collector reclaims it.
+//
+// Concretely, two copies of the plaintext data key coexist in
+// process memory between the string() conversion and the next GC
+// cycle:
+//  1. The immutable Go-heap string copy produced by string(...).
+//  2. The original AWS SDK-owned []byte that is no longer referenced
+//     by dataKeyOutput after SetPlaintext but has not been
+//     overwritten.
+//
+// Either copy is visible to heap scanners, debuggers, or a core dump
+// captured during that window. Neither copy is guaranteed to be
+// overwritten even after GC — the memory pages may be recycled and
+// re-used without being zeroed.
+//
+// Treat the SetPlaintext call as best-effort reference drop only: it
+// makes both copies GC-eligible, but it does NOT overwrite any bytes.
+// Callers that need stronger scrubbing guarantees must use a
+// []byte-based AEAD API that never converts to string and manually
+// overwrites the plaintext slice before release (not currently
+// exposed by this package).
 func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (cipherText string, err error) {
 	if k == nil {
 		return "", errors.New("KMS receiver is nil")
@@ -1718,13 +1737,20 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 	//
 	// F6 caveat: string(dataKeyOutput.Plaintext) copies the data key
 	// bytes onto the Go heap as an immutable string. The SetPlaintext
-	// call below zeros only the AWS SDK's backing slice — the heap
-	// copy lives until GC. See function godoc for the full caveat.
+	// call below does NOT zero-scrub the SDK-owned backing slice — it
+	// is a pointer reassignment that rebinds dataKeyOutput.Plaintext
+	// to an empty slice and leaves the previous backing array live on
+	// the heap, unreferenced but intact, until GC. Both the heap
+	// string copy AND the former SDK slice remain readable in
+	// process memory until GC reclaims them. See function godoc for
+	// the full discussion.
 	buf, e := crypto.AesGcmEncrypt(plainText, string(dataKeyOutput.Plaintext))
 
-	// best-effort scrub: zero the SDK-owned slice. Does NOT reach the
-	// string heap copy created on the preceding line — that copy is
-	// immutable and lives until GC.
+	// best-effort reference-drop: rebind the SDK-owned slice field to
+	// an empty slice so both the former backing array and our heap
+	// string copy become GC-eligible. This does NOT overwrite any
+	// bytes — the underlying pages remain readable until GC and
+	// possibly beyond (page recycle without zeroing is legal).
 	dataKeyOutput.SetPlaintext([]byte{})
 	dataKeyOutput = nil
 
@@ -1744,13 +1770,21 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 //
 // cipherKey = encrypted data key in hex (must use KMS CMK to decrypt such key)
 //
-// Plaintext-handling caveat (F6 pass-3 contrarian, 2026-04-14):
-// Same caveat as EncryptWithDataKeyAes256 — the string() conversion
-// of the KMS plaintext data key creates an immutable heap copy that
-// the subsequent SetPlaintext([]byte{}) call cannot zero. Treat the
-// data key as exposed in process memory from the string() call
-// until GC. See EncryptWithDataKeyAes256 godoc for the full
-// discussion.
+// Plaintext-handling caveat (F6 pass-3 contrarian 2026-04-14;
+// corrected SP-008 lens-3 2026-04-15):
+//
+// Same caveat as EncryptWithDataKeyAes256. The string() conversion
+// of the KMS plaintext data key creates an immutable heap copy. The
+// subsequent SetPlaintext([]byte{}) call is a pointer reassignment
+// (per aws-sdk-go/service/kms/api.go) — it does NOT overwrite the
+// original SDK-owned backing slice; it merely rebinds the
+// dataKeyOutput.Plaintext field to an empty slice and leaves the
+// prior backing array live on the heap, unreferenced but intact,
+// until GC. Both the heap string copy and the former SDK slice
+// remain readable in process memory from the string() conversion
+// until GC reclaims them (and may persist on recycled pages even
+// after GC). Treat scrubbing as best-effort reference-drop only.
+// See EncryptWithDataKeyAes256 godoc for the full discussion.
 func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (plainText string, err error) {
 	if k == nil {
 		return "", errors.New("KMS receiver is nil")
@@ -1841,13 +1875,20 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	//
 	// F6 caveat: string(dataKeyOutput.Plaintext) copies the data key
 	// bytes onto the Go heap as an immutable string. The SetPlaintext
-	// call below zeros only the AWS SDK's backing slice — the heap
-	// copy lives until GC. See function godoc for the full caveat.
+	// call below does NOT zero-scrub the SDK-owned backing slice — it
+	// is a pointer reassignment that rebinds dataKeyOutput.Plaintext
+	// to an empty slice and leaves the previous backing array live on
+	// the heap, unreferenced but intact, until GC. Both the heap
+	// string copy AND the former SDK slice remain readable in
+	// process memory until GC reclaims them. See function godoc for
+	// the full discussion.
 	buf, e := crypto.AesGcmDecrypt(cipherText, string(dataKeyOutput.Plaintext))
 
-	// best-effort scrub: zero the SDK-owned slice. Does NOT reach the
-	// string heap copy created on the preceding line — that copy is
-	// immutable and lives until GC.
+	// best-effort reference-drop: rebind the SDK-owned slice field to
+	// an empty slice so both the former backing array and our heap
+	// string copy become GC-eligible. This does NOT overwrite any
+	// bytes — the underlying pages remain readable until GC and
+	// possibly beyond (page recycle without zeroing is legal).
 	dataKeyOutput.SetPlaintext([]byte{})
 	dataKeyOutput = nil
 

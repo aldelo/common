@@ -361,6 +361,74 @@ func TestSortedAttributeKeys(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// maskPhoneForXray — SP-008 P1-COMMON-SNS-01 phone-PII redaction
+// ---------------------------------------------------------------------------
+//
+// These tests pin the contract that the xray-metadata emit sites on
+// OptInPhoneNumber / CheckIfPhoneNumberIsOptedOut / ListPhoneNumbersOptedOut
+// rely on — if the mask leaks more of the subscriber number than
+// "country code + last 4", the PII invariant silently regresses.
+
+func TestMaskPhoneForXray(t *testing.T) {
+	tests := []struct {
+		name  string
+		phone string
+		want  string
+	}{
+		{name: "US 10-digit E.164", phone: "+12125551234", want: "+1******1234"},
+		{name: "UK 11-digit E.164", phone: "+447911123456", want: "+4*******3456"},
+		{name: "minimum masked length (7 chars, 1 digit masked)", phone: "+123456", want: "+1*3456"},
+		{name: "6-char input returns verbatim (below mask threshold)", phone: "+12345", want: "+12345"},
+		{name: "short non-E.164 verbatim", phone: "+12", want: "+12"},
+		{name: "empty string verbatim", phone: "", want: ""},
+		{name: "no plus prefix verbatim", phone: "2125551234", want: "2125551234"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := maskPhoneForXray(tt.phone)
+			if got != tt.want {
+				t.Errorf("maskPhoneForXray(%q) = %q, want %q", tt.phone, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaskPhoneForXray_NeverRevealsMiddleDigits(t *testing.T) {
+	// Property: for any valid E.164 number >= 6 chars, the mask must
+	// not contain the middle-of-subscriber digits. This is the
+	// security-facing invariant — if it regresses, the xray trace
+	// becomes pivotable back to a natural-person identity.
+	phones := []string{
+		"+12125551234",     // US
+		"+447911123456",    // UK
+		"+919876543210",    // India
+		"+8613800138000",   // China
+		"+353861234567",    // Ireland
+	}
+	for _, p := range phones {
+		masked := maskPhoneForXray(p)
+		// Leading "+X" (country code's first digit) and trailing 4 digits
+		// must survive. Everything in between must be asterisks.
+		if len(masked) != len(p) {
+			t.Errorf("maskPhoneForXray(%q) changed length: got %q", p, masked)
+			continue
+		}
+		if masked[:2] != p[:2] {
+			t.Errorf("maskPhoneForXray(%q) mangled country prefix: %q", p, masked)
+		}
+		if masked[len(masked)-4:] != p[len(p)-4:] {
+			t.Errorf("maskPhoneForXray(%q) mangled trailing 4 digits: %q", p, masked)
+		}
+		for i := 2; i < len(masked)-4; i++ {
+			if masked[i] != '*' {
+				t.Errorf("maskPhoneForXray(%q) leaked digit at index %d: %q", p, i, masked)
+				break
+			}
+		}
+	}
+}
+
 func TestSmsLength_UsedNeverExceedsLimit(t *testing.T) {
 	// Property: for any message, used <= limit
 	msgs := []string{

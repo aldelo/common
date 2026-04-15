@@ -252,6 +252,38 @@ func validateE164Phone(phone string) error {
 	return nil
 }
 
+// maskPhoneForXray returns a PII-reduced form of a phone number suitable
+// for xray metadata. The country-code prefix and the last 4 digits are
+// retained (enough to debug an ARN/endpoint mismatch); the middle digits
+// are replaced with asterisks so the metadata cannot be pivoted to a
+// natural-person identity by a reader of the xray trace.
+//
+// SP-008 P1-COMMON-SNS-01 (2026-04-15): used by OptInPhoneNumber,
+// CheckIfPhoneNumberIsOptedOut, and ListPhoneNumbersOptedOut xray emit
+// sites. Not used by SendSMS — that method intentionally retains the
+// full phone number as the delivery destination (see F5 pass-3 comment
+// at ~L1969); redacting there would hide which device received a given
+// SMS during an operational incident.
+//
+// Edge cases: inputs shorter than 7 characters (which would not
+// validate as E.164 anyway — the mask needs "+X" + middle + "NNNN") are
+// returned verbatim. Anything without a "+" prefix is also returned
+// verbatim since it cannot be interpreted as E.164 in the first place.
+// A 7-char input leaves exactly one digit masked ("+1*3456"), which is
+// the minimum useful output.
+func maskPhoneForXray(phone string) string {
+	// E.164 is always "+<country><subscriber>"; keep the leading "+"
+	// plus the country code's first digit (head = 2 chars) and the
+	// final 4 subscriber digits (tail = 4 chars), replace the rest
+	// with asterisks. Length threshold 7 = len(head) + len(tail) + 1.
+	if len(phone) < 7 || phone[0] != '+' {
+		return phone
+	}
+	head := phone[:2]
+	tail := phone[len(phone)-4:]
+	return head + strings.Repeat("*", len(phone)-len(head)-len(tail)) + tail
+}
+
 // validateSenderID enforces AWS rules: 3-11 alphanumeric chars, at least one letter.
 func validateSenderID(id string) error {
 	if strings.TrimSpace(id) == "" {
@@ -750,18 +782,12 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 	// perform action
 	var output *sns.CreateTopicOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.CreateTopicWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.CreateTopicWithContext(segCtx, input)
-		} else {
-			output, err = client.CreateTopic(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.CreateTopicWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -813,18 +839,12 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.DeleteTopicWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.DeleteTopicWithContext(segCtx, input)
-		} else {
-			_, err = client.DeleteTopic(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.DeleteTopicWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -884,18 +904,12 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 	// perform action
 	var output *sns.ListTopicsOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.ListTopicsWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.ListTopicsWithContext(segCtx, input)
-		} else {
-			output, err = client.ListTopics(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.ListTopicsWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -983,18 +997,12 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 	// perform action
 	var output *sns.GetTopicAttributesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.GetTopicAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.GetTopicAttributesWithContext(segCtx, input)
-		} else {
-			output, err = client.GetTopicAttributes(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.GetTopicAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1058,18 +1066,12 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.SetTopicAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.SetTopicAttributesWithContext(segCtx, input)
-		} else {
-			_, err = client.SetTopicAttributes(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.SetTopicAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1230,18 +1232,12 @@ func (s *SNS) Subscribe(topicArn string,
 	// perform action
 	var output *sns.SubscribeOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.SubscribeWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.SubscribeWithContext(segCtx, input)
-		} else {
-			output, err = client.Subscribe(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.SubscribeWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1297,18 +1293,12 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.UnsubscribeWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.UnsubscribeWithContext(segCtx, input)
-		} else {
-			_, err = client.Unsubscribe(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.UnsubscribeWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1384,18 +1374,12 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 	// perform action
 	var output *sns.ConfirmSubscriptionOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.ConfirmSubscriptionWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.ConfirmSubscriptionWithContext(segCtx, input)
-		} else {
-			output, err = client.ConfirmSubscription(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.ConfirmSubscriptionWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1456,18 +1440,12 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 	// perform action
 	var output *sns.ListSubscriptionsOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.ListSubscriptionsWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.ListSubscriptionsWithContext(segCtx, input)
-		} else {
-			output, err = client.ListSubscriptions(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.ListSubscriptionsWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1555,18 +1533,12 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 	// perform action
 	var output *sns.ListSubscriptionsByTopicOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.ListSubscriptionsByTopicWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.ListSubscriptionsByTopicWithContext(segCtx, input)
-		} else {
-			output, err = client.ListSubscriptionsByTopic(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.ListSubscriptionsByTopicWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1663,18 +1635,12 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 	// perform action
 	var output *sns.GetSubscriptionAttributesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.GetSubscriptionAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.GetSubscriptionAttributesWithContext(segCtx, input)
-		} else {
-			output, err = client.GetSubscriptionAttributes(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.GetSubscriptionAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1738,18 +1704,12 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.SetSubscriptionAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.SetSubscriptionAttributesWithContext(segCtx, input)
-		} else {
-			_, err = client.SetSubscriptionAttributes(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.SetSubscriptionAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2091,7 +2051,11 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-OptInPhoneNumber-Phone", phoneNumber)
+			// SP-008 P1-COMMON-SNS-01 (2026-04-15): mask phone PII in
+			// xray metadata — retain country code + last 4 digits for
+			// debugging, redact the rest so the trace cannot be pivoted
+			// back to a natural-person identity.
+			_ = seg.SafeAddMetadata("SNS-OptInPhoneNumber-Phone", maskPhoneForXray(phoneNumber))
 
 			if err != nil {
 				_ = seg.SafeAddError(err)
@@ -2122,18 +2086,12 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.OptInPhoneNumberWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.OptInPhoneNumberWithContext(segCtx, input)
-		} else {
-			_, err = client.OptInPhoneNumber(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.OptInPhoneNumberWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2165,7 +2123,11 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Phone", phoneNumber)
+			// SP-008 P1-COMMON-SNS-01 (2026-04-15): mask phone PII in
+			// xray metadata — retain country code + last 4 digits for
+			// debugging, redact the rest so the trace cannot be pivoted
+			// back to a natural-person identity.
+			_ = seg.SafeAddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Phone", maskPhoneForXray(phoneNumber))
 			_ = seg.SafeAddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Result-OptedOut", optedOut)
 
 			if err != nil {
@@ -2199,18 +2161,12 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 	// perform action
 	var output *sns.CheckIfPhoneNumberIsOptedOutOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.CheckIfPhoneNumberIsOptedOutWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.CheckIfPhoneNumberIsOptedOutWithContext(segCtx, input)
-		} else {
-			output, err = client.CheckIfPhoneNumberIsOptedOut(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.CheckIfPhoneNumberIsOptedOutWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2244,8 +2200,19 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 
 		defer seg.Close()
 		defer func() {
+			// SP-008 P1-COMMON-SNS-01 (2026-04-15): mask phone PII in
+			// xray metadata — retain country code + last 4 digits for
+			// debugging, redact the rest so the trace cannot be pivoted
+			// back to a natural-person identity. Count is retained so
+			// operators can still see how many opted-out numbers came
+			// back in one page.
+			maskedPhones := make([]string, 0, len(phonesList))
+			for _, p := range phonesList {
+				maskedPhones = append(maskedPhones, maskPhoneForXray(p))
+			}
 			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-PhonesList", phonesList)
+			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-PhonesList", maskedPhones)
+			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-PhonesList-Count", len(phonesList))
 			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-NextToken", morePhonesNextToken)
 
 			if err != nil {
@@ -2271,18 +2238,12 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 	// perform action
 	var output *sns.ListPhoneNumbersOptedOutOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.ListPhoneNumbersOptedOutWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.ListPhoneNumbersOptedOutWithContext(segCtx, input)
-		} else {
-			output, err = client.ListPhoneNumbersOptedOut(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.ListPhoneNumbersOptedOutWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2396,18 +2357,12 @@ func (s *SNS) CreatePlatformApplication(name string,
 	// perform action
 	var output *sns.CreatePlatformApplicationOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.CreatePlatformApplicationWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.CreatePlatformApplicationWithContext(segCtx, input)
-		} else {
-			output, err = client.CreatePlatformApplication(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.CreatePlatformApplicationWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2463,18 +2418,12 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.DeletePlatformApplicationWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.DeletePlatformApplicationWithContext(segCtx, input)
-		} else {
-			_, err = client.DeletePlatformApplication(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.DeletePlatformApplicationWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2534,18 +2483,12 @@ func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time
 	// perform action
 	var output *sns.ListPlatformApplicationsOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.ListPlatformApplicationsWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.ListPlatformApplicationsWithContext(segCtx, input)
-		} else {
-			output, err = client.ListPlatformApplications(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.ListPlatformApplicationsWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2616,18 +2559,12 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 	// perform action
 	var output *sns.GetPlatformApplicationAttributesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.GetPlatformApplicationAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.GetPlatformApplicationAttributesWithContext(segCtx, input)
-		} else {
-			output, err = client.GetPlatformApplicationAttributes(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.GetPlatformApplicationAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2687,18 +2624,12 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.SetPlatformApplicationAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.SetPlatformApplicationAttributesWithContext(segCtx, input)
-		} else {
-			_, err = client.SetPlatformApplicationAttributes(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.SetPlatformApplicationAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2787,18 +2718,12 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 	// perform action
 	var output *sns.CreatePlatformEndpointOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.CreatePlatformEndpointWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.CreatePlatformEndpointWithContext(segCtx, input)
-		} else {
-			output, err = client.CreatePlatformEndpoint(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.CreatePlatformEndpointWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2854,18 +2779,12 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.DeleteEndpointWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.DeleteEndpointWithContext(segCtx, input)
-		} else {
-			_, err = client.DeleteEndpoint(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.DeleteEndpointWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2936,18 +2855,12 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 	// perform action
 	var output *sns.ListEndpointsByPlatformApplicationOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.ListEndpointsByPlatformApplicationWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.ListEndpointsByPlatformApplicationWithContext(segCtx, input)
-		} else {
-			output, err = client.ListEndpointsByPlatformApplication(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.ListEndpointsByPlatformApplicationWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -3029,18 +2942,12 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 	// perform action
 	var output *sns.GetEndpointAttributesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.GetEndpointAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.GetEndpointAttributesWithContext(segCtx, input)
-		} else {
-			output, err = client.GetEndpointAttributes(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.GetEndpointAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -3101,18 +3008,12 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.SetEndpointAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.SetEndpointAttributesWithContext(segCtx, input)
-		} else {
-			_, err = client.SetEndpointAttributes(input)
-		}
-	}
+	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
+	// caller timeout > xray ctx > default 30s — so no SNS call can
+	// block forever on a hung AWS endpoint.
+	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.SetEndpointAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {

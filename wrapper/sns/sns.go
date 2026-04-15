@@ -86,15 +86,17 @@ const defaultSNSCallTimeout = 30 * time.Second
 //  1. If timeOutDuration is set, the caller-supplied timeout wins
 //     (context is derived from segCtx so xray parents stay attached).
 //  2. Else if segCtxSet (xray active), the xray segment ctx is
-//     returned as-is with a no-op cancel.
+//     wrapped in WithTimeout(defaultSNSCallTimeout). Xray segment
+//     lineage is preserved via the segCtx parent, and a deadline is
+//     enforced so hung AWS endpoints cannot block indefinitely.
 //  3. Else a fresh context.Background() is wrapped in
 //     WithTimeout(defaultSNSCallTimeout) so unsupervised calls cannot
 //     block indefinitely on a hung AWS endpoint.
 //
 // Callers MUST invoke the returned cancel before returning from the
 // enclosing method (use defer or an explicit call after the SDK
-// invocation). The no-op cancel in case (2) keeps call-site shape
-// uniform.
+// invocation). All three branches return a real cancel func — no-op
+// cancels are no longer possible after SP-008 pass-5 A1-F1.
 func ensureSNSCtx(segCtx context.Context, segCtxSet bool, timeOutDuration []time.Duration) (context.Context, context.CancelFunc) {
 	// SP-008 re-eval follow-up (2026-04-15): defensive nil-segCtx guard
 	// for case 1. Every current caller passes a non-nil segCtx derived
@@ -112,7 +114,17 @@ func ensureSNSCtx(segCtx context.Context, segCtxSet bool, timeOutDuration []time
 		return context.WithTimeout(parent, timeOutDuration[0])
 	}
 	if segCtxSet && segCtx != nil {
-		return segCtx, func() {}
+		// SP-008 pass-5 A1-F1 (2026-04-15): wrap the xray segment ctx
+		// with defaultSNSCallTimeout. Prior to this fix, branch 2
+		// returned the xray ctx as-is with a no-op cancel, which left
+		// SNS calls deadline-less under xray-on because
+		// xray.BeginSegment derives its child ctx from
+		// context.Background() (see wrapper/xray/xray.go:405). A hung
+		// AWS endpoint under xray-on therefore parked goroutines
+		// indefinitely. WithTimeout preserves the segment lineage via
+		// the segCtx parent while enforcing the same 30s deadline as
+		// branch 3.
+		return context.WithTimeout(segCtx, defaultSNSCallTimeout)
 	}
 	return context.WithTimeout(context.Background(), defaultSNSCallTimeout)
 }

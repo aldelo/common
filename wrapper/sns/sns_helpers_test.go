@@ -17,8 +17,10 @@ package sns
  */
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/sns"
@@ -426,6 +428,116 @@ func TestMaskPhoneForXray_NeverRevealsMiddleDigits(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ensureSNSCtx — SP-008 pass-5 A1-F1 xray-on deadline enforcement
+// ---------------------------------------------------------------------------
+//
+// These tests pin the contract that every branch of ensureSNSCtx
+// returns a context with an enforceable deadline.
+//
+// Mutation probe (quality gate): remove the
+// context.WithTimeout(segCtx, defaultSNSCallTimeout) wrap in branch 2
+// of ensureSNSCtx (revert to `return segCtx, func(){}`). All three
+// TestEnsureSNSCtx_XrayBranch_* tests must turn red. This confirms
+// the tests exercise the causal path, not just the postcondition.
+
+func TestEnsureSNSCtx_XrayBranch_AppliesDefaultDeadline(t *testing.T) {
+	// Branch 2: segCtxSet=true, segCtx non-nil, no caller timeout.
+	// Post A1-F1 fix, this MUST return a ctx with a ~30s deadline.
+	segCtx := context.Background()
+	got, cancel := ensureSNSCtx(segCtx, true, nil)
+	defer cancel()
+
+	deadline, ok := got.Deadline()
+	if !ok {
+		t.Fatal("branch-2 must return a context with a deadline (A1-F1 regression)")
+	}
+	until := time.Until(deadline)
+	if until < 29*time.Second || until > 31*time.Second {
+		t.Errorf("default deadline ~30s expected, got %v", until)
+	}
+}
+
+func TestEnsureSNSCtx_XrayBranch_PreservesParentLineage(t *testing.T) {
+	// Branch 2: the returned ctx MUST be a child of segCtx so xray
+	// segment lineage is preserved (any values stored on segCtx remain
+	// accessible on the returned ctx).
+	type ctxKey string
+	const k ctxKey = "xray-test-marker"
+	segCtx := context.WithValue(context.Background(), k, "parent-value")
+
+	got, cancel := ensureSNSCtx(segCtx, true, nil)
+	defer cancel()
+
+	v, _ := got.Value(k).(string)
+	if v != "parent-value" {
+		t.Errorf("branch-2 must preserve parent ctx values for xray lineage; got %q", v)
+	}
+}
+
+func TestEnsureSNSCtx_XrayBranch_CancelsOnParent(t *testing.T) {
+	// Branch 2: if the parent segCtx is canceled, the returned ctx
+	// MUST also be canceled (WithTimeout propagates parent cancellation).
+	parent, parentCancel := context.WithCancel(context.Background())
+	got, cancel := ensureSNSCtx(parent, true, nil)
+	defer cancel()
+
+	parentCancel()
+	select {
+	case <-got.Done():
+		// ok
+	case <-time.After(1 * time.Second):
+		t.Fatal("branch-2 ctx did not propagate parent cancellation")
+	}
+}
+
+func TestEnsureSNSCtx_CallerTimeoutOverridesXray(t *testing.T) {
+	// Branch 1: caller-supplied timeout wins over xray parent.
+	segCtx := context.Background()
+	got, cancel := ensureSNSCtx(segCtx, true, []time.Duration{5 * time.Second})
+	defer cancel()
+
+	deadline, ok := got.Deadline()
+	if !ok {
+		t.Fatal("branch-1 must return a ctx with a deadline")
+	}
+	until := time.Until(deadline)
+	if until > 6*time.Second {
+		t.Errorf("caller timeout 5s must win over xray branch 30s default, got %v", until)
+	}
+}
+
+func TestEnsureSNSCtx_BackgroundBranch_AppliesDefaultDeadline(t *testing.T) {
+	// Branch 3: no xray, no caller timeout.
+	got, cancel := ensureSNSCtx(nil, false, nil)
+	defer cancel()
+
+	deadline, ok := got.Deadline()
+	if !ok {
+		t.Fatal("branch-3 must return a ctx with a deadline")
+	}
+	until := time.Until(deadline)
+	if until < 29*time.Second || until > 31*time.Second {
+		t.Errorf("default deadline ~30s expected, got %v", until)
+	}
+}
+
+func TestEnsureSNSCtx_NilSegCtxWithCallerTimeout_FallsBackToBackground(t *testing.T) {
+	// Branch 1 defensive guard (A1-F5 dead-guard, also covered by
+	// Gap3.2): segCtxSet=true but segCtx=nil + caller timeout.
+	// Must NOT panic — must fall back to context.Background parent.
+	got, cancel := ensureSNSCtx(nil, true, []time.Duration{2 * time.Second})
+	defer cancel()
+
+	deadline, ok := got.Deadline()
+	if !ok {
+		t.Fatal("defensive nil-segCtx guard must still return a ctx with deadline")
+	}
+	if until := time.Until(deadline); until > 3*time.Second {
+		t.Errorf("caller timeout 2s expected, got %v", until)
 	}
 }
 

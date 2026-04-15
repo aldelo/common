@@ -14,6 +14,107 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ## [Unreleased]
 
+## [v1.8.1] — 2026-04-15
+
+Patch release. Closes the two `wrapper/sns` + `wrapper/kms` P1 findings
+from the `deep-review-2026-04-15-contrarian-pass4` cycle that landed on
+`master` after the `v1.8.0` tag was cut. No observable helper contract
+changes from `v1.8.0`; every public function signature is preserved.
+Consumers should bump `v1.8.0 → v1.8.1` as a drop-in.
+
+Context: `v1.8.0` narrated hardening of `wrapper/kms` / `wrapper/sns`
+against nil / torn-read / hung-endpoint failure modes, but the two
+*implementations* of that hardening (`ensureSNSCtx` full rollout +
+`atomic.Pointer[kms.KMS]` migration) merged after the tag. `v1.8.1`
+brings the tag in line with the narrative. This is the first release
+cut under workspace rule #15 (release-artifact parity), which is why
+the gap was surfaced as a P0 contrarian finding rather than silently
+shipped.
+
+### Fixed — SP-008 P1-COMMON-SNS-01 (`wrapper/sns`)
+
+- **ensureSNSCtx helper rollout (25 callsites).** Every SNS client
+  callsite in `wrapper/sns/sns.go` now funnels through a single
+  `ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)` helper with
+  precedence: caller-provided `timeOutDuration` > xray-derived ctx >
+  default 30s deadline. The helper is also nil-segCtx safe — a nil
+  xray ctx no longer slips into an SDK call site. Before the
+  rollout, 17 of the 25 callsites had no deadline at all when xray
+  was disabled and the caller did not pass an explicit timeout,
+  leaving the caller goroutine blocked indefinitely on a hung AWS
+  SNS endpoint. The rollout is internal plumbing — no public
+  function signature changed, and callers that already pass
+  `timeOutDuration` see zero behavioral change. Commit `f982aee`.
+- **Phone-PII mask for xray emit sites.** A new internal
+  `maskPhoneForXray` redacts E.164 phone numbers to `+X*****NNNN`
+  (keeps the country-code prefix and last four digits, asterisks the
+  middle) so trace readers with metadata access can no longer pivot
+  a raw xray segment dump to a natural-person identity. Wired into
+  `OptInPhoneNumber`, `CheckIfPhoneNumberIsOptedOut`, and
+  `ListPhoneNumbersOptedOut` xray emit sites. `SendSMS` continues
+  to emit the unredacted destination on purpose — the F5 pass-3
+  rationale comment at ~L1935 documents that SendSMS treats the
+  phone as a delivery address, not PII metadata. Table-driven tests
+  (`TestMaskPhoneForXray` — US / UK / minimum / below-threshold /
+  non-E.164 / empty / no-plus) and a property test
+  (`TestMaskPhoneForXray_NeverRevealsMiddleDigits` across five
+  country formats) freeze the redaction invariant against future
+  regression. Commit `f982aee`.
+
+### Fixed — SP-008 P1-COMMON-KMS-01 (`wrapper/kms`)
+
+- **`kmsClient` migrated to `atomic.Pointer[kms.KMS]`.** The hot-path
+  KMS client publication in `wrapper/kms/kms.go` is now an
+  `atomic.Pointer[kms.KMS]` instead of a plain pointer protected by
+  `k.mu.RLock`. Every reader path does a single acquire `Load()` +
+  nil check — lock-free and faster — and, more importantly, the
+  compiler now **enforces** the torn-read invariant: a future
+  refactor cannot silently reintroduce the hazard by adding a new
+  method that reads the field without taking the mutex, because the
+  field is no longer directly readable. Torn reads under the old
+  plain-pointer scheme were benign on amd64 but theoretically
+  observable on arm64 (the Go memory model does not guarantee
+  pointer-write atomicity without explicit synchronization), so
+  this also future-proofs the library for Graviton-based AWS
+  deployments. Commit `00d2a13`.
+- **Reconfigure path unchanged.** `setSessionAndClient` still holds
+  `k.mu` across the session + client mutation, and the `Store()` now
+  happens *under* that lock. Multi-field snapshot readers (the four
+  hot-path methods `EncryptViaCmkAes256`, `DecryptViaCmkAes256`,
+  `EncryptViaCmkRsa2048`, `DecryptViaCmkRsa2048`) keep their
+  function-entry `RLock` — the `RLock` still pins `AesKmsKeyName` /
+  `RsaKmsKeyName` + `_parentSegment` to the same publication
+  generation as the client, so an `RLock` + `Load` observes a
+  consistent snapshot even if a concurrent `setSessionAndClient`
+  fires mid-call.
+- **New regression tests.** `TestKMS_ConcurrentReconfigureDoesNotRace`
+  pins the writer-reader invariant under `go test -race` with eight
+  parallel readers and a flip-flop writer; a regressed migration
+  that removes an `RLock` hoist or reintroduces a plain pointer
+  trips the race detector. `TestKMS_GetClientReturnsErrWhenUnset`
+  and `TestKMS_DisconnectClearsPublishedClient` pin the nil-`Load()`
+  contract that the sentinel "Client is Required" error path depends
+  on.
+
+### Verified
+
+- `go build ./...` clean
+- `go vet ./...` clean
+- `go test -race ./...` clean (full package tree, including new
+  tests above)
+- `govulncheck ./...` — same baseline as v1.8.0 (no new advisories)
+
+### Upgrade notes
+
+- **Drop-in from v1.8.0.** No `go.mod` directive moves; the `go`
+  toolchain pin remains `1.26.2` from v1.8.0.
+- **Consumer sweep.** All 38 workspace consumer repos should bump
+  their `common` pin `v1.8.0 → v1.8.1` in coordination with the
+  sibling `connector` release cut from the same review cycle. The
+  sibling release's CHANGELOG entry is the canonical record of that
+  sibling tag — see `github.com/aldelo/connector/CHANGELOG.md` at
+  whichever tag is current on origin.
+
 ## [v1.8.0] — 2026-04-15
 
 Minor release. Primary themes: **coordinated `go 1.26.2` baseline bump**

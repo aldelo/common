@@ -794,9 +794,12 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 	// perform action
 	var output *sns.CreateTopicOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.CreateTopicWithContext(callCtx, input)
 	callCancel()
@@ -851,9 +854,12 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 	}
 
 	// perform action
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	_, err = client.DeleteTopicWithContext(callCtx, input)
 	callCancel()
@@ -916,9 +922,12 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 	// perform action
 	var output *sns.ListTopicsOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.ListTopicsWithContext(callCtx, input)
 	callCancel()
@@ -1009,9 +1018,12 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 	// perform action
 	var output *sns.GetTopicAttributesOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.GetTopicAttributesWithContext(callCtx, input)
 	callCancel()
@@ -1078,9 +1090,12 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 	}
 
 	// perform action
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	_, err = client.SetTopicAttributesWithContext(callCtx, input)
 	callCancel()
@@ -1244,9 +1259,12 @@ func (s *SNS) Subscribe(topicArn string,
 	// perform action
 	var output *sns.SubscribeOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.SubscribeWithContext(callCtx, input)
 	callCancel()
@@ -1305,9 +1323,12 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 	}
 
 	// perform action
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	_, err = client.UnsubscribeWithContext(callCtx, input)
 	callCancel()
@@ -1386,9 +1407,12 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 	// perform action
 	var output *sns.ConfirmSubscriptionOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.ConfirmSubscriptionWithContext(callCtx, input)
 	callCancel()
@@ -1452,9 +1476,12 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 	// perform action
 	var output *sns.ListSubscriptionsOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.ListSubscriptionsWithContext(callCtx, input)
 	callCancel()
@@ -1545,9 +1572,12 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 	// perform action
 	var output *sns.ListSubscriptionsByTopicOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.ListSubscriptionsByTopicWithContext(callCtx, input)
 	callCancel()
@@ -1647,9 +1677,12 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 	// perform action
 	var output *sns.GetSubscriptionAttributesOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.GetSubscriptionAttributesWithContext(callCtx, input)
 	callCancel()
@@ -1716,9 +1749,12 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 	}
 
 	// perform action
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	_, err = client.SetSubscriptionAttributesWithContext(callCtx, input)
 	callCancel()
@@ -1875,9 +1911,12 @@ func (s *SNS) Publish(topicArn string,
 	// perform action
 	var output *sns.PublishOutput
 
-	// SP-008 P2-CMN-3: always bound via ensureSNSCtx. The helper picks
-	// caller timeout > xray ctx > default 30s timeout so no Publish
-	// can block forever on a hung AWS endpoint.
+	// SP-008 P2-CMN-3 + pass-5 A1-F1 (2026-04-15): always bound via
+	// ensureSNSCtx. Caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No Publish can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	pubCtx, pubCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.PublishWithContext(pubCtx, input)
 	pubCancel()
@@ -2028,9 +2067,12 @@ func (s *SNS) SendSMS(phoneNumber string,
 	// perform action
 	var output *sns.PublishOutput
 
-	// SP-008 P2-CMN-3: always bound via ensureSNSCtx. The helper picks
-	// caller timeout > xray ctx > default 30s timeout so no Publish
-	// can block forever on a hung AWS endpoint.
+	// SP-008 P2-CMN-3 + pass-5 A1-F1 (2026-04-15): always bound via
+	// ensureSNSCtx. Caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No Publish can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	pubCtx, pubCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.PublishWithContext(pubCtx, input)
 	pubCancel()
@@ -2098,9 +2140,12 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 	}
 
 	// perform action
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	_, err = client.OptInPhoneNumberWithContext(callCtx, input)
 	callCancel()
@@ -2173,9 +2218,12 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 	// perform action
 	var output *sns.CheckIfPhoneNumberIsOptedOutOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.CheckIfPhoneNumberIsOptedOutWithContext(callCtx, input)
 	callCancel()
@@ -2250,9 +2298,12 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 	// perform action
 	var output *sns.ListPhoneNumbersOptedOutOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.ListPhoneNumbersOptedOutWithContext(callCtx, input)
 	callCancel()
@@ -2369,9 +2420,12 @@ func (s *SNS) CreatePlatformApplication(name string,
 	// perform action
 	var output *sns.CreatePlatformApplicationOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.CreatePlatformApplicationWithContext(callCtx, input)
 	callCancel()
@@ -2430,9 +2484,12 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 	}
 
 	// perform action
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	_, err = client.DeletePlatformApplicationWithContext(callCtx, input)
 	callCancel()
@@ -2495,9 +2552,12 @@ func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time
 	// perform action
 	var output *sns.ListPlatformApplicationsOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.ListPlatformApplicationsWithContext(callCtx, input)
 	callCancel()
@@ -2571,9 +2631,12 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 	// perform action
 	var output *sns.GetPlatformApplicationAttributesOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.GetPlatformApplicationAttributesWithContext(callCtx, input)
 	callCancel()
@@ -2636,9 +2699,12 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 	}
 
 	// perform action
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	_, err = client.SetPlatformApplicationAttributesWithContext(callCtx, input)
 	callCancel()
@@ -2730,9 +2796,12 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 	// perform action
 	var output *sns.CreatePlatformEndpointOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.CreatePlatformEndpointWithContext(callCtx, input)
 	callCancel()
@@ -2791,9 +2860,12 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 	}
 
 	// perform action
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	_, err = client.DeleteEndpointWithContext(callCtx, input)
 	callCancel()
@@ -2867,9 +2939,12 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 	// perform action
 	var output *sns.ListEndpointsByPlatformApplicationOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.ListEndpointsByPlatformApplicationWithContext(callCtx, input)
 	callCancel()
@@ -2954,9 +3029,12 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 	// perform action
 	var output *sns.GetEndpointAttributesOutput
 
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	output, err = client.GetEndpointAttributesWithContext(callCtx, input)
 	callCancel()
@@ -3020,9 +3098,12 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 	}
 
 	// perform action
-	// SP-008 P1-COMMON-SNS-01 (2026-04-15): bounded via ensureSNSCtx —
-	// caller timeout > xray ctx > default 30s — so no SNS call can
-	// block forever on a hung AWS endpoint.
+	// SP-008 P1-COMMON-SNS-01 + pass-5 A1-F1 (2026-04-15): bounded via
+	// ensureSNSCtx — caller timeout wins when supplied; otherwise
+	// defaultSNSCallTimeout (30s) is applied to BOTH the xray-segment-
+	// parented and Background-parented branches. No SNS call can block
+	// forever on a hung AWS endpoint. See wrapper/sns/sns.go:100 for
+	// the full precedence contract.
 	callCtx, callCancel := ensureSNSCtx(segCtx, segCtxSet, timeOutDuration)
 	_, err = client.SetEndpointAttributesWithContext(callCtx, input)
 	callCancel()

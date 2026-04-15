@@ -272,10 +272,13 @@ func validateE164Phone(phone string) error {
 //
 // SP-008 P1-COMMON-SNS-01 (2026-04-15): used by OptInPhoneNumber,
 // CheckIfPhoneNumberIsOptedOut, and ListPhoneNumbersOptedOut xray emit
-// sites. Not used by SendSMS — that method intentionally retains the
-// full phone number as the delivery destination (see F5 pass-3 comment
-// at ~L1969); redacting there would hide which device received a given
-// SMS during an operational incident.
+// sites. SP-010 pass-5 A1-F3 (2026-04-15) extended usage to SendSMS —
+// the three "admin" phone APIs were masking while SendSMS (the
+// highest-volume delivery method) left the full E.164 in xray metadata.
+// The asymmetry had no principled basis; pass-5 closed it so every
+// phone arg that reaches an xray emit is masked to country-code +
+// last-4-subscriber. Last-4 is still sufficient for correlating "did
+// this device get the SMS?" during an incident.
 //
 // Edge cases: inputs shorter than 7 characters (which would not
 // validate as E.164 anyway — the mask needs "+X" + middle + "NNNN") are
@@ -1975,15 +1978,25 @@ func (s *SNS) SendSMS(phoneNumber string,
 
 		defer seg.Close()
 		defer func() {
-			// F5 (pass-3 contrarian, 2026-04-14): SMS bodies commonly
-			// carry OTP / MFA codes and other auth secrets that MUST
-			// NOT land in xray metadata. Record length only — never
-			// the content. Phone number is retained as the delivery
-			// destination (required for operational debugging); if
-			// downstream tooling needs stronger phone redaction it
-			// can be layered in the xray sanitizer. See finding F5
-			// for the full rationale.
-			_ = seg.SafeAddMetadata("SNS-SendSMS-Phone", phoneNumber)
+			// F5 (pass-3, 2026-04-14): SMS bodies commonly carry OTP /
+			// MFA codes and other auth secrets — record length only,
+			// never content.
+			//
+			// A1-F3 (pass-5, 2026-04-15): phone number is now masked
+			// via maskPhoneForXray, matching OptInPhoneNumber,
+			// CheckIfPhoneNumberIsOptedOut, and ListPhoneNumbersOptedOut.
+			// Pass-3 originally rationalized the unmasked emit here as
+			// "delivery destination needed for operational debugging"
+			// but pass-5 showed that the three masked siblings log
+			// phone numbers for the same debugging reason and there
+			// is no principled distinction — SendSMS is the highest-
+			// volume phone API in this package, so leaving it unmasked
+			// left the head of the PII distribution exposed while the
+			// long tail was already masked. The masked form retains
+			// country code + last 4 subscriber digits which remains
+			// sufficient for "did this device get the SMS?" correlation
+			// during an incident.
+			_ = seg.SafeAddMetadata("SNS-SendSMS-Phone", maskPhoneForXray(phoneNumber))
 			_ = seg.SafeAddMetadata("SNS-SendSMS-Message-Length", len(message))
 			_ = seg.SafeAddMetadata("SNS-SendSMS-Result-MessageID", messageId)
 

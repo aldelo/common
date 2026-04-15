@@ -18,6 +18,7 @@ package sns
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -538,6 +539,59 @@ func TestEnsureSNSCtx_NilSegCtxWithCallerTimeout_FallsBackToBackground(t *testin
 	}
 	if until := time.Until(deadline); until > 3*time.Second {
 		t.Errorf("caller timeout 2s expected, got %v", until)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SendSMS xray phone PII mask — SP-010 pass-5 A1-F3 (2026-04-15)
+// ---------------------------------------------------------------------------
+//
+// Pass-3 F5 rationalized SendSMS's xray metadata emit as "phone number
+// is the delivery destination, needed for operational debugging" and
+// left the full E.164 in the segment while the three sibling admin
+// APIs (OptInPhoneNumber, CheckIfPhoneNumberIsOptedOut,
+// ListPhoneNumbersOptedOut) masked theirs via maskPhoneForXray. Pass-5
+// A1-F3 showed that debugging rationale applied identically to the
+// masked siblings — the asymmetry was unprincipled, and SendSMS is the
+// highest-volume phone API in this package so it was the head of the
+// PII distribution.
+//
+// The fix: route SendSMS's SNS-SendSMS-Phone metadata through
+// maskPhoneForXray. The TestMaskPhoneForXray_* tests above already pin
+// the mask function's correctness; the test below pins the CALL-SITE
+// WIRING — i.e. that SendSMS actually routes through the mask. Without
+// this pin, a reviewer could delete `maskPhoneForXray(` from the call
+// site and every pure-function test would still pass.
+//
+// Mutation probe (quality gate): in sns.go, revert the SendSMS emit
+// site from `maskPhoneForXray(phoneNumber)` back to `phoneNumber`.
+// TestSendSMS_XrayMetadata_MasksPhoneNumber MUST turn red. Restore the
+// fix and it MUST return to green. This confirms the test exercises the
+// causal path, not just a tautological postcondition.
+
+func TestSendSMS_XrayMetadata_MasksPhoneNumber(t *testing.T) {
+	// Source-invariant regression test: the SendSMS xray emit site
+	// must route the phone argument through maskPhoneForXray so that
+	// SNS-SendSMS-Phone metadata in xray segments only ever carries
+	// the country-code + last-4 form, never a raw E.164 number.
+	src, err := os.ReadFile("sns.go")
+	if err != nil {
+		t.Fatalf("cannot read sns.go: %v", err)
+	}
+	body := string(src)
+
+	// Positive: the masked emit MUST appear in the file.
+	wantMasked := `SafeAddMetadata("SNS-SendSMS-Phone", maskPhoneForXray(phoneNumber))`
+	if !strings.Contains(body, wantMasked) {
+		t.Errorf("A1-F3 regression: expected SendSMS xray emit to call maskPhoneForXray(phoneNumber), but did not find %q in sns.go", wantMasked)
+	}
+
+	// Negative: the old unmasked form MUST NOT appear anywhere. This
+	// catches partial reverts (e.g. someone adds a second emit site
+	// for debugging and forgets to mask it).
+	wantAbsent := `SafeAddMetadata("SNS-SendSMS-Phone", phoneNumber)`
+	if strings.Contains(body, wantAbsent) {
+		t.Errorf("A1-F3 regression: unmasked SendSMS phone emit found in sns.go: %q — must route through maskPhoneForXray", wantAbsent)
 	}
 }
 

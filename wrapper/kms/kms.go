@@ -82,17 +82,19 @@ import (
 const defaultKMSCallTimeout = 30 * time.Second
 
 // ensureKMSCtx normalizes segCtx into a context suitable for every
-// cli.*WithContext SDK call in this package. If segCtx is non-nil
-// (the xray-enabled path populates it from seg.Ctx) it is returned
-// as-is with a no-op cancel; if segCtx is nil we mint a fresh
-// context.Background() wrapped in WithTimeout(defaultKMSCallTimeout)
-// so the caller always has an upper bound. Callers MUST invoke the
-// returned cancel function before returning from the enclosing method
-// (defer or call explicitly after the SDK call returns). Passing the
-// no-op cancel through to callers keeps the call-site shape uniform.
+// cli.*WithContext SDK call in this package.
+//
+// Branches:
+//
+//  1. Xray segment ctx present (segCtx != nil): segCtx wrapped in
+//     WithTimeout(defaultKMSCallTimeout).
+//  2. No segment ctx: context.Background() with
+//     defaultKMSCallTimeout.
+//
+// Callers MUST invoke the returned cancel before returning.
 func ensureKMSCtx(segCtx context.Context) (context.Context, context.CancelFunc) {
 	if segCtx != nil {
-		return segCtx, func() {}
+		return context.WithTimeout(segCtx, defaultKMSCallTimeout)
 	}
 	return context.WithTimeout(context.Background(), defaultKMSCallTimeout)
 }

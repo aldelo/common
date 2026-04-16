@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"reflect"
 	"strings"
@@ -27,6 +28,29 @@ import (
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+// =====================================================================================================================
+// Struct-tag parse helpers (EH-3: surface parse failures instead of silently defaulting to zero)
+// =====================================================================================================================
+
+// parseInt32Logged wraps ParseInt32 and logs a warning when the input is non-empty but unparseable.
+// This surfaces struct-tag misconfigurations (e.g. size:"abc") that would otherwise silently default to zero.
+func parseInt32Logged(s string, tagName string, fieldContext string) int {
+	v, ok := ParseInt32(s)
+	if !ok && LenTrim(s) > 0 {
+		log.Printf("[WARN] struct tag parse: ParseInt32 failed for %s=%q in %s, defaulting to 0", tagName, s, fieldContext)
+	}
+	return v
+}
+
+// parseBoolLogged wraps ParseBool and logs a warning when the input is non-empty but unparseable.
+func parseBoolLogged(s string, tagName string, fieldContext string) bool {
+	v, ok := ParseBool(s)
+	if !ok && LenTrim(s) > 0 {
+		log.Printf("[WARN] struct tag parse: ParseBool failed for %s=%q in %s, defaulting to false", tagName, s, fieldContext)
+	}
+	return v
+}
 
 // =====================================================================================================================
 // Csv Parser Helpers
@@ -105,20 +129,22 @@ func csvParseFieldConfig(field reflect.StructField) (cfg csvFieldConfig, ok bool
 	cfg.defVal = field.Tag.Get("def")
 	cfg.validate = Trim(field.Tag.Get("validate"))
 
+	fctx := "csvParseFieldConfig(" + field.Name + ")" // field context for log messages
+
 	tagSize := Trim(strings.ToLower(field.Tag.Get("size")))
 	arModulo := strings.Split(tagSize, "+%")
 	if len(arModulo) == 2 {
 		tagSize = arModulo[0]
-		if cfg.tagModulo, _ = ParseInt32(arModulo[1]); cfg.tagModulo < 0 {
+		if cfg.tagModulo = parseInt32Logged(arModulo[1], "size(modulo)", fctx); cfg.tagModulo < 0 {
 			cfg.tagModulo = 0
 		}
 	}
 	arSize := strings.Split(tagSize, "..")
 	if len(arSize) == 2 {
-		cfg.sizeMin, _ = ParseInt32(arSize[0])
-		cfg.sizeMax, _ = ParseInt32(arSize[1])
+		cfg.sizeMin = parseInt32Logged(arSize[0], "size(min)", fctx)
+		cfg.sizeMax = parseInt32Logged(arSize[1], "size(max)", fctx)
 	} else {
-		cfg.sizeMin, _ = ParseInt32(tagSize)
+		cfg.sizeMin = parseInt32Logged(tagSize, "size", fctx)
 		cfg.sizeMax = cfg.sizeMin
 	}
 
@@ -128,16 +154,16 @@ func csvParseFieldConfig(field reflect.StructField) (cfg csvFieldConfig, ok bool
 		if len(arRange) == 2 {
 			if LenTrim(arRange[0]) > 0 {
 				cfg.rangeMinSet = true
-				cfg.rangeMin, _ = ParseInt32(arRange[0])
+				cfg.rangeMin = parseInt32Logged(arRange[0], "range(min)", fctx)
 			}
 			if LenTrim(arRange[1]) > 0 {
 				cfg.rangeMaxSet = true
-				cfg.rangeMax, _ = ParseInt32(arRange[1])
+				cfg.rangeMax = parseInt32Logged(arRange[1], "range(max)", fctx)
 			}
 		} else {
 			cfg.rangeMinSet = true
 			cfg.rangeMaxSet = true
-			cfg.rangeMin, _ = ParseInt32(tagRange)
+			cfg.rangeMin = parseInt32Logged(tagRange, "range", fctx)
 			cfg.rangeMax = cfg.rangeMin
 		}
 	}
@@ -145,11 +171,11 @@ func csvParseFieldConfig(field reflect.StructField) (cfg csvFieldConfig, ok bool
 	if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "outprefix", "zeroblank"); len(vs) == 7 {
 		cfg.boolTrue = vs[0]
 		cfg.boolFalse = vs[1]
-		cfg.skipBlank, _ = ParseBool(vs[2])
-		cfg.skipZero, _ = ParseBool(vs[3])
+		cfg.skipBlank = parseBoolLogged(vs[2], "skipblank", fctx)
+		cfg.skipZero = parseBoolLogged(vs[3], "skipzero", fctx)
 		cfg.timeFormat = vs[4]
 		cfg.outPrefix = vs[5]
-		cfg.zeroBlank, _ = ParseBool(vs[6])
+		cfg.zeroBlank = parseBoolLogged(vs[6], "zeroblank", fctx)
 	}
 
 	// safer getter parsing (no Left/Right on short strings)
@@ -500,11 +526,13 @@ func csvParseUnmarshalConfig(field reflect.StructField) (cfg csvUnmarshalConfig,
 	cfg.validate = Trim(field.Tag.Get("validate"))
 
 	// size
+	fctx := "csvParseUnmarshalConfig(" + field.Name + ")" // field context for log messages
+
 	tagSize := Trim(strings.ToLower(field.Tag.Get("size")))
 	arModulo := strings.Split(tagSize, "+%")
 	if len(arModulo) == 2 {
 		tagSize = arModulo[0]
-		if n, _ := ParseInt32(arModulo[1]); n < 0 {
+		if n := parseInt32Logged(arModulo[1], "size(modulo)", fctx); n < 0 {
 			cfg.tagModulo = 0
 		} else {
 			cfg.tagModulo = int32(n)
@@ -512,12 +540,10 @@ func csvParseUnmarshalConfig(field reflect.StructField) (cfg csvUnmarshalConfig,
 	}
 	arSize := strings.Split(tagSize, "..")
 	if len(arSize) == 2 {
-		iMin, _ := ParseInt32(arSize[0])
-		cfg.sizeMin = int32(iMin)
-		iMax, _ := ParseInt32(arSize[1])
-		cfg.sizeMax = int32(iMax)
+		cfg.sizeMin = int32(parseInt32Logged(arSize[0], "size(min)", fctx))
+		cfg.sizeMax = int32(parseInt32Logged(arSize[1], "size(max)", fctx))
 	} else {
-		iMin, _ := ParseInt32(tagSize)
+		iMin := parseInt32Logged(tagSize, "size", fctx)
 		cfg.sizeMin = int32(iMin)
 		cfg.sizeMax = int32(iMin)
 	}
@@ -528,17 +554,15 @@ func csvParseUnmarshalConfig(field reflect.StructField) (cfg csvUnmarshalConfig,
 		arRange := strings.Split(tagRange, "..")
 		if len(arRange) == 2 {
 			if LenTrim(arRange[0]) > 0 {
-				iMin, _ := ParseInt32(arRange[0])
-				cfg.tagRangeMin = int32(iMin)
+				cfg.tagRangeMin = int32(parseInt32Logged(arRange[0], "range(min)", fctx))
 				cfg.rangeMinSet = true
 			}
 			if LenTrim(arRange[1]) > 0 {
-				iMax, _ := ParseInt32(arRange[1])
-				cfg.tagRangeMax = int32(iMax)
+				cfg.tagRangeMax = int32(parseInt32Logged(arRange[1], "range(max)", fctx))
 				cfg.rangeMaxSet = true
 			}
 		} else {
-			iMin, _ := ParseInt32(tagRange)
+			iMin := parseInt32Logged(tagRange, "range", fctx)
 			cfg.tagRangeMin = int32(iMin)
 			cfg.tagRangeMax = int32(iMin)
 			cfg.rangeMinSet = true
@@ -1013,11 +1037,13 @@ func jsonParseFieldConfig(field reflect.StructField) (cfg jsonFieldConfig, ok bo
 	cfg.validate = Trim(field.Tag.Get("validate"))
 
 	// size
+	fctx := "jsonParseFieldConfig(" + field.Name + ")" // field context for log messages
+
 	tagSize := Trim(strings.ToLower(field.Tag.Get("size")))
 	arModulo := strings.Split(tagSize, "+%")
 	if len(arModulo) == 2 {
 		tagSize = arModulo[0]
-		if n, _ := ParseInt32(arModulo[1]); n < 0 {
+		if n := parseInt32Logged(arModulo[1], "size(modulo)", fctx); n < 0 {
 			cfg.tagModulo = 0
 		} else {
 			cfg.tagModulo = int32(n)
@@ -1025,12 +1051,10 @@ func jsonParseFieldConfig(field reflect.StructField) (cfg jsonFieldConfig, ok bo
 	}
 	arSize := strings.Split(tagSize, "..")
 	if len(arSize) == 2 {
-		iMin, _ := ParseInt32(arSize[0])
-		cfg.sizeMin = int32(iMin)
-		iMax, _ := ParseInt32(arSize[1])
-		cfg.sizeMax = int32(iMax)
+		cfg.sizeMin = int32(parseInt32Logged(arSize[0], "size(min)", fctx))
+		cfg.sizeMax = int32(parseInt32Logged(arSize[1], "size(max)", fctx))
 	} else {
-		iMin, _ := ParseInt32(tagSize)
+		iMin := parseInt32Logged(tagSize, "size", fctx)
 		cfg.sizeMin = int32(iMin)
 		cfg.sizeMax = int32(iMin)
 	}
@@ -1041,17 +1065,15 @@ func jsonParseFieldConfig(field reflect.StructField) (cfg jsonFieldConfig, ok bo
 		arRange := strings.Split(tagRange, "..")
 		if len(arRange) == 2 {
 			if LenTrim(arRange[0]) > 0 {
-				iMin, _ := ParseInt32(arRange[0])
-				cfg.tagRangeMin = int32(iMin)
+				cfg.tagRangeMin = int32(parseInt32Logged(arRange[0], "range(min)", fctx))
 				cfg.rangeMinSet = true
 			}
 			if LenTrim(arRange[1]) > 0 {
-				iMax, _ := ParseInt32(arRange[1])
-				cfg.tagRangeMax = int32(iMax)
+				cfg.tagRangeMax = int32(parseInt32Logged(arRange[1], "range(max)", fctx))
 				cfg.rangeMaxSet = true
 			}
 		} else {
-			iMin, _ := ParseInt32(tagRange)
+			iMin := parseInt32Logged(tagRange, "range", fctx)
 			cfg.tagRangeMin = int32(iMin)
 			cfg.tagRangeMax = int32(iMin)
 			cfg.rangeMinSet = true
@@ -1399,15 +1421,16 @@ func MarshalStructToQueryParams(inputStructPtr interface{}, tagName string, excl
 
 				var boolTrue, boolFalse, timeFormat, outPrefix string
 				var skipBlank, skipZero, zeroblank bool
+				qpCtx := "MarshalStructToQueryParams(" + field.Name + ")"
 
 				if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "outprefix", "zeroblank"); len(vs) == 7 {
 					boolTrue = vs[0]
 					boolFalse = vs[1]
-					skipBlank, _ = ParseBool(vs[2])
-					skipZero, _ = ParseBool(vs[3])
+					skipBlank = parseBoolLogged(vs[2], "skipblank", qpCtx)
+					skipZero = parseBoolLogged(vs[3], "skipzero", qpCtx)
 					timeFormat = vs[4]
 					outPrefix = vs[5]
-					zeroblank, _ = ParseBool(vs[6])
+					zeroblank = parseBoolLogged(vs[6], "zeroblank", qpCtx)
 				}
 
 				defVal := field.Tag.Get("def") // capture default early so it can be applied on skip
@@ -1667,14 +1690,15 @@ func MarshalStructToJson(inputStructPtr interface{}, tagName string, excludeTagN
 
 			var boolTrue, boolFalse, timeFormat string
 			var skipBlank, skipZero, zeroBlank bool
+			jsCtx := "MarshalStructToJson(" + field.Name + ")"
 
 			if vs := GetStructTagsValueSlice(field, "booltrue", "boolfalse", "skipblank", "skipzero", "timeformat", "zeroblank"); len(vs) == 6 {
 				boolTrue = vs[0]
 				boolFalse = vs[1]
-				skipBlank, _ = ParseBool(vs[2])
-				skipZero, _ = ParseBool(vs[3])
+				skipBlank = parseBoolLogged(vs[2], "skipblank", jsCtx)
+				skipZero = parseBoolLogged(vs[3], "skipzero", jsCtx)
 				timeFormat = vs[4]
-				zeroBlank, _ = ParseBool(vs[5])
+				zeroBlank = parseBoolLogged(vs[5], "zeroblank", jsCtx)
 			}
 
 			defVal := field.Tag.Get("def") // capture default regardless of getter presence
@@ -2555,7 +2579,7 @@ func SetStructFieldDefaultValues(inputStructPtr interface{}) (bool, error) {
 					}
 				case sql.NullBool:
 					if !f.Valid {
-						b, _ := ParseBool(tagDef)
+						b := parseBoolLogged(tagDef, "def", "SetStructFieldDefaultValues("+field.Name+")")
 						o.Set(reflect.ValueOf(sql.NullBool{Bool: b, Valid: true}))
 					}
 				case sql.NullFloat64:

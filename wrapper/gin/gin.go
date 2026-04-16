@@ -298,7 +298,8 @@ func NewServer(name string, port uint, releaseMode bool, customRecovery bool, cu
 					}
 
 					if gw.HttpStatusErrorHandler == nil {
-						c.String(500, msg)
+						log.Printf("!!! Panic recovered: %s !!!", msg)
+						c.String(500, "Internal Server Error")
 					} else {
 						gw.HttpStatusErrorHandler(500, msg, c)
 					}
@@ -324,7 +325,8 @@ func NewServer(name string, port uint, releaseMode bool, customRecovery bool, cu
 				}
 
 				if gw.HttpStatusErrorHandler == nil {
-					c.String(500, msg)
+					log.Printf("!!! Panic recovered: %s !!!", msg)
+					c.String(500, "Internal Server Error")
 				} else {
 					gw.HttpStatusErrorHandler(500, msg, c)
 				}
@@ -885,19 +887,10 @@ func (g *Gin) setupMaxLimitMiddleware(rg gin.IRoutes, maxLimit int) {
 	}
 }
 
-// helper to derive a client key, preferring proxy headers if present
+// clientKeyFromRequest derives the rate-limiter key from the client IP.
+// Uses c.ClientIP() which respects gin's TrustedProxies configuration,
+// preventing rate-limit bypass via spoofed X-Forwarded-For headers.
 func clientKeyFromRequest(c *gin.Context) string {
-	if xff := c.GetHeader("X-Forwarded-For"); util.LenTrim(xff) > 0 {
-		parts := strings.Split(xff, ",")
-		for _, p := range parts {
-			if ip := strings.TrimSpace(p); util.LenTrim(ip) > 0 {
-				return ip
-			}
-		}
-	}
-	if xr := c.GetHeader("X-Real-IP"); util.LenTrim(xr) > 0 {
-		return strings.TrimSpace(xr)
-	}
 	return c.ClientIP()
 }
 

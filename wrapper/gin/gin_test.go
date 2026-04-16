@@ -539,6 +539,84 @@ func TestNewServer_CustomRecovery(t *testing.T) {
 	}
 }
 
+// TestNewServer_CustomRecovery_NoDetailLeak verifies SR-NEW-1: when a handler
+// panics and no HttpStatusErrorHandler is set, the response body must contain
+// only "Internal Server Error" — never the raw panic value, stack frames,
+// or file paths.
+func TestNewServer_CustomRecovery_NoDetailLeak(t *testing.T) {
+	gw := NewServer("test-no-leak", 0, true, true, nil)
+	if gw == nil {
+		t.Fatal("NewServer returned nil")
+	}
+
+	// Register a route that panics with sensitive info.
+	gw.Engine().GET("/panic-leak", func(c *ginlib.Context) {
+		panic("secret: password=hunter2 at /home/user/.config/db.json")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/panic-leak", nil)
+	gw.Engine().ServeHTTP(w, req)
+
+	if w.Code != 500 {
+		t.Fatalf("status = %d, want 500", w.Code)
+	}
+
+	body := w.Body.String()
+
+	// Must contain the generic message.
+	if body != "Internal Server Error" {
+		t.Errorf("response body = %q, want %q", body, "Internal Server Error")
+	}
+
+	// Must NOT contain any of the panic's sensitive content.
+	for _, leak := range []string{"password", "hunter2", "db.json", "/home/user", "secret"} {
+		if bytes.Contains(w.Body.Bytes(), []byte(leak)) {
+			t.Errorf("response body contains sensitive data %q — panic detail leaked to client", leak)
+		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// clientKeyFromRequest — must use c.ClientIP(), not raw headers (SR-NEW-2)
+// --------------------------------------------------------------------------
+
+func TestClientKeyFromRequest_IgnoresSpoofedHeaders(t *testing.T) {
+	// When TrustedProxies is empty (default in test), c.ClientIP() ignores
+	// X-Forwarded-For and returns the transport-layer RemoteAddr.
+	// Before the fix, clientKeyFromRequest parsed X-Forwarded-For directly,
+	// letting attackers rotate rate-limiter keys via header spoofing.
+	engine := ginlib.New()
+	engine.TrustedPlatform = ""
+	// SetTrustedProxies(nil) = trust nobody → c.ClientIP() uses RemoteAddr
+	_ = engine.SetTrustedProxies(nil)
+
+	var gotKey string
+	engine.GET("/rate-test", func(c *ginlib.Context) {
+		gotKey = clientKeyFromRequest(c)
+		c.String(200, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/rate-test", nil)
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
+	req.Header.Set("X-Real-IP", "9.10.11.12")
+	req.RemoteAddr = "192.168.1.100:12345"
+	engine.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	// With no trusted proxies, c.ClientIP() should return RemoteAddr IP,
+	// NOT the spoofed X-Forwarded-For value.
+	if gotKey == "1.2.3.4" || gotKey == "5.6.7.8" || gotKey == "9.10.11.12" {
+		t.Errorf("clientKeyFromRequest = %q — used spoofed header instead of transport IP", gotKey)
+	}
+	if gotKey != "192.168.1.100" {
+		t.Errorf("clientKeyFromRequest = %q, want %q (RemoteAddr)", gotKey, "192.168.1.100")
+	}
+}
+
 func TestRunServer_MissingRoutes(t *testing.T) {
 	gw := NewServer("test-no-routes", 0, true, false, nil)
 	err := gw.RunServer()

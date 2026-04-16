@@ -405,12 +405,21 @@ func (s *SNS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("SNS-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-AWS-Region", s.getAwsRegion())
-			_ = seg.SafeAddMetadata("SNS-SMS-Sender-Name", s.getSMSSenderName())
-			_ = seg.SafeAddMetadata("SNS-SMS-Transactional", s.getSMSTransactional())
+			// COMMON-R2-001: sampled xray failure logging instead of silent discard
+			if e := seg.SafeAddMetadata("SNS-AWS-Region", s.getAwsRegion()); e != nil {
+				xray.LogXrayAddFailure("SNS-Connect", e)
+			}
+			if e := seg.SafeAddMetadata("SNS-SMS-Sender-Name", s.getSMSSenderName()); e != nil {
+				xray.LogXrayAddFailure("SNS-Connect", e)
+			}
+			if e := seg.SafeAddMetadata("SNS-SMS-Transactional", s.getSMSTransactional()); e != nil {
+				xray.LogXrayAddFailure("SNS-Connect", e)
+			}
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				if e := seg.SafeAddError(err); e != nil {
+					xray.LogXrayAddFailure("SNS-Connect", e)
+				}
 			}
 		}()
 
@@ -778,12 +787,21 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-CreateTopic-TopicName", topicName)
-			_ = seg.SafeAddMetadata("SNS-CreateTopic-Attributes", attributes)
-			_ = seg.SafeAddMetadata("SNS-CreateTopic-Result-TopicArn", topicArn)
+			// COMMON-R2-001: sampled xray failure logging instead of silent discard
+			if e := seg.SafeAddMetadata("SNS-CreateTopic-TopicName", topicName); e != nil {
+				xray.LogXrayAddFailure("SNS-CreateTopic", e)
+			}
+			if e := seg.SafeAddMetadata("SNS-CreateTopic-Attributes", attributes); e != nil {
+				xray.LogXrayAddFailure("SNS-CreateTopic", e)
+			}
+			if e := seg.SafeAddMetadata("SNS-CreateTopic-Result-TopicArn", topicArn); e != nil {
+				xray.LogXrayAddFailure("SNS-CreateTopic", e)
+			}
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				if e := seg.SafeAddError(err); e != nil {
+					xray.LogXrayAddFailure("SNS-CreateTopic", e)
+				}
 			}
 		}()
 	}
@@ -1390,7 +1408,11 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 		defer seg.Close()
 		defer func() {
 			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-TopicArn", topicArn)
-			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-Token", token)
+			// SEC-002 (2026-04-16): the SNS confirmation token is a
+			// security credential — never emit the raw value to xray.
+			// Length is sufficient for debugging (was a token present?
+			// how long was it?).
+			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-Token-Len", len(token))
 			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-Result-SubscriptionArn", subscriptionArn)
 
 			if err != nil {

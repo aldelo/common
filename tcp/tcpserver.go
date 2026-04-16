@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -111,6 +112,11 @@ func (s *TCPServer) Serve() (err error) {
 		// start continuous loop to accept incoming tcp client,
 		// and initiate client handler go-routine for each connection
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("tcp server: recovered panic in listener loop: %v\n%s", r, debug.Stack())
+				}
+			}()
 			for {
 				// perform listener action on connected tcp client
 				if c, e := s._tcpListener.Accept(); e != nil {
@@ -148,7 +154,14 @@ func (s *TCPServer) Serve() (err error) {
 					s._mux.Unlock()
 
 					// handle client connection
-					go s.handleClientConnection(c, clientIP)
+					go func(conn net.Conn, ip string) {
+						defer func() {
+							if r := recover(); r != nil {
+								log.Printf("tcp server: recovered panic in client handler for %s: %v\n%s", ip, r, debug.Stack())
+							}
+						}()
+						s.handleClientConnection(conn, ip)
+					}(c, clientIP)
 
 					// notify accept event
 					if s.ListenerAcceptHandler != nil {

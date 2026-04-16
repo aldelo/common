@@ -42,10 +42,13 @@ package xray
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	util "github.com/aldelo/common"
 	"github.com/aws/aws-xray-sdk-go/awsplugins/ecs"
@@ -860,4 +863,80 @@ func (x *XSegment) CaptureAsync(traceName string, executeFunc func() error, trac
 	}(baseCtx)
 
 	return errCh
+}
+
+// ================================================================================================================
+// xray failure observability — sampled logging for SafeAdd* errors (COMMON-R2-001)
+// ================================================================================================================
+
+// xrayFailureState tracks per-category failure counts and last-log timestamps.
+// Protected by xrayFailureMu. Categories are caller-chosen strings like
+// "SES-SendEmail" or "SNS-Connect" that identify which wrapper method observed
+// the SafeAdd* error.
+var (
+	xrayFailureMu    sync.Mutex
+	xrayFailureLast  = make(map[string]time.Time)
+	xrayFailureCount = make(map[string]int64)
+
+	// xrayLogInterval controls how often sampled failure logs are emitted per
+	// category. Default: 1 minute. Exposed as a package var so tests can
+	// shorten the interval without time.Sleep.
+	xrayLogInterval = time.Minute
+
+	// xrayFailureTotal is a process-wide counter of all SafeAdd* failures
+	// across all categories. Useful for lightweight health-check probes that
+	// want a single "are xray adds failing?" signal without parsing logs.
+	xrayFailureTotal atomic.Int64
+)
+
+// LogXrayAddFailure records and rate-limits logging of X-Ray SafeAdd*
+// failures. Call it any time a SafeAddMetadata or SafeAddError call returns
+// a non-nil error. At most one log line per category per xrayLogInterval
+// (default 1 minute) is emitted; intermediate failures are counted and
+// reported in the next log line.
+//
+// category should identify the wrapper method, e.g. "SES-SendEmail",
+// "SNS-CreateTopic". This keeps the log output actionable — operators can
+// grep for the category to see which wrapper is experiencing xray failures.
+//
+// Design rationale: the 1,168 existing `_ = seg.SafeAdd*(...)` call sites
+// silently discard errors. Checking every one individually would flood logs
+// when xray is misconfigured. This sampled approach gives visibility into
+// systemic failures without per-call log spam.
+func LogXrayAddFailure(category string, err error) {
+	if err == nil {
+		return
+	}
+
+	xrayFailureTotal.Add(1)
+
+	xrayFailureMu.Lock()
+	defer xrayFailureMu.Unlock()
+
+	xrayFailureCount[category]++
+
+	if time.Since(xrayFailureLast[category]) >= xrayLogInterval {
+		log.Printf("xray: %s SafeAdd failures in last interval: %d (latest: %v)",
+			category, xrayFailureCount[category], err)
+		xrayFailureLast[category] = time.Now()
+		xrayFailureCount[category] = 0
+	}
+}
+
+// XrayFailureTotal returns the process-lifetime count of SafeAdd* failures
+// observed via LogXrayAddFailure. Useful for health-check endpoints that want
+// to expose xray observability health as a metric without log parsing.
+func XrayFailureTotal() int64 {
+	return xrayFailureTotal.Load()
+}
+
+// ResetXrayFailureCounters resets all sampled-failure state. Intended for
+// testing only — production code should not call this.
+func ResetXrayFailureCounters() {
+	xrayFailureMu.Lock()
+	defer xrayFailureMu.Unlock()
+
+	xrayFailureLast = make(map[string]time.Time)
+	xrayFailureCount = make(map[string]int64)
+	xrayFailureTotal.Store(0)
 }

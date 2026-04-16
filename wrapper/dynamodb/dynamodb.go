@@ -607,10 +607,13 @@ func (w *DynamoDBTransactionWrites) LoadPutItems() interface{} {
 				} else {
 					merged, mergeErr := util.ReflectAppendSlices(allPutItems, putItemsSet.PutItems)
 					if mergeErr != nil {
-						log.Printf("WARNING: DynamoDBTransactionWrites.LoadPutItems: ReflectAppendSlices failed — items from this PutItemsSet will be OMITTED from the transaction: %v", mergeErr)
-					} else {
-						allPutItems = merged
+						log.Printf("ERROR: DynamoDBTransactionWrites.LoadPutItems: ReflectAppendSlices failed — aborting merge to prevent silent data loss: %v", mergeErr)
+						w.allPutItemsMutex.Lock()
+						w.allPutItems = nil
+						w.allPutItemsMutex.Unlock()
+						return nil
 					}
+					allPutItems = merged
 				}
 			}
 		}
@@ -1356,26 +1359,28 @@ func (d *DynamoDB) connectInternal() error {
 	if d == nil {
 		return errors.New("Connect To DynamoDB Failed: (Validate) " + "DynamoDB Object Nil")
 	}
-	d.connMutex.Lock()
-	defer d.connMutex.Unlock()
 
-	// clean up prior cn reference
+	// validate region and capture config under write lock, then release before I/O
+	d.connMutex.Lock()
 	d.cn = nil
 	if !d.AwsRegion.Valid() || d.AwsRegion == awsregion.UNKNOWN {
+		d.connMutex.Unlock()
 		return errors.New("Connect To DynamoDB Failed: (AWS Session Error) " + "Region is Required")
 	}
 
-	// create custom http2 client if needed
-	var httpCli *http.Client
-	var httpErr error
-
+	region := d.AwsRegion.Key()
 	if d.HttpOptions == nil {
 		d.HttpOptions = new(awshttp2.HttpClientSettings)
 	}
+	httpOptions := d.HttpOptions
+	d.connMutex.Unlock()
 
-	// use custom http2 client
+	// perform I/O (HTTP client creation + AWS session) without holding the lock
+	var httpCli *http.Client
+	var httpErr error
+
 	h2 := &awshttp2.AwsHttp2Client{
-		Options: d.HttpOptions,
+		Options: httpOptions,
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
@@ -1386,27 +1391,29 @@ func (d *DynamoDB) connectInternal() error {
 		httpCli = &http.Client{}
 	}
 
-	// establish aws session connection and connect to dynamodb service
-	if sess, err := session.NewSession(
+	sess, err := session.NewSession(
 		&aws.Config{
-			Region:     aws.String(d.AwsRegion.Key()),
+			Region:     aws.String(region),
 			LogLevel:   aws.LogLevel(aws.LogOff), // explicitly turn off aws sdk logging
 			HTTPClient: httpCli,
 			MaxRetries: aws.Int(3),
-		}); err != nil {
-		// aws session error
+		})
+	if err != nil {
 		return errors.New("Connect To DynamoDB Failed: (AWS Session Error) " + err.Error())
-	} else {
-		// aws session obtained
-		d.cn = dynamodb.New(sess)
-
-		if d.cn == nil {
-			return errors.New("Connect To DynamoDB Failed: (New DynamoDB Connection) " + "Connection Object Nil")
-		}
-
-		// successfully connected to dynamodb service
-		return nil
 	}
+
+	// re-acquire lock to assign the connection
+	d.connMutex.Lock()
+	defer d.connMutex.Unlock()
+
+	d.cn = dynamodb.New(sess)
+
+	if d.cn == nil {
+		return errors.New("Connect To DynamoDB Failed: (New DynamoDB Connection) " + "Connection Object Nil")
+	}
+
+	// successfully connected to dynamodb service
+	return nil
 }
 
 // =====================================================================================================================

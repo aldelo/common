@@ -19,7 +19,9 @@ package tcp
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"net"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -248,6 +250,11 @@ func (c *TCPClient) StartReader() error {
 
 	// start reader loop and continue until Reader End
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("tcp client: recovered panic in reader loop: %v\n%s", r, debug.Stack())
+			}
+		}()
 		defer func() {
 			c.mu.Lock()
 			c._readerStarted = false

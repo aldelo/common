@@ -2,6 +2,7 @@ package xray
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -243,5 +244,111 @@ func TestEndToEnd_XraySdkDisabled_NoPanic(t *testing.T) {
 	}
 	if err := seg.SafeAddError(errors.New("post-close")); err != nil {
 		t.Errorf("SafeAddError post-Close: %v", err)
+	}
+}
+
+// ================================================================================================================
+// LogXrayAddFailure tests (COMMON-R2-001)
+// ================================================================================================================
+
+// TestLogXrayAddFailure_NilError verifies that nil errors are no-ops:
+// the total counter must not increment.
+func TestLogXrayAddFailure_NilError(t *testing.T) {
+	ResetXrayFailureCounters()
+
+	LogXrayAddFailure("test-nil", nil)
+
+	if got := XrayFailureTotal(); got != 0 {
+		t.Errorf("XrayFailureTotal() = %d after nil error; want 0", got)
+	}
+}
+
+// TestLogXrayAddFailure_CountsErrors verifies that non-nil errors increment
+// the process-wide total and per-category counters.
+func TestLogXrayAddFailure_CountsErrors(t *testing.T) {
+	ResetXrayFailureCounters()
+
+	LogXrayAddFailure("SES-Connect", errors.New("e1"))
+	LogXrayAddFailure("SES-Connect", errors.New("e2"))
+	LogXrayAddFailure("SNS-Connect", errors.New("e3"))
+
+	if got := XrayFailureTotal(); got != 3 {
+		t.Errorf("XrayFailureTotal() = %d; want 3", got)
+	}
+}
+
+// TestLogXrayAddFailure_RateLimit verifies the sampled logging behavior:
+// after the first call (which logs immediately on a fresh category), subsequent
+// calls within the same interval should NOT reset the accumulated count to zero
+// until the interval elapses. We shorten the interval for test speed.
+func TestLogXrayAddFailure_RateLimit(t *testing.T) {
+	ResetXrayFailureCounters()
+
+	// Shorten interval for testing — restore after test.
+	origInterval := xrayLogInterval
+	xrayLogInterval = 50 * time.Millisecond
+	defer func() { xrayLogInterval = origInterval }()
+
+	// First call on a fresh category triggers an immediate log (time.Since(zero) >= 50ms).
+	LogXrayAddFailure("rate-test", errors.New("first"))
+
+	// Several rapid calls within the 50ms window — these should accumulate.
+	for i := 0; i < 10; i++ {
+		LogXrayAddFailure("rate-test", errors.New("rapid"))
+	}
+
+	// Total should be 11 (1 + 10).
+	if got := XrayFailureTotal(); got != 11 {
+		t.Errorf("XrayFailureTotal() = %d; want 11", got)
+	}
+
+	// Wait for the interval to elapse, then trigger another log.
+	time.Sleep(60 * time.Millisecond)
+	LogXrayAddFailure("rate-test", errors.New("after-interval"))
+
+	if got := XrayFailureTotal(); got != 12 {
+		t.Errorf("XrayFailureTotal() = %d after interval; want 12", got)
+	}
+}
+
+// TestLogXrayAddFailure_ConcurrentSafe verifies that concurrent calls to
+// LogXrayAddFailure do not race. Run with -race to detect data races.
+func TestLogXrayAddFailure_ConcurrentSafe(t *testing.T) {
+	ResetXrayFailureCounters()
+
+	const goroutines = 64
+	const callsPerGoroutine = 100
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < callsPerGoroutine; i++ {
+				LogXrayAddFailure("concurrent-test", errors.New("err"))
+			}
+		}(g)
+	}
+
+	wg.Wait()
+
+	expected := int64(goroutines * callsPerGoroutine)
+	if got := XrayFailureTotal(); got != expected {
+		t.Errorf("XrayFailureTotal() = %d; want %d", got, expected)
+	}
+}
+
+// TestResetXrayFailureCounters verifies that Reset clears all state.
+func TestResetXrayFailureCounters(t *testing.T) {
+	// Populate some state first.
+	LogXrayAddFailure("reset-test", errors.New("e"))
+	if XrayFailureTotal() == 0 {
+		t.Fatal("expected non-zero total before reset")
+	}
+
+	ResetXrayFailureCounters()
+
+	if got := XrayFailureTotal(); got != 0 {
+		t.Errorf("XrayFailureTotal() = %d after reset; want 0", got)
 	}
 }

@@ -551,6 +551,118 @@ func TestMaskPhoneForXray_AsciiBCUnchanged_A1F4(t *testing.T) {
 	}
 }
 
+func TestMaskPhoneForXray_SupplementaryUnicode_TEST004(t *testing.T) {
+	// TEST-004: supplementary-plane characters (codepoints > U+FFFF) are
+	// encoded as 4-byte UTF-8 sequences. A byte-based slicer would cut
+	// inside a 4-byte rune when computing head[:2] or tail[len-4:],
+	// producing invalid UTF-8. These cases exercise that boundary.
+	//
+	// 📱 = U+1F4F1 (4 bytes), 𝟎 = U+1D7CE (4 bytes), 𝟏 = U+1D7CF (4 bytes),
+	// 🔒 = U+1F512 (4 bytes).
+	cases := []struct {
+		name  string
+		input string
+		// wantHead is the first 2 runes preserved in the output.
+		wantHead string
+		// wantTail is the last 4 runes preserved in the output.
+		wantTail string
+		// wantMidLen is the number of '*' runes in the middle.
+		wantMidLen int
+	}{
+		{
+			// Phone prefixed with emoji: "+📱" are the first 2 runes,
+			// "7890" are the last 4. 12 runes total → 6 middle asterisks.
+			name:       "emoji prefix phone",
+			input:      "+📱1234567890",
+			wantHead:   "+📱",
+			wantTail:   "7890",
+			wantMidLen: 6,
+		},
+		{
+			// Mathematical bold digits (SMP, 4 bytes each) at the start.
+			// "+𝟎" are the first 2 runes, "8901" are the last 4.
+			// Input: "+𝟎𝟏2345678901" = 13 runes → 7 middle asterisks.
+			name:       "mathematical bold digits head",
+			input:      "+𝟎𝟏2345678901",
+			wantHead:   "+𝟎",
+			wantTail:   "8901",
+			wantMidLen: 7,
+		},
+		{
+			// 4-byte runes in the tail window. Last 4 runes are emoji.
+			// "+1202555" (8 runes) + "📱🔒📱🔒" (4 runes) = 12 runes total.
+			// Head: "+1", Tail: "📱🔒📱🔒", middle: 6 asterisks.
+			name:       "emoji tail window",
+			input:      "+1202555📱🔒📱🔒",
+			wantHead:   "+1",
+			wantTail:   "📱🔒📱🔒",
+			wantMidLen: 6,
+		},
+		{
+			// Entire phone is supplementary-plane runes except '+'.
+			// "+🔒📱🔒📱🔒📱🔒" = 8 runes → head 2 = "+🔒", tail 4 = "📱🔒📱🔒", mid 2 = "**".
+			name:       "all supplementary runes",
+			input:      "+🔒📱🔒📱🔒📱🔒",
+			wantHead:   "+🔒",
+			wantTail:   "📱🔒📱🔒",
+			wantMidLen: 2,
+		},
+		{
+			// Minimum mask length (7 runes) with supplementary-plane chars
+			// in head and tail. "+🔒A🔒📱🔒📱" = 7 runes total.
+			// Head: "+🔒", Tail: "🔒📱🔒📱", middle: 1 asterisk.
+			name:       "minimum mask length with SMP runes",
+			input:      "+🔒A🔒📱🔒📱",
+			wantHead:   "+🔒",
+			wantTail:   "🔒📱🔒📱",
+			wantMidLen: 1,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := maskPhoneForXray(tc.input)
+
+			// (1) Output must be valid UTF-8 — the primary invariant this
+			// test exists to enforce.
+			if !utf8.ValidString(got) {
+				t.Fatalf("maskPhoneForXray(%q) produced invalid UTF-8: % x", tc.input, []byte(got))
+			}
+
+			// (2) Rune-length must be preserved.
+			inRunes := []rune(tc.input)
+			gotRunes := []rune(got)
+			if len(gotRunes) != len(inRunes) {
+				t.Fatalf("rune-length mismatch: input %d, masked %d (input=%q, got=%q)",
+					len(inRunes), len(gotRunes), tc.input, got)
+			}
+
+			// (3) Head 2 runes preserved.
+			gotHead := string(gotRunes[:2])
+			if gotHead != tc.wantHead {
+				t.Errorf("head: got %q, want %q", gotHead, tc.wantHead)
+			}
+
+			// (4) Tail 4 runes preserved.
+			gotTail := string(gotRunes[len(gotRunes)-4:])
+			if gotTail != tc.wantTail {
+				t.Errorf("tail: got %q, want %q", gotTail, tc.wantTail)
+			}
+
+			// (5) Middle runes are all '*'.
+			mid := gotRunes[2 : len(gotRunes)-4]
+			if len(mid) != tc.wantMidLen {
+				t.Errorf("middle length: got %d, want %d", len(mid), tc.wantMidLen)
+			}
+			for i, r := range mid {
+				if r != '*' {
+					t.Errorf("middle rune %d is %q, want '*'", i, string(r))
+					break
+				}
+			}
+		})
+	}
+}
+
 func TestMaskPhoneForXray_SourcePinsRuneConversion_A1F4(t *testing.T) {
 	// Source-invariant pin: the fix relies on the helper walking the
 	// input as runes, not bytes. If a well-meaning refactor reverts

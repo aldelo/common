@@ -178,6 +178,72 @@ func (s *SES) clearClient() {
 	s.sesClient = nil
 }
 
+// maskEmailForXray returns a PII-reduced form of an email address suitable
+// for xray metadata. The first 2 characters of the local part and the full
+// domain are retained (enough to debug a sender/recipient mismatch); the
+// remaining local-part characters are replaced with asterisks so the trace
+// cannot be pivoted to a natural-person identity.
+//
+// SEC-001 (2026-04-16): used by SendEmail, SendRawEmail, and
+// SendTemplateEmail xray emit sites. Mirrors the pattern established by
+// maskPhoneForXray in the sibling sns package.
+//
+// Edge cases: inputs without "@" show the first 2 chars + "***". Inputs
+// shorter than 2 runes are returned verbatim — there is nothing useful to
+// mask. The helper walks runes, not bytes (lesson L18), to avoid splitting
+// multi-byte code points in non-ASCII local-part addresses.
+func maskEmailForXray(email string) string {
+	runes := []rune(email)
+	if len(runes) < 2 {
+		return email
+	}
+
+	atIdx := strings.IndexRune(email, '@')
+	if atIdx < 0 {
+		// No "@" — show first 2 runes + "***"
+		if len(runes) <= 2 {
+			return email
+		}
+		return string(runes[:2]) + "***"
+	}
+
+	// Convert atIdx from byte offset to rune offset
+	runeAtIdx := len([]rune(email[:atIdx]))
+	if runeAtIdx <= 2 {
+		// Local part is 2 or fewer runes — mask would reveal everything;
+		// just show first rune + "***@domain"
+		if runeAtIdx == 0 {
+			return email
+		}
+		return string(runes[:1]) + "***@" + string(runes[runeAtIdx+1:])
+	}
+	return string(runes[:2]) + "***@" + string(runes[runeAtIdx+1:])
+}
+
+// maskEmailsForXray applies maskEmailForXray to each element of a slice.
+func maskEmailsForXray(emails []string) []string {
+	masked := make([]string, 0, len(emails))
+	for _, e := range emails {
+		masked = append(masked, maskEmailForXray(e))
+	}
+	return masked
+}
+
+// maskSubjectForXray returns a truncated subject line suitable for xray
+// metadata. Full subject lines can contain sensitive context (account
+// numbers, names, transaction details). The first 10 runes are retained
+// for debugging; the remainder is replaced with "...".
+//
+// SEC-001 (2026-04-16): used by SendEmail and SendRawEmail xray emit
+// sites.
+func maskSubjectForXray(subject string) string {
+	runes := []rune(subject)
+	if len(runes) <= 10 {
+		return subject
+	}
+	return string(runes[:10]) + "..."
+}
+
 // setParentSegment sets the parent segment in a thread-safe manner
 func (s *SES) setParentSegment(seg *xray.XRayParentSegment) {
 	s.mu.Lock()
@@ -215,10 +281,15 @@ func (s *SES) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("SES-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-AWS-Region", awsRegionSnap)
+			// COMMON-R2-001: sampled xray failure logging instead of silent discard
+			if e := seg.SafeAddMetadata("SES-AWS-Region", awsRegionSnap); e != nil {
+				xray.LogXrayAddFailure("SES-Connect", e)
+			}
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				if e := seg.SafeAddError(err); e != nil {
+					xray.LogXrayAddFailure("SES-Connect", e)
+				}
 			}
 		}()
 
@@ -763,17 +834,33 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 
 		defer seg.Close()
 		defer func() {
+			// COMMON-R2-001: sampled xray failure logging instead of silent discard
 			if email != nil {
-				_ = seg.SafeAddMetadata("SES-SendEmail-Email-From", email.From)
-				_ = seg.SafeAddMetadata("SES-SendEmail-Email-To", email.To)
-				_ = seg.SafeAddMetadata("SES-SendEmail-Email-Subject", email.Subject)
-				_ = seg.SafeAddMetadata("SES-SendEmail-Result-MessageID", messageId)
+				// SEC-001 (2026-04-16): mask email PII in xray metadata —
+				// email addresses and subject lines can contain or constitute
+				// personally identifiable information.
+				if e := seg.SafeAddMetadata("SES-SendEmail-Email-From", maskEmailForXray(email.From)); e != nil {
+					xray.LogXrayAddFailure("SES-SendEmail", e)
+				}
+				if e := seg.SafeAddMetadata("SES-SendEmail-Email-To", maskEmailsForXray(email.To)); e != nil {
+					xray.LogXrayAddFailure("SES-SendEmail", e)
+				}
+				if e := seg.SafeAddMetadata("SES-SendEmail-Email-Subject", maskSubjectForXray(email.Subject)); e != nil {
+					xray.LogXrayAddFailure("SES-SendEmail", e)
+				}
+				if e := seg.SafeAddMetadata("SES-SendEmail-Result-MessageID", messageId); e != nil {
+					xray.LogXrayAddFailure("SES-SendEmail", e)
+				}
 			} else {
-				_ = seg.SafeAddMetadata("SES-SendEmail-Email-Fail", "Email Object Nil")
+				if e := seg.SafeAddMetadata("SES-SendEmail-Email-Fail", "Email Object Nil"); e != nil {
+					xray.LogXrayAddFailure("SES-SendEmail", e)
+				}
 			}
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				if e := seg.SafeAddError(err); e != nil {
+					xray.LogXrayAddFailure("SES-SendEmail", e)
+				}
 			}
 		}()
 	}
@@ -862,9 +949,12 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 		defer seg.Close()
 		defer func() {
 			if email != nil {
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-From", email.From)
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-To", email.To)
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Subject", email.Subject)
+				// SEC-001 (2026-04-16): mask email PII in xray metadata —
+				// email addresses and subject lines can contain or constitute
+				// personally identifiable information.
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-From", maskEmailForXray(email.From))
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-To", maskEmailsForXray(email.To))
+				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Subject", maskSubjectForXray(email.Subject))
 				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Attachment-FileName", attachmentFileName)
 				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Attachment-ContentType", attachmentContentType)
 				_ = seg.SafeAddMetadata("SES-SendRawEmail-Result-MessageID", messageId)
@@ -1292,13 +1382,17 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-From", senderEmail)
-			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReturnPath", returnPath)
-			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReplyTo", replyTo)
+			// SEC-001 (2026-04-16): mask email PII in xray metadata —
+			// senderEmail, returnPath, replyTo, and emailTarget.To are
+			// all email addresses containing personally identifiable
+			// information.
+			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-From", maskEmailForXray(senderEmail))
+			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReturnPath", maskEmailForXray(returnPath))
+			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReplyTo", maskEmailForXray(replyTo))
 			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-TemplateName", templateName)
 
 			if emailTarget != nil {
-				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-To", emailTarget.To)
+				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-To", maskEmailsForXray(emailTarget.To))
 				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Result-MessageID", messageId)
 			} else {
 				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-Fail", "Email Target Nil")

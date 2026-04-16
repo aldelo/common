@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -188,7 +189,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 
 	if err != nil {
 		// when read error, even if 200, still return error
-		return statusCode, "", err
+		return statusCode, "", fmt.Errorf("reading response body: %w", err)
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
@@ -266,7 +267,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 
 	if err != nil {
 		// when read error, even if 200, still return error
-		return statusCode, "", err
+		return statusCode, "", fmt.Errorf("reading response body: %w", err)
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
@@ -343,7 +344,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 
 	if err != nil {
 		// when read error, even if 200, still return error
-		return statusCode, "", err
+		return statusCode, "", fmt.Errorf("reading response body: %w", err)
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
@@ -409,7 +410,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 
 	if err != nil {
 		// when read error, even if 200, still return error
-		return statusCode, "", err
+		return statusCode, "", fmt.Errorf("reading response body: %w", err)
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {

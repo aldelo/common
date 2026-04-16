@@ -219,11 +219,11 @@ func (r *Redis) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("Redis-Connect", r._parentSegment)
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Writer-Endpoint", r.AwsRedisWriterEndpoint)
-			_ = seg.SafeAddMetadata("Redis-Reader-Endpoint", r.AwsRedisReaderEndpoint)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Writer-Endpoint", r.AwsRedisWriterEndpoint))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Reader-Endpoint", r.AwsRedisReaderEndpoint))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -1339,18 +1339,18 @@ func (r *Redis) SetBase(key string, val interface{}, setCondition redissetcondit
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Set-Key", key)
-			_ = seg.SafeAddMetadata("Redis-Set-Value", val)
-			_ = seg.SafeAddMetadata("Redis-Set-Condition", setCondition.Caption())
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Set-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Set-Value", val))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Set-Condition", setCondition.Caption()))
 
 			if len(expires) > 0 {
-				_ = seg.SafeAddMetadata("Redis-Set-Expire-Seconds", expires[0].Seconds())
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Set-Expire-Seconds", expires[0].Seconds()))
 			} else {
-				_ = seg.SafeAddMetadata("Redis-Set-Expire-Seconds", "Not Defined")
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Set-Expire-Seconds", "Not Defined"))
 			}
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -1501,12 +1501,12 @@ func (r *Redis) GetBase(key string) (cmd *redis.StringCmd, notFound bool, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Get-Key", key)
-			_ = seg.SafeAddMetadata("Redis-Get-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-Get-Value-Cmd", cmd)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Get-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Get-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Get-Value-Cmd", cmd))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -1772,13 +1772,13 @@ func (r *Redis) GetSet(key string, val string) (oldValue string, notFound bool, 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GetSet-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GetSet-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-GetSet-Old_Value", oldValue)
-			_ = seg.SafeAddMetadata("Redis-GetSet-New-Value", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetSet-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetSet-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetSet-Old_Value", oldValue))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetSet-New-Value", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -1830,10 +1830,10 @@ func (r *Redis) MSet(kvMap map[string]interface{}, setIfNotExists ...bool) (err 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-MSet-KeyValueMap", kvMap)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-MSet-KeyValueMap", kvMap))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -1900,12 +1900,12 @@ func (r *Redis) MGet(key ...string) (results []interface{}, notFound bool, err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-MGet-Keys", key)
-			_ = seg.SafeAddMetadata("Redis-MGet-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-MGet-Results", results)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-MGet-Keys", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-MGet-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-MGet-Results", results))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -1953,12 +1953,12 @@ func (r *Redis) SetRange(key string, offset int64, val string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SetRange-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SetRange-Offset", offset)
-			_ = seg.SafeAddMetadata("Redis-SetRange-Value", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SetRange-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SetRange-Offset", offset))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SetRange-Value", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2011,13 +2011,13 @@ func (r *Redis) GetRange(key string, start int64, end int64) (val string, notFou
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GetRange-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GetRange-Start-End", util.Int64ToString(start)+"-"+util.Int64ToString(end))
-			_ = seg.SafeAddMetadata("Redis-GetRange-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-GetRange-Value", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetRange-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetRange-Start-End", util.Int64ToString(start)+"-"+util.Int64ToString(end)))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetRange-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetRange-Value", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2073,20 +2073,20 @@ func (r *Redis) Int64AddOrReduce(key string, val int64, isReduce ...bool) (newVa
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-Key", key)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Int64AddOrReduce-Key", key))
 
 			if len(isReduce) > 0 {
-				_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-IsReduce", isReduce[0])
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Int64AddOrReduce-IsReduce", isReduce[0]))
 			} else {
-				_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-IsReduce", "false")
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Int64AddOrReduce-IsReduce", "false"))
 			}
 
-			_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-Old-Value", val)
-			_ = seg.SafeAddMetadata("Redis-Int64AddOrReduce-New-Value", newVal)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Int64AddOrReduce-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Int64AddOrReduce-Old-Value", val))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Int64AddOrReduce-New-Value", newVal))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2163,13 +2163,13 @@ func (r *Redis) Float64AddOrReduce(key string, val float64) (newVal float64, not
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Float64AddOrReduce-Key", key)
-			_ = seg.SafeAddMetadata("Redis-Float64AddOrReduce-Value", val)
-			_ = seg.SafeAddMetadata("Redis-Float64AddOrReduce-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-Float64AddOrReduce-Result-NewValue", newVal)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Float64AddOrReduce-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Float64AddOrReduce-Value", val))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Float64AddOrReduce-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Float64AddOrReduce-Result-NewValue", newVal))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2213,11 +2213,11 @@ func (r *Redis) PFAdd(key string, elements ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-PFAdd-Key", key)
-			_ = seg.SafeAddMetadata("Redis-PFAdd-Elements", elements)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PFAdd-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PFAdd-Elements", elements))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2262,12 +2262,12 @@ func (r *Redis) PFCount(key ...string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-PFCount-Keys", key)
-			_ = seg.SafeAddMetadata("Redis-PFCount-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-PFCount-Result-Count", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PFCount-Keys", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PFCount-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PFCount-Result-Count", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2306,11 +2306,11 @@ func (r *Redis) PFMerge(destKey string, sourceKey ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-PFMerge-DestKey", destKey)
-			_ = seg.SafeAddMetadata("Redis-PFMerge-SourceKeys", sourceKey)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PFMerge-DestKey", destKey))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PFMerge-SourceKeys", sourceKey))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2358,11 +2358,11 @@ func (r *Redis) Exists(key ...string) (foundCount int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Exists-Keys", key)
-			_ = seg.SafeAddMetadata("Redis-Exists-Result-Count", foundCount)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Exists-Keys", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Exists-Result-Count", foundCount))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2404,12 +2404,12 @@ func (r *Redis) StrLen(key string) (length int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-StrLen-Key", key)
-			_ = seg.SafeAddMetadata("Redis-StrLen-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-StrLen-Result-Len", length)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-StrLen-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-StrLen-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-StrLen-Result-Len", length))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2461,11 +2461,11 @@ func (r *Redis) Append(key string, valToAppend string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Append-Key", key)
-			_ = seg.SafeAddMetadata("Redis-Append-Value", valToAppend)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Append-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Append-Value", valToAppend))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2505,11 +2505,11 @@ func (r *Redis) Del(key ...string) (deletedCount int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Del-Keys", key)
-			_ = seg.SafeAddMetadata("Redis-Del-Result-Deleted-Count", deletedCount)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Del-Keys", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Del-Result-Deleted-Count", deletedCount))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2549,11 +2549,11 @@ func (r *Redis) Unlink(key ...string) (unlinkedCount int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Unlink-Keys", key)
-			_ = seg.SafeAddMetadata("Redis-Unlink-Result-Unlinked-Count", unlinkedCount)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Unlink-Keys", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Unlink-Result-Unlinked-Count", unlinkedCount))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2604,12 +2604,12 @@ func (b *BIT) SetBit(key string, offset int64, bitValue bool) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SetBit-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SetBit-Offset", offset)
-			_ = seg.SafeAddMetadata("Redis-SetBit-Bit-Value", bitValue)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SetBit-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SetBit-Offset", offset))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SetBit-Bit-Value", bitValue))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2670,12 +2670,12 @@ func (b *BIT) GetBit(key string, offset int64) (val int, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GetBit-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GetBit-Offset", offset)
-			_ = seg.SafeAddMetadata("Redis-GetBit-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetBit-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetBit-Offset", offset))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GetBit-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2730,13 +2730,13 @@ func (b *BIT) BitCount(key string, offsetFrom int64, offsetTo int64) (valCount i
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-BitCount-Key", key)
-			_ = seg.SafeAddMetadata("Redis-BitCount-Offset-From", offsetFrom)
-			_ = seg.SafeAddMetadata("Redis-BitCount-Offset-To", offsetTo)
-			_ = seg.SafeAddMetadata("Redis-BitCount-Result-Count", valCount)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitCount-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitCount-Offset-From", offsetFrom))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitCount-Offset-To", offsetTo))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitCount-Result-Count", valCount))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2799,12 +2799,12 @@ func (b *BIT) BitField(key string, args ...interface{}) (valBits []int64, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-BitField-Key", key)
-			_ = seg.SafeAddMetadata("Redis-BitField-Input-Args", args)
-			_ = seg.SafeAddMetadata("Redis-BitField-Input-Result", valBits)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitField-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitField-Input-Args", args))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitField-Input-Result", valBits))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2873,12 +2873,12 @@ func (b *BIT) BitOp(keyDest string, bitOpType redisbitop.RedisBitop, keySource .
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-BitOp-KeyDest", keyDest)
-			_ = seg.SafeAddMetadata("Redis-BitOp-OpType", bitOpType)
-			_ = seg.SafeAddMetadata("Redis-BitOp-KeySource", keySource)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitOp-KeyDest", keyDest))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitOp-OpType", bitOpType))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitOp-KeySource", keySource))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -2964,13 +2964,13 @@ func (b *BIT) BitPos(key string, bitValue int64, startPosition ...int64) (valPos
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-BitPos-Key", key)
-			_ = seg.SafeAddMetadata("Redis-BitPos-BitValue", bitValue)
-			_ = seg.SafeAddMetadata("Redis-BitPos-Start-Position", startPosition)
-			_ = seg.SafeAddMetadata("Redis-BitPos-Result-Position", valPosition)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitPos-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitPos-BitValue", bitValue))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitPos-Start-Position", startPosition))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-BitPos-Result-Position", valPosition))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3030,12 +3030,12 @@ func (l *LIST) LSet(key string, index int64, value interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LSet-Key", key)
-			_ = seg.SafeAddMetadata("Redis-LSet-Index", index)
-			_ = seg.SafeAddMetadata("Redis-LSet-value", value)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LSet-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LSet-Index", index))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LSet-value", value))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3084,13 +3084,13 @@ func (l *LIST) LInsert(key string, bBefore bool, pivot interface{}, value interf
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LInsert-Key", key)
-			_ = seg.SafeAddMetadata("Redis-LInsert-Insert-Before", bBefore)
-			_ = seg.SafeAddMetadata("Redis-LInsert-Pivot-Element", pivot)
-			_ = seg.SafeAddMetadata("Redis-LInsert-Insert-Value", value)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LInsert-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LInsert-Insert-Before", bBefore))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LInsert-Pivot-Element", pivot))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LInsert-Insert-Value", value))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3157,12 +3157,12 @@ func (l *LIST) LPush(key string, keyMustExist bool, value ...interface{}) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LPush-Key", key)
-			_ = seg.SafeAddMetadata("Redis-LPush-Key-Must-Exist", keyMustExist)
-			_ = seg.SafeAddMetadata("Redis-LPush-Values", value)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LPush-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LPush-Key-Must-Exist", keyMustExist))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LPush-Values", value))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3230,12 +3230,12 @@ func (l *LIST) RPush(key string, keyMustExist bool, value ...interface{}) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-RPush-Key", key)
-			_ = seg.SafeAddMetadata("Redis-RPush-Key-Must-Exist", keyMustExist)
-			_ = seg.SafeAddMetadata("Redis-RPush-Values", value)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPush-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPush-Key-Must-Exist", keyMustExist))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPush-Values", value))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3297,13 +3297,13 @@ func (l *LIST) LPop(key string, outputDataType redisdatatype.RedisDataType, outp
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LPop-Key", key)
-			_ = seg.SafeAddMetadata("Redis-LPop-Output-Data-Type", outputDataType)
-			_ = seg.SafeAddMetadata("Redis-LPop-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-LPop-Output-Object", outputObjectPtr)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LPop-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LPop-Output-Data-Type", outputDataType))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LPop-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LPop-Output-Object", outputObjectPtr))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3356,13 +3356,13 @@ func (l *LIST) RPop(key string, outputDataType redisdatatype.RedisDataType, outp
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-RPop-Key", key)
-			_ = seg.SafeAddMetadata("Redis-RPop-Output-Data-Type", outputDataType)
-			_ = seg.SafeAddMetadata("Redis-RPop-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-RPop-Output-Object", outputObjectPtr)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPop-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPop-Output-Data-Type", outputDataType))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPop-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPop-Output-Object", outputObjectPtr))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3416,14 +3416,14 @@ func (l *LIST) RPopLPush(keySource string, keyDest string, outputDataType redisd
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-RPopLPush-KeySource", keySource)
-			_ = seg.SafeAddMetadata("Redis-RPopLPush-KeyDest", keyDest)
-			_ = seg.SafeAddMetadata("Redis-RPopLPush-Output-Data-Type", outputDataType)
-			_ = seg.SafeAddMetadata("Redis-RPopLPush-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-RPopLPush-Output-Object", outputObjectPtr)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPopLPush-KeySource", keySource))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPopLPush-KeyDest", keyDest))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPopLPush-Output-Data-Type", outputDataType))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPopLPush-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RPopLPush-Output-Object", outputObjectPtr))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3488,14 +3488,14 @@ func (l *LIST) LIndex(key string, index int64, outputDataType redisdatatype.Redi
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LIndex-Key", key)
-			_ = seg.SafeAddMetadata("Redis-LIndex-Index", index)
-			_ = seg.SafeAddMetadata("Redis-LIndex-Output-Data-Type", outputDataType)
-			_ = seg.SafeAddMetadata("Redis-LIndex-Output-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-LIndex-Output-Object", outputObjectPtr)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LIndex-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LIndex-Index", index))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LIndex-Output-Data-Type", outputDataType))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LIndex-Output-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LIndex-Output-Object", outputObjectPtr))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3550,12 +3550,12 @@ func (l *LIST) LLen(key string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LLen-Key", key)
-			_ = seg.SafeAddMetadata("Redis-LLen-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-LLen-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LLen-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LLen-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LLen-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3612,14 +3612,14 @@ func (l *LIST) LRange(key string, start int64, stop int64) (outputSlice []string
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LRange-Key", key)
-			_ = seg.SafeAddMetadata("Redis-LRange-Start", start)
-			_ = seg.SafeAddMetadata("Redis-LRange-Stop", stop)
-			_ = seg.SafeAddMetadata("Redis-LRange-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-LRange-Result", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LRange-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LRange-Start", start))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LRange-Stop", stop))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LRange-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LRange-Result", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3682,12 +3682,12 @@ func (l *LIST) LRem(key string, count int64, value interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LRem-Key", key)
-			_ = seg.SafeAddMetadata("Redis-LRem-Count", count)
-			_ = seg.SafeAddMetadata("Redis-LRem-Value", value)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LRem-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LRem-Count", count))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LRem-Value", value))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3751,12 +3751,12 @@ func (l *LIST) LTrim(key string, start int64, stop int64) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LTrim-Key", key)
-			_ = seg.SafeAddMetadata("Redis-LTrim-Start", start)
-			_ = seg.SafeAddMetadata("Redis-LTrim-Stop", stop)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LTrim-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LTrim-Start", start))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LTrim-Stop", stop))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3813,12 +3813,12 @@ func (h *HASH) HExists(key string, field string) (valExists bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HExists-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HExists-Field", field)
-			_ = seg.SafeAddMetadata("Redis-HExists-Result-Exists", valExists)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HExists-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HExists-Field", field))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HExists-Result-Exists", valExists))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3869,12 +3869,12 @@ func (h *HASH) HLen(key string) (valLen int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HLen-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HLen-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-HLen-Result-Length", valLen)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HLen-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HLen-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HLen-Result-Length", valLen))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3923,11 +3923,11 @@ func (h *HASH) HSet(key string, value ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HSet-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HSet-Values", value)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HSet-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HSet-Values", value))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -3985,12 +3985,12 @@ func (h *HASH) HSetNX(key string, field string, value interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HSetNX-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HSetNX-Field", field)
-			_ = seg.SafeAddMetadata("Redis-HSetNX-Value", value)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HSetNX-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HSetNX-Field", field))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HSetNX-Value", value))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4059,14 +4059,14 @@ func (h *HASH) HGet(key string, field string, outputDataType redisdatatype.Redis
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HGet-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HGet-Field", field)
-			_ = seg.SafeAddMetadata("Redis-HGet-Output-Data-Type", outputDataType)
-			_ = seg.SafeAddMetadata("Redis-HGet-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-HGet-Output-Object", outputObjectPtr)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HGet-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HGet-Field", field))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HGet-Output-Data-Type", outputDataType))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HGet-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HGet-Output-Object", outputObjectPtr))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4124,12 +4124,12 @@ func (h *HASH) HGetAll(key string) (outputMap map[string]string, notFound bool, 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HGetAll-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HGetAll-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-HGetAll-Result", outputMap)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HGetAll-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HGetAll-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HGetAll-Result", outputMap))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4177,11 +4177,11 @@ func (h *HASH) HMSet(key string, value ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HMSet-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HMSet-Values", value)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HMSet-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HMSet-Values", value))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4245,13 +4245,13 @@ func (h *HASH) HMGet(key string, field ...string) (outputSlice []interface{}, no
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HMGet-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HMGet-Fields", field)
-			_ = seg.SafeAddMetadata("Redis-HMGet-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-HMGet-Result", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HMGet-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HMGet-Fields", field))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HMGet-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HMGet-Result", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4304,12 +4304,12 @@ func (h *HASH) HDel(key string, field ...string) (deletedCount int64, err error)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HDel-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HDel-Fields", field)
-			_ = seg.SafeAddMetadata("Redis-HDel-Result-Deleted-Count", deletedCount)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HDel-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HDel-Fields", field))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HDel-Result-Deleted-Count", deletedCount))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4362,12 +4362,12 @@ func (h *HASH) HKeys(key string) (outputSlice []string, notFound bool, err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HKeys-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HKeys-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-HKeys-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HKeys-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HKeys-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HKeys-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4413,12 +4413,12 @@ func (h *HASH) HVals(key string) (outputSlice []string, notFound bool, err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HVals-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HVals-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-HVals-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HVals-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HVals-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HVals-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4480,15 +4480,15 @@ func (h *HASH) HScan(key string, cursor uint64, match string, count int64) (outp
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HScan-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HScan-Cursor", cursor)
-			_ = seg.SafeAddMetadata("Redis-HScan-Match", match)
-			_ = seg.SafeAddMetadata("Redis-HScan-Count", count)
-			_ = seg.SafeAddMetadata("Redis-HScan-Result-Keys", outputKeys)
-			_ = seg.SafeAddMetadata("Redis-HScan-Result-Cursor", outputCursor)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HScan-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HScan-Cursor", cursor))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HScan-Match", match))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HScan-Count", count))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HScan-Result-Keys", outputKeys))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HScan-Result-Cursor", outputCursor))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4558,12 +4558,12 @@ func (h *HASH) HIncrBy(key string, field string, incrValue int64) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HIncrBy-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HIncrBy-Field", field)
-			_ = seg.SafeAddMetadata("Redis-HIncrBy-Increment-Value", incrValue)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HIncrBy-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HIncrBy-Field", field))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HIncrBy-Increment-Value", incrValue))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4629,12 +4629,12 @@ func (h *HASH) HIncrByFloat(key string, field string, incrValue float64) (err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-HIncrByFloat-Key", key)
-			_ = seg.SafeAddMetadata("Redis-HIncrByFloat-Field", field)
-			_ = seg.SafeAddMetadata("Redis-HIncrByFloat-Increment-Value", incrValue)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HIncrByFloat-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HIncrByFloat-Field", field))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-HIncrByFloat-Increment-Value", incrValue))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4704,11 +4704,11 @@ func (s *SET) SAdd(key string, member ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SAdd-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SAdd-Members", member)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SAdd-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SAdd-Members", member))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4761,12 +4761,12 @@ func (s *SET) SCard(key string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SCard-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SCard-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SCard-Result-Count", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SCard-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SCard-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SCard-Result-Count", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4819,12 +4819,12 @@ func (s *SET) SDiff(key ...string) (outputSlice []string, notFound bool, err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SDiff-Keys", key)
-			_ = seg.SafeAddMetadata("Redis-SDiff-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SDiff-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SDiff-Keys", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SDiff-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SDiff-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4886,11 +4886,11 @@ func (s *SET) SDiffStore(keyDest string, keySource ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SDiffStore-KeyDest", keyDest)
-			_ = seg.SafeAddMetadata("Redis-SDiffStore-KeySources", keySource)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SDiffStore-KeyDest", keyDest))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SDiffStore-KeySources", keySource))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -4956,12 +4956,12 @@ func (s *SET) SInter(key ...string) (outputSlice []string, notFound bool, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SInter-Keys", key)
-			_ = seg.SafeAddMetadata("Redis-SInter-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SInter-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SInter-Keys", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SInter-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SInter-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5023,11 +5023,11 @@ func (s *SET) SInterStore(keyDest string, keySource ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SInterStore-KeyDest", keyDest)
-			_ = seg.SafeAddMetadata("Redis-SInterStore-KeySources", keySource)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SInterStore-KeyDest", keyDest))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SInterStore-KeySources", keySource))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5085,12 +5085,12 @@ func (s *SET) SIsMember(key string, member interface{}) (val bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SIsMember-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SIsMember-Member", member)
-			_ = seg.SafeAddMetadata("Redis-SIsMember-Result-IsMember", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SIsMember-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SIsMember-Member", member))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SIsMember-Result-IsMember", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5139,12 +5139,12 @@ func (s *SET) SMembers(key string) (outputSlice []string, notFound bool, err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SMember-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SMember-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SMember-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SMember-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SMember-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SMember-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5189,12 +5189,12 @@ func (s *SET) SMembersMap(key string) (outputMap map[string]struct{}, notFound b
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SMembersMap-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SMembersMap-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SMembersMap-Result", outputMap)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SMembersMap-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SMembersMap-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SMembersMap-Result", outputMap))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5256,15 +5256,15 @@ func (s *SET) SScan(key string, cursor uint64, match string, count int64) (outpu
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SScan-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SScan-Cursor", cursor)
-			_ = seg.SafeAddMetadata("Redis-SScan-Match", match)
-			_ = seg.SafeAddMetadata("Redis-SScan-Count", count)
-			_ = seg.SafeAddMetadata("Redis-SScan-Result-Keys", outputKeys)
-			_ = seg.SafeAddMetadata("Redis-SScan-Result-Cursor", outputCursor)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SScan-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SScan-Cursor", cursor))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SScan-Match", match))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SScan-Count", count))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SScan-Result-Keys", outputKeys))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SScan-Result-Cursor", outputCursor))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5330,13 +5330,13 @@ func (s *SET) SRandMember(key string, outputDataType redisdatatype.RedisDataType
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SRandMember-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SRandMember-Output-Data-Type", outputDataType)
-			_ = seg.SafeAddMetadata("Redis-SRandMember-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SRandMember-Output-Object", outputObjectPtr)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRandMember-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRandMember-Output-Data-Type", outputDataType))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRandMember-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRandMember-Output-Object", outputObjectPtr))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5392,13 +5392,13 @@ func (s *SET) SRandMemberN(key string, count int64) (outputSlice []string, notFo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SRandMemberN-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SRandMemberN-Count", count)
-			_ = seg.SafeAddMetadata("Redis-SRandMemberN-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SRandMemberN-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRandMemberN-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRandMemberN-Count", count))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRandMemberN-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRandMemberN-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5454,11 +5454,11 @@ func (s *SET) SRem(key string, member ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SRem-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SRem-Members", member)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRem-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SRem-Members", member))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5519,12 +5519,12 @@ func (s *SET) SMove(keySource string, keyDest string, member interface{}) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SMove-KeySource", keySource)
-			_ = seg.SafeAddMetadata("Redis-SMove-KeyDest", keyDest)
-			_ = seg.SafeAddMetadata("Redis-SMove-Member", member)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SMove-KeySource", keySource))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SMove-KeyDest", keyDest))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SMove-Member", member))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5596,13 +5596,13 @@ func (s *SET) SPop(key string, outputDataType redisdatatype.RedisDataType, outpu
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SPop-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SPop-Output-Data-Type", outputDataType)
-			_ = seg.SafeAddMetadata("Redis-SPop-Output-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SPop-Output-Object", outputObjectPtr)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SPop-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SPop-Output-Data-Type", outputDataType))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SPop-Output-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SPop-Output-Object", outputObjectPtr))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5658,13 +5658,13 @@ func (s *SET) SPopN(key string, count int64) (outputSlice []string, notFound boo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SPopN-Key", key)
-			_ = seg.SafeAddMetadata("Redis-SPopN-Count", count)
-			_ = seg.SafeAddMetadata("Redis-SPopN-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SPopN-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SPopN-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SPopN-Count", count))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SPopN-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SPopN-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5724,12 +5724,12 @@ func (s *SET) SUnion(key ...string) (outputSlice []string, notFound bool, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SUnion-Keys", key)
-			_ = seg.SafeAddMetadata("Redis-SUnion-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SUnion-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SUnion-Keys", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SUnion-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SUnion-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5791,11 +5791,11 @@ func (s *SET) SUnionStore(keyDest string, keySource ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SUnionStore-KeyDest", keyDest)
-			_ = seg.SafeAddMetadata("Redis-SUnionStore-KeySources", keySource)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SUnionStore-KeyDest", keyDest))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SUnionStore-KeySources", keySource))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5870,13 +5870,13 @@ func (z *SORTED_SET) ZAdd(key string, setCondition redissetcondition.RedisSetCon
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZAdd-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZAdd-Condition", setCondition)
-			_ = seg.SafeAddMetadata("Redis-ZAdd-Get-Changed", getChanged)
-			_ = seg.SafeAddMetadata("Redis-ZAdd-Member", member)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZAdd-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZAdd-Condition", setCondition))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZAdd-Get-Changed", getChanged))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZAdd-Member", member))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -5966,12 +5966,12 @@ func (z *SORTED_SET) ZCard(key string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZCard-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZCard-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZCard-Not-Result-Count", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZCard-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZCard-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZCard-Not-Result-Count", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6016,14 +6016,14 @@ func (z *SORTED_SET) ZCount(key string, min string, max string) (val int64, notF
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZCount-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZCount-Min", min)
-			_ = seg.SafeAddMetadata("Redis-ZCount-Max", max)
-			_ = seg.SafeAddMetadata("Redis-ZCount-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZCount-Result-Count", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZCount-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZCount-Min", min))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZCount-Max", max))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZCount-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZCount-Result-Count", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6078,12 +6078,12 @@ func (z *SORTED_SET) ZIncr(key string, setCondition redissetcondition.RedisSetCo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZIncr-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZIncr-Condition", setCondition)
-			_ = seg.SafeAddMetadata("Redis-ZIncr-Member", member)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZIncr-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZIncr-Condition", setCondition))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZIncr-Member", member))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6161,12 +6161,12 @@ func (z *SORTED_SET) ZIncrBy(key string, increment float64, member string) (err 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZIncrBy-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZIncrBy-Increment", increment)
-			_ = seg.SafeAddMetadata("Redis-ZIncrBy-Member", member)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZIncrBy-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZIncrBy-Increment", increment))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZIncrBy-Member", member))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6239,11 +6239,11 @@ func (z *SORTED_SET) ZInterStore(keyDest string, store *redis.ZStore) (err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZInterStore-KeyDest", keyDest)
-			_ = seg.SafeAddMetadata("Redis-ZInterStore-Input-Args", store)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZInterStore-KeyDest", keyDest))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZInterStore-Input-Args", store))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6301,14 +6301,14 @@ func (z *SORTED_SET) ZLexCount(key string, min string, max string) (val int64, n
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZLexCount-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZLexCount-Min", min)
-			_ = seg.SafeAddMetadata("Redis-ZLexCount-Max", max)
-			_ = seg.SafeAddMetadata("Redis-ZLexCount-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZLexCount-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZLexCount-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZLexCount-Min", min))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZLexCount-Max", max))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZLexCount-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZLexCount-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6363,13 +6363,13 @@ func (z *SORTED_SET) ZPopMax(key string, count ...int64) (outputSlice []redis.Z,
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZPopMax-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZPopMax-Count", count)
-			_ = seg.SafeAddMetadata("Redis-ZPopMax-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZPopMax-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZPopMax-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZPopMax-Count", count))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZPopMax-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZPopMax-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6425,13 +6425,13 @@ func (z *SORTED_SET) ZPopMin(key string, count ...int64) (outputSlice []redis.Z,
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZPopMin-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZPopMin-Count", count)
-			_ = seg.SafeAddMetadata("Redis-ZPopMin-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZPopMin-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZPopMin-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZPopMin-Count", count))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZPopMin-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZPopMin-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6491,14 +6491,14 @@ func (z *SORTED_SET) ZRange(key string, start int64, stop int64) (outputSlice []
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRange-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRange-Start", start)
-			_ = seg.SafeAddMetadata("Redis-ZRange-Stop", stop)
-			_ = seg.SafeAddMetadata("Redis-ZRange-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZRange-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRange-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRange-Start", start))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRange-Stop", stop))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRange-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRange-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6549,13 +6549,13 @@ func (z *SORTED_SET) ZRangeByLex(key string, opt *redis.ZRangeBy) (outputSlice [
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRangeByLex-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRangeByLex-Input-Args", opt)
-			_ = seg.SafeAddMetadata("Redis-ZRangeByLex-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZRangeByLex-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByLex-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByLex-Input-Args", opt))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByLex-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByLex-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6605,13 +6605,13 @@ func (z *SORTED_SET) ZRangeByScore(key string, opt *redis.ZRangeBy) (outputSlice
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRangeByScore-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRangeByScore-Input-Args", opt)
-			_ = seg.SafeAddMetadata("Redis-ZRangeByScore-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZRangeByScore-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByScore-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByScore-Input-Args", opt))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByScore-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByScore-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6662,13 +6662,13 @@ func (z *SORTED_SET) ZRangeByScoreWithScores(key string, opt *redis.ZRangeBy) (o
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Input-Args", opt)
-			_ = seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Input-Args", opt))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRangeByScoreWithScores-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6719,13 +6719,13 @@ func (z *SORTED_SET) ZRank(key string, member string) (val int64, notFound bool,
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRank-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRank-Member", member)
-			_ = seg.SafeAddMetadata("Redis-ZRank-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZRank-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRank-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRank-Member", member))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRank-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRank-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6778,11 +6778,11 @@ func (z *SORTED_SET) ZRem(key string, member ...interface{}) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRem-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRem-Members", member)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRem-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRem-Members", member))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6834,12 +6834,12 @@ func (z *SORTED_SET) ZRemRangeByLex(key string, min string, max string) (err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRemRangeByLex-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRemRangeByLex-Min", min)
-			_ = seg.SafeAddMetadata("Redis-ZRemRangeByLex-Max", max)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRemRangeByLex-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRemRangeByLex-Min", min))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRemRangeByLex-Max", max))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6892,12 +6892,12 @@ func (z *SORTED_SET) ZRemRangeByScore(key string, min string, max string) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRemRangeByScore-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRemRangeByScore-Min", min)
-			_ = seg.SafeAddMetadata("Redis-ZRemRangeByScore-Max", max)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRemRangeByScore-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRemRangeByScore-Min", min))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRemRangeByScore-Max", max))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -6953,12 +6953,12 @@ func (z *SORTED_SET) ZRemRangeByRank(key string, start int64, stop int64) (err e
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRemRangeByRank-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRemRangeByRank-Start", start)
-			_ = seg.SafeAddMetadata("Redis-ZRemRangeByRank-Stop", stop)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRemRangeByRank-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRemRangeByRank-Start", start))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRemRangeByRank-Stop", stop))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7008,14 +7008,14 @@ func (z *SORTED_SET) ZRevRange(key string, start int64, stop int64) (outputSlice
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRevRange-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRevRange-Start", start)
-			_ = seg.SafeAddMetadata("Redis-ZRevRange-Stop", stop)
-			_ = seg.SafeAddMetadata("Redis-ZRevRange-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZRevRange-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRange-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRange-Start", start))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRange-Stop", stop))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRange-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRange-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7064,14 +7064,14 @@ func (z *SORTED_SET) ZRevRangeWithScores(key string, start int64, stop int64) (o
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Start", start)
-			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Stop", stop)
-			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Start", start))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Stop", stop))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRangeWithScores-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7120,13 +7120,13 @@ func (z *SORTED_SET) ZRevRangeByScoreWithScores(key string, opt *redis.ZRangeBy)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Input-Args", opt)
-			_ = seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Input-Args", opt))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRangeByScoreWithScores-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7179,13 +7179,13 @@ func (z *SORTED_SET) ZRevRank(key string, member string) (val int64, notFound bo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZRevRank-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZRevRank-Member", member)
-			_ = seg.SafeAddMetadata("Redis-ZRevRank-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZRevRank-Result-Rank", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRank-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRank-Member", member))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRank-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZRevRank-Result-Rank", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7253,15 +7253,15 @@ func (z *SORTED_SET) ZScan(key string, cursor uint64, match string, count int64)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZScan-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZScan-Cursor", cursor)
-			_ = seg.SafeAddMetadata("Redis-ZScan-Match", match)
-			_ = seg.SafeAddMetadata("Redis-ZScan-Count", count)
-			_ = seg.SafeAddMetadata("Redis-ZScan-Result-Keys", outputKeys)
-			_ = seg.SafeAddMetadata("Redis-ZScan-Result-Cursor", outputCursor)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScan-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScan-Cursor", cursor))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScan-Match", match))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScan-Count", count))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScan-Result-Keys", outputKeys))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScan-Result-Cursor", outputCursor))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7328,13 +7328,13 @@ func (z *SORTED_SET) ZScore(key string, member string) (val float64, notFound bo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZScore-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ZScore-Member", member)
-			_ = seg.SafeAddMetadata("Redis-ZScore-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ZScore-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScore-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScore-Member", member))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScore-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZScore-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7387,11 +7387,11 @@ func (z *SORTED_SET) ZUnionStore(keyDest string, store *redis.ZStore) (err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ZUnionStore-KeyDest", keyDest)
-			_ = seg.SafeAddMetadata("Redis-ZUnionStore-Input-Keys", store)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZUnionStore-KeyDest", keyDest))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ZUnionStore-Input-Keys", store))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7454,11 +7454,11 @@ func (g *GEO) GeoAdd(key string, geoLocation *redis.GeoLocation) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GeoAdd-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GeoAdd-Location", geoLocation)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoAdd-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoAdd-Location", geoLocation))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7517,15 +7517,15 @@ func (g *GEO) GeoDist(key string, member1 string, member2 string, unit redisradi
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GeoDist-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GeoDist-Member1", member1)
-			_ = seg.SafeAddMetadata("Redis-GeoDist-Member2", member2)
-			_ = seg.SafeAddMetadata("Redis-GeoDist-Radius-Unit", unit)
-			_ = seg.SafeAddMetadata("Redis-GeoDist-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-GeoDist-Result-Distance", valDist)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoDist-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoDist-Member1", member1))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoDist-Member2", member2))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoDist-Radius-Unit", unit))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoDist-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoDist-Result-Distance", valDist))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7585,13 +7585,13 @@ func (g *GEO) GeoHash(key string, member ...string) (geoHashSlice []string, notF
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GeoHash-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GeoHash-Members", member)
-			_ = seg.SafeAddMetadata("Redis-GeoHash-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-GeoHash-Result-Positions", geoHashSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoHash-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoHash-Members", member))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoHash-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoHash-Result-Positions", geoHashSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7641,12 +7641,12 @@ func (g *GEO) GeoPos(key string, member ...string) (cmd *redis.GeoPosCmd, err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GeoPos-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GeoPos-Members", member)
-			_ = seg.SafeAddMetadata("Redis-GeoPos-Result-Position", cmd)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoPos-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoPos-Members", member))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoPos-Result-Position", cmd))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7711,14 +7711,14 @@ func (g *GEO) GeoRadius(key string, longitude float64, latitude float64, query *
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GeoRadius-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GeoRadius-Longitude", longitude)
-			_ = seg.SafeAddMetadata("Redis-GeoRadius-Latitude", latitude)
-			_ = seg.SafeAddMetadata("Redis-GeoRadius-Query", query)
-			_ = seg.SafeAddMetadata("Redis-GeoRadius-Result-Location", cmd)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadius-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadius-Longitude", longitude))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadius-Latitude", latitude))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadius-Query", query))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadius-Result-Location", cmd))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7845,13 +7845,13 @@ func (g *GEO) GeoRadiusStore(key string, longitude float64, latitude float64, qu
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusStore-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusStore-Longitude", longitude)
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusStore-Latitude", latitude)
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusStore-Query", query)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusStore-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusStore-Longitude", longitude))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusStore-Latitude", latitude))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusStore-Query", query))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -7930,13 +7930,13 @@ func (g *GEO) GeoRadiusByMember(key string, member string, query *redis.GeoRadiu
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMember-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMember-Member", member)
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMember-Query", query)
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMember-Result-Location", cmd)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusByMember-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusByMember-Member", member))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusByMember-Query", query))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusByMember-Result-Location", cmd))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8023,12 +8023,12 @@ func (g *GEO) GeoRadiusByMemberStore(key string, member string, query *redis.Geo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMemberStore-Key", key)
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMemberStore-Member", member)
-			_ = seg.SafeAddMetadata("Redis-GeoRadiusByMemberStore-Query", query)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusByMemberStore-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusByMemberStore-Member", member))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-GeoRadiusByMemberStore-Query", query))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8110,12 +8110,12 @@ func (x *STREAM) XAck(stream string, group string, id ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XAck-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XAck-Group", group)
-			_ = seg.SafeAddMetadata("Redis-XAck-IDs", id)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XAck-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XAck-Group", group))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XAck-IDs", id))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8173,10 +8173,10 @@ func (x *STREAM) XAdd(addArgs *redis.XAddArgs) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XAdd-Input-Args", addArgs)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XAdd-Input-Args", addArgs))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8228,12 +8228,12 @@ func (x *STREAM) XClaim(claimArgs *redis.XClaimArgs) (valMessages []redis.XMessa
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XClaim-Input-Args", claimArgs)
-			_ = seg.SafeAddMetadata("Redis-XClaim-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XClaim-Results", valMessages)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XClaim-Input-Args", claimArgs))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XClaim-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XClaim-Results", valMessages))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8280,12 +8280,12 @@ func (x *STREAM) XClaimJustID(claimArgs *redis.XClaimArgs) (outputSlice []string
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XClaimJustID-Input-Args", claimArgs)
-			_ = seg.SafeAddMetadata("Redis-XClaimJustID-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XClaimJustID-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XClaimJustID-Input-Args", claimArgs))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XClaimJustID-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XClaimJustID-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8331,11 +8331,11 @@ func (x *STREAM) XDel(stream string, id ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XDel-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XDel-IDs", id)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XDel-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XDel-IDs", id))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8384,12 +8384,12 @@ func (x *STREAM) XGroupCreate(stream string, group string, start string) (err er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XGroupCreate-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XGroupCreate-Group", group)
-			_ = seg.SafeAddMetadata("Redis-XGroupCreate-Start", start)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupCreate-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupCreate-Group", group))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupCreate-Start", start))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8442,12 +8442,12 @@ func (x *STREAM) XGroupCreateMkStream(stream string, group string, start string)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XGroupCreateMkStream-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XGroupCreateMkStream-Group", group)
-			_ = seg.SafeAddMetadata("Redis-XGroupCreateMkStream-Start", start)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupCreateMkStream-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupCreateMkStream-Group", group))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupCreateMkStream-Start", start))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8500,12 +8500,12 @@ func (x *STREAM) XGroupDelConsumer(stream string, group string, consumer string)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XGroupDelConsumer-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XGroupDelConsumer-Group", group)
-			_ = seg.SafeAddMetadata("Redis-XGroupDelConsumer-Consumer", consumer)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupDelConsumer-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupDelConsumer-Group", group))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupDelConsumer-Consumer", consumer))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8558,11 +8558,11 @@ func (x *STREAM) XGroupDestroy(stream string, group string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XGroupDestroy-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XGroupDestroy-Group", group)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupDestroy-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupDestroy-Group", group))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8613,12 +8613,12 @@ func (x *STREAM) XGroupSetID(stream string, group string, start string) (err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XGroupSetID-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XGroupSetID-Group", group)
-			_ = seg.SafeAddMetadata("Redis-XGroupSetID-Start", start)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupSetID-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupSetID-Group", group))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XGroupSetID-Start", start))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8673,12 +8673,12 @@ func (x *STREAM) XInfoGroups(key string) (outputSlice []redis.XInfoGroup, notFou
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XInfoGroups-Key", key)
-			_ = seg.SafeAddMetadata("Redis-XInfoGroups-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XInfoGroups-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XInfoGroups-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XInfoGroups-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XInfoGroups-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8723,12 +8723,12 @@ func (x *STREAM) XLen(stream string) (val int64, notFound bool, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XLen-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XLen-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XLen-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XLen-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XLen-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XLen-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8773,13 +8773,13 @@ func (x *STREAM) XPending(stream string, group string) (val *redis.XPending, not
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XPending-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XPending-Group", group)
-			_ = seg.SafeAddMetadata("Redis-XPending-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XPending-Results", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XPending-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XPending-Group", group))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XPending-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XPending-Results", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8828,12 +8828,12 @@ func (x *STREAM) XPendingExt(pendingArgs *redis.XPendingExtArgs) (outputSlice []
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XPendingExt-Input-Args", pendingArgs)
-			_ = seg.SafeAddMetadata("Redis-XPendingExt-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XPendingExt-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XPendingExt-Input-Args", pendingArgs))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XPendingExt-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XPendingExt-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8880,21 +8880,21 @@ func (x *STREAM) XRange(stream string, start string, stop string, count ...int64
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XRange-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XRange-Start", start)
-			_ = seg.SafeAddMetadata("Redis-XRange-Stop", stop)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRange-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRange-Start", start))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRange-Stop", stop))
 
 			if len(count) > 0 {
-				_ = seg.SafeAddMetadata("Redis-XRange-Limit-Count", count[0])
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRange-Limit-Count", count[0]))
 			} else {
-				_ = seg.SafeAddMetadata("Redis-XRange-Limit-Count", "None")
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRange-Limit-Count", "None"))
 			}
 
-			_ = seg.SafeAddMetadata("Redis-XRange-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XRange-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRange-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRange-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -8958,21 +8958,21 @@ func (x *STREAM) XRevRange(stream string, start string, stop string, count ...in
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XRevRange-Stream", stream)
-			_ = seg.SafeAddMetadata("Redis-XRevRange-Start", start)
-			_ = seg.SafeAddMetadata("Redis-XRevRange-Stop", stop)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRevRange-Stream", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRevRange-Start", start))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRevRange-Stop", stop))
 
 			if len(count) > 0 {
-				_ = seg.SafeAddMetadata("Redis-XRevRange-Limit-Count", count[0])
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRevRange-Limit-Count", count[0]))
 			} else {
-				_ = seg.SafeAddMetadata("Redis-XRevRange-Limit-Count", "None")
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRevRange-Limit-Count", "None"))
 			}
 
-			_ = seg.SafeAddMetadata("Redis-XRevRange-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XRevRange-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRevRange-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRevRange-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9035,12 +9035,12 @@ func (x *STREAM) XRead(readArgs *redis.XReadArgs) (outputSlice []redis.XStream, 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XRead-Input-Args", readArgs)
-			_ = seg.SafeAddMetadata("Redis-XRead-Input-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XRead-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRead-Input-Args", readArgs))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRead-Input-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XRead-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9086,12 +9086,12 @@ func (x *STREAM) XReadStreams(stream ...string) (outputSlice []redis.XStream, no
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XReadStreams-Streams", stream)
-			_ = seg.SafeAddMetadata("Redis-XReadStreams-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XReadStreams-Results", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XReadStreams-Streams", stream))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XReadStreams-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XReadStreams-Results", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9136,12 +9136,12 @@ func (x *STREAM) XReadGroup(readGroupArgs *redis.XReadGroupArgs) (outputSlice []
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XReadGroup-ReadGroup", readGroupArgs)
-			_ = seg.SafeAddMetadata("Redis-XReadGroup-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-XReadGroup-Result", outputSlice)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XReadGroup-ReadGroup", readGroupArgs))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XReadGroup-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XReadGroup-Result", outputSlice))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9186,11 +9186,11 @@ func (x *STREAM) XTrim(key string, maxLen int64) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XTrim-Key", key)
-			_ = seg.SafeAddMetadata("Redis-XTrim-MaxLen", maxLen)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XTrim-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XTrim-MaxLen", maxLen))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9240,11 +9240,11 @@ func (x *STREAM) XTrimApprox(key string, maxLen int64) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-XTrimApprox-Key", key)
-			_ = seg.SafeAddMetadata("Redis-XTrimApprox-MaxLen", maxLen)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XTrimApprox-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-XTrimApprox-MaxLen", maxLen))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9314,10 +9314,10 @@ func (ps *PUBSUB) PSubscribe(channel ...string) (psObj *redis.PubSub, err error)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-PSubscribe-Channels", channel)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PSubscribe-Channels", channel))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9376,10 +9376,10 @@ func (ps *PUBSUB) Subscribe(channel ...string) (psObj *redis.PubSub, err error) 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Subscribe-Channels", channel)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Subscribe-Channels", channel))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9427,12 +9427,12 @@ func (ps *PUBSUB) Publish(channel string, message interface{}) (valReceived int6
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Publish-Channel", channel)
-			_ = seg.SafeAddMetadata("Redis-Publish-Message", message)
-			_ = seg.SafeAddMetadata("Redis-Publish-Received-Clients-Count", valReceived)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Publish-Channel", channel))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Publish-Message", message))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Publish-Received-Clients-Count", valReceived))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9486,11 +9486,11 @@ func (ps *PUBSUB) PubSubChannels(pattern string) (valChannels []string, err erro
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-PubSubChannels-Pattern", pattern)
-			_ = seg.SafeAddMetadata("Redis-PubSubChannels-Result", valChannels)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PubSubChannels-Pattern", pattern))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PubSubChannels-Result", valChannels))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9544,10 +9544,10 @@ func (ps *PUBSUB) PubSubNumPat() (valPatterns int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-PubSubNumPat-Result", valPatterns)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PubSubNumPat-Result", valPatterns))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9590,11 +9590,11 @@ func (ps *PUBSUB) PubSubNumSub(channel ...string) (val map[string]int64, err err
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-PubSubNumSub-Channels", channel)
-			_ = seg.SafeAddMetadata("Redis-PubSubNumSub-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PubSubNumSub-Channels", channel))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-PubSubNumSub-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9644,10 +9644,10 @@ func (p *PIPELINE) Pipeline() (result redis.Pipeliner, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Pipeline-Result", result)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Pipeline-Result", result))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9687,10 +9687,10 @@ func (p *PIPELINE) Pipelined(fn func(redis.Pipeliner) error) (result []redis.Cmd
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Pipelined-Result", result)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Pipelined-Result", result))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9730,10 +9730,10 @@ func (p *PIPELINE) TxPipeline() (result redis.Pipeliner, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-TxPipeline-Result", result)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-TxPipeline-Result", result))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9773,10 +9773,10 @@ func (p *PIPELINE) TxPipelined(fn func(redis.Pipeliner) error) (result []redis.C
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-TxPipelined-Result", result)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-TxPipelined-Result", result))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9821,17 +9821,17 @@ func (t *TTL) TTL(key string, bGetMilliseconds bool) (valTTL int64, notFound boo
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-TTL-Key", key)
-			_ = seg.SafeAddMetadata("Redis-TTL-Not-Found", notFound)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-TTL-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-TTL-Not-Found", notFound))
 
 			if bGetMilliseconds {
-				_ = seg.SafeAddMetadata("Redis-TTL-Remainder-Milliseconds", valTTL)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-TTL-Remainder-Milliseconds", valTTL))
 			} else {
-				_ = seg.SafeAddMetadata("Redis-TTL-Remainder-Seconds", valTTL)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-TTL-Remainder-Seconds", valTTL))
 			}
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9909,16 +9909,16 @@ func (t *TTL) Expire(key string, bSetMilliseconds bool, expireValue time.Duratio
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Expire-Key", key)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Expire-Key", key))
 
 			if bSetMilliseconds {
-				_ = seg.SafeAddMetadata("Redis-Expire-Milliseconds", expireValue.Milliseconds())
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Expire-Milliseconds", expireValue.Milliseconds()))
 			} else {
-				_ = seg.SafeAddMetadata("Redis-Expire-Seconds", expireValue.Seconds())
+				xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Expire-Seconds", expireValue.Seconds()))
 			}
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -9988,11 +9988,11 @@ func (t *TTL) ExpireAt(key string, expireTime time.Time) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ExpireAt-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ExpireAt-Expire-Time", expireTime)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ExpireAt-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ExpireAt-Expire-Time", expireTime))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10055,10 +10055,10 @@ func (t *TTL) Touch(key ...string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Touch-Keys", key)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Touch-Keys", key))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10115,10 +10115,10 @@ func (t *TTL) Persist(key string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Persist-Key", key)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Persist-Key", key))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10181,7 +10181,7 @@ func (u *UTILS) Ping() (err error) {
 		defer seg.Close()
 		defer func() {
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10224,10 +10224,10 @@ func (u *UTILS) DBSize() (val int64, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-DBSize-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-DBSize-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10269,10 +10269,10 @@ func (u *UTILS) Time() (val time.Time, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Time-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Time-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10314,10 +10314,10 @@ func (u *UTILS) LastSave() (val time.Time, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-LastSave-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-LastSave-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10365,11 +10365,11 @@ func (u *UTILS) Type(key string) (val rediskeytype.RedisKeyType, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Type-Key", key)
-			_ = seg.SafeAddMetadata("Redis-Type-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Type-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Type-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10437,12 +10437,12 @@ func (u *UTILS) ObjectEncoding(key string) (val string, notFound bool, err error
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ObjectEncoding-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ObjectEncoding-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ObjectEncoding-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ObjectEncoding-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ObjectEncoding-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ObjectEncoding-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10487,12 +10487,12 @@ func (u *UTILS) ObjectIdleTime(key string) (val time.Duration, notFound bool, er
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ObjectIdleTime-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ObjectIdleTime-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ObjectIdleTime-Result-Seconds", val.Seconds())
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ObjectIdleTime-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ObjectIdleTime-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ObjectIdleTime-Result-Seconds", val.Seconds()))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10537,12 +10537,12 @@ func (u *UTILS) ObjectRefCount(key string) (val int64, notFound bool, err error)
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-ObjectRefCount-Key", key)
-			_ = seg.SafeAddMetadata("Redis-ObjectRefCount-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-ObjectRefCount-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ObjectRefCount-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ObjectRefCount-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-ObjectRefCount-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10604,14 +10604,14 @@ func (u *UTILS) Scan(cursor uint64, match string, count int64) (keys []string, r
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Scan-Match", match)
-			_ = seg.SafeAddMetadata("Redis-Scan-Scan-Cursor", cursor)
-			_ = seg.SafeAddMetadata("Redis-Scan-Scan-Count", count)
-			_ = seg.SafeAddMetadata("Redis-Scan-Result-Cursor", resultCursor)
-			_ = seg.SafeAddMetadata("Redis-Scan-Keys-Found", keys)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Scan-Match", match))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Scan-Scan-Cursor", cursor))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Scan-Scan-Count", count))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Scan-Result-Cursor", resultCursor))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Scan-Keys-Found", keys))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10683,12 +10683,12 @@ func (u *UTILS) Keys(match string) (valKeys []string, notFound bool, err error) 
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Keys-Match", match)
-			_ = seg.SafeAddMetadata("Redis-Keys-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-Keys-Keys-Found", valKeys)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Keys-Match", match))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Keys-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Keys-Keys-Found", valKeys))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10747,10 +10747,10 @@ func (u *UTILS) RandomKey() (val string, err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-RandomKey-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RandomKey-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10794,11 +10794,11 @@ func (u *UTILS) Rename(keyOriginal string, keyNew string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Rename-OriginalKey", keyOriginal)
-			_ = seg.SafeAddMetadata("Redis-Rename-NewKey", keyNew)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Rename-OriginalKey", keyOriginal))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Rename-NewKey", keyNew))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10850,11 +10850,11 @@ func (u *UTILS) RenameNX(keyOriginal string, keyNew string) (err error) {
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-RenameNX-OriginalKey", keyOriginal)
-			_ = seg.SafeAddMetadata("Redis-RenameNX-NewKey", keyNew)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RenameNX-OriginalKey", keyOriginal))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-RenameNX-NewKey", keyNew))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10917,13 +10917,13 @@ func (u *UTILS) Sort(key string, sortPattern *redis.Sort) (val []string, notFoun
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-Sort-Key", key)
-			_ = seg.SafeAddMetadata("Redis-Sort-SortPattern", sortPattern)
-			_ = seg.SafeAddMetadata("Redis-Sort-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-Sort-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Sort-Key", key))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Sort-SortPattern", sortPattern))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Sort-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-Sort-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -10974,13 +10974,13 @@ func (u *UTILS) SortInterfaces(keyToSort string, sortPattern *redis.Sort) (val [
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SortInterfaces-SortKey", keyToSort)
-			_ = seg.SafeAddMetadata("Redis-SortInterfaces-SortPattern", sortPattern)
-			_ = seg.SafeAddMetadata("Redis-SortInterfaces-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("Redis-SortInterfaces-Result", val)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SortInterfaces-SortKey", keyToSort))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SortInterfaces-SortPattern", sortPattern))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SortInterfaces-Not-Found", notFound))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SortInterfaces-Result", val))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 
@@ -11031,12 +11031,12 @@ func (u *UTILS) SortStore(keyToSort string, keyToStore string, sortPattern *redi
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Redis-SortStore-SortKey", keyToSort)
-			_ = seg.SafeAddMetadata("Redis-SortStore-SortPattern", sortPattern)
-			_ = seg.SafeAddMetadata("Redis-SortStore-StoreKey", keyToStore)
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SortStore-SortKey", keyToSort))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SortStore-SortPattern", sortPattern))
+			xray.LogXrayAddFailure("Redis", seg.SafeAddMetadata("Redis-SortStore-StoreKey", keyToStore))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Redis", seg.SafeAddError(err))
 			}
 		}()
 

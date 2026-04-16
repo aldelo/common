@@ -258,9 +258,9 @@ func (s *SQS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("SQS-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-AWS-Region", s.getAwsRegion())
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-AWS-Region", s.getAwsRegion()))
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 
@@ -539,11 +539,11 @@ func (s *SQS) GetQueueArnFromQueue(queueUrl string, timeoutDuration ...time.Dura
 	if seg != nil {
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-GetQueueArnFromQueue-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-GetQueueArnFromQueue-Result-ARN", arn)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-GetQueueArnFromQueue-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-GetQueueArnFromQueue-Result-ARN", maskARNForXray(arn)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -665,12 +665,12 @@ func (s *SQS) CreateQueue(queueName string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-CreateQueue-QueueName", queueName)
-			_ = seg.SafeAddMetadata("SQS-CreateQueue-Attributes", attributes)
-			_ = seg.SafeAddMetadata("SQS-CreateQueue-Result-QueueURL", queueUrl)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-CreateQueue-QueueName", queueName))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-CreateQueue-Attributes", attributes))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-CreateQueue-Result-QueueURL", maskQueueURLForXray(queueUrl)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -737,12 +737,12 @@ func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (q
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-GetQueueUrl-QueueName", queueName)
-			_ = seg.SafeAddMetadata("SQS-GetQueueUrl-Result-Not-Found", notFound)
-			_ = seg.SafeAddMetadata("SQS-GetQueueUrl-Result-QueueURL", queueUrl)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-GetQueueUrl-QueueName", queueName))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-GetQueueUrl-Result-Not-Found", notFound))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-GetQueueUrl-Result-QueueURL", maskQueueURLForXray(queueUrl)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -825,10 +825,10 @@ func (s *SQS) PurgeQueue(queueUrl string, timeOutDuration ...time.Duration) (err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-PurgeQueue-QueueURL", queueUrl)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-PurgeQueue-QueueURL", maskQueueURLForXray(queueUrl)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -890,10 +890,10 @@ func (s *SQS) DeleteQueue(queueUrl string, timeOutDuration ...time.Duration) (er
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-DeleteQueue-QueueURL", queueUrl)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-DeleteQueue-QueueURL", maskQueueURLForXray(queueUrl)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -966,14 +966,14 @@ func (s *SQS) ListQueues(queueNamePrefix string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-ListQueues-QueueNamePrefix", queueNamePrefix)
-			_ = seg.SafeAddMetadata("SQS-ListQueues-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("SQS-ListQueues-MaxResults", maxResults)
-			_ = seg.SafeAddMetadata("SQS-ListQueues-Result-QueueUrlsList", queueUrlsList)
-			_ = seg.SafeAddMetadata("SQS-ListQueues-Result-NextToken", moreQueueUrlsNextToken)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListQueues-QueueNamePrefix", queueNamePrefix))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListQueues-NextToken", nextToken))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListQueues-MaxResults", maxResults))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListQueues-Result-QueueUrlsList", queueUrlsList))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListQueues-Result-NextToken", moreQueueUrlsNextToken))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1056,14 +1056,14 @@ func (s *SQS) ListDeadLetterSourceQueues(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-MaxResults", maxResults)
-			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-Result-QueueUrlsList", queueUrlsList)
-			_ = seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-Result-NextToken", moreQueueUrlsNextToken)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-NextToken", nextToken))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-MaxResults", maxResults))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-Result-QueueUrlsList", queueUrlsList))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ListDeadLetterSourceQueues-Result-NextToken", moreQueueUrlsNextToken))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1221,12 +1221,12 @@ func (s *SQS) GetQueueAttributes(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-GetQueueAttributes-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-GetQueueAttributes-AttributeNames", attributeNames)
-			_ = seg.SafeAddMetadata("SQS-GetQueueAttributes-Result-Attributes", attributes)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-GetQueueAttributes-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-GetQueueAttributes-AttributeNames", attributeNames))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-GetQueueAttributes-Result-Attributes", attributes))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1403,11 +1403,11 @@ func (s *SQS) SetQueueAttributes(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-SetQueueAttributes-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-SetQueueAttributes-Attributes", attributes)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SetQueueAttributes-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SetQueueAttributes-Attributes", attributes))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1501,14 +1501,14 @@ func (s *SQS) SendMessage(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-SendMessage-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-SendMessage-MessageBody", messageBody)
-			_ = seg.SafeAddMetadata("SQS-SendMessage-MessageAttributes", messageAttributes)
-			_ = seg.SafeAddMetadata("SQS-SendMessage-DelaySeconds", delaySeconds)
-			_ = seg.SafeAddMetadata("SQS-SendMessage-Result", result)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessage-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessage-MessageBody-Length", len(messageBody)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessage-MessageAttribute-Count", len(messageAttributes)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessage-DelaySeconds", delaySeconds))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessage-Result", result))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1676,15 +1676,15 @@ func (s *SQS) SendMessageFifo(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-MessageDeduplicationID", messageDeduplicationId)
-			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-MessageGroupID", messageGroupId)
-			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-MessageBody", messageBody)
-			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-MessageAttributes", messageAttributes)
-			_ = seg.SafeAddMetadata("SQS-SendMessageFifo-Result", result)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageFifo-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageFifo-MessageDeduplicationID", messageDeduplicationId))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageFifo-MessageGroupID", messageGroupId))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageFifo-MessageBody-Length", len(messageBody)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageFifo-MessageAttribute-Count", len(messageAttributes)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageFifo-Result", result))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1775,13 +1775,13 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-SendMessageBatch-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-SendMessageBatch-MessageEntries", messageEntries)
-			_ = seg.SafeAddMetadata("SQS-SendMessageBatch-Result-SuccessList", successList)
-			_ = seg.SafeAddMetadata("SQS-SendMessageBatch-Result-FailedList", failedList)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageBatch-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageBatch-MessageEntry-Count", len(messageEntries)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageBatch-Result-SuccessList", successList))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageBatch-Result-FailedList", failedList))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1912,13 +1912,13 @@ func (s *SQS) SendMessageBatchFifo(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-SendMessageBatchFifo-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-SendMessageBatchFifo-MessageEntries", messageEntries)
-			_ = seg.SafeAddMetadata("SQS-SendMessageBatchFifo-Result-SuccessList", successList)
-			_ = seg.SafeAddMetadata("SQS-SendMessageBatchFifo-Result-FailedList", failedList)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageBatchFifo-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageBatchFifo-MessageEntry-Count", len(messageEntries)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageBatchFifo-Result-SuccessList", successList))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-SendMessageBatchFifo-Result-FailedList", failedList))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2118,17 +2118,17 @@ func (s *SQS) ReceiveMessage(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-MaxNumberOfMessages", maxNumberOfMessages)
-			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-MessageAttributeNames", messageAttributeNames)
-			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-SystemAttributeNames", systemAttributeNames)
-			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-VisibilityTimeOutSeconds", visibilityTimeOutSeconds)
-			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-WaitTimeSeconds", waitTimeSeconds)
-			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-ReceiveRequestAttemptID", receiveRequestAttemptId)
-			_ = seg.SafeAddMetadata("SQS-ReceiveMessage-Result-MessagesList", messagesList)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ReceiveMessage-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ReceiveMessage-MaxNumberOfMessages", maxNumberOfMessages))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ReceiveMessage-MessageAttributeNames", messageAttributeNames))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ReceiveMessage-SystemAttributeNames", systemAttributeNames))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ReceiveMessage-VisibilityTimeOutSeconds", visibilityTimeOutSeconds))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ReceiveMessage-WaitTimeSeconds", waitTimeSeconds))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ReceiveMessage-ReceiveRequestAttemptID", receiveRequestAttemptId))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ReceiveMessage-Result-MessageCount", len(messagesList)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2257,12 +2257,12 @@ func (s *SQS) ChangeMessageVisibility(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibility-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibility-ReceiptHandle", receiptHandle)
-			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibility-VisibilityTimeOutSeconds", visibilityTimeOutSeconds)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ChangeMessageVisibility-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ChangeMessageVisibility-HasReceiptHandle", len(receiptHandle) > 0))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ChangeMessageVisibility-VisibilityTimeOutSeconds", visibilityTimeOutSeconds))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2341,13 +2341,13 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-MessageEntries", messageEntries)
-			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-Result-SuccessIDsList", successIDsList)
-			_ = seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-Result-FailedList", failedList)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-MessageEntry-Count", len(messageEntries)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-Result-SuccessIDsList", successIDsList))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-ChangeMessageVisibilityBatch-Result-FailedList", failedList))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2475,11 +2475,11 @@ func (s *SQS) DeleteMessage(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-DeleteMessage-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-DeleteMessage-ReceiptHandle", receiptHandle)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-DeleteMessage-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-DeleteMessage-HasReceiptHandle", len(receiptHandle) > 0))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2546,13 +2546,13 @@ func (s *SQS) DeleteMessageBatch(queueUrl string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SQS-DeleteMessageBatch-QueueURL", queueUrl)
-			_ = seg.SafeAddMetadata("SQS-DeleteMessageBatch-MessageEntries", messageEntries)
-			_ = seg.SafeAddMetadata("SQS-DeleteMessageBatch-Result-SuccessIDsList", successIDsList)
-			_ = seg.SafeAddMetadata("SQS-DeleteMessageBatch-Result-FailedList", failedList)
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-DeleteMessageBatch-QueueURL", maskQueueURLForXray(queueUrl)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-DeleteMessageBatch-MessageEntry-Count", len(messageEntries)))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-DeleteMessageBatch-Result-SuccessIDsList", successIDsList))
+			xray.LogXrayAddFailure("SQS", seg.SafeAddMetadata("SQS-DeleteMessageBatch-Result-FailedList", failedList))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SQS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2652,4 +2652,52 @@ func (s *SQS) DeleteMessageBatch(queueUrl string,
 
 		return successIDsList, failedList, nil
 	}
+}
+
+// maskQueueURLForXray masks the 12-digit AWS account ID in SQS queue URLs.
+// Input:  https://sqs.us-east-1.amazonaws.com/123456789012/queue-name
+// Output: https://sqs.us-east-1.amazonaws.com/1234****/queue-name
+func maskQueueURLForXray(queueURL string) string {
+	if len(queueURL) == 0 {
+		return ""
+	}
+	parts := strings.Split(queueURL, "/")
+	for i, part := range parts {
+		if len(part) == 12 {
+			allDigit := true
+			for _, r := range part {
+				if r < '0' || r > '9' {
+					allDigit = false
+					break
+				}
+			}
+			if allDigit {
+				parts[i] = part[:4] + "****"
+			}
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
+// maskARNForXray masks the account ID portion of an AWS ARN.
+// Input:  arn:aws:sqs:us-east-1:123456789012:queue-name
+// Output: arn:aws:sqs:us-east-1:1234****:queue-name
+func maskARNForXray(arnStr string) string {
+	if len(arnStr) == 0 {
+		return ""
+	}
+	parts := strings.Split(arnStr, ":")
+	if len(parts) >= 5 && len(parts[4]) == 12 {
+		allDigit := true
+		for _, r := range parts[4] {
+			if r < '0' || r > '9' {
+				allDigit = false
+				break
+			}
+		}
+		if allDigit {
+			parts[4] = parts[4][:4] + "****"
+		}
+	}
+	return strings.Join(parts, ":")
 }

@@ -160,10 +160,10 @@ func (sd *CloudMap) Connect(parentSegment ...*xray.XRayParentSegment) (err error
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-AWS-Region", awsRegionSnap)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-AWS-Region", awsRegionSnap))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -322,12 +322,12 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-CreateHttpNamespace-Name", name)
-				_ = seg.SafeAddMetadata("Cloudmap-CreateHttpNamespace-CreatorRequestID", creatorRequestId)
-				_ = seg.SafeAddMetadata("Cloudmap-CreateHttpNamespace-Result-OperationID", operationId)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreateHttpNamespace-Name", name))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreateHttpNamespace-CreatorRequestID", creatorRequestId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreateHttpNamespace-Result-OperationID", operationId))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -451,13 +451,13 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-Name", name)
-				_ = seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-CreatorRequestID", creatorRequestId)
-				_ = seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-VPC", vpc)
-				_ = seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-Result-OperationID", operationId)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-Name", name))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-CreatorRequestID", creatorRequestId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-VPC", vpc))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreatePrivateDnsNamespace-Result-OperationID", operationId))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -585,12 +585,12 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-CreatePublicDnsNamespace-Name", name)
-				_ = seg.SafeAddMetadata("Cloudmap-CreatePublicDnsNamespace-CreatorRequestID", creatorRequestId)
-				_ = seg.SafeAddMetadata("Cloudmap-CreatePublicDnsNamespace-Result-OperationID", operationId)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreatePublicDnsNamespace-Name", name))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreatePublicDnsNamespace-CreatorRequestID", creatorRequestId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreatePublicDnsNamespace-Result-OperationID", operationId))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -700,11 +700,11 @@ func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Dur
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-GetNamespace-NamespaceID", namespaceId)
-				_ = seg.SafeAddMetadata("Cloudmap-GetNamespace-Result-NamespaceObject", namespace)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetNamespace-NamespaceID", namespaceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetNamespace-Result-NamespaceObject", namespace))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -797,14 +797,14 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Filter", filter)
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Max-Results", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Next-Token", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Result-Namespaces", namespaces)
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespaces-Result-Next-Token", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespaces-Filter", filter))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespaces-Max-Results", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespaces-Next-Token", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespaces-Result-Namespaces", namespaces))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespaces-Result-Next-Token", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -942,14 +942,14 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Filter", filter)
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Max-Results", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Next-Token", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Result-Namespaces", namespaces)
-				_ = seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Result-Next-Token", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Filter", filter))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Max-Results", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Next-Token", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Result-Namespaces", namespaces))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListNamespacesPages-Result-Next-Token", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -1078,11 +1078,11 @@ func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-DeleteNamespace-NamespaceID", namespaceId)
-				_ = seg.SafeAddMetadata("Cloudmap-DeleteNamespace-Result-OperationID", operationId)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DeleteNamespace-NamespaceID", namespaceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DeleteNamespace-Result-OperationID", operationId))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -1188,15 +1188,15 @@ func (sd *CloudMap) CreateService(name string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-CreateService-ServiceName", name)
-				_ = seg.SafeAddMetadata("Cloudmap-CreateService-CreatorRequestID", creatorRequestId)
-				_ = seg.SafeAddMetadata("Cloudmap-CreateService-NamespaceID", namespaceId)
-				_ = seg.SafeAddMetadata("Cloudmap-CreateService-DNSConf", dnsConf)
-				_ = seg.SafeAddMetadata("Cloudmap-CreateService-HealthCheckConf", healthCheckConf)
-				_ = seg.SafeAddMetadata("Cloudmap-CreateService-Result-ServiceObject", service)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreateService-ServiceName", name))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreateService-CreatorRequestID", creatorRequestId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreateService-NamespaceID", namespaceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreateService-DNSConf", dnsConf))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreateService-HealthCheckConf", healthCheckConf))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-CreateService-Result-ServiceObject", service))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -1433,14 +1433,14 @@ func (sd *CloudMap) UpdateService(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-DNSConfUpdate", dnsConfUpdate)
-				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-HealthCheckConfUpdate", healthCheckConfUpdate)
-				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-DescriptionUpdate", descriptionUpdate)
-				_ = seg.SafeAddMetadata("Cloudmap-UpdateService-Result-OperationID", operationId)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-UpdateService-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-UpdateService-DNSConfUpdate", dnsConfUpdate))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-UpdateService-HealthCheckConfUpdate", healthCheckConfUpdate))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-UpdateService-DescriptionUpdate", descriptionUpdate))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-UpdateService-Result-OperationID", operationId))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -1613,11 +1613,11 @@ func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duratio
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-GetService-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-GetService-Result-Service", service)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetService-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetService-Result-Service", service))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -1705,14 +1705,14 @@ func (sd *CloudMap) ListServices(filter []string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-ListServices-Filter", filter)
-				_ = seg.SafeAddMetadata("Cloudmap-ListServices-MaxResults", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-ListServices-NextToken", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-ListServices-Result-Services", services)
-				_ = seg.SafeAddMetadata("Cloudmap-ListServices-Result-NextToken", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServices-Filter", filter))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServices-MaxResults", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServices-NextToken", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServices-Result-Services", services))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServices-Result-NextToken", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -1850,14 +1850,14 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-Filter", filter)
-				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-MaxResults", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-NextToken", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-Result-Services", services)
-				_ = seg.SafeAddMetadata("Cloudmap-ListServicesPages-Result-NextToken", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServicesPages-Filter", filter))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServicesPages-MaxResults", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServicesPages-NextToken", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServicesPages-Result-Services", services))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListServicesPages-Result-NextToken", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -1993,10 +1993,10 @@ func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Dura
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-DeleteService-ServiceID", serviceId)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DeleteService-ServiceID", serviceId))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -2120,14 +2120,14 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-InstanceID", instanceId)
-				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-CreatorRequestID", creatorRequestId)
-				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-Attributes", attributes)
-				_ = seg.SafeAddMetadata("Cloudmap-RegisterInstance-Result-OperationID", operationId)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-RegisterInstance-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-RegisterInstance-InstanceID", instanceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-RegisterInstance-CreatorRequestID", creatorRequestId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-RegisterInstance-Attributes", attributes))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-RegisterInstance-Result-OperationID", operationId))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -2251,12 +2251,12 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-InstanceID", instanceId)
-				_ = seg.SafeAddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-IsHealthy", isHealthy)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-InstanceID", instanceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-UpdateInstanceCustomHealthStatus-IsHealthy", isHealthy))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -2355,12 +2355,12 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-DeregisterInstance-InstanceID", instanceId)
-				_ = seg.SafeAddMetadata("Cloudmap-DeregisterInstance-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-DeregisterInstance-Result-OperationID", operationId)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DeregisterInstance-InstanceID", instanceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DeregisterInstance-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DeregisterInstance-Result-OperationID", operationId))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -2455,12 +2455,12 @@ func (sd *CloudMap) GetInstance(instanceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstance-InstanceID", instanceId)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstance-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstance-Result-Instance", instance)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstance-InstanceID", instanceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstance-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstance-Result-Instance", instance))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -2565,15 +2565,15 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-InstanceIDs", instanceIds)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-MaxResults", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-NextToken", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-Result-Status", status)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-Result-NextToken", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-InstanceIDs", instanceIds))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-MaxResults", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-NextToken", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-Result-Status", status))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatus-Result-NextToken", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -2701,15 +2701,15 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-InstanceIDs", instanceIds)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-MaxResults", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-NextToken", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-Result-Status", status)
-				_ = seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-Result-NextToken", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-InstanceIDs", instanceIds))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-MaxResults", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-NextToken", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-Result-Status", status))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetInstancesHealthStatusPages-Result-NextToken", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -2841,15 +2841,15 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-NamespaceName", namespaceName)
-				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-ServiceName", serviceName)
-				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-IsHealthy", isHealthy)
-				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-QueryParameters", queryParameters)
-				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-MaxResults", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-DiscoverInstances-Result-Instances", instances)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DiscoverInstances-NamespaceName", namespaceName))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DiscoverInstances-ServiceName", serviceName))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DiscoverInstances-IsHealthy", isHealthy))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DiscoverInstances-QueryParameters", queryParameters))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DiscoverInstances-MaxResults", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-DiscoverInstances-Result-Instances", instances))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -2970,14 +2970,14 @@ func (sd *CloudMap) ListInstances(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-MaxResults", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-NextToken", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-Result-Instances", instances)
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstances-Result-NextToken", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstances-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstances-MaxResults", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstances-NextToken", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstances-Result-Instances", instances))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstances-Result-NextToken", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -3095,14 +3095,14 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-ServiceID", serviceId)
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-MaxResults", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-NextToken", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-Result-Instances", instances)
-				_ = seg.SafeAddMetadata("Cloudmap-ListInstancesPages-Result-NextToken", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstancesPages-ServiceID", serviceId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstancesPages-MaxResults", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstancesPages-NextToken", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstancesPages-Result-Instances", instances))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListInstancesPages-Result-NextToken", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -3213,11 +3213,11 @@ func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Dur
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-GetOperation-OperationID", operationId)
-				_ = seg.SafeAddMetadata("Cloudmap-GetOperation-Result-Operation", operation)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetOperation-OperationID", operationId))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-GetOperation-Result-Operation", operation))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -3314,14 +3314,14 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-Filter", filter)
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-MaxResults", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-NextToken", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-Result-Operations", operations)
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperations-Result-NextToken", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperations-Filter", filter))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperations-MaxResults", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperations-NextToken", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperations-Result-Operations", operations))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperations-Result-NextToken", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -3507,14 +3507,14 @@ func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperation
 			// P1-4: guard seg.Seg — wrapper may have nil Seg when
 			// tracing is disabled or BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-Filter", filter)
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-MaxResults", maxResults)
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-NextToken", nextToken)
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-Result-Operations", operations)
-				_ = seg.SafeAddMetadata("Cloudmap-ListOperationsPages-Result-NextToken", moreNextToken)
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperationsPages-Filter", filter))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperationsPages-MaxResults", maxResults))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperationsPages-NextToken", nextToken))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperationsPages-Result-Operations", operations))
+				xray.LogXrayAddFailure("CloudMap", seg.SafeAddMetadata("Cloudmap-ListOperationsPages-Result-NextToken", moreNextToken))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("CloudMap", seg.SafeAddError(err))
 				}
 			}
 		}()

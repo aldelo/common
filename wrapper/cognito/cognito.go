@@ -111,10 +111,10 @@ func (s *Cognito) Connect(parentSegment ...*xray.XRayParentSegment) (err error) 
 		s.mu.RUnlock()
 
 		defer func() {
-			_ = seg.SafeAddMetadata("Cognito-AWS-Region", awsRegion)
+			xray.LogXrayAddFailure("Cognito", seg.SafeAddMetadata("Cognito-AWS-Region", awsRegion))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Cognito", seg.SafeAddError(err))
 			}
 		}()
 
@@ -229,11 +229,11 @@ func (s *Cognito) getOpenIdTokenForDeveloperIdentity(identityPoolId, developerPr
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Cognito-GetOpenIdTokenForDeveloperIdentity-IdentityId", identityId)
-			_ = seg.SafeAddMetadata("Cognito-GetOpenIdTokenForDeveloperIdentity-Token", token)
+			xray.LogXrayAddFailure("Cognito", seg.SafeAddMetadata("Cognito-GetOpenIdTokenForDeveloperIdentity-IdentityId", identityId))
+			xray.LogXrayAddFailure("Cognito", seg.SafeAddMetadata("Cognito-GetOpenIdTokenForDeveloperIdentity-Token", token))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Cognito", seg.SafeAddError(err))
 			}
 		}()
 	}

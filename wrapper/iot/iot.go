@@ -118,10 +118,10 @@ func (s *IoT) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("IoT-Connect", s.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("IoT-AWS-Region", region)
+			xray.LogXrayAddFailure("IoT", seg.SafeAddMetadata("IoT-AWS-Region", region))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("IoT", seg.SafeAddError(err))
 			}
 		}()
 
@@ -226,11 +226,11 @@ func (s *IoT) AttachPolicy(policyName, target string) (err error) {
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("IoT-AttachPolicy-PolicyName", policyName)
-			_ = seg.SafeAddMetadata("IoT-AttachPolicy-Target", target)
+			xray.LogXrayAddFailure("IoT", seg.SafeAddMetadata("IoT-AttachPolicy-PolicyName", policyName))
+			xray.LogXrayAddFailure("IoT", seg.SafeAddMetadata("IoT-AttachPolicy-Target", target))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("IoT", seg.SafeAddError(err))
 			}
 		}()
 	}

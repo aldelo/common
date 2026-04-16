@@ -1328,11 +1328,11 @@ func (d *DynamoDB) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 			// Seg field when tracing is disabled OR when BeginSegment
 			// panic-recovers (xray.go:399-403).
 			if seg != nil && seg.Seg != nil {
-				_ = seg.SafeAddMetadata("DynamoDB-AWS-Region", d.AwsRegion)
-				_ = seg.SafeAddMetadata("DynamoDB-Table-Name", d.TableName)
+				xray.LogXrayAddFailure("DynamoDB", seg.SafeAddMetadata("DynamoDB-AWS-Region", d.AwsRegion))
+				xray.LogXrayAddFailure("DynamoDB", seg.SafeAddMetadata("DynamoDB-Table-Name", d.TableName))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("DynamoDB", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -1435,10 +1435,10 @@ func (d *DynamoDB) EnableDax() (err error) {
 			// P1-4: guard seg.Seg — even with seg != nil, the wrapper's
 			// Seg field can be nil if BeginSegment panic-recovered.
 			if seg.Seg != nil {
-				_ = seg.SafeAddMetadata("DynamoDB-Dax-Endpoint", d.DaxEndpoint)
+				xray.LogXrayAddFailure("DynamoDB", seg.SafeAddMetadata("DynamoDB-Dax-Endpoint", d.DaxEndpoint))
 
 				if err != nil {
-					_ = seg.SafeAddError(err)
+					xray.LogXrayAddFailure("DynamoDB", seg.SafeAddError(err))
 				}
 			}
 		}()
@@ -2889,7 +2889,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
+			xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage)))
 		}
 	}()
 
@@ -3253,7 +3253,7 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
+			xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage)))
 		}
 	}()
 
@@ -3632,7 +3632,7 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
+			xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage)))
 		}
 	}()
 
@@ -3958,7 +3958,7 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
+			xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage)))
 		}
 	}()
 
@@ -4262,7 +4262,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
+			xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage)))
 		}
 	}()
 
@@ -4787,7 +4787,7 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
+			xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage)))
 		}
 	}()
 
@@ -5181,7 +5181,7 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
+			xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage)))
 		}
 	}()
 
@@ -6092,7 +6092,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 	defer trace.Close()
 	defer func() {
 		if ddbErr != nil {
-			_ = trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage))
+			xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(fmt.Errorf("%s", ddbErr.ErrorMessage)))
 		}
 	}()
 
@@ -6696,7 +6696,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 	defer trace.Close()
 	defer func() {
 		if err != nil {
-			_ = trace.SafeAddError(fmt.Errorf("%s", err.ErrorMessage))
+			xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(fmt.Errorf("%s", err.ErrorMessage)))
 		}
 	}()
 
@@ -7539,19 +7539,19 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 				err.ErrorMessage = err.ErrorMessage + " - PANIC: " + fmt.Sprintf("%v", r)
 				log.Printf("DynamoDB batchGetItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
 				if trace.Seg != nil {
-					_ = trace.SafeAddError(err)
+					xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(err))
 				}
 			} else {
 				err = d.handleError(fmt.Errorf("PANIC: %v", r), "DynamoDB-batchGetItemsWithTrace")
 				log.Printf("DynamoDB batchGetItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
 				if trace.Seg != nil {
-					_ = trace.SafeAddError(err)
+					xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(err))
 				}
 			}
 		} else if err != nil {
 			log.Printf("DynamoDB batchGetItemsWithTrace Recovered Without Panic But Has Error: %s", err.ErrorMessage)
 			if trace.Seg != nil {
-				_ = trace.SafeAddError(err)
+				xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(err))
 			}
 		}
 	}()
@@ -8312,19 +8312,19 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 				err.ErrorMessage = err.ErrorMessage + " - PANIC: " + fmt.Sprintf("%v", r)
 				log.Printf("DynamoDB transactionWriteItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
 				if trace.Seg != nil {
-					_ = trace.SafeAddError(err)
+					xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(err))
 				}
 			} else {
 				err = d.handleError(fmt.Errorf("PANIC: %v", r), "DynamoDB-transactionWriteItemsWithTrace")
 				log.Printf("DynamoDB transactionWriteItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
 				if trace.Seg != nil {
-					_ = trace.SafeAddError(err)
+					xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(err))
 				}
 			}
 		} else if err != nil {
 			log.Printf("DynamoDB transactionWriteItemsWithTrace Recovered Without Panic But Has Error: %s", err.ErrorMessage)
 			if trace.Seg != nil {
-				_ = trace.SafeAddError(err)
+				xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(err))
 			}
 		}
 	}()
@@ -8859,19 +8859,19 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 				err.ErrorMessage = err.ErrorMessage + " - PANIC: " + fmt.Sprintf("%v", r)
 				log.Printf("DynamoDB transactionGetItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
 				if trace.Seg != nil {
-					_ = trace.SafeAddError(err)
+					xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(err))
 				}
 			} else {
 				err = d.handleError(fmt.Errorf("PANIC: %v", r), "DynamoDB-transactionGetItemsWithTrace")
 				log.Printf("DynamoDB transactionGetItemsWithTrace Recovered From Panic: %s", err.ErrorMessage)
 				if trace.Seg != nil {
-					_ = trace.SafeAddError(err)
+					xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(err))
 				}
 			}
 		} else if err != nil {
 			log.Printf("DynamoDB transactionGetItemsWithTrace Recovered Without Panic But Has Error: %s", err.ErrorMessage)
 			if trace.Seg != nil {
-				_ = trace.SafeAddError(err)
+				xray.LogXrayAddFailure("DynamoDB", trace.SafeAddError(err))
 			}
 		}
 	}()

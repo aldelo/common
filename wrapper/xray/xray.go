@@ -899,7 +899,7 @@ var (
 // "SNS-CreateTopic". This keeps the log output actionable — operators can
 // grep for the category to see which wrapper is experiencing xray failures.
 //
-// Design rationale: the 1,168 existing `_ = seg.SafeAdd*(...)` call sites
+// Design rationale: the 1,168 existing `LogXrayAddFailure("Xray", seg.SafeAdd*(...)` call sites)
 // silently discard errors. Checking every one individually would flood logs
 // when xray is misconfigured. This sampled approach gives visibility into
 // systemic failures without per-call log spam.

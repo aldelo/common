@@ -105,7 +105,7 @@ func (r *Route53) Connect(parentSegment ...*xray.XRayParentSegment) (err error) 
 		defer seg.Close()
 		defer func() {
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Route53", seg.SafeAddError(err))
 			}
 		}()
 
@@ -240,14 +240,14 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Route53-HostedZoneID", hostedZoneID)
-			_ = seg.SafeAddMetadata("Route53-URL", url)
-			_ = seg.SafeAddMetadata("Route53-IP", ip)
-			_ = seg.SafeAddMetadata("Route53-TTL", ttl)
-			_ = seg.SafeAddMetadata("Route53-RecordType", recordType)
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-HostedZoneID", hostedZoneID))
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-URL", url))
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-IP", ip))
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-TTL", ttl))
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-RecordType", recordType))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Route53", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -354,14 +354,14 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("Route53-HostedZoneID", hostedZoneID)
-			_ = seg.SafeAddMetadata("Route53-URL", url)
-			_ = seg.SafeAddMetadata("Route53-IP", ip)
-			_ = seg.SafeAddMetadata("Route53-TTL", ttl)
-			_ = seg.SafeAddMetadata("Route53-RecordType", recordType)
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-HostedZoneID", hostedZoneID))
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-URL", url))
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-IP", ip))
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-TTL", ttl))
+			xray.LogXrayAddFailure("Route53", seg.SafeAddMetadata("Route53-RecordType", recordType))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("Route53", seg.SafeAddError(err))
 			}
 		}()
 	}

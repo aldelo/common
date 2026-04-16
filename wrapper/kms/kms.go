@@ -232,10 +232,10 @@ func (k *KMS) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("KMS-Connect", k.getParentSegment())
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KDS-AWS-Region", k.getAWSRegion())
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KDS-AWS-Region", k.getAWSRegion()))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 
@@ -370,12 +370,12 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-AES-KMS-KeyName", aesKeyName)
-			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-PlainText-Length", len(plainText))
-			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-Result-CipherText-Length", len(cipherText))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-AES-KMS-KeyName", aesKeyName))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-PlainText-Length", len(plainText)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptViaCmkAes256-Result-CipherText-Length", len(cipherText)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -446,13 +446,13 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-ReEncryptViaCmkAes256-Source-AES-KMS-KeyName", k.getAesKeyName())
-			_ = seg.SafeAddMetadata("KMS-ReEncryptViaCmkAes256-Target-AES-KMS-KeyName", targetKmsKeyName)
-			_ = seg.SafeAddMetadata("KMS-ReEncryptViaCmkAes256-SourceCipherText-Length", len(sourceCipherText))
-			_ = seg.SafeAddMetadata("KMS-ReEncryptViaCmkAes256-Result-Target-CipherText-Length", len(targetCipherText))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ReEncryptViaCmkAes256-Source-AES-KMS-KeyName", k.getAesKeyName()))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ReEncryptViaCmkAes256-Target-AES-KMS-KeyName", targetKmsKeyName))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ReEncryptViaCmkAes256-SourceCipherText-Length", len(sourceCipherText)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ReEncryptViaCmkAes256-Result-Target-CipherText-Length", len(targetCipherText)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -554,12 +554,12 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-AES-KMS-KeyName", aesKeyName)
-			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-CipherText-Length", len(cipherText))
-			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-Result-PlainText-Length", len(plainText))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-AES-KMS-KeyName", aesKeyName))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-CipherText-Length", len(cipherText)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptViaCmkAes256-Result-PlainText-Length", len(plainText)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -712,9 +712,9 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-GenerateEncryptionDecryptionKeyRsa2048-RSA-KMS-KeyName", k.getRsaKeyName())
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-GenerateEncryptionDecryptionKeyRsa2048-RSA-KMS-KeyName", k.getRsaKeyName()))
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -788,9 +788,9 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-GenerateSignVerifyKeyRsa2048-RSA-KMS-KeyName", k.getRsaKeyName())
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-GenerateSignVerifyKeyRsa2048-RSA-KMS-KeyName", k.getRsaKeyName()))
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -868,9 +868,9 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-KeyDeleteWithAlias-RSA-KMS-KeyName", k.getRsaKeyName())
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-KeyDeleteWithAlias-RSA-KMS-KeyName", k.getRsaKeyName()))
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -948,9 +948,9 @@ func (k *KMS) KeyDeleteWithArnID(arn string, PendingWindowInDays int64) (output 
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-KeyDeleteWithArnID-RSA-KMS-KeyName", k.getRsaKeyName())
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-KeyDeleteWithArnID-RSA-KMS-KeyName", k.getRsaKeyName()))
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1026,12 +1026,12 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-RSA-KMS-KeyName", rsaKeyName)
-			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-PlainText-Length", len(plainText))
-			_ = seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-Result-CipherText-Length", len(cipherText))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-RSA-KMS-KeyName", rsaKeyName))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-PlainText-Length", len(plainText)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptViaCmkRsa2048-Result-CipherText-Length", len(cipherText)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1104,9 +1104,9 @@ func (k *KMS) GetRSAPublicKey(alias string) (output *kms.GetPublicKeyOutput, err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-GetRSAPublicKey-RSA-KMS-KeyName", k.getRsaKeyName())
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-GetRSAPublicKey-RSA-KMS-KeyName", k.getRsaKeyName()))
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1156,13 +1156,13 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-ReEncryptViaCmkRsa2048-Source-RSA-KMS-KeyName", k.getRsaKeyName())
-			_ = seg.SafeAddMetadata("KMS-ReEncryptViaCmkRsa2048-Target-RSA-KMS-KeyName", targetKmsKeyName)
-			_ = seg.SafeAddMetadata("KMS-ReEncryptViaCmkRsa2048-Source-CipherText-Length", len(sourceCipherText))
-			_ = seg.SafeAddMetadata("KMS-ReEncryptViaCmkRsa2048-Result-Target-CipherText-Length", len(targetCipherText))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ReEncryptViaCmkRsa2048-Source-RSA-KMS-KeyName", k.getRsaKeyName()))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ReEncryptViaCmkRsa2048-Target-RSA-KMS-KeyName", targetKmsKeyName))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ReEncryptViaCmkRsa2048-Source-CipherText-Length", len(sourceCipherText)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ReEncryptViaCmkRsa2048-Result-Target-CipherText-Length", len(targetCipherText)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1264,12 +1264,12 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-RSA-KMS-KeyName", rsaKeyName)
-			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-CipherText-Length", len(cipherText))
-			_ = seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-Result-PlainText-Length", len(plainText))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-RSA-KMS-KeyName", rsaKeyName))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-CipherText-Length", len(cipherText)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptViaCmkRsa2048-Result-PlainText-Length", len(plainText)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1349,12 +1349,12 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-decryptViaCmkRsa2048Base-RSA-KMS-KeyName", k.getRsaKeyName())
-			_ = seg.SafeAddMetadata("KMS-decryptViaCmkRsa2048Base-CipherText-Length", len(cipherText))
-			_ = seg.SafeAddMetadata("KMS-decryptViaCmkRsa2048Base-Result-PlainText-Length", len(plainText))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-decryptViaCmkRsa2048Base-RSA-KMS-KeyName", k.getRsaKeyName()))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-decryptViaCmkRsa2048Base-CipherText-Length", len(cipherText)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-decryptViaCmkRsa2048Base-Result-PlainText-Length", len(plainText)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1435,12 +1435,12 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-SignViaCmkRsa2048-Signature-KMS-KeyName", k.getSigKeyName())
-			_ = seg.SafeAddMetadata("KMS-SignViaCmkRsa2048-DataToSign-Length", len(dataToSign))
-			_ = seg.SafeAddMetadata("KMS-SignViaCmkRsa2048-Result-Signature", signature)
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-SignViaCmkRsa2048-Signature-KMS-KeyName", k.getSigKeyName()))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-SignViaCmkRsa2048-DataToSign-Length", len(dataToSign)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-SignViaCmkRsa2048-Result-Signature-Length", len(signature)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1518,13 +1518,13 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-VerifyViaCmkRsa2048-Signature-KMS-KeyName", k.getSigKeyName())
-			_ = seg.SafeAddMetadata("KMS-VerifyViaCmkRsa2048-DataToVerify-Length", len(dataToVerify))
-			_ = seg.SafeAddMetadata("KMS-VerifyViaCmkRsa2048-Signature-To-Verify", signatureToVerify)
-			_ = seg.SafeAddMetadata("KMS-VerifyViaCmkRsa2048-Result-SignatureValid", signatureValid)
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-VerifyViaCmkRsa2048-Signature-KMS-KeyName", k.getSigKeyName()))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-VerifyViaCmkRsa2048-DataToVerify-Length", len(dataToVerify)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-VerifyViaCmkRsa2048-Signature-To-Verify-Length", len(signatureToVerify)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-VerifyViaCmkRsa2048-Result-SignatureValid", signatureValid))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1614,11 +1614,11 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-GenerateDataKeyAes256-AES-KMS-KeyName", k.getAesKeyName())
-			_ = seg.SafeAddMetadata("KMS-GenerateDataKeyAes256-Result-CipherKey-Length", len(cipherKey))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-GenerateDataKeyAes256-AES-KMS-KeyName", k.getAesKeyName()))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-GenerateDataKeyAes256-Result-CipherKey-Length", len(cipherKey)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1720,13 +1720,13 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-EncryptWithDataKeyAes256-AES-KMS-KeyName", k.getAesKeyName())
-			_ = seg.SafeAddMetadata("KMS-EncryptWithDataKeyAes256-PlainText-Length", len(plainText))
-			_ = seg.SafeAddMetadata("KMS-EncryptWithDataKeyAes256-CipherKey-Length", len(cipherKey))
-			_ = seg.SafeAddMetadata("KMS-EncryptWithDataKeyAes256-Result-CipherText-Length", len(cipherText))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptWithDataKeyAes256-AES-KMS-KeyName", k.getAesKeyName()))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptWithDataKeyAes256-PlainText-Length", len(plainText)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptWithDataKeyAes256-CipherKey-Length", len(cipherKey)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-EncryptWithDataKeyAes256-Result-CipherText-Length", len(cipherText)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1854,13 +1854,13 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("KMS-DecryptWithDataKeyAes256-AES-KMS-KeyName", k.getAesKeyName())
-			_ = seg.SafeAddMetadata("KMS-DecryptWithDataKeyAes256-CipherText-Length", len(cipherText))
-			_ = seg.SafeAddMetadata("KMS-DecryptWithDataKeyAes256-CipherKey-Length", len(cipherKey))
-			_ = seg.SafeAddMetadata("KMS-DecryptWithDataKeyAes256-Result-PlainText-Length", len(plainText))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptWithDataKeyAes256-AES-KMS-KeyName", k.getAesKeyName()))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptWithDataKeyAes256-CipherText-Length", len(cipherText)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptWithDataKeyAes256-CipherKey-Length", len(cipherKey)))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-DecryptWithDataKeyAes256-Result-PlainText-Length", len(plainText)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
 			}
 		}()
 	}

@@ -151,11 +151,11 @@ func (s *S3) Connect(parentSegment ...*xray.XRayParentSegment) (err error) {
 		seg := xray.NewSegment("S3-Connect", parentSeg)
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("S3-AWS-Region", awsRegionSnap)
-			_ = seg.SafeAddMetadata("S3-Bucket-Name", bucketNameSnap)
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-AWS-Region", awsRegionSnap))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Bucket-Name", bucketNameSnap))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("S3", seg.SafeAddError(err))
 			}
 		}()
 
@@ -314,13 +314,13 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("S3-UploadFile-SourceFilePath", sourceFilePath)
-			_ = seg.SafeAddMetadata("S3-UploadFile-TargetKey", targetKey)
-			_ = seg.SafeAddMetadata("S3-UploadFile-TargetFolder", targetFolder)
-			_ = seg.SafeAddMetadata("S3-UploadFile-Result-Location", location)
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-UploadFile-SourceFilePath", sourceFilePath))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-UploadFile-TargetKey", targetKey))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-UploadFile-TargetFolder", targetFolder))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-UploadFile-Result-Location", location))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("S3", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -446,12 +446,12 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("S3-Upload-TargetKey", targetKey)
-			_ = seg.SafeAddMetadata("S3-Upload-TargetFolder", targetFolder)
-			_ = seg.SafeAddMetadata("S3-Upload-Result-Location", location)
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Upload-TargetKey", targetKey))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Upload-TargetFolder", targetFolder))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Upload-Result-Location", location))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("S3", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -572,14 +572,14 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("S3-DownloadFile-TargetKey", targetKey)
-			_ = seg.SafeAddMetadata("S3-DownloadFile-TargetFolder", targetFolder)
-			_ = seg.SafeAddMetadata("S3-DownloadFile-WriteToFilePath", writeToFilePath)
-			_ = seg.SafeAddMetadata("S3-DownloadFile-Result-NotFound", notFound)
-			_ = seg.SafeAddMetadata("S3-DownloadFile-Result-Location", location)
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-DownloadFile-TargetKey", targetKey))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-DownloadFile-TargetFolder", targetFolder))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-DownloadFile-WriteToFilePath", writeToFilePath))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-DownloadFile-Result-NotFound", notFound))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-DownloadFile-Result-Location", location))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("S3", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -708,12 +708,12 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("S3-Download-TargetKey", targetKey)
-			_ = seg.SafeAddMetadata("S3-Download-TargetFolder", targetFolder)
-			_ = seg.SafeAddMetadata("S3-Download-Result-NotFound", notFound)
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Download-TargetKey", targetKey))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Download-TargetFolder", targetFolder))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Download-Result-NotFound", notFound))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("S3", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -822,12 +822,12 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("S3-Delete-TargetKey", targetKey)
-			_ = seg.SafeAddMetadata("S3-Delete-TargetFolder", targetFolder)
-			_ = seg.SafeAddMetadata("S3-Delete-Result-Success", deleteSuccess)
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Delete-TargetKey", targetKey))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Delete-TargetFolder", targetFolder))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-Delete-Result-Success", deleteSuccess))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("S3", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -927,12 +927,12 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("S3-DeleteBatch-TargetKey", targetKeys)
-			_ = seg.SafeAddMetadata("S3-DeleteBatch-Result-DeletedKeysList", deletedKeysList)
-			_ = seg.SafeAddMetadata("S3-DeleteBatch-Result-ErrorList", errorList)
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-DeleteBatch-TargetKey", targetKeys))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-DeleteBatch-Result-DeletedKeysList", deletedKeysList))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-DeleteBatch-Result-ErrorList", errorList))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("S3", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1058,14 +1058,14 @@ func (s *S3) ListFileKeys(timeOutDuration *time.Duration, nextToken string, maxR
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("S3-ListFileKeys-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("S3-ListFileKeys-MaxResults", maxResults)
-			_ = seg.SafeAddMetadata("S3-ListFileKeys-Folder", folder)
-			_ = seg.SafeAddMetadata("S3-ListFileKeys-Result-FileKeys", fileKeys)
-			_ = seg.SafeAddMetadata("S3-ListFileKeys-Result-MoreFileKeysNextToken", moreFileKeysNextToken)
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-ListFileKeys-NextToken", nextToken))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-ListFileKeys-MaxResults", maxResults))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-ListFileKeys-Folder", folder))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-ListFileKeys-Result-FileKeys", fileKeys))
+			xray.LogXrayAddFailure("S3", seg.SafeAddMetadata("S3-ListFileKeys-Result-MoreFileKeysNextToken", moreFileKeysNextToken))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("S3", seg.SafeAddError(err))
 			}
 		}()
 	}

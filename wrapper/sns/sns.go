@@ -864,10 +864,10 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-DeleteTopic-TopicArn", topicArn)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-DeleteTopic-TopicArn", topicArn))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -931,12 +931,12 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-ListTopics-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("SNS-ListTopics-Result-TopicArnsList", topicArnsList)
-			_ = seg.SafeAddMetadata("SNS-ListTopics-Result-NextToken", moreTopicArnsNextToken)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListTopics-NextToken", nextToken))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListTopics-Result-TopicArnsList", topicArnsList))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListTopics-Result-NextToken", moreTopicArnsNextToken))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1025,11 +1025,11 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-GetTopicAttributes-TopicArn", topicArn)
-			_ = seg.SafeAddMetadata("SNS-GetTopicAttributes-Result-Attributes", attributes)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-GetTopicAttributes-TopicArn", topicArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-GetTopicAttributes-Result-Attributes", attributes))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1091,12 +1091,12 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-SetTopicAttribute-TopicArn", topicArn)
-			_ = seg.SafeAddMetadata("SNS-SetTopicAttribute-AttributeName", attributeName)
-			_ = seg.SafeAddMetadata("SNS-SetTopicAttribute-AttributeValue", attributeValue)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetTopicAttribute-TopicArn", topicArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetTopicAttribute-AttributeName", attributeName))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetTopicAttribute-AttributeValue", attributeValue))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1247,14 +1247,14 @@ func (s *SNS) Subscribe(topicArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-Subscribe-TopicArn", topicArn)
-			_ = seg.SafeAddMetadata("SNS-Subscribe-Protocol", protocol)
-			_ = seg.SafeAddMetadata("SNS-Subscribe-Endpoint", endPoint)
-			_ = seg.SafeAddMetadata("SNS-Subscribe-Attributes", attributes)
-			_ = seg.SafeAddMetadata("SNS-Subscribe-Result-SubscriptionArn", subscriptionArn)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Subscribe-TopicArn", topicArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Subscribe-Protocol", protocol))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Subscribe-Endpoint", endPoint))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Subscribe-Attributes", attributes))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Subscribe-Result-SubscriptionArn", subscriptionArn))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1333,10 +1333,10 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-Unsubscribe-SubscriptionArn", subscriptionArn)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Unsubscribe-SubscriptionArn", subscriptionArn))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1407,16 +1407,16 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-TopicArn", topicArn)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ConfirmSubscription-TopicArn", topicArn))
 			// SEC-002 (2026-04-16): the SNS confirmation token is a
 			// security credential — never emit the raw value to xray.
 			// Length is sufficient for debugging (was a token present?
 			// how long was it?).
-			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-Token-Len", len(token))
-			_ = seg.SafeAddMetadata("SNS-ConfirmSubscription-Result-SubscriptionArn", subscriptionArn)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ConfirmSubscription-Token-Len", len(token)))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ConfirmSubscription-Result-SubscriptionArn", subscriptionArn))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1489,12 +1489,12 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-ListSubscriptions-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("SNS-ListSubscriptions-Result-SubscriptionsList", subscriptionsList)
-			_ = seg.SafeAddMetadata("SNS-ListSubscriptions-Result-NextToken", moreSubscriptionsNextToken)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListSubscriptions-NextToken", nextToken))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListSubscriptions-Result-SubscriptionsList", subscriptionsList))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListSubscriptions-Result-NextToken", moreSubscriptionsNextToken))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1577,13 +1577,13 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-TopicArn", topicArn)
-			_ = seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-Result-SubscriptionsList", subscriptionsList)
-			_ = seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-Result-NextToken", moreSubscriptionsNextToken)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-TopicArn", topicArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-NextToken", nextToken))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-Result-SubscriptionsList", subscriptionsList))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListSubscriptionsByTopic-Result-NextToken", moreSubscriptionsNextToken))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1688,11 +1688,11 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-GetSubscriptionAttributes-SubscriptionArn", subscriptionArn)
-			_ = seg.SafeAddMetadata("SNS-GetSubscriptionAttributes-Result-Attributes", attributes)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-GetSubscriptionAttributes-SubscriptionArn", subscriptionArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-GetSubscriptionAttributes-Result-Attributes", attributes))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1754,12 +1754,12 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-SetSubscriptionAttribute-SubscriptionArn", subscriptionArn)
-			_ = seg.SafeAddMetadata("SNS-SetSubscriptionAttribute-AttributeName", attributeName)
-			_ = seg.SafeAddMetadata("SNS-SetSubscriptionAttribute-AttributeValue", attributeValue)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetSubscriptionAttribute-SubscriptionArn", subscriptionArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetSubscriptionAttribute-AttributeName", attributeName))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetSubscriptionAttribute-AttributeValue", attributeValue))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1873,15 +1873,15 @@ func (s *SNS) Publish(topicArn string,
 			// Observable contract change per workspace rule #10 — prior
 			// consumers saw full message/attributes; now see length +
 			// sorted key list. No known alarm depends on metadata content.
-			_ = seg.SafeAddMetadata("SNS-Publish-TopicArn", topicArn)
-			_ = seg.SafeAddMetadata("SNS-Publish-TargetArn", targetArn)
-			_ = seg.SafeAddMetadata("SNS-Publish-Message-Length", len(message))
-			_ = seg.SafeAddMetadata("SNS-Publish-Subject", subject)
-			_ = seg.SafeAddMetadata("SNS-Publish-Attribute-Keys", sortedAttributeKeys(attributes))
-			_ = seg.SafeAddMetadata("SNS-Publish-Result-MessageID", messageId)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Publish-TopicArn", topicArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Publish-TargetArn", targetArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Publish-Message-Length", len(message)))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Publish-Subject", subject))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Publish-Attribute-Keys", sortedAttributeKeys(attributes)))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-Publish-Result-MessageID", messageId))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2033,12 +2033,12 @@ func (s *SNS) SendSMS(phoneNumber string,
 			// country code + last 4 subscriber digits which remains
 			// sufficient for "did this device get the SMS?" correlation
 			// during an incident.
-			_ = seg.SafeAddMetadata("SNS-SendSMS-Phone", maskPhoneForXray(phoneNumber))
-			_ = seg.SafeAddMetadata("SNS-SendSMS-Message-Length", len(message))
-			_ = seg.SafeAddMetadata("SNS-SendSMS-Result-MessageID", messageId)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SendSMS-Phone", maskPhoneForXray(phoneNumber)))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SendSMS-Message-Length", len(message)))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SendSMS-Result-MessageID", messageId))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2159,10 +2159,10 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 			// xray metadata — retain country code + last 4 digits for
 			// debugging, redact the rest so the trace cannot be pivoted
 			// back to a natural-person identity.
-			_ = seg.SafeAddMetadata("SNS-OptInPhoneNumber-Phone", maskPhoneForXray(phoneNumber))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-OptInPhoneNumber-Phone", maskPhoneForXray(phoneNumber)))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2234,11 +2234,11 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 			// xray metadata — retain country code + last 4 digits for
 			// debugging, redact the rest so the trace cannot be pivoted
 			// back to a natural-person identity.
-			_ = seg.SafeAddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Phone", maskPhoneForXray(phoneNumber))
-			_ = seg.SafeAddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Result-OptedOut", optedOut)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Phone", maskPhoneForXray(phoneNumber)))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CheckIfPhoneNumberIsOptedOut-Result-OptedOut", optedOut))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2320,13 +2320,13 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 			for _, p := range phonesList {
 				maskedPhones = append(maskedPhones, maskPhoneForXray(p))
 			}
-			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-PhonesList", maskedPhones)
-			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-PhonesList-Count", len(phonesList))
-			_ = seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-NextToken", morePhonesNextToken)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-NextToken", nextToken))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-PhonesList", maskedPhones))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-PhonesList-Count", len(phonesList)))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListPhoneNumbersOptedOut-Result-NextToken", morePhonesNextToken))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2427,13 +2427,13 @@ func (s *SNS) CreatePlatformApplication(name string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-CreatePlatformApplication-Name", name)
-			_ = seg.SafeAddMetadata("SNS-CreatePlatformApplication-Platform", platform)
-			_ = seg.SafeAddMetadata("SNS-CreatePlatformApplication-Attributes", attributes)
-			_ = seg.SafeAddMetadata("SNS-CreatePlatformApplication-Result-PlatformApplicationArn", platformApplicationArn)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CreatePlatformApplication-Name", name))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CreatePlatformApplication-Platform", platform))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CreatePlatformApplication-Attributes", attributes))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CreatePlatformApplication-Result-PlatformApplicationArn", platformApplicationArn))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2508,10 +2508,10 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-DeletePlatformApplication-PlatformApplicationArn", platformApplicationArn)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-DeletePlatformApplication-PlatformApplicationArn", platformApplicationArn))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2575,12 +2575,12 @@ func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-ListPlatformApplications-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("SNS-ListPlatformApplications-Result-PlatformApplicationArnsList", platformApplicationArnsList)
-			_ = seg.SafeAddMetadata("SNS-ListPlatformApplications-Result-NextToken", moreAppArnsNextToken)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListPlatformApplications-NextToken", nextToken))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListPlatformApplications-Result-PlatformApplicationArnsList", platformApplicationArnsList))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListPlatformApplications-Result-NextToken", moreAppArnsNextToken))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2652,11 +2652,11 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-GetPlatformApplicationAttributes-PlatformApplicationArn", platformApplicationArn)
-			_ = seg.SafeAddMetadata("SNS-GetPlatformApplicationAttributes-Result-Attributes", attributes)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-GetPlatformApplicationAttributes-PlatformApplicationArn", platformApplicationArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-GetPlatformApplicationAttributes-Result-Attributes", attributes))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2717,11 +2717,11 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-SetPlatformApplicationAttributes-PlatformApplicationArn", platformApplicationArn)
-			_ = seg.SafeAddMetadata("SNS-SetPlatformApplicationAttributes-Attributes", attributes)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetPlatformApplicationAttributes-PlatformApplicationArn", platformApplicationArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetPlatformApplicationAttributes-Attributes", attributes))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2799,13 +2799,13 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-PlatformApplicationArn", platformApplicationArn)
-			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-Token-Len", len(token))
-			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-CustomUserData", customUserData)
-			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-Result-EndpointArn", endpointArn)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-PlatformApplicationArn", platformApplicationArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-Token-Len", len(token)))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-CustomUserData", customUserData))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-Result-EndpointArn", endpointArn))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2884,10 +2884,10 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-DeletePlatformEndpoint-EndpointArn", endpointArn)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-DeletePlatformEndpoint-EndpointArn", endpointArn))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2954,13 +2954,13 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-PlatformApplicationArn", platformApplicationArn)
-			_ = seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-NextToken", nextToken)
-			_ = seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-Result-EndpointArnsList", endpointArnsList)
-			_ = seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-Result-NextToken", moreEndpointArnsNextToken)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-PlatformApplicationArn", platformApplicationArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-NextToken", nextToken))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-Result-EndpointArnsList", endpointArnsList))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-ListEndpointsByPlatformApplication-Result-NextToken", moreEndpointArnsNextToken))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -3050,11 +3050,11 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-GetPlatformEndpointAttributes-EndpointArn", endpointArn)
-			_ = seg.SafeAddMetadata("SNS-GetPlatformEndpointAttributes-Result-Attributes", attributes)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-GetPlatformEndpointAttributes-EndpointArn", endpointArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-GetPlatformEndpointAttributes-Result-Attributes", attributes))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -3115,11 +3115,11 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SNS-SetPlatformEndpointAttributes-EndpointArn", endpointArn)
-			_ = seg.SafeAddMetadata("SNS-SetPlatformEndpointAttributes-Attributes", attributes)
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetPlatformEndpointAttributes-EndpointArn", endpointArn))
+			xray.LogXrayAddFailure("SNS", seg.SafeAddMetadata("SNS-SetPlatformEndpointAttributes-Attributes", attributes))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SNS", seg.SafeAddError(err))
 			}
 		}()
 	}

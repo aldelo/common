@@ -843,15 +843,15 @@ func (g *Gin) setupCorsMiddleware(rg gin.IRoutes, corsConfig *cors.Config) {
 		config.AllowWildcard = corsConfig.AllowWildcard
 
 		// SEC-003 (2026-04-16): when AllowAllOrigins is false but no
-		// AllowOrigins are configured, fail closed — do NOT silently
-		// fall back to AllowAllOrigins=true. The previous behavior
-		// opened the server to any cross-origin request when the
-		// caller forgot to populate AllowOrigins. Log a warning so
-		// the misconfiguration is visible in service logs; CORS will
-		// reject all cross-origin requests until the caller provides
-		// an explicit origin list.
+		// AllowOrigins are configured, fail closed — do NOT install
+		// CORS middleware at all. Without middleware, the browser
+		// receives no Access-Control-Allow-Origin header and rejects
+		// the cross-origin request. This prevents the previous behavior
+		// where the caller forgetting AllowOrigins could silently open
+		// the server to any origin.
 		if !config.AllowAllOrigins && len(config.AllowOrigins) == 0 && config.AllowOriginFunc == nil {
-			log.Println("WARNING: CORS AllowAllOrigins is false but AllowOrigins is empty and AllowOriginFunc is nil — all cross-origin requests will be rejected")
+			log.Println("WARNING: CORS AllowAllOrigins is false but AllowOrigins is empty and AllowOriginFunc is nil — CORS middleware NOT installed, all cross-origin requests will be rejected")
+			return
 		}
 
 		rg.Use(cors.New(config))

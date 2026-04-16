@@ -768,10 +768,10 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-GetSendQuota-Result-SendQuota", sq)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-GetSendQuota-Result-SendQuota", sq))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -952,18 +952,18 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 				// SEC-001 (2026-04-16): mask email PII in xray metadata —
 				// email addresses and subject lines can contain or constitute
 				// personally identifiable information.
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-From", maskEmailForXray(email.From))
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-To", maskEmailsForXray(email.To))
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Subject", maskSubjectForXray(email.Subject))
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Attachment-FileName", attachmentFileName)
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Attachment-ContentType", attachmentContentType)
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Result-MessageID", messageId)
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Email-From", maskEmailForXray(email.From)))
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Email-To", maskEmailsForXray(email.To)))
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Email-Subject", maskSubjectForXray(email.Subject)))
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Email-Attachment-FileName", attachmentFileName))
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Email-Attachment-ContentType", attachmentContentType))
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Result-MessageID", messageId))
 			} else {
-				_ = seg.SafeAddMetadata("SES-SendRawEmail-Email-Fail", "Email Object Nil")
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Email-Fail", "Email Object Nil"))
 			}
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1091,13 +1091,13 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-CreateTemplate-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-CreateTemplate-SubjectPart", maskSubjectForXray(subjectPart))
-			_ = seg.SafeAddMetadata("SES-CreateTemplate-TextPart", textPart)
-			_ = seg.SafeAddMetadata("SES-CreateTemplate-HtmlPart", htmlPart)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateTemplate-TemplateName", templateName))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateTemplate-SubjectPart", maskSubjectForXray(subjectPart)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateTemplate-TextPart", textPart))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateTemplate-HtmlPart", htmlPart))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1195,13 +1195,13 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-UpdateTemplate-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-UpdateTemplate-SubjectPart", maskSubjectForXray(subjectPart))
-			_ = seg.SafeAddMetadata("SES-UpdateTemplate-TextPart", textPart)
-			_ = seg.SafeAddMetadata("SES-UpdateTemplate-HtmlPart", htmlPart)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateTemplate-TemplateName", templateName))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateTemplate-SubjectPart", maskSubjectForXray(subjectPart)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateTemplate-TextPart", textPart))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateTemplate-HtmlPart", htmlPart))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1286,10 +1286,10 @@ func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Durati
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-DeleteTemplate-TemplateName", templateName)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-DeleteTemplate-TemplateName", templateName))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1386,20 +1386,20 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 			// senderEmail, returnPath, replyTo, and emailTarget.To are
 			// all email addresses containing personally identifiable
 			// information.
-			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-From", maskEmailForXray(senderEmail))
-			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReturnPath", maskEmailForXray(returnPath))
-			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReplyTo", maskEmailForXray(replyTo))
-			_ = seg.SafeAddMetadata("SES-SendTemplateEmail-TemplateName", templateName)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-Email-From", maskEmailForXray(senderEmail)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReturnPath", maskEmailForXray(returnPath)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReplyTo", maskEmailForXray(replyTo)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-TemplateName", templateName))
 
 			if emailTarget != nil {
-				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-To", maskEmailsForXray(emailTarget.To))
-				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Result-MessageID", messageId)
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-Email-To", maskEmailsForXray(emailTarget.To)))
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-Result-MessageID", messageId))
 			} else {
-				_ = seg.SafeAddMetadata("SES-SendTemplateEmail-Email-Fail", "Email Target Nil")
+				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-Email-Fail", "Email Target Nil"))
 			}
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1559,16 +1559,16 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-Email-From", maskEmailForXray(senderEmail))
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReturnPath", maskEmailForXray(returnPath))
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReplyTo", maskEmailForXray(replyTo))
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-DefaultTemplateDataJson", defaultTemplateDataJson)
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-EmailTargetList-Count", len(emailTargetList))
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-Result-FailCount", failedCount)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-Email-From", maskEmailForXray(senderEmail)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReturnPath", maskEmailForXray(returnPath)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReplyTo", maskEmailForXray(replyTo)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-TemplateName", templateName))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-DefaultTemplateDataJson", defaultTemplateDataJson))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-EmailTargetList-Count", len(emailTargetList)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-Result-FailCount", failedCount))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1746,15 +1746,15 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateSubject", maskSubjectForXray(templateSubject))
-			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateContent", templateContent)
-			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Email-From", maskEmailForXray(fromEmailAddress))
-			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL)
-			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateName", templateName))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateSubject", maskSubjectForXray(templateSubject)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateContent", templateContent))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Email-From", maskEmailForXray(fromEmailAddress)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1859,15 +1859,15 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateSubject", maskSubjectForXray(templateSubject))
-			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateContent", templateContent)
-			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Email-From", maskEmailForXray(fromEmailAddress))
-			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL)
-			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateName", templateName))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateSubject", maskSubjectForXray(templateSubject)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateContent", templateContent))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Email-From", maskEmailForXray(fromEmailAddress)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -1961,10 +1961,10 @@ func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOut
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-DeleteCustomVerificationEmailTemplate-TemplateName", templateName)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-DeleteCustomVerificationEmailTemplate-TemplateName", templateName))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -2027,12 +2027,12 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-Email-To", maskEmailForXray(toEmailAddress))
-			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-Result-MessageID", messageId)
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendCustomVerificationEmail-TemplateName", templateName))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendCustomVerificationEmail-Email-To", maskEmailForXray(toEmailAddress)))
+			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendCustomVerificationEmail-Result-MessageID", messageId))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("SES", seg.SafeAddError(err))
 			}
 		}()
 	}

@@ -126,10 +126,10 @@ func (k *PaymentCryptography) Connect(parentSegment ...*xray.XRayParentSegment) 
 		k.mu.RUnlock()
 
 		defer func() {
-			_ = seg.SafeAddMetadata("KDS-AWS-Region", awsRegion)
+			xray.LogXrayAddFailure("APC", seg.SafeAddMetadata("KDS-AWS-Region", awsRegion))
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 
@@ -251,7 +251,7 @@ func (k *PaymentCryptography) generateRSAKey(KeyAlgorithm string) (keyArn string
 		defer func() {
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -324,7 +324,7 @@ func (k *PaymentCryptography) GenerateAES256Key() (keyArn string, err error) {
 		defer func() {
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -398,7 +398,7 @@ func (k *PaymentCryptography) GetRSAPublicKey(keyArn string) (cert, certChain st
 		defer func() {
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -451,7 +451,7 @@ func (k *PaymentCryptography) SetKeyAlias(keyArn, KeyAliasName string) (respAlia
 		defer func() {
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -511,7 +511,7 @@ func (k *PaymentCryptography) ImportRootCAPublicKey(publicKey string) (keyArn st
 		defer func() {
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -577,7 +577,7 @@ func (k *PaymentCryptography) ImportIntermediateCAPublicKey(capkArn, publicKey s
 		defer func() {
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -648,7 +648,7 @@ func (k *PaymentCryptography) ImportKEKey(capkArn, imToken, signCA, keyBlock str
 		defer func() {
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -715,7 +715,7 @@ func (k *PaymentCryptography) ImportTR31Key(keyBlock, warpKeyArn string) (keyArn
 		defer func() {
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 	}
@@ -779,7 +779,7 @@ func (k *PaymentCryptography) GetParamsForImportKEKey() (cert, certChain, token 
 		defer func() {
 
 			if err != nil {
-				_ = seg.SafeAddError(err)
+				xray.LogXrayAddFailure("APC", seg.SafeAddError(err))
 			}
 		}()
 	}

@@ -2800,7 +2800,7 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 		defer seg.Close()
 		defer func() {
 			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-PlatformApplicationArn", platformApplicationArn)
-			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-Token", token)
+			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-Token-Len", len(token))
 			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-CustomUserData", customUserData)
 			_ = seg.SafeAddMetadata("SNS-CreatePlatformEndpoint-Result-EndpointArn", endpointArn)
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -496,4 +497,57 @@ func TestNilReceiverSafety(t *testing.T) {
 	if len(clients) != 0 {
 		t.Errorf("expected empty client list from nil server, got %d", len(clients))
 	}
+}
+
+// TestServerSurvivesClientHandlerPanic verifies that a panic inside
+// ClientReceiveHandler is recovered and does not crash the server's
+// listener loop — subsequent clients can still connect and communicate.
+// Covers COMMON-R3-001 panic recovery in the per-client goroutine.
+func TestServerSurvivesClientHandlerPanic(t *testing.T) {
+	var callCount int32
+	serverGotData := make(chan []byte, 1)
+
+	_, port, acceptCh := startTestServer(t, serverOpts{
+		clientReceiveHandler: func(clientIP string, data []byte, writeBack func([]byte, string) error) {
+			n := atomicAddInt32(&callCount, 1)
+			if n == 1 {
+				panic("test panic in client handler (TG-3)")
+			}
+			serverGotData <- append([]byte(nil), data...)
+		},
+		clientErrorHandler: func(string, error) {},
+	})
+
+	// Client 1: triggers the panic in the handler goroutine.
+	conn1, err := net.DialTimeout("tcp4", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second)
+	if err != nil {
+		t.Fatalf("client 1 dial: %v", err)
+	}
+	waitForAccept(t, acceptCh)
+	_, _ = conn1.Write([]byte("trigger-panic"))
+	time.Sleep(300 * time.Millisecond) // allow panic + recovery
+	_ = conn1.Close()
+
+	// Client 2: proves the listener loop survived the panic.
+	conn2, err := net.DialTimeout("tcp4", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second)
+	if err != nil {
+		t.Fatalf("client 2 dial failed — server did not survive client handler panic: %v", err)
+	}
+	defer conn2.Close()
+	waitForAccept(t, acceptCh)
+	_, _ = conn2.Write([]byte("after-panic"))
+
+	select {
+	case got := <-serverGotData:
+		if string(got) != "after-panic" {
+			t.Errorf("server received %q, want %q", got, "after-panic")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not process client 2 data — panic recovery failed")
+	}
+}
+
+// atomicAddInt32 wraps sync/atomic.AddInt32 for readability in test closures.
+func atomicAddInt32(addr *int32, delta int32) int32 {
+	return atomic.AddInt32(addr, delta)
 }

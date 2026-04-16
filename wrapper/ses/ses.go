@@ -1092,7 +1092,7 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 		defer seg.Close()
 		defer func() {
 			_ = seg.SafeAddMetadata("SES-CreateTemplate-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-CreateTemplate-SubjectPart", subjectPart)
+			_ = seg.SafeAddMetadata("SES-CreateTemplate-SubjectPart", maskSubjectForXray(subjectPart))
 			_ = seg.SafeAddMetadata("SES-CreateTemplate-TextPart", textPart)
 			_ = seg.SafeAddMetadata("SES-CreateTemplate-HtmlPart", htmlPart)
 
@@ -1196,7 +1196,7 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 		defer seg.Close()
 		defer func() {
 			_ = seg.SafeAddMetadata("SES-UpdateTemplate-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-UpdateTemplate-SubjectPart", subjectPart)
+			_ = seg.SafeAddMetadata("SES-UpdateTemplate-SubjectPart", maskSubjectForXray(subjectPart))
 			_ = seg.SafeAddMetadata("SES-UpdateTemplate-TextPart", textPart)
 			_ = seg.SafeAddMetadata("SES-UpdateTemplate-HtmlPart", htmlPart)
 
@@ -1559,9 +1559,9 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 
 		defer seg.Close()
 		defer func() {
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-Email-From", senderEmail)
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReturnPath", returnPath)
-			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReplyTo", replyTo)
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-Email-From", maskEmailForXray(senderEmail))
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReturnPath", maskEmailForXray(returnPath))
+			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReplyTo", maskEmailForXray(replyTo))
 			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-TemplateName", templateName)
 			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-DefaultTemplateDataJson", defaultTemplateDataJson)
 			_ = seg.SafeAddMetadata("SES-SendBulkTemplateEmail-EmailTargetList-Count", len(emailTargetList))
@@ -1747,9 +1747,9 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 		defer seg.Close()
 		defer func() {
 			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateSubject", templateSubject)
+			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateSubject", maskSubjectForXray(templateSubject))
 			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-TemplateContent", templateContent)
-			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Email-From", fromEmailAddress)
+			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Email-From", maskEmailForXray(fromEmailAddress))
 			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL)
 			_ = seg.SafeAddMetadata("SES-CreateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL)
 
@@ -1860,9 +1860,9 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 		defer seg.Close()
 		defer func() {
 			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateSubject", templateSubject)
+			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateSubject", maskSubjectForXray(templateSubject))
 			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-TemplateContent", templateContent)
-			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Email-From", fromEmailAddress)
+			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Email-From", maskEmailForXray(fromEmailAddress))
 			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Success-RedirectURL", successRedirectionURL)
 			_ = seg.SafeAddMetadata("SES-UpdateCustomVerificationEmailTemplate-Failure-RedirectURL", failureRedirectionURL)
 
@@ -2028,7 +2028,7 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 		defer seg.Close()
 		defer func() {
 			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-TemplateName", templateName)
-			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-Email-To", toEmailAddress)
+			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-Email-To", maskEmailForXray(toEmailAddress))
 			_ = seg.SafeAddMetadata("SES-SendCustomVerificationEmail-Result-MessageID", messageId)
 
 			if err != nil {

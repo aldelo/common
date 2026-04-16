@@ -488,7 +488,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	if err != nil {
 		// when read error, even if 200, still return error
 
-		return statusCode, err
+		return statusCode, fmt.Errorf("reading response body: %w", err)
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
@@ -593,7 +593,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	if err != nil {
 		// when read error, even if 200, still return error
 
-		return statusCode, err
+		return statusCode, fmt.Errorf("reading response body: %w", err)
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
@@ -697,7 +697,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	if err != nil {
 		// when read error, even if 200, still return error
 
-		return statusCode, err
+		return statusCode, fmt.Errorf("reading response body: %w", err)
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {
@@ -787,7 +787,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	if err != nil {
 		// when read error, even if 200, still return error
 
-		return statusCode, err
+		return statusCode, fmt.Errorf("reading response body: %w", err)
 	}
 
 	if statusCode < httpSuccessStatusMin || statusCode >= httpErrorStatusMin {

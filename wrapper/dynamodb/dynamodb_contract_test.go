@@ -32,10 +32,13 @@ package dynamodb
 // new P0-2 retry plumbing).
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+
+	"github.com/aws/aws-sdk-go/aws/awserr"
 )
 
 // TestMaxTransactItems_ContractPin locks the value of MaxTransactItems to
@@ -360,5 +363,108 @@ func TestAwsRequestItemsToUnprocessedItems_SkipsNilAndEmpty(t *testing.T) {
 		if len(r.PutItems) == 0 && len(r.DeleteKeys) == 0 {
 			t.Errorf("empty residual table %q leaked into output", r.TableName)
 		}
+	}
+}
+
+// =============================================================================
+// DB-F1/AD-1 — SuppressError must NOT suppress final failure after retry
+// exhaustion. These tests pin the corrected contract.
+// =============================================================================
+
+// TestHandleError_SuppressErrorAlwaysHasAllowRetry verifies that every error
+// code classified with SuppressError=true also has AllowRetry=true.
+// This is the foundational invariant: SuppressError means "transient, retry
+// silently" — it should never mean "hide the failure from the caller."
+func TestHandleError_SuppressErrorAlwaysHasAllowRetry(t *testing.T) {
+	d := &DynamoDB{} // nil connection is fine — handleError doesn't use it
+
+	// Error codes that should produce SuppressError=true
+	suppressCodes := []string{
+		dynamodb.ErrCodeProvisionedThroughputExceededException,
+		dynamodb.ErrCodeRequestLimitExceeded,
+		dynamodb.ErrCodeInternalServerError,
+	}
+	for _, code := range suppressCodes {
+		aerr := awserr.New(code, "test", fmt.Errorf("test"))
+		ddbErr := d.handleError(aerr)
+		if ddbErr == nil {
+			t.Fatalf("handleError(%s) returned nil", code)
+		}
+		if !ddbErr.SuppressError {
+			t.Errorf("handleError(%s): SuppressError = false, want true", code)
+		}
+		if !ddbErr.AllowRetry {
+			t.Errorf("handleError(%s): AllowRetry = false, want true — "+
+				"SuppressError without AllowRetry is the old silent-data-loss bug", code)
+		}
+	}
+}
+
+// TestHandleError_NonSuppressErrorCodes verifies that error codes NOT in the
+// suppress set produce SuppressError=false, ensuring callers always see the
+// failure on the first attempt.
+func TestHandleError_NonSuppressErrorCodes(t *testing.T) {
+	d := &DynamoDB{}
+
+	nonSuppressCodes := []string{
+		dynamodb.ErrCodeConditionalCheckFailedException,
+		dynamodb.ErrCodeResourceNotFoundException,
+		dynamodb.ErrCodeItemCollectionSizeLimitExceededException,
+		dynamodb.ErrCodeTransactionCanceledException,
+	}
+	for _, code := range nonSuppressCodes {
+		aerr := awserr.New(code, "test", fmt.Errorf("test"))
+		ddbErr := d.handleError(aerr)
+		if ddbErr == nil {
+			t.Fatalf("handleError(%s) returned nil", code)
+		}
+		if ddbErr.SuppressError {
+			t.Errorf("handleError(%s): SuppressError = true, want false", code)
+		}
+	}
+}
+
+// TestWithRetry_ReturnsErrorOnRetryExhaustion verifies that *WithRetry methods
+// return a non-nil error when retries are exhausted, even for error codes that
+// have SuppressError=true. This is the core fix for DB-F1/AD-1.
+//
+// We test PutItemWithRetry with maxRetries=0 on a nil-connection DynamoDB
+// object. The nil connection causes PutItem to fail immediately. Since
+// maxRetries=0 means no retries allowed, the method must return the error.
+// Before the fix, SuppressError=true errors would return nil here.
+func TestWithRetry_ReturnsErrorOnRetryExhaustion(t *testing.T) {
+	d := &DynamoDB{
+		TableName: "test-table",
+		PKName:    "PK",
+		SKName:    "SK",
+	}
+	// PutItemWithRetry with maxRetries=0 on a nil connection.
+	// The call will fail (nil connection), and with maxRetries=0
+	// the error must be returned — never suppressed.
+	err := d.PutItemWithRetry(0, map[string]string{"PK": "test"}, nil)
+	if err == nil {
+		t.Fatal("PutItemWithRetry(maxRetries=0) returned nil error on failed operation — " +
+			"this is the DB-F1/AD-1 silent data loss bug")
+	}
+	if err.ErrorMessage == "" {
+		t.Error("PutItemWithRetry error has empty ErrorMessage")
+	}
+}
+
+// TestWithRetry_ReturnsErrorOnMaxRetriesExhausted tests with maxRetries=1
+// to verify that even after one retry attempt, the error is still returned
+// when all retries are exhausted.
+func TestWithRetry_ReturnsErrorOnMaxRetriesExhausted(t *testing.T) {
+	d := &DynamoDB{
+		TableName: "test-table",
+		PKName:    "PK",
+		SKName:    "SK",
+	}
+	// maxRetries=1: will attempt once, fail, retry once, fail again.
+	// The final failure must be returned.
+	err := d.PutItemWithRetry(1, map[string]string{"PK": "test"}, nil)
+	if err == nil {
+		t.Fatal("PutItemWithRetry(maxRetries=1) returned nil error after retry exhaustion — " +
+			"retry-exhausted errors must always be returned to caller")
 	}
 }

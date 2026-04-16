@@ -110,13 +110,11 @@ const MaxBatchWriteItems = 25
 
 // DynamoDBError struct contains special status info including error and retry advise.
 //
-// WARNING: When SuppressError is true and retries are exhausted, *WithRetry methods
-// return nil error even though the write did not land. Callers MUST NOT interpret
-// nil error as confirmation of a successful write when SuppressError is enabled.
-// This applies to ProvisionedThroughputExceededException and InternalServerError
-// responses from DynamoDB. For payment or order-critical writes, callers should
-// either set SuppressError to false or implement their own verification after the
-// call returns. Redesign of this contract is planned for v2.0.0.
+// SuppressError indicates transient errors (ProvisionedThroughputExceededException,
+// RequestLimitExceeded, InternalServerError) that are safe to retry silently.
+// When SuppressError is true and AllowRetry is true, *WithRetry methods will
+// automatically retry with backoff. If retries are exhausted, the error is always
+// returned to the caller — nil return means the operation genuinely succeeded.
 type DynamoDBError struct {
 	ErrorMessage  string
 	SuppressError bool
@@ -3098,29 +3096,19 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 				log.Println("PutItemWithRetry Failed: " + err.ErrorMessage)
 				return d.PutItemWithRetry(maxRetries-1, item, util.DurationPtr(timeout), conditionExpressionSet...)
 			} else {
-				if err.SuppressError {
-					log.Println("PutItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return nil
-				} else {
-					return &DynamoDBError{
-						ErrorMessage:      "PutItemWithRetry Failed: " + err.ErrorMessage,
-						SuppressError:     false,
-						AllowRetry:        false,
-						RetryNeedsBackOff: false,
-					}
-				}
-			}
-		} else {
-			if err.SuppressError {
-				log.Println("PutItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return nil
-			} else {
 				return &DynamoDBError{
-					ErrorMessage:      "PutItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					ErrorMessage:      "PutItemWithRetry Failed: " + err.ErrorMessage,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
+			}
+		} else {
+			return &DynamoDBError{
+				ErrorMessage:      "PutItemWithRetry Failed: (MaxRetries Exhausted) " + err.ErrorMessage,
+				SuppressError:     false,
+				AllowRetry:        false,
+				RetryNeedsBackOff: false,
 			}
 		}
 	} else {
@@ -3563,29 +3551,19 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 				log.Println("UpdateItemWithRetry Failed: " + err.ErrorMessage)
 				return d.UpdateItemWithRetry(maxRetries-1, pkValue, skValue, updateExpression, conditionExpression, expressionAttributeNames, expressionAttributeValues, util.DurationPtr(timeout))
 			} else {
-				if err.SuppressError {
-					log.Println("UpdateItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return nil
-				} else {
-					return &DynamoDBError{
-						ErrorMessage:      "UpdateItemWithRetry Failed: " + err.ErrorMessage,
-						SuppressError:     false,
-						AllowRetry:        false,
-						RetryNeedsBackOff: false,
-					}
-				}
-			}
-		} else {
-			if err.SuppressError {
-				log.Println("UpdateItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return nil
-			} else {
 				return &DynamoDBError{
-					ErrorMessage:      "UpdateItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					ErrorMessage:      "UpdateItemWithRetry Failed: " + err.ErrorMessage,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
+			}
+		} else {
+			return &DynamoDBError{
+				ErrorMessage:      "UpdateItemWithRetry Failed: (MaxRetries Exhausted) " + err.ErrorMessage,
+				SuppressError:     false,
+				AllowRetry:        false,
+				RetryNeedsBackOff: false,
 			}
 		}
 	} else {
@@ -3879,29 +3857,19 @@ func (d *DynamoDB) RemoveItemAttributeWithRetry(maxRetries uint, pkValue string,
 				log.Println("RemoveItemAttributeWithRetry Failed: " + err.ErrorMessage)
 				return d.RemoveItemAttributeWithRetry(maxRetries-1, pkValue, skValue, removeExpression, util.DurationPtr(timeout), conditionExpressionSet...)
 			} else {
-				if err.SuppressError {
-					log.Println("RemoveItemAttributeWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return nil
-				} else {
-					return &DynamoDBError{
-						ErrorMessage:      "RemoveItemAttributeWithRetry Failed: " + err.ErrorMessage,
-						SuppressError:     false,
-						AllowRetry:        false,
-						RetryNeedsBackOff: false,
-					}
-				}
-			}
-		} else {
-			if err.SuppressError {
-				log.Println("RemoveItemAttributeWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return nil
-			} else {
 				return &DynamoDBError{
-					ErrorMessage:      "RemoveItemAttributeWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					ErrorMessage:      "RemoveItemAttributeWithRetry Failed: " + err.ErrorMessage,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
+			}
+		} else {
+			return &DynamoDBError{
+				ErrorMessage:      "RemoveItemAttributeWithRetry Failed: (MaxRetries Exhausted) " + err.ErrorMessage,
+				SuppressError:     false,
+				AllowRetry:        false,
+				RetryNeedsBackOff: false,
 			}
 		}
 	} else {
@@ -4157,29 +4125,19 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 				log.Println("DeleteItemWithRetry Failed: " + err.ErrorMessage)
 				return d.DeleteItemWithRetry(maxRetries-1, pkValue, skValue, util.DurationPtr(timeout))
 			} else {
-				if err.SuppressError {
-					log.Println("DeleteItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return nil
-				} else {
-					return &DynamoDBError{
-						ErrorMessage:      "DeleteItemWithRetry Failed: " + err.ErrorMessage,
-						SuppressError:     false,
-						AllowRetry:        false,
-						RetryNeedsBackOff: false,
-					}
-				}
-			}
-		} else {
-			if err.SuppressError {
-				log.Println("DeleteItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return nil
-			} else {
 				return &DynamoDBError{
-					ErrorMessage:      "DeleteItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					ErrorMessage:      "DeleteItemWithRetry Failed: " + err.ErrorMessage,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
+			}
+		} else {
+			return &DynamoDBError{
+				ErrorMessage:      "DeleteItemWithRetry Failed: (MaxRetries Exhausted) " + err.ErrorMessage,
+				SuppressError:     false,
+				AllowRetry:        false,
+				RetryNeedsBackOff: false,
 			}
 		}
 	} else {
@@ -4611,29 +4569,19 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 				log.Println("GetItemWithRetry Failed: " + err.ErrorMessage)
 				return d.GetItemWithRetry(maxRetries-1, resultItemPtr, pkValue, skValue, util.DurationPtr(timeout), consistentRead, projectedAttributes...)
 			} else {
-				if err.SuppressError {
-					log.Println("GetItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return nil
-				} else {
-					return &DynamoDBError{
-						ErrorMessage:      "GetItemWithRetry Failed: " + err.ErrorMessage,
-						SuppressError:     false,
-						AllowRetry:        false,
-						RetryNeedsBackOff: false,
-					}
-				}
-			}
-		} else {
-			if err.SuppressError {
-				log.Println("GetItemWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return nil
-			} else {
 				return &DynamoDBError{
-					ErrorMessage:      "GetItemWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					ErrorMessage:      "GetItemWithRetry Failed: " + err.ErrorMessage,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
+			}
+		} else {
+			return &DynamoDBError{
+				ErrorMessage:      "GetItemWithRetry Failed: (MaxRetries Exhausted) " + err.ErrorMessage,
+				SuppressError:     false,
+				AllowRetry:        false,
+				RetryNeedsBackOff: false,
 			}
 		}
 	} else {
@@ -4703,29 +4651,19 @@ func (d *DynamoDB) QueryPaginationDataWithRetry(
 				log.Println("QueryPaginationDataWithRetry Failed: " + ddbErr.ErrorMessage)
 				return d.QueryPaginationDataWithRetry(maxRetries-1, util.DurationPtr(timeout), indexName, itemsPerPage, keyConditionExpression, expressionAttributeNames, expressionAttributeValues)
 			} else {
-				if ddbErr.SuppressError {
-					log.Println("QueryPaginationDataWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return nil, nil
-				} else {
-					return nil, &DynamoDBError{
-						ErrorMessage:      "QueryPaginationDataWithRetry Failed: " + ddbErr.ErrorMessage,
-						SuppressError:     false,
-						AllowRetry:        false,
-						RetryNeedsBackOff: false,
-					}
-				}
-			}
-		} else {
-			if ddbErr.SuppressError {
-				log.Println("QueryPaginationDataWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return nil, nil
-			} else {
 				return nil, &DynamoDBError{
-					ErrorMessage:      "QueryPaginationDataWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
+					ErrorMessage:      "QueryPaginationDataWithRetry Failed: " + ddbErr.ErrorMessage,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
+			}
+		} else {
+			return nil, &DynamoDBError{
+				ErrorMessage:      "QueryPaginationDataWithRetry Failed: (MaxRetries Exhausted) " + ddbErr.ErrorMessage,
+				SuppressError:     false,
+				AllowRetry:        false,
+				RetryNeedsBackOff: false,
 			}
 		}
 	} else {
@@ -5658,29 +5596,19 @@ func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
 					pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, keyConditionExpression,
 					expressionAttributeNames, expressionAttributeValues, filterConditionExpression, projectedAttributes...)
 			} else {
-				if ddbErr.SuppressError {
-					log.Println("QueryItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return nil, nil
-				} else {
-					return nil, &DynamoDBError{
-						ErrorMessage:      "QueryItemsWithRetry Failed: " + ddbErr.ErrorMessage,
-						SuppressError:     false,
-						AllowRetry:        false,
-						RetryNeedsBackOff: false,
-					}
-				}
-			}
-		} else {
-			if ddbErr.SuppressError {
-				log.Println("QueryItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return nil, nil
-			} else {
 				return nil, &DynamoDBError{
-					ErrorMessage:      "QueryItemsWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
+					ErrorMessage:      "QueryItemsWithRetry Failed: " + ddbErr.ErrorMessage,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
+			}
+		} else {
+			return nil, &DynamoDBError{
+				ErrorMessage:      "QueryItemsWithRetry Failed: (MaxRetries Exhausted) " + ddbErr.ErrorMessage,
+				SuppressError:     false,
+				AllowRetry:        false,
+				RetryNeedsBackOff: false,
 			}
 		}
 	} else {
@@ -6458,29 +6386,19 @@ func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
 					pagedQuery, pagedQueryPageCountLimit,
 					exclusiveStartKey, filterConditionExpression, projectedAttributes...)
 			} else {
-				if ddbErr.SuppressError {
-					log.Println("ScanItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return nil, nil
-				} else {
-					return nil, &DynamoDBError{
-						ErrorMessage:      "ScanItemsWithRetry Failed: " + ddbErr.ErrorMessage,
-						SuppressError:     false,
-						AllowRetry:        false,
-						RetryNeedsBackOff: false,
-					}
-				}
-			}
-		} else {
-			if ddbErr.SuppressError {
-				log.Println("ScanItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return nil, nil
-			} else {
 				return nil, &DynamoDBError{
-					ErrorMessage:      "ScanItemsWithRetry Failed: (MaxRetries = 0) " + ddbErr.ErrorMessage,
+					ErrorMessage:      "ScanItemsWithRetry Failed: " + ddbErr.ErrorMessage,
 					SuppressError:     false,
 					AllowRetry:        false,
 					RetryNeedsBackOff: false,
 				}
+			}
+		} else {
+			return nil, &DynamoDBError{
+				ErrorMessage:      "ScanItemsWithRetry Failed: (MaxRetries Exhausted) " + ddbErr.ErrorMessage,
+				SuppressError:     false,
+				AllowRetry:        false,
+				RetryNeedsBackOff: false,
 			}
 		}
 	} else {
@@ -7356,31 +7274,21 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 				log.Println("BatchWriteItemsWithRetry Failed: " + err.ErrorMessage)
 				return d.BatchWriteItemsWithRetry(maxRetries-1, putItemsSet, deleteKeys, util.DurationPtr(timeout))
 			} else {
-				if err.SuppressError {
-					log.Println("BatchWriteItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return 0, nil, nil
-				} else {
-					return 0, nil, &DynamoDBError{
-						ErrorMessage:                      "BatchWriteItemsWithRetry Failed: " + err.ErrorMessage,
-						SuppressError:                     false,
-						AllowRetry:                        false,
-						RetryNeedsBackOff:                 false,
-						TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
-					}
-				}
-			}
-		} else {
-			if err.SuppressError {
-				log.Println("BatchWriteItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return 0, nil, nil
-			} else {
 				return 0, nil, &DynamoDBError{
-					ErrorMessage:                      "BatchWriteItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					ErrorMessage:                      "BatchWriteItemsWithRetry Failed: " + err.ErrorMessage,
 					SuppressError:                     false,
 					AllowRetry:                        false,
 					RetryNeedsBackOff:                 false,
 					TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
 				}
+			}
+		} else {
+			return 0, nil, &DynamoDBError{
+				ErrorMessage:                      "BatchWriteItemsWithRetry Failed: (MaxRetries Exhausted) " + err.ErrorMessage,
+				SuppressError:                     false,
+				AllowRetry:                        false,
+				RetryNeedsBackOff:                 false,
+				TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
 			}
 		}
 	}
@@ -8163,31 +8071,21 @@ func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint, timeOutDuration *time
 				log.Println("BatchGetItemsWithRetry Failed: " + err.ErrorMessage)
 				return d.BatchGetItemsWithRetry(maxRetries-1, util.DurationPtr(timeout), multiGetRequestResponse...)
 			} else {
-				if err.SuppressError {
-					log.Println("BatchGetItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return true, nil
-				} else {
-					return true, &DynamoDBError{
-						ErrorMessage:                      "BatchGetItemsWithRetry Failed: " + err.ErrorMessage,
-						SuppressError:                     false,
-						AllowRetry:                        false,
-						RetryNeedsBackOff:                 false,
-						TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
-					}
-				}
-			}
-		} else {
-			if err.SuppressError {
-				log.Println("BatchGetItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return true, nil
-			} else {
 				return true, &DynamoDBError{
-					ErrorMessage:                      "BatchGetItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					ErrorMessage:                      "BatchGetItemsWithRetry Failed: " + err.ErrorMessage,
 					SuppressError:                     false,
 					AllowRetry:                        false,
 					RetryNeedsBackOff:                 false,
 					TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
 				}
+			}
+		} else {
+			return true, &DynamoDBError{
+				ErrorMessage:                      "BatchGetItemsWithRetry Failed: (MaxRetries Exhausted) " + err.ErrorMessage,
+				SuppressError:                     false,
+				AllowRetry:                        false,
+				RetryNeedsBackOff:                 false,
+				TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
 			}
 		}
 	} else {
@@ -8760,31 +8658,21 @@ func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 				log.Println("TransactionWriteItemsWithRetry Failed: " + err.ErrorMessage)
 				return d.TransactionWriteItemsWithRetry(maxRetries-1, util.DurationPtr(timeout), tranItems...)
 			} else {
-				if err.SuppressError {
-					log.Println("TransactionWriteItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return false, nil
-				} else {
-					return false, &DynamoDBError{
-						ErrorMessage:                      "TransactionWriteItemsWithRetry Failed: " + err.ErrorMessage,
-						SuppressError:                     false,
-						AllowRetry:                        false,
-						RetryNeedsBackOff:                 false,
-						TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
-					}
-				}
-			}
-		} else {
-			if err.SuppressError {
-				log.Println("TransactionWriteItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return false, nil
-			} else {
 				return false, &DynamoDBError{
-					ErrorMessage:                      "TransactionWriteItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					ErrorMessage:                      "TransactionWriteItemsWithRetry Failed: " + err.ErrorMessage,
 					SuppressError:                     false,
 					AllowRetry:                        false,
 					RetryNeedsBackOff:                 false,
 					TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
 				}
+			}
+		} else {
+			return false, &DynamoDBError{
+				ErrorMessage:                      "TransactionWriteItemsWithRetry Failed: (MaxRetries Exhausted) " + err.ErrorMessage,
+				SuppressError:                     false,
+				AllowRetry:                        false,
+				RetryNeedsBackOff:                 false,
+				TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
 			}
 		}
 	} else {
@@ -9349,31 +9237,21 @@ func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
 				log.Println("TransactionGetItemsWithRetry Failed: " + err.ErrorMessage)
 				return d.TransactionGetItemsWithRetry(maxRetries-1, util.DurationPtr(timeout), getItems...)
 			} else {
-				if err.SuppressError {
-					log.Println("TransactionGetItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = " + util.UintToStr(maxRetries) + ")")
-					return 0, nil
-				} else {
-					return 0, &DynamoDBError{
-						ErrorMessage:                      "TransactionGetItemsWithRetry Failed: " + err.ErrorMessage,
-						SuppressError:                     false,
-						AllowRetry:                        false,
-						RetryNeedsBackOff:                 false,
-						TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
-					}
-				}
-			}
-		} else {
-			if err.SuppressError {
-				log.Println("TransactionGetItemsWithRetry DynamoDB Error Suppressed, Returning Error Nil (MaxRetries = 0)")
-				return 0, nil
-			} else {
 				return 0, &DynamoDBError{
-					ErrorMessage:                      "TransactionGetItemsWithRetry Failed: (MaxRetries = 0) " + err.ErrorMessage,
+					ErrorMessage:                      "TransactionGetItemsWithRetry Failed: " + err.ErrorMessage,
 					SuppressError:                     false,
 					AllowRetry:                        false,
 					RetryNeedsBackOff:                 false,
 					TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
 				}
+			}
+		} else {
+			return 0, &DynamoDBError{
+				ErrorMessage:                      "TransactionGetItemsWithRetry Failed: (MaxRetries Exhausted) " + err.ErrorMessage,
+				SuppressError:                     false,
+				AllowRetry:                        false,
+				RetryNeedsBackOff:                 false,
+				TransactionConditionalCheckFailed: err.TransactionConditionalCheckFailed,
 			}
 		}
 	} else {

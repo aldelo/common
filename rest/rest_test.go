@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -348,5 +349,114 @@ func TestDELETEWithCustomHeaders(t *testing.T) {
 	}
 	if statusCode != http.StatusOK {
 		t.Errorf("DELETE() statusCode = %d, expected %d", statusCode, http.StatusOK)
+	}
+}
+
+// TestCloneClientTlsConfigReturnsNilWhenNil verifies that cloneClientTlsConfig
+// returns nil when no TLS config has been set.
+func TestCloneClientTlsConfigReturnsNilWhenNil(t *testing.T) {
+	// Save and restore original value
+	mu.Lock()
+	origConfig := clientTlsConfig
+	clientTlsConfig = nil
+	mu.Unlock()
+
+	defer func() {
+		mu.Lock()
+		clientTlsConfig = origConfig
+		mu.Unlock()
+	}()
+
+	mu.RLock()
+	got := cloneClientTlsConfig()
+	mu.RUnlock()
+
+	if got != nil {
+		t.Error("cloneClientTlsConfig() should return nil when clientTlsConfig is nil")
+	}
+}
+
+// TestCloneClientTlsConfigIsolation verifies that mutating the cloned TLS config
+// does NOT affect the process-global clientTlsConfig.
+// This is the core test for AD-2: without Clone(), modifying the returned config
+// would corrupt the shared state for all consumers in the process.
+func TestCloneClientTlsConfigIsolation(t *testing.T) {
+	// Save and restore original value
+	mu.Lock()
+	origConfig := clientTlsConfig
+	mu.Unlock()
+
+	defer func() {
+		mu.Lock()
+		clientTlsConfig = origConfig
+		mu.Unlock()
+	}()
+
+	// Set a known global TLS config
+	mu.Lock()
+	clientTlsConfig = &tls.Config{
+		InsecureSkipVerify: false,
+		ServerName:         "original.example.com",
+		MinVersion:         tls.VersionTLS12,
+	}
+	mu.Unlock()
+
+	// Get a clone
+	mu.RLock()
+	cloned := cloneClientTlsConfig()
+	mu.RUnlock()
+
+	if cloned == nil {
+		t.Fatal("cloneClientTlsConfig() returned nil, expected a clone")
+	}
+
+	// Verify the clone has the same values
+	if cloned.ServerName != "original.example.com" {
+		t.Errorf("cloned ServerName = %q, expected %q", cloned.ServerName, "original.example.com")
+	}
+	if cloned.InsecureSkipVerify != false {
+		t.Error("cloned InsecureSkipVerify should be false")
+	}
+
+	// Mutate the clone — this simulates what http.Transport or a consumer might do
+	cloned.InsecureSkipVerify = true
+	cloned.ServerName = "mutated.example.com"
+	cloned.MinVersion = tls.VersionTLS13
+
+	// Verify the global config is NOT affected by the mutation
+	mu.RLock()
+	if clientTlsConfig.InsecureSkipVerify != false {
+		t.Error("Global clientTlsConfig.InsecureSkipVerify was mutated by clone modification — isolation failure")
+	}
+	if clientTlsConfig.ServerName != "original.example.com" {
+		t.Errorf("Global clientTlsConfig.ServerName = %q, was mutated by clone — isolation failure", clientTlsConfig.ServerName)
+	}
+	if clientTlsConfig.MinVersion != tls.VersionTLS12 {
+		t.Errorf("Global clientTlsConfig.MinVersion = %d, was mutated by clone — isolation failure", clientTlsConfig.MinVersion)
+	}
+	mu.RUnlock()
+}
+
+// TestCloneClientTlsConfigIsDistinctPointer verifies the clone is a different
+// pointer from the global, ensuring no aliasing.
+func TestCloneClientTlsConfigIsDistinctPointer(t *testing.T) {
+	mu.Lock()
+	origConfig := clientTlsConfig
+	clientTlsConfig = &tls.Config{ServerName: "distinct-test.example.com"}
+	mu.Unlock()
+
+	defer func() {
+		mu.Lock()
+		clientTlsConfig = origConfig
+		mu.Unlock()
+	}()
+
+	mu.RLock()
+	cloned := cloneClientTlsConfig()
+	global := clientTlsConfig
+	mu.RUnlock()
+
+	if cloned == global {
+		t.Error("cloneClientTlsConfig() returned the same pointer as the global — no isolation")
 	}
 }

@@ -47,15 +47,34 @@ var mu sync.RWMutex
 // from malicious or oversized responses (10MB limit)
 const maxResponseBytes = 10 << 20 // 10MB
 
-// server ca pems stores list of self-signed CAs for client tls config
+// serverCaPems stores list of self-signed CAs for client TLS config.
+// PROCESS-GLOBAL: shared by all consumers in the same process.
 var serverCaPems []string
 
-// client tls config stores the current client tls root CA config object
+// clientTlsConfig stores the current client TLS root CA config object.
+// PROCESS-GLOBAL: shared by all consumers in the same process.
+// Always access via cloneClientTlsConfig() to get an isolated copy.
 var clientTlsConfig *tls.Config
 
-// client timeout seconds for http client requests
+// clientTimeoutSeconds is the HTTP client request timeout.
+// PROCESS-GLOBAL: shared by all consumers in the same process.
 var clientTimeoutSeconds int
 
+// cloneClientTlsConfig returns a deep copy of the current clientTlsConfig,
+// or nil if no TLS config is set. Must be called under mu.RLock (or mu.Lock).
+// The clone prevents cross-consumer interference when the http.Transport
+// mutates TLS session state during handshakes.
+func cloneClientTlsConfig() *tls.Config {
+	if clientTlsConfig == nil {
+		return nil
+	}
+	return clientTlsConfig.Clone()
+}
+
+// SetClientTimeoutSeconds sets the HTTP client timeout for all subsequent requests.
+// PROCESS-GLOBAL: this affects every consumer of the rest package in the same process.
+// Concurrent calls are safe (protected by mutex), but callers should be aware that
+// changing the timeout mid-flight affects all new requests, not just the caller's.
 func SetClientTimeoutSeconds(timeoutSeconds int) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -63,8 +82,9 @@ func SetClientTimeoutSeconds(timeoutSeconds int) {
 	clientTimeoutSeconds = timeoutSeconds
 }
 
-// AppendServerCAPemFiles adds self-signed server ca pems to local cache,
-// and then recreates the clientTlsConfig object based on the new list of CAs
+// AppendServerCAPemFiles adds self-signed server CA PEM files to the process-global cache,
+// and then recreates the clientTlsConfig object based on the new list of CAs.
+// PROCESS-GLOBAL: this affects every consumer of the rest package in the same process.
 func AppendServerCAPemFiles(caPemFilePath ...string) error {
 	if len(caPemFilePath) > 0 {
 		mu.Lock()
@@ -77,9 +97,10 @@ func AppendServerCAPemFiles(caPemFilePath ...string) error {
 	}
 }
 
-// ResetServerCAPemFiles first clears serverCaPems cache,
-// then adds self-signed server ca pems to local cache,
-// then recreates the clientTlsConfig object based on the new list of CAs
+// ResetServerCAPemFiles first clears the process-global serverCaPems cache,
+// then adds self-signed server CA PEM files to the cache,
+// then recreates the clientTlsConfig object based on the new list of CAs.
+// PROCESS-GLOBAL: this affects every consumer of the rest package in the same process.
 func ResetServerCAPemFiles(caPemFilePath ...string) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -142,7 +163,7 @@ type HeaderKeyValue struct {
 func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := clientTlsConfig
+	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -210,7 +231,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := clientTlsConfig
+	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -287,7 +308,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := clientTlsConfig
+	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -364,7 +385,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := clientTlsConfig
+	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -429,7 +450,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := clientTlsConfig
+	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -521,7 +542,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := clientTlsConfig
+	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -625,7 +646,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := clientTlsConfig
+	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -728,7 +749,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := clientTlsConfig
+	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {

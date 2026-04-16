@@ -194,14 +194,26 @@ func (s *TCPServer) Serve() (err error) {
 						s.handleClientConnection(conn, ip)
 					}(c, clientIP)
 
+					// CT-NEW-2 fix: snapshot ListenerAcceptHandler under RLock
+					// so the read does not race with main-goroutine mutations.
+					s._mux.RLock()
+					acceptHandler := s.ListenerAcceptHandler
+					s._mux.RUnlock()
+
 					// notify accept event
-					if s.ListenerAcceptHandler != nil {
-						s.ListenerAcceptHandler(clientIP)
+					if acceptHandler != nil {
+						acceptHandler(clientIP)
 					}
 				}
 
-				if s.ListenerYieldDuration > 0 && s.ListenerYieldDuration <= maxListenerYieldDuration*time.Millisecond {
-					time.Sleep(s.ListenerYieldDuration)
+				// CT-NEW-2 fix: snapshot ListenerYieldDuration under RLock
+				// so the read does not race with main-goroutine mutations.
+				s._mux.RLock()
+				yieldDur := s.ListenerYieldDuration
+				s._mux.RUnlock()
+
+				if yieldDur > 0 && yieldDur <= maxListenerYieldDuration*time.Millisecond {
+					time.Sleep(yieldDur)
 				}
 			}
 		}()
@@ -360,19 +372,27 @@ func (s *TCPServer) handleClientConnection(conn net.Conn, clientIP string) {
 	// clean up upon exit method
 	defer conn.Close()
 
+	// CT-NEW-1 fix: snapshot mutable config fields under RLock so that
+	// per-client goroutines do not race with main-goroutine mutations.
+	s._mux.RLock()
+	cfgReadBuf := s.ReadBufferSize
+	cfgReaderYield := s.ReaderYieldDuration
+	cfgReadDeadline := s.ReadDeadlineDuration
+	s._mux.RUnlock()
+
 	readBufferSize := uint(defaultReadBufferSize)
-	if s.ReadBufferSize > 0 && s.ReadBufferSize < maxPortNumber {
-		readBufferSize = s.ReadBufferSize
+	if cfgReadBuf > 0 && cfgReadBuf < maxPortNumber {
+		readBufferSize = cfgReadBuf
 	}
 
 	readYield := defaultReaderYieldDuration * time.Millisecond
-	if s.ReaderYieldDuration > 0 && s.ReaderYieldDuration < maxReaderYieldDuration*time.Millisecond {
-		readYield = s.ReaderYieldDuration
+	if cfgReaderYield > 0 && cfgReaderYield < maxReaderYieldDuration*time.Millisecond {
+		readYield = cfgReaderYield
 	}
 
 	readDeadline := defaultReadDeadlineDuration * time.Millisecond
-	if s.ReadDeadlineDuration > minReadDeadlineDuration*time.Millisecond && s.ReadDeadlineDuration <= maxReadDeadlineDuration*time.Millisecond {
-		readDeadline = s.ReadDeadlineDuration
+	if cfgReadDeadline > minReadDeadlineDuration*time.Millisecond && cfgReadDeadline <= maxReadDeadlineDuration*time.Millisecond {
+		readDeadline = cfgReadDeadline
 	}
 
 	// get the stop channel once (under lock) to avoid map races

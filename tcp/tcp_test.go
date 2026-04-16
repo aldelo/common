@@ -606,3 +606,96 @@ func TestTCPServer_ConcurrentClose_NoRace(t *testing.T) {
 		t.Errorf("expected 0 connected clients after Close, got %d", len(clients))
 	}
 }
+
+// TestTCPServer_ConcurrentConfigMutation_NoRace verifies that mutating
+// mutable config fields (ReadBufferSize, ReaderYieldDuration,
+// ListenerYieldDuration, ListenerAcceptHandler) from the main goroutine
+// while the server is running does not trigger a data race. This covers
+// findings CT-NEW-1 (per-client goroutine reads of ReadBufferSize and
+// ReaderYieldDuration) and CT-NEW-2 (accept-loop reads of
+// ListenerYieldDuration and ListenerAcceptHandler).
+//
+// This test MUST be run with -race to be meaningful.
+func TestTCPServer_ConcurrentConfigMutation_NoRace(t *testing.T) {
+	port := getFreePort(t)
+
+	listenerDone := make(chan struct{}, 1)
+	acceptCh := make(chan struct{}, 64)
+
+	srv := &TCPServer{
+		Port: port,
+		ListenerAcceptHandler: func(clientIP string) {
+			select {
+			case acceptCh <- struct{}{}:
+			default:
+			}
+		},
+		ListenerErrorHandler: func(err error) {
+			select {
+			case listenerDone <- struct{}{}:
+			default:
+			}
+		},
+		ClientReceiveHandler: func(clientIP string, data []byte, writeBack func([]byte, string) error) {},
+		ClientErrorHandler:   func(string, error) {},
+		ReadDeadlineDuration: 300 * time.Millisecond,
+		ReaderYieldDuration:  10 * time.Millisecond,
+		ReadBufferSize:       1024,
+	}
+
+	if err := srv.Serve(); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	t.Cleanup(func() { safeCloseServer(srv, listenerDone) })
+
+	// Connect a client so that a per-client goroutine (handleClientConnection)
+	// is actively running and reading config fields.
+	conn, err := net.DialTimeout("tcp4", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second)
+	if err != nil {
+		t.Fatalf("client dial: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	select {
+	case <-acceptCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for accept")
+	}
+
+	// Mutate config fields from the main goroutine while both the accept
+	// loop and per-client goroutine are actively reading them.
+	// Under -race, unsynchronized access would be flagged here.
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Writer goroutine: continuously mutates config fields under the lock.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			srv._mux.Lock()
+			srv.ReadBufferSize = uint(512 + (i % 1024))
+			srv.ReaderYieldDuration = time.Duration(5+(i%20)) * time.Millisecond
+			srv.ListenerYieldDuration = time.Duration(i%10) * time.Millisecond
+			srv.ListenerAcceptHandler = func(clientIP string) {
+				select {
+				case acceptCh <- struct{}{}:
+				default:
+				}
+			}
+			srv._mux.Unlock()
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	// Let the mutation and reads overlap for a meaningful window.
+	time.Sleep(200 * time.Millisecond)
+
+	close(stop)
+	wg.Wait()
+}

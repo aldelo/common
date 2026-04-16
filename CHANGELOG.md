@@ -12,7 +12,16 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ---
 
-## [Unreleased]
+## [v1.8.3] — 2026-04-16
+
+Patch release. Closes all pass-6 contrarian findings (22 total) and the
+"remaining to 10/10" deadline audit across S3, CloudMap, and Route53
+wrappers. Combined with v1.8.2's SNS hardening, every AWS SDK wrapper
+in common now enforces a 30s default context deadline on all call paths.
+
+No observable helper contract change from v1.8.2. Every public function
+signature is preserved. Consumers pinning `common v1.8.2` should bump
+to `v1.8.3` as a drop-in for deadline-safety and observability guarantees.
 
 ### Changed (behavioral — review before upgrading)
 
@@ -33,6 +42,13 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ### Fixed
 
+- **S3/CloudMap/Route53 deadline enforcement (REM-1):** All 34 methods
+  across S3 (7), CloudMap (25), and Route53 (2) now enforce a 30s default
+  context deadline via `ensureS3Ctx`/`ensureCloudMapCtx`/`ensureRoute53Ctx`,
+  completing the pattern established by `ensureSNSCtx`/`ensureSESCtx`/
+  `ensureSQSCtx`. Route53 had a different pattern (no `timeOutDuration`
+  parameter) with both branches unbounded — now all SDK calls are bounded.
+  12 new deadline tests. Net -203 production lines.
 - **SES/SQS deadline enforcement:** All 12 SES and 15 SQS methods now
   enforce a 30s default context deadline via `ensureSESCtx`/`ensureSQSCtx`,
   matching the existing `ensureSNSCtx` pattern. Prevents goroutine leaks

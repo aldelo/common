@@ -748,14 +748,18 @@ func (g *Gin) newRouteFunc(relativePath string, method string, bindingType ginbi
 				bindingInputPtr = util.ReflectObjectNewPtr(t)
 
 				if bindingInputPtr == nil {
-					_ = c.AbortWithError(500, fmt.Errorf("%s %s Failed on %s Binding: %s", method, relativePath, bindingType.Key(), "ReflectObjectNewPtr() Yielded Nil for Target Binding Object"))
+					log.Printf("%s %s Failed on %s Binding: ReflectObjectNewPtr() Yielded Nil for Target Binding Object", method, relativePath, bindingType.Key())
+					c.String(500, "Internal Server Error")
+					c.Abort()
 					return
 				}
 			}
 
 			if err := g.bindInput(c, bindingType, bindingInputPtr); err != nil {
-				// binding error
-				_ = c.AbortWithError(500, fmt.Errorf("%s %s Failed on %s Binding: %s", method, relativePath, bindingType.Key(), err.Error()))
+				// binding error — log detail server-side, return generic message to client (SR-NEW-4)
+				log.Printf("%s %s Failed on %s Binding: %s", method, relativePath, bindingType.Key(), err.Error())
+				c.String(400, "Bad Request")
+				c.Abort()
 				return
 			} else {
 				// continue processing

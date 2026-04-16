@@ -8,7 +8,9 @@ import (
 
 	ginlib "github.com/gin-gonic/gin"
 
+	"github.com/aldelo/common/wrapper/gin/ginbindtype"
 	"github.com/aldelo/common/wrapper/gin/gingzipcompression"
+	"github.com/aldelo/common/wrapper/gin/ginhttpmethod"
 )
 
 func init() {
@@ -639,5 +641,79 @@ func TestRunServer_PortTooHigh(t *testing.T) {
 	err := gw.RunServer()
 	if err == nil {
 		t.Error("expected error when port > 65535")
+	}
+}
+
+// --------------------------------------------------------------------------
+// SR-NEW-4: binding error must NOT leak internal details to client
+// --------------------------------------------------------------------------
+
+// TestNewRouteFunc_BindingError_NoDetailLeak verifies SR-NEW-4: when a request
+// body fails JSON binding (e.g. malformed JSON or type mismatch), the HTTP
+// response must contain only "Bad Request" — never struct field names,
+// validation rules, type information, or internal paths.
+func TestNewRouteFunc_BindingError_NoDetailLeak(t *testing.T) {
+	// Create a minimal Gin wrapper and register a POST route with JSON binding.
+	gw := NewServer("test-bind-leak", 0, false, false, nil)
+	if gw == nil {
+		t.Fatal("NewServer returned nil")
+	}
+
+	type bindTarget struct {
+		SecretField string `json:"secret_field" binding:"required"`
+		Amount      int    `json:"amount" binding:"required"`
+	}
+
+	gw.Routes = map[string]*RouteDefinition{
+		"*": {
+			Routes: []*Route{
+				{
+					RelativePath:    "/bind-test",
+					Method:          ginhttpmethod.POST,
+					Binding:         ginbindtype.BindJson,
+					BindingInputPtr: &bindTarget{},
+					Handler: func(c *ginlib.Context, bindingInputPtr interface{}) {
+						c.String(200, "ok")
+					},
+				},
+			},
+		},
+	}
+
+	// Setup routes on the engine (calls newRouteFunc internally).
+	count := gw.setupRoutes()
+	if count == 0 {
+		t.Fatal("setupRoutes returned 0 — route not registered")
+	}
+
+	// Send malformed JSON that will trigger a binding error.
+	malformedBody := bytes.NewBufferString(`{"amount": "not-a-number"`)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/bind-test", malformedBody)
+	req.Header.Set("Content-Type", "application/json")
+	gw.Engine().ServeHTTP(w, req)
+
+	if w.Code != 400 {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+
+	body := w.Body.String()
+
+	// Must be exactly the generic message.
+	if body != "Bad Request" {
+		t.Errorf("response body = %q, want %q", body, "Bad Request")
+	}
+
+	// Must NOT leak any internal details — struct field names, types, paths,
+	// binding type, validation rules.
+	for _, leak := range []string{
+		"SecretField", "secret_field", "Amount", "amount",
+		"bindTarget", "BindJson", "cannot unmarshal",
+		"json:", "binding:", "required", "POST /bind-test",
+		"Binding:", "Failed on",
+	} {
+		if bytes.Contains(w.Body.Bytes(), []byte(leak)) {
+			t.Errorf("response body contains internal detail %q — binding error leaked to client", leak)
+		}
 	}
 }

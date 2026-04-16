@@ -32,11 +32,16 @@ package dynamodb
 // new P0-2 retry plumbing).
 
 import (
+	"bytes"
 	"fmt"
+	"log"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 )
@@ -467,4 +472,191 @@ func TestWithRetry_ReturnsErrorOnMaxRetriesExhausted(t *testing.T) {
 		t.Fatal("PutItemWithRetry(maxRetries=1) returned nil error after retry exhaustion — " +
 			"retry-exhausted errors must always be returned to caller")
 	}
+}
+
+// =============================================================================
+// DB-F2 — Unbounded scan warning tests
+// =============================================================================
+
+// TestScanItems_UnboundedScanWarning verifies that ScanItems logs a warning
+// when called without a Limit (pageLimit == nil), which signals a potential
+// full table scan, and does NOT log the warning when a Limit is provided.
+//
+// The DynamoDB struct has no connection, so the call fails after the warning
+// check with "DynamoDB Connection is Required". We only care about the log
+// output — the error is expected and ignored.
+func TestScanItems_UnboundedScanWarning(t *testing.T) {
+	d := &DynamoDB{
+		TableName: "test-table",
+	}
+
+	filter := expression.Name("pk").Equal(expression.Value("x"))
+	var result []map[string]string
+
+	t.Run("no_limit_logs_warning", func(t *testing.T) {
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+		defer log.SetOutput(nil) // restore default
+
+		// pageLimit = nil → should trigger warning
+		_, _ = d.ScanItems(&result, nil, nil, nil, nil, false, nil, nil, filter)
+
+		output := buf.String()
+		if !strings.Contains(output, "[WARN] DynamoDB ScanItems called without Limit") {
+			t.Errorf("expected unbounded scan warning in log output, got: %q", output)
+		}
+		if !strings.Contains(output, "test-table") {
+			t.Errorf("expected table name in warning, got: %q", output)
+		}
+	})
+
+	t.Run("with_limit_no_warning", func(t *testing.T) {
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+		defer log.SetOutput(nil)
+
+		limit := aws.Int64(100)
+		// pageLimit = 100 → should NOT trigger warning
+		_, _ = d.ScanItems(&result, nil, nil, nil, limit, false, nil, nil, filter)
+
+		output := buf.String()
+		if strings.Contains(output, "[WARN] DynamoDB ScanItems called without Limit") {
+			t.Errorf("did not expect unbounded scan warning when Limit is set, got: %q", output)
+		}
+	})
+}
+
+// =============================================================================
+// DB-F3 — Timeout clamping warning tests
+// =============================================================================
+
+// TestTimeoutClamping_WarningLogged verifies that *WithRetry methods log a
+// [WARN] when the caller-supplied timeout is clamped to the allowed range.
+//
+// There are two clamping tiers:
+//   - 5–15s: PutItemWithRetry, DeleteItemWithRetry, GetItemWithRetry,
+//     QueryPaginationDataWithRetry, QueryItemsWithRetry,
+//     BatchGetItemsWithRetry, BatchDeleteItemsWithRetry,
+//     TransactionGetItemsWithRetry
+//   - 10–30s: UpdateItemWithRetry, RemoveItemAttributeWithRetry,
+//     ScanItemsWithRetry, BatchWriteItemsWithRetry,
+//     TransactionWriteItemsWithRetry
+//
+// Each sub-test calls the method with a timeout below the minimum and above
+// the maximum, then checks that the log contains the expected warning. The
+// DynamoDB struct has no AWS connection, so the call itself fails — but the
+// clamping warning fires before the AWS call, which is all we verify.
+func TestTimeoutClamping_WarningLogged(t *testing.T) {
+	d := &DynamoDB{
+		TableName: "clamp-test-table",
+		PKName:    "PK",
+		SKName:    "SK",
+	}
+
+	// helper: run fn, capture log, check for expected substring
+	assertLogContains := func(t *testing.T, label string, fn func(), expected string) {
+		t.Helper()
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+		defer log.SetOutput(nil)
+
+		fn()
+
+		output := buf.String()
+		if !strings.Contains(output, expected) {
+			t.Errorf("%s: expected log to contain %q, got: %q", label, expected, output)
+		}
+	}
+
+	// helper: run fn, capture log, check substring is absent
+	assertLogNotContains := func(t *testing.T, label string, fn func(), unexpected string) {
+		t.Helper()
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+		defer log.SetOutput(nil)
+
+		fn()
+
+		output := buf.String()
+		if strings.Contains(output, unexpected) {
+			t.Errorf("%s: did not expect log to contain %q, got: %q", label, unexpected, output)
+		}
+	}
+
+	// --- PutItemWithRetry (5–15s tier) ---
+	t.Run("PutItemWithRetry_below_min", func(t *testing.T) {
+		dur := 1 * time.Second
+		assertLogContains(t, "below_min", func() {
+			_ = d.PutItemWithRetry(0, map[string]string{"PK": "x"}, &dur)
+		}, "[WARN] DynamoDB PutItemWithRetry timeout 1s clamped to minimum 5s for table clamp-test-table")
+	})
+
+	t.Run("PutItemWithRetry_above_max", func(t *testing.T) {
+		dur := 30 * time.Second
+		assertLogContains(t, "above_max", func() {
+			_ = d.PutItemWithRetry(0, map[string]string{"PK": "x"}, &dur)
+		}, "[WARN] DynamoDB PutItemWithRetry timeout 30s clamped to maximum 15s for table clamp-test-table")
+	})
+
+	t.Run("PutItemWithRetry_within_range_no_warning", func(t *testing.T) {
+		dur := 10 * time.Second
+		assertLogNotContains(t, "within_range", func() {
+			_ = d.PutItemWithRetry(0, map[string]string{"PK": "x"}, &dur)
+		}, "[WARN] DynamoDB PutItemWithRetry timeout")
+	})
+
+	// --- UpdateItemWithRetry (10–30s tier) ---
+	t.Run("UpdateItemWithRetry_below_min", func(t *testing.T) {
+		dur := 3 * time.Second
+		assertLogContains(t, "below_min", func() {
+			_ = d.UpdateItemWithRetry(0, "pk1", "sk1", "", "", nil, nil, &dur)
+		}, "[WARN] DynamoDB UpdateItemWithRetry timeout 3s clamped to minimum 10s for table clamp-test-table")
+	})
+
+	t.Run("UpdateItemWithRetry_above_max", func(t *testing.T) {
+		dur := 60 * time.Second
+		assertLogContains(t, "above_max", func() {
+			_ = d.UpdateItemWithRetry(0, "pk1", "sk1", "", "", nil, nil, &dur)
+		}, "[WARN] DynamoDB UpdateItemWithRetry timeout 1m0s clamped to maximum 30s for table clamp-test-table")
+	})
+
+	// --- DeleteItemWithRetry (5–15s tier) ---
+	t.Run("DeleteItemWithRetry_below_min", func(t *testing.T) {
+		dur := 2 * time.Second
+		assertLogContains(t, "below_min", func() {
+			_ = d.DeleteItemWithRetry(0, "pk1", "sk1", &dur)
+		}, "[WARN] DynamoDB DeleteItemWithRetry timeout 2s clamped to minimum 5s for table clamp-test-table")
+	})
+
+	t.Run("DeleteItemWithRetry_above_max", func(t *testing.T) {
+		dur := 20 * time.Second
+		assertLogContains(t, "above_max", func() {
+			_ = d.DeleteItemWithRetry(0, "pk1", "sk1", &dur)
+		}, "[WARN] DynamoDB DeleteItemWithRetry timeout 20s clamped to maximum 15s for table clamp-test-table")
+	})
+
+	// --- GetItemWithRetry (5–15s tier) ---
+	t.Run("GetItemWithRetry_below_min", func(t *testing.T) {
+		dur := 1 * time.Second
+		var result map[string]string
+		assertLogContains(t, "below_min", func() {
+			_ = d.GetItemWithRetry(0, &result, "pk1", "sk1", &dur, nil)
+		}, "[WARN] DynamoDB GetItemWithRetry timeout 1s clamped to minimum 5s for table clamp-test-table")
+	})
+
+	// --- TransactionGetItemsWithRetry (5–15s tier) ---
+	t.Run("TransactionGetItemsWithRetry_below_min", func(t *testing.T) {
+		dur := 2 * time.Second
+		assertLogContains(t, "below_min", func() {
+			_, _ = d.TransactionGetItemsWithRetry(0, &dur)
+		}, "[WARN] DynamoDB TransactionGetItemsWithRetry timeout 2s clamped to minimum 5s for table clamp-test-table")
+	})
+
+	// --- TransactionWriteItemsWithRetry (10–30s tier) ---
+	t.Run("TransactionWriteItemsWithRetry_above_max", func(t *testing.T) {
+		dur := 45 * time.Second
+		assertLogContains(t, "above_max", func() {
+			_, _ = d.TransactionWriteItemsWithRetry(0, &dur)
+		}, "[WARN] DynamoDB TransactionWriteItemsWithRetry timeout 45s clamped to maximum 30s for table clamp-test-table")
+	})
 }

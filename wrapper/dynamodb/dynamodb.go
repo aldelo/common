@@ -3078,8 +3078,10 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 	}
 
 	if timeout < 5*time.Second {
+		log.Printf("[WARN] DynamoDB PutItemWithRetry timeout %v clamped to minimum 5s for table %s", timeout, d.TableName)
 		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
+		log.Printf("[WARN] DynamoDB PutItemWithRetry timeout %v clamped to maximum 15s for table %s", timeout, d.TableName)
 		timeout = 15 * time.Second
 	}
 
@@ -3533,8 +3535,10 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 	}
 
 	if timeout < 10*time.Second {
+		log.Printf("[WARN] DynamoDB UpdateItemWithRetry timeout %v clamped to minimum 10s for table %s", timeout, d.TableName)
 		timeout = 10 * time.Second
 	} else if timeout > 30*time.Second {
+		log.Printf("[WARN] DynamoDB UpdateItemWithRetry timeout %v clamped to maximum 30s for table %s", timeout, d.TableName)
 		timeout = 30 * time.Second
 	}
 
@@ -3839,8 +3843,10 @@ func (d *DynamoDB) RemoveItemAttributeWithRetry(maxRetries uint, pkValue string,
 	}
 
 	if timeout < 10*time.Second {
+		log.Printf("[WARN] DynamoDB RemoveItemAttributeWithRetry timeout %v clamped to minimum 10s for table %s", timeout, d.TableName)
 		timeout = 10 * time.Second
 	} else if timeout > 30*time.Second {
+		log.Printf("[WARN] DynamoDB RemoveItemAttributeWithRetry timeout %v clamped to maximum 30s for table %s", timeout, d.TableName)
 		timeout = 30 * time.Second
 	}
 
@@ -4107,8 +4113,10 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 	}
 
 	if timeout < 5*time.Second {
+		log.Printf("[WARN] DynamoDB DeleteItemWithRetry timeout %v clamped to minimum 5s for table %s", timeout, d.TableName)
 		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
+		log.Printf("[WARN] DynamoDB DeleteItemWithRetry timeout %v clamped to maximum 15s for table %s", timeout, d.TableName)
 		timeout = 15 * time.Second
 	}
 
@@ -4551,8 +4559,10 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 	}
 
 	if timeout < 5*time.Second {
+		log.Printf("[WARN] DynamoDB GetItemWithRetry timeout %v clamped to minimum 5s for table %s", timeout, d.TableName)
 		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
+		log.Printf("[WARN] DynamoDB GetItemWithRetry timeout %v clamped to maximum 15s for table %s", timeout, d.TableName)
 		timeout = 15 * time.Second
 	}
 
@@ -4633,8 +4643,10 @@ func (d *DynamoDB) QueryPaginationDataWithRetry(
 	}
 
 	if timeout < 5*time.Second {
+		log.Printf("[WARN] DynamoDB QueryPaginationDataWithRetry timeout %v clamped to minimum 5s for table %s", timeout, d.TableName)
 		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
+		log.Printf("[WARN] DynamoDB QueryPaginationDataWithRetry timeout %v clamped to maximum 15s for table %s", timeout, d.TableName)
 		timeout = 15 * time.Second
 	}
 
@@ -5573,8 +5585,10 @@ func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
 	}
 
 	if timeout < 5*time.Second {
+		log.Printf("[WARN] DynamoDB QueryItemsWithRetry timeout %v clamped to minimum 5s for table %s", timeout, d.TableName)
 		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
+		log.Printf("[WARN] DynamoDB QueryItemsWithRetry timeout %v clamped to maximum 15s for table %s", timeout, d.TableName)
 		timeout = 15 * time.Second
 	}
 
@@ -5989,6 +6003,11 @@ func (d *DynamoDB) ScanItems(resultItemsPtr interface{},
 		}
 	}
 
+	// DB-F2: warn when no Limit is set — potential full table scan
+	if pageLimit == nil {
+		log.Println("[WARN] DynamoDB ScanItems called without Limit — potential full table scan on table: " + d.TableName)
+	}
+
 	if xray.XRayServiceOn() {
 		return d.scanItemsWithTrace(resultItemsPtr, timeOutDuration, consistentRead, indexName, pageLimit, pagedQuery, pagedQueryPageCountLimit, exclusiveStartKey, filterConditionExpression, projectedAttributes...)
 	} else {
@@ -6363,8 +6382,10 @@ func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
 	}
 
 	if timeout < 10*time.Second {
+		log.Printf("[WARN] DynamoDB ScanItemsWithRetry timeout %v clamped to minimum 10s for table %s", timeout, d.TableName)
 		timeout = 10 * time.Second
 	} else if timeout > 30*time.Second {
+		log.Printf("[WARN] DynamoDB ScanItemsWithRetry timeout %v clamped to maximum 30s for table %s", timeout, d.TableName)
 		timeout = 30 * time.Second
 	}
 
@@ -7256,8 +7277,10 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 	}
 
 	if timeout < 10*time.Second {
+		log.Printf("[WARN] DynamoDB BatchWriteItemsWithRetry timeout %v clamped to minimum 10s for table %s", timeout, d.TableName)
 		timeout = 10 * time.Second
 	} else if timeout > 30*time.Second {
+		log.Printf("[WARN] DynamoDB BatchWriteItemsWithRetry timeout %v clamped to maximum 30s for table %s", timeout, d.TableName)
 		timeout = 30 * time.Second
 	}
 
@@ -8053,8 +8076,10 @@ func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint, timeOutDuration *time
 	}
 
 	if timeout < 5*time.Second {
+		log.Printf("[WARN] DynamoDB BatchGetItemsWithRetry timeout %v clamped to minimum 5s for table %s", timeout, d.TableName)
 		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
+		log.Printf("[WARN] DynamoDB BatchGetItemsWithRetry timeout %v clamped to maximum 15s for table %s", timeout, d.TableName)
 		timeout = 15 * time.Second
 	}
 
@@ -8130,8 +8155,10 @@ func (d *DynamoDB) BatchDeleteItemsWithRetry(maxRetries uint,
 	}
 
 	if timeout < 5*time.Second {
+		log.Printf("[WARN] DynamoDB BatchDeleteItemsWithRetry timeout %v clamped to minimum 5s for table %s", timeout, d.TableName)
 		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
+		log.Printf("[WARN] DynamoDB BatchDeleteItemsWithRetry timeout %v clamped to maximum 15s for table %s", timeout, d.TableName)
 		timeout = 15 * time.Second
 	}
 
@@ -8640,8 +8667,10 @@ func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 	}
 
 	if timeout < 10*time.Second {
+		log.Printf("[WARN] DynamoDB TransactionWriteItemsWithRetry timeout %v clamped to minimum 10s for table %s", timeout, d.TableName)
 		timeout = 10 * time.Second
 	} else if timeout > 30*time.Second {
+		log.Printf("[WARN] DynamoDB TransactionWriteItemsWithRetry timeout %v clamped to maximum 30s for table %s", timeout, d.TableName)
 		timeout = 30 * time.Second
 	}
 
@@ -9219,8 +9248,10 @@ func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
 	}
 
 	if timeout < 5*time.Second {
+		log.Printf("[WARN] DynamoDB TransactionGetItemsWithRetry timeout %v clamped to minimum 5s for table %s", timeout, d.TableName)
 		timeout = 5 * time.Second
 	} else if timeout > 15*time.Second {
+		log.Printf("[WARN] DynamoDB TransactionGetItemsWithRetry timeout %v clamped to maximum 15s for table %s", timeout, d.TableName)
 		timeout = 15 * time.Second
 	}
 

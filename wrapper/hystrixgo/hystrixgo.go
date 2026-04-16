@@ -32,7 +32,15 @@ import (
 	data "github.com/aldelo/common/wrapper/zap"
 )
 
-// CircuitBreaker defines one specific circuit breaker by command name
+// CircuitBreaker defines one specific circuit breaker by command name.
+//
+// IMPORTANT — Global-state constraints of afex/hystrix-go:
+//   - Logger (SetLogger) is PROCESS-GLOBAL: the last Init()/UpdateLogger() call wins
+//     for ALL circuits in the process, not just this instance. (BL-2)
+//   - FlushAll() purges ALL circuits in the process, not just this instance's
+//     command. There is no per-circuit flush in the upstream library. (BL-3)
+//   - These are fundamental limitations of the package-level design in
+//     afex/hystrix-go. A per-instance solution requires replacing the library (P2-5).
 //
 // Config Properties:
 //  1. Timeout = how long to wait for command to complete, in milliseconds, default = 1000
@@ -40,7 +48,7 @@ import (
 //  3. RequestVolumeThreshold = minimum number of requests needed before a circuit can be tripped due to health, default = 20
 //  4. SleepWindow = how long to wait after a circuit opens before testing for recovery, in milliseconds, default = 5000
 //  5. ErrorPercentThreshold = causes circuits to open once the rolling measure of errors exceeds this percent of requests, default = 50
-//  6. Logger = indicates the logger that will be used in the Hystrix package, default = logs nothing
+//  6. Logger = indicates the logger that will be used in the Hystrix package, default = logs nothing (GLOBAL — see above)
 type CircuitBreaker struct {
 	// circuit breaker command name for this instance
 	CommandName string
@@ -114,7 +122,11 @@ func (c *CircuitBreaker) Init() error {
 		ErrorPercentThreshold:  c.ErrorPercentThreshold,
 	})
 
-	// setup logger
+	// WARNING: hystrix.SetLogger is PROCESS-GLOBAL — the last caller wins for ALL
+	// circuit breakers in this process, not just this instance. This is a limitation
+	// of afex/hystrix-go's package-level logger design. When multiple CircuitBreaker
+	// instances call Init(), the last one to initialize determines the logger for
+	// every circuit. A per-instance logger requires replacing hystrix-go (see P2-5).
 	if c.Logger != nil {
 		hystrix.SetLogger(c.Logger)
 	} else {
@@ -125,7 +137,12 @@ func (c *CircuitBreaker) Init() error {
 	return nil
 }
 
-// FlushAll will purge all circuits and metrics from memory
+// FlushAll purges ALL circuits and metrics from memory across the ENTIRE PROCESS,
+// not just the circuits owned by this CircuitBreaker instance. This is a limitation
+// of afex/hystrix-go's package-level circuit registry — there is no exported API to
+// flush or remove a single named circuit. Callers should be aware that invoking this
+// method on any CircuitBreaker instance will reset every circuit breaker in the process.
+// A per-instance flush requires replacing hystrix-go (see P2-5).
 func (c *CircuitBreaker) FlushAll() {
 	if c == nil {
 		return
@@ -176,8 +193,9 @@ func (c *CircuitBreaker) UpdateConfig() {
 	})
 }
 
-// UpdateLogger will udpate the hystrixgo package wide logger,
-// based on the Logger set in the struct field
+// UpdateLogger updates the PROCESS-GLOBAL hystrix-go logger based on the Logger
+// field of this struct. WARNING: hystrix.SetLogger is package-level — the last
+// caller wins for ALL circuits, not just this instance (see BL-2 / P2-5).
 func (c *CircuitBreaker) UpdateLogger() {
 	if c == nil {
 		return

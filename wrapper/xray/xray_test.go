@@ -248,6 +248,86 @@ func TestEndToEnd_XraySdkDisabled_NoPanic(t *testing.T) {
 }
 
 // ================================================================================================================
+// EH-1: Init sets _xrayServiceOn correctly without requiring SetXRayServiceOn
+// ================================================================================================================
+
+// TestInit_SuccessEnablesTracing verifies that a successful Init() call sets
+// XRayServiceOn() = true WITHOUT requiring a subsequent SetXRayServiceOn().
+// This is the contract that EH-1 remediation relies on: the connector callers
+// removed the redundant SetXRayServiceOn() after Init because Init already
+// handles the flag on both success and failure paths.
+func TestInit_SuccessEnablesTracing(t *testing.T) {
+	// Ensure tracing is off before the test.
+	DisableTracing()
+	if XRayServiceOn() {
+		t.Fatal("XRayServiceOn() = true after DisableTracing(); want false")
+	}
+
+	// Remove the SDK-disabled env var so Init can enable tracing.
+	t.Setenv("AWS_XRAY_SDK_DISABLED", "")
+
+	// Init with defaults — xray.Configure always succeeds with valid input.
+	if err := Init("127.0.0.1:2000", "1.2.0"); err != nil {
+		t.Fatalf("Init() returned error: %v", err)
+	}
+
+	// KEY ASSERTION: XRayServiceOn is true after Init alone — no SetXRayServiceOn needed.
+	if !XRayServiceOn() {
+		t.Error("XRayServiceOn() = false after successful Init(); want true — Init must self-enable")
+	}
+
+	// Cleanup: disable tracing so other tests are not affected.
+	DisableTracing()
+}
+
+// TestInit_SdkDisabledOverridesSuccess verifies that Init() respects
+// AWS_XRAY_SDK_DISABLED=TRUE even when xray.Configure succeeds.
+func TestInit_SdkDisabledOverridesSuccess(t *testing.T) {
+	DisableTracing()
+	t.Setenv("AWS_XRAY_SDK_DISABLED", "TRUE")
+
+	if err := Init("127.0.0.1:2000", "1.2.0"); err != nil {
+		t.Fatalf("Init() returned error: %v", err)
+	}
+
+	if XRayServiceOn() {
+		t.Error("XRayServiceOn() = true after Init with AWS_XRAY_SDK_DISABLED=TRUE; want false")
+	}
+
+	DisableTracing()
+}
+
+// TestSetXRayServiceOn_OverridesInternalFlag documents that SetXRayServiceOn()
+// unconditionally sets the internal flag to true. This is the bug EH-1 found:
+// if Init fails (setting flag=false), a subsequent SetXRayServiceOn() overrides
+// the failure state. The connector code removed the redundant SetXRayServiceOn()
+// calls after Init to prevent this.
+//
+// Note: tracingEnabled() also checks AWS_XRAY_SDK_DISABLED env var, so we must
+// clear it to observe the internal flag in isolation.
+func TestSetXRayServiceOn_OverridesInternalFlag(t *testing.T) {
+	// Clear env-level disable so we observe only the internal flag.
+	t.Setenv("AWS_XRAY_SDK_DISABLED", "")
+
+	// Turn off the internal flag directly.
+	SetXRayServiceOff()
+	if XRayServiceOn() {
+		t.Fatal("XRayServiceOn() = true after SetXRayServiceOff(); want false")
+	}
+
+	// SetXRayServiceOn unconditionally enables — even without Init.
+	SetXRayServiceOn()
+	if !XRayServiceOn() {
+		t.Error("XRayServiceOn() = false after SetXRayServiceOn(); want true")
+	}
+
+	// This proves the old pattern was dangerous: if Init failed but
+	// SetXRayServiceOn was called next, tracing appears enabled with
+	// a misconfigured SDK.
+	SetXRayServiceOff()
+}
+
+// ================================================================================================================
 // LogXrayAddFailure tests (COMMON-R2-001)
 // ================================================================================================================
 

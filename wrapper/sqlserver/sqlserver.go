@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	util "github.com/aldelo/common"
 	"github.com/jmoiron/sqlx"
@@ -120,6 +121,11 @@ import (
 		s.Instance = ""		// optional
 		s.Timeout = 15		// seconds
 
+		// optional: override connection pool defaults (zero = use production defaults)
+		// s.MaxOpenConns = 25            // default 25
+		// s.MaxIdleConns = 5             // default 5
+		// s.ConnMaxLifetime = 5*time.Minute // default 5m
+
 		//
 		// open sqlserver database connection
 		//
@@ -194,6 +200,14 @@ type SQLServer struct {
 	Timeout   int
 	Encrypted bool
 	AppName   string
+
+	// Connection pool configuration (zero value = use production defaults)
+	//   MaxOpenConns: max simultaneous open connections (default 25, prevents server resource exhaustion)
+	//   MaxIdleConns: max idle connections retained in pool (default 5, balances reuse vs memory)
+	//   ConnMaxLifetime: max time a connection may be reused (default 5m, forces reconnect to pick up DNS changes)
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
 
 	// SQLSvr state object
 	db *sqlx.DB
@@ -417,6 +431,28 @@ func (svr *SQLServer) Open(useADOConnectString ...bool) error {
 
 		return err
 	}
+
+	// configure connection pool for production safety:
+	// - MaxOpenConns prevents resource exhaustion on the SQL Server
+	// - MaxIdleConns balances connection reuse with memory usage
+	// - ConnMaxLifetime forces reconnection to pick up DNS/endpoint changes
+	maxOpen := svr.MaxOpenConns
+	if maxOpen == 0 {
+		maxOpen = 25
+	}
+	db.SetMaxOpenConns(maxOpen)
+
+	maxIdle := svr.MaxIdleConns
+	if maxIdle == 0 {
+		maxIdle = 5
+	}
+	db.SetMaxIdleConns(maxIdle)
+
+	connMaxLifetime := svr.ConnMaxLifetime
+	if connMaxLifetime == 0 {
+		connMaxLifetime = 5 * time.Minute
+	}
+	db.SetConnMaxLifetime(connMaxLifetime)
 
 	// upon open, transaction object already nil
 	svr.mu.Lock()

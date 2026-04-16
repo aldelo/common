@@ -60,6 +60,38 @@ import (
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
 
+// defaultS3CallTimeout bounds any single S3 SDK call that would
+// otherwise execute without a deadline. Applied in ensureS3Ctx when
+// the caller does not supply its own timeOutDuration. 30 seconds is
+// consistent with wrapper/ses/ses.go defaultSESCallTimeout and
+// wrapper/sns/sns.go defaultSNSCallTimeout.
+const defaultS3CallTimeout = 30 * time.Second
+
+// ensureS3Ctx normalizes the (segCtx, segCtxSet, timeOutDuration)
+// triple into a single (ctx, cancel) pair so every S3 SDK call has
+// an upper-bound deadline:
+//
+//  1. Caller-supplied timeout: *timeOutDuration wins, applied to
+//     segCtx (or context.Background() if segCtx is nil).
+//  2. Xray segment ctx set (segCtxSet && segCtx != nil): segCtx
+//     wrapped in WithTimeout(defaultS3CallTimeout).
+//  3. Neither: context.Background() with defaultS3CallTimeout.
+//
+// Callers MUST invoke the returned cancel before returning.
+func ensureS3Ctx(segCtx context.Context, segCtxSet bool, timeOutDuration *time.Duration) (context.Context, context.CancelFunc) {
+	if timeOutDuration != nil {
+		parent := segCtx
+		if parent == nil {
+			parent = context.Background()
+		}
+		return context.WithTimeout(parent, *timeOutDuration)
+	}
+	if segCtxSet && segCtx != nil {
+		return context.WithTimeout(segCtx, defaultS3CallTimeout)
+	}
+	return context.WithTimeout(context.Background(), defaultS3CallTimeout)
+}
+
 // ================================================================================================================
 // STRUCTS
 // ================================================================================================================
@@ -379,31 +411,14 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 	// upload content to s3 bucket as an object with the key being custom
 	var output *s3manager.UploadOutput
 
-	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
-		defer cancel()
+	callCtx, callCancel := ensureS3Ctx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = s.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
-			Bucket: aws.String(s.BucketName),
-			Key:    aws.String(key),
-			Body:   f,
-		})
-	} else {
-		if segCtxSet {
-			output, err = s.uploader.UploadWithContext(segCtx,
-				&s3manager.UploadInput{
-					Bucket: aws.String(s.BucketName),
-					Key:    aws.String(key),
-					Body:   f,
-				})
-		} else {
-			output, err = s.uploader.Upload(&s3manager.UploadInput{
-				Bucket: aws.String(s.BucketName),
-				Key:    aws.String(key),
-				Body:   f,
-			})
-		}
-	}
+	output, err = s.uploader.UploadWithContext(callCtx, &s3manager.UploadInput{
+		Bucket: aws.String(s.BucketName),
+		Key:    aws.String(key),
+		Body:   f,
+	})
 
 	// evaluate result
 	if err != nil {
@@ -504,31 +519,14 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 	// upload content to s3 bucket as an object with the key being custom
 	var output *s3manager.UploadOutput
 
-	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
-		defer cancel()
+	callCtx, callCancel := ensureS3Ctx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = s.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
-			Bucket: aws.String(s.BucketName),
-			Key:    aws.String(key),
-			Body:   r,
-		})
-	} else {
-		if segCtxSet {
-			output, err = s.uploader.UploadWithContext(segCtx,
-				&s3manager.UploadInput{
-					Bucket: aws.String(s.BucketName),
-					Key:    aws.String(key),
-					Body:   r,
-				})
-		} else {
-			output, err = s.uploader.Upload(&s3manager.UploadInput{
-				Bucket: aws.String(s.BucketName),
-				Key:    aws.String(key),
-				Body:   r,
-			})
-		}
-	}
+	output, err = s.uploader.UploadWithContext(callCtx, &s3manager.UploadInput{
+		Bucket: aws.String(s.BucketName),
+		Key:    aws.String(key),
+		Body:   r,
+	})
 
 	// evaluate result
 	if err != nil {
@@ -639,27 +637,13 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 	// download content from s3 bucket as an object with the key being custom
 	var bytesCount int64
 
-	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
-		defer cancel()
+	callCtx, callCancel := ensureS3Ctx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		bytesCount, err = s.downloader.DownloadWithContext(ctx, f, &s3.GetObjectInput{
-			Bucket: aws.String(s.BucketName),
-			Key:    aws.String(key),
-		})
-	} else {
-		if segCtxSet {
-			bytesCount, err = s.downloader.DownloadWithContext(segCtx, f, &s3.GetObjectInput{
-				Bucket: aws.String(s.BucketName),
-				Key:    aws.String(key),
-			})
-		} else {
-			bytesCount, err = s.downloader.Download(f, &s3.GetObjectInput{
-				Bucket: aws.String(s.BucketName),
-				Key:    aws.String(key),
-			})
-		}
-	}
+	bytesCount, err = s.downloader.DownloadWithContext(callCtx, f, &s3.GetObjectInput{
+		Bucket: aws.String(s.BucketName),
+		Key:    aws.String(key),
+	})
 
 	// evaluate result
 	if err != nil {
@@ -756,27 +740,13 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 	// download content from s3 bucket as an object with the key being custom
 	var bytesCount int64
 
-	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
-		defer cancel()
+	callCtx, callCancel := ensureS3Ctx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		bytesCount, err = s.downloader.DownloadWithContext(ctx, buf, &s3.GetObjectInput{
-			Bucket: aws.String(s.BucketName),
-			Key:    aws.String(key),
-		})
-	} else {
-		if segCtxSet {
-			bytesCount, err = s.downloader.DownloadWithContext(segCtx, buf, &s3.GetObjectInput{
-				Bucket: aws.String(s.BucketName),
-				Key:    aws.String(key),
-			})
-		} else {
-			bytesCount, err = s.downloader.Download(buf, &s3.GetObjectInput{
-				Bucket: aws.String(s.BucketName),
-				Key:    aws.String(key),
-			})
-		}
-	}
+	bytesCount, err = s.downloader.DownloadWithContext(callCtx, buf, &s3.GetObjectInput{
+		Bucket: aws.String(s.BucketName),
+		Key:    aws.String(key),
+	})
 
 	// evaluate result
 	if err != nil {
@@ -865,27 +835,13 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 	}
 
 	// delete object from s3 bucket
-	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
-		defer cancel()
+	callCtx, callCancel := ensureS3Ctx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		_, err = s.s3Obj.DeleteObjectWithContext(ctx, &s3.DeleteObjectInput{
-			Bucket: aws.String(s.BucketName),
-			Key:    aws.String(key),
-		})
-	} else {
-		if segCtxSet {
-			_, err = s.s3Obj.DeleteObjectWithContext(segCtx, &s3.DeleteObjectInput{
-				Bucket: aws.String(s.BucketName),
-				Key:    aws.String(key),
-			})
-		} else {
-			_, err = s.s3Obj.DeleteObject(&s3.DeleteObjectInput{
-				Bucket: aws.String(s.BucketName),
-				Key:    aws.String(key),
-			})
-		}
-	}
+	_, err = s.s3Obj.DeleteObjectWithContext(callCtx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.BucketName),
+		Key:    aws.String(key),
+	})
 
 	// evaluate result
 	if err != nil {
@@ -986,18 +942,10 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 	// delete objects from s3 bucket
 	var output *s3.DeleteObjectsOutput
 
-	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
-		defer cancel()
+	callCtx, callCancel := ensureS3Ctx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = s.s3Obj.DeleteObjectsWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = s.s3Obj.DeleteObjectsWithContext(segCtx, input)
-		} else {
-			output, err = s.s3Obj.DeleteObjects(input)
-		}
-	}
+	output, err = s.s3Obj.DeleteObjectsWithContext(callCtx, input)
 
 	// evaluate result
 	if err != nil {
@@ -1115,18 +1063,10 @@ func (s *S3) ListFileKeys(timeOutDuration *time.Duration, nextToken string, maxR
 	// perform action
 	var output *s3.ListObjectsV2Output
 
-	if timeOutDuration != nil {
-		ctx, cancel := context.WithTimeout(segCtx, *timeOutDuration)
-		defer cancel()
+	callCtx, callCancel := ensureS3Ctx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = s.s3Obj.ListObjectsV2WithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = s.s3Obj.ListObjectsV2WithContext(segCtx, input)
-		} else {
-			output, err = s.s3Obj.ListObjectsV2(input)
-		}
-	}
+	output, err = s.s3Obj.ListObjectsV2WithContext(callCtx, input)
 
 	// evaluate result
 	if err != nil {

@@ -45,6 +45,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/xray"
@@ -53,6 +54,31 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
+
+// defaultRoute53CallTimeout bounds any single Route53 SDK call that
+// would otherwise execute without a deadline. Applied in
+// ensureRoute53Ctx when the caller does not supply its own timeout.
+// 30 seconds is consistent with wrapper/ses/ses.go
+// defaultSESCallTimeout and wrapper/sns/sns.go defaultSNSCallTimeout.
+const defaultRoute53CallTimeout = 30 * time.Second
+
+// ensureRoute53Ctx normalizes the (segCtx) value into a
+// (ctx, cancel) pair so every Route53 SDK call has an upper-bound
+// deadline. Route53 methods do not expose a timeOutDuration parameter,
+// so this function only handles two branches:
+//
+//  1. Xray segment ctx present (segCtx != nil): segCtx wrapped in
+//     WithTimeout(defaultRoute53CallTimeout).
+//  2. No segment ctx: context.Background() with
+//     defaultRoute53CallTimeout.
+//
+// Callers MUST invoke the returned cancel before returning.
+func ensureRoute53Ctx(segCtx context.Context) (context.Context, context.CancelFunc) {
+	if segCtx != nil {
+		return context.WithTimeout(segCtx, defaultRoute53CallTimeout)
+	}
+	return context.WithTimeout(context.Background(), defaultRoute53CallTimeout)
+}
 
 // ================================================================================================================
 // STRUCTS
@@ -310,11 +336,10 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 		HostedZoneId: aws.String(hostedZoneID),
 	}
 
-	if segCtx == nil {
-		_, err = r53Client.ChangeResourceRecordSets(input)
-	} else {
-		_, err = r53Client.ChangeResourceRecordSetsWithContext(segCtx, input)
-	}
+	callCtx, callCancel := ensureRoute53Ctx(segCtx)
+	defer callCancel()
+
+	_, err = r53Client.ChangeResourceRecordSetsWithContext(callCtx, input)
 	r.r53ClientMutex.RUnlock()
 
 	if err != nil {
@@ -424,11 +449,10 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 		HostedZoneId: aws.String(hostedZoneID),
 	}
 
-	if segCtx == nil {
-		_, err = r53Client.ChangeResourceRecordSets(input)
-	} else {
-		_, err = r53Client.ChangeResourceRecordSetsWithContext(segCtx, input)
-	}
+	callCtx, callCancel := ensureRoute53Ctx(segCtx)
+	defer callCancel()
+
+	_, err = r53Client.ChangeResourceRecordSetsWithContext(callCtx, input)
 	r.r53ClientMutex.RUnlock()
 
 	if err != nil {

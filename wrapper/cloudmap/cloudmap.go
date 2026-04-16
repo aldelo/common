@@ -61,6 +61,39 @@ import (
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
 
+// defaultCloudMapCallTimeout bounds any single CloudMap SDK call that
+// would otherwise execute without a deadline. Applied in
+// ensureCloudMapCtx when the caller does not supply its own
+// timeOutDuration. 30 seconds is consistent with
+// wrapper/ses/ses.go defaultSESCallTimeout and
+// wrapper/sns/sns.go defaultSNSCallTimeout.
+const defaultCloudMapCallTimeout = 30 * time.Second
+
+// ensureCloudMapCtx normalizes the (segCtx, segCtxSet, timeOutDuration)
+// triple into a single (ctx, cancel) pair so every CloudMap SDK call
+// has an upper-bound deadline:
+//
+//  1. Caller-supplied timeout: timeOutDuration[0] wins, applied to
+//     segCtx (or context.Background() if segCtx is nil).
+//  2. Xray segment ctx set (segCtxSet && segCtx != nil): segCtx
+//     wrapped in WithTimeout(defaultCloudMapCallTimeout).
+//  3. Neither: context.Background() with defaultCloudMapCallTimeout.
+//
+// Callers MUST invoke the returned cancel before returning.
+func ensureCloudMapCtx(segCtx context.Context, segCtxSet bool, timeOutDuration []time.Duration) (context.Context, context.CancelFunc) {
+	if len(timeOutDuration) > 0 {
+		parent := segCtx
+		if parent == nil {
+			parent = context.Background()
+		}
+		return context.WithTimeout(parent, timeOutDuration[0])
+	}
+	if segCtxSet && segCtx != nil {
+		return context.WithTimeout(segCtx, defaultCloudMapCallTimeout)
+	}
+	return context.WithTimeout(context.Background(), defaultCloudMapCallTimeout)
+}
+
 // ================================================================================================================
 // STRUCTS
 // ================================================================================================================
@@ -379,18 +412,10 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 	// invoke action
 	var output *servicediscovery.CreateHttpNamespaceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.CreateHttpNamespaceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.CreateHttpNamespaceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.CreateHttpNamespace(input)
-		}
-	}
+	output, err = sdClient.CreateHttpNamespaceWithContext(callCtx, input)
 
 	if err != nil {
 		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: (Create Action) %s", err.Error())
@@ -515,18 +540,10 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 	// invoke action
 	var output *servicediscovery.CreatePrivateDnsNamespaceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.CreatePrivateDnsNamespaceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.CreatePrivateDnsNamespaceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.CreatePrivateDnsNamespace(input)
-		}
-	}
+	output, err = sdClient.CreatePrivateDnsNamespaceWithContext(callCtx, input)
 
 	if err != nil {
 		err = errors.New("CloudMap CreatePrivateDnsNamespace Failed: (Create Action) " + err.Error())
@@ -642,18 +659,10 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 	// invoke action
 	var output *servicediscovery.CreatePublicDnsNamespaceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.CreatePublicDnsNamespaceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.CreatePublicDnsNamespaceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.CreatePublicDnsNamespace(input)
-		}
-	}
+	output, err = sdClient.CreatePublicDnsNamespaceWithContext(callCtx, input)
 
 	if err != nil {
 		err = errors.New("CloudMap CreatePublicDnsNamespace Failed: (Create Action) " + err.Error())
@@ -733,18 +742,10 @@ func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Dur
 	// invoke action
 	var output *servicediscovery.GetNamespaceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.GetNamespaceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.GetNamespaceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.GetNamespace(input)
-		}
-	}
+	output, err = sdClient.GetNamespaceWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -874,18 +875,10 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 	// invoke action
 	var output *servicediscovery.ListNamespacesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.ListNamespacesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.ListNamespacesWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.ListNamespaces(input)
-		}
-	}
+	output, err = sdClient.ListNamespacesWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -1026,18 +1019,10 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 		return !lastPage
 	}
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		err = sdClient.ListNamespacesPagesWithContext(ctx, input, fn)
-	} else {
-		if segCtxSet {
-			err = sdClient.ListNamespacesPagesWithContext(segCtx, input, fn)
-		} else {
-			err = sdClient.ListNamespacesPages(input, fn)
-		}
-	}
+	err = sdClient.ListNamespacesPagesWithContext(callCtx, input, fn)
 
 	if err != nil {
 		// handle error
@@ -1111,18 +1096,10 @@ func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.
 	// invoke action
 	var output *servicediscovery.DeleteNamespaceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.DeleteNamespaceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.DeleteNamespaceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.DeleteNamespace(input)
-		}
-	}
+	output, err = sdClient.DeleteNamespaceWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -1349,18 +1326,10 @@ func (sd *CloudMap) CreateService(name string,
 	// invoke action
 	var output *servicediscovery.CreateServiceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.CreateServiceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.CreateServiceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.CreateService(input)
-		}
-	}
+	output, err = sdClient.CreateServiceWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -1550,18 +1519,10 @@ func (sd *CloudMap) UpdateService(serviceId string,
 	// invoke action
 	var output *servicediscovery.UpdateServiceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.UpdateServiceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.UpdateServiceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.UpdateService(input)
-		}
-	}
+	output, err = sdClient.UpdateServiceWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -1641,18 +1602,10 @@ func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duratio
 	// invoke action
 	var output *servicediscovery.GetServiceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.GetServiceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.GetServiceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.GetService(input)
-		}
-	}
+	output, err = sdClient.GetServiceWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -1782,18 +1735,10 @@ func (sd *CloudMap) ListServices(filter []string,
 	// invoke action
 	var output *servicediscovery.ListServicesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.ListServicesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.ListServicesWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.ListServices(input)
-		}
-	}
+	output, err = sdClient.ListServicesWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -1934,18 +1879,10 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 		return !lastPage
 	}
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		err = sdClient.ListServicesPagesWithContext(ctx, input, fn)
-	} else {
-		if segCtxSet {
-			err = sdClient.ListServicesPagesWithContext(segCtx, input, fn)
-		} else {
-			err = sdClient.ListServicesPages(input, fn)
-		}
-	}
+	err = sdClient.ListServicesPagesWithContext(callCtx, input, fn)
 
 	if err != nil {
 		// handle error
@@ -2018,18 +1955,10 @@ func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Dura
 	}
 
 	// invoke action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		_, err = sdClient.DeleteServiceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = sdClient.DeleteServiceWithContext(segCtx, input)
-		} else {
-			_, err = sdClient.DeleteService(input)
-		}
-	}
+	_, err = sdClient.DeleteServiceWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -2174,18 +2103,10 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 	// invoke action
 	var output *servicediscovery.RegisterInstanceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.RegisterInstanceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.RegisterInstanceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.RegisterInstance(input)
-		}
-	}
+	output, err = sdClient.RegisterInstanceWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -2293,18 +2214,10 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 	}
 
 	// invoke action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		_, err = sdClient.UpdateInstanceCustomHealthStatusWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = sdClient.UpdateInstanceCustomHealthStatusWithContext(segCtx, input)
-		} else {
-			_, err = sdClient.UpdateInstanceCustomHealthStatus(input)
-		}
-	}
+	_, err = sdClient.UpdateInstanceCustomHealthStatusWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -2390,18 +2303,10 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 	// invoke action
 	var output *servicediscovery.DeregisterInstanceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.DeregisterInstanceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.DeregisterInstanceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.DeregisterInstance(input)
-		}
-	}
+	output, err = sdClient.DeregisterInstanceWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -2490,18 +2395,10 @@ func (sd *CloudMap) GetInstance(instanceId string,
 	// invoke action
 	var output *servicediscovery.GetInstanceOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.GetInstanceWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.GetInstanceWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.GetInstance(input)
-		}
-	}
+	output, err = sdClient.GetInstanceWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -2622,18 +2519,10 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 	// invoke action
 	var output *servicediscovery.GetInstancesHealthStatusOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.GetInstancesHealthStatusWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.GetInstancesHealthStatusWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.GetInstancesHealthStatus(input)
-		}
-	}
+	output, err = sdClient.GetInstancesHealthStatusWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -2773,18 +2662,10 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 		return !lastPage
 	}
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		err = sdClient.GetInstancesHealthStatusPagesWithContext(ctx, input, fn)
-	} else {
-		if segCtxSet {
-			err = sdClient.GetInstancesHealthStatusPagesWithContext(segCtx, input, fn)
-		} else {
-			err = sdClient.GetInstancesHealthStatusPages(input, fn)
-		}
-	}
+	err = sdClient.GetInstancesHealthStatusPagesWithContext(callCtx, input, fn)
 
 	if err != nil {
 		// handle error
@@ -2901,18 +2782,10 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 	// invoke action
 	var output *servicediscovery.DiscoverInstancesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.DiscoverInstancesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.DiscoverInstancesWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.DiscoverInstances(input)
-		}
-	}
+	output, err = sdClient.DiscoverInstancesWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -3022,18 +2895,10 @@ func (sd *CloudMap) ListInstances(serviceId string,
 	// invoke action
 	var output *servicediscovery.ListInstancesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.ListInstancesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.ListInstancesWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.ListInstances(input)
-		}
-	}
+	output, err = sdClient.ListInstancesWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -3154,18 +3019,10 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 		return !lastPage
 	}
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		err = sdClient.ListInstancesPagesWithContext(ctx, input, fn)
-	} else {
-		if segCtxSet {
-			err = sdClient.ListInstancesPagesWithContext(segCtx, input, fn)
-		} else {
-			err = sdClient.ListInstancesPages(input, fn)
-		}
-	}
+	err = sdClient.ListInstancesPagesWithContext(callCtx, input, fn)
 
 	if err != nil {
 		// handle error
@@ -3246,18 +3103,10 @@ func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Dur
 	// invoke action
 	var output *servicediscovery.GetOperationOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.GetOperationWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.GetOperationWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.GetOperation(input)
-		}
-	}
+	output, err = sdClient.GetOperationWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -3435,18 +3284,10 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 	// invoke action
 	var output *servicediscovery.ListOperationsOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		output, err = sdClient.ListOperationsWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = sdClient.ListOperationsWithContext(segCtx, input)
-		} else {
-			output, err = sdClient.ListOperations(input)
-		}
-	}
+	output, err = sdClient.ListOperationsWithContext(callCtx, input)
 
 	if err != nil {
 		// handle error
@@ -3635,18 +3476,10 @@ func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperation
 		return !lastPage
 	}
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
+	callCtx, callCancel := ensureCloudMapCtx(segCtx, segCtxSet, timeOutDuration)
+	defer callCancel()
 
-		err = sdClient.ListOperationsPagesWithContext(ctx, input, fn)
-	} else {
-		if segCtxSet {
-			err = sdClient.ListOperationsPagesWithContext(segCtx, input, fn)
-		} else {
-			err = sdClient.ListOperationsPages(input, fn)
-		}
-	}
+	err = sdClient.ListOperationsPagesWithContext(callCtx, input, fn)
 
 	if err != nil {
 		// handle error

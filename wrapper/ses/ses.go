@@ -863,6 +863,10 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 				// SEC-001 (2026-04-16): mask email PII in xray metadata —
 				// email addresses and subject lines can contain or constitute
 				// personally identifiable information.
+				// NOTE (A1-F4): CC and BCC are intentionally NOT emitted to xray
+				// metadata — they contain PII (email addresses) and are not needed
+				// for debugging. If CC/BCC logging is added in the future, apply
+				// maskEmailsForXray before emitting.
 				if e := seg.SafeAddMetadata("SES-SendEmail-Email-From", maskEmailForXray(email.From)); e != nil {
 					xray.LogXrayAddFailure("SES-SendEmail", e)
 				}
@@ -967,6 +971,8 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 				// SEC-001 (2026-04-16): mask email PII in xray metadata —
 				// email addresses and subject lines can contain or constitute
 				// personally identifiable information.
+				// NOTE (A1-F4): CC and BCC are intentionally NOT emitted to xray
+				// metadata — same rationale as SendEmail above.
 				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Email-From", maskEmailForXray(email.From)))
 				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Email-To", maskEmailsForXray(email.To)))
 				xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendRawEmail-Email-Subject", maskSubjectForXray(email.Subject)))
@@ -1365,6 +1371,8 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 			// senderEmail, returnPath, replyTo, and emailTarget.To are
 			// all email addresses containing personally identifiable
 			// information.
+			// NOTE (A1-F4): emailTarget.CC and emailTarget.BCC are intentionally
+			// NOT emitted to xray metadata — same rationale as SendEmail above.
 			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-Email-From", maskEmailForXray(senderEmail)))
 			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReturnPath", maskEmailForXray(returnPath)))
 			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendTemplateEmail-Email-ReplyTo", maskEmailForXray(replyTo)))
@@ -1529,6 +1537,8 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 
 		defer seg.Close()
 		defer func() {
+			// NOTE (A1-F4): per-target CC and BCC are intentionally NOT emitted
+			// to xray metadata — same rationale as SendEmail above.
 			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-Email-From", maskEmailForXray(senderEmail)))
 			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReturnPath", maskEmailForXray(returnPath)))
 			xray.LogXrayAddFailure("SES", seg.SafeAddMetadata("SES-SendBulkTemplateEmail-ReplyTo", maskEmailForXray(replyTo)))

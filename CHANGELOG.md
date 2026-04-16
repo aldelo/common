@@ -14,6 +14,37 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ## [Unreleased]
 
+### Changed (behavioral — review before upgrading)
+
+- **CORS fail-closed (wrapper/gin):** When `AllowAllOrigins` is false and
+  `AllowOrigins` is empty and `AllowOriginFunc` is nil, CORS middleware is
+  NO LONGER installed. Previously, an empty config silently allowed all
+  origins. Now the server returns no `Access-Control-Allow-Origin` header,
+  causing browsers to reject cross-origin requests. Consumers relying on
+  the previous permissive-by-default behavior must explicitly set
+  `AllowOrigins` or `AllowAllOrigins = true`. (gin.go:842-856, SEC-003)
+
+- **REST error wrapping (wrapper/rest):** `rest.GET`, `rest.POST`,
+  `rest.PUT`, `rest.DELETE` now wrap response-body read errors with
+  `fmt.Errorf("reading response body: %w", err)` instead of returning
+  the raw `io.ReadAll` error. Callers using `errors.Is(err, ...)` on the
+  returned error should use `errors.Unwrap` or `errors.As` if they need
+  the inner error. (rest.go:188,266,343,409)
+
+### Fixed
+
+- **SES/SQS deadline enforcement:** All 12 SES and 15 SQS methods now
+  enforce a 30s default context deadline via `ensureSESCtx`/`ensureSQSCtx`,
+  matching the existing `ensureSNSCtx` pattern. Prevents goroutine leaks
+  during AWS regional degradation. (A1-F1)
+- **TCPServer data race:** Eliminated `_tcpListener` read/write race
+  between Accept goroutine and Close() via goroutine-local capture under
+  RLock + `net.ErrClosed` clean shutdown. (A1-F3)
+- **ginxray silent error discard:** All 7 `_ = seg.AddMetadata(...)` sites
+  in ginxray now route through `LogXrayAddFailure()`. (A1-F2)
+- **ginxray raw body PII:** Removed raw request/response body from xray
+  metadata to prevent PII exposure in traces. (A1-F6)
+
 ## [v1.8.2] — 2026-04-15
 
 Patch release. Closes five `wrapper/sns` findings from the **SP-010

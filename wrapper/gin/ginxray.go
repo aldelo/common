@@ -129,13 +129,16 @@ func traceRequestData(c *gin.Context, seg *awsxray.Segment) {
 
 		reqHdr, _ := util.ReadHttpRequestHeaders(req)
 		if reqHdr != nil {
-			_ = seg.AddMetadata("Request_Headers", reqHdr)
+			xray.LogXrayAddFailure("GinXRay", seg.AddMetadata("Request_Headers", reqHdr))
 		} else {
-			_ = seg.AddMetadata("Request_Headers", "")
+			xray.LogXrayAddFailure("GinXRay", seg.AddMetadata("Request_Headers", ""))
 		}
 
-		reqBdy, _ := util.ReadHttpRequestBody(req)
-		_ = seg.AddMetadata("Request_Body", string(reqBdy))
+		// SEC-002 (2026-04-16): raw request body removed from xray metadata —
+		// POST payloads can contain PII (emails, names, phone numbers, payment
+		// data). Logging raw bodies to xray traces creates a PII exposure risk.
+		// See A1-F6.
+		_, _ = util.ReadHttpRequestBody(req)
 	} else {
 		seg.Unlock()
 	}
@@ -264,16 +267,15 @@ func traceResponseData(c *gin.Context, seg *awsxray.Segment, respBody *bytes.Buf
 
 		respHdr, _ := util.ParseHttpHeader(c.Writer.Header())
 		if respHdr != nil {
-			_ = seg.AddMetadata("Response_Headers", respHdr)
+			xray.LogXrayAddFailure("GinXRay", seg.AddMetadata("Response_Headers", respHdr))
 		} else {
-			_ = seg.AddMetadata("Response_Headers", "")
+			xray.LogXrayAddFailure("GinXRay", seg.AddMetadata("Response_Headers", ""))
 		}
 
-		if respBody != nil {
-			_ = seg.AddMetadata("Response_Body", string(respBody.Bytes()))
-		} else {
-			_ = seg.AddMetadata("Response_Body", "")
-		}
+		// SEC-002 (2026-04-16): raw response body removed from xray metadata —
+		// response payloads can contain PII. Same rationale as request body
+		// removal above. See A1-F6.
+		// respBody is intentionally not logged.
 	} else {
 		seg.Unlock()
 	}

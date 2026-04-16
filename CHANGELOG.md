@@ -38,7 +38,7 @@ to `v1.8.3` as a drop-in for deadline-safety and observability guarantees.
   `fmt.Errorf("reading response body: %w", err)` instead of returning
   the raw `io.ReadAll` error. Callers using `errors.Is(err, ...)` on the
   returned error should use `errors.Unwrap` or `errors.As` if they need
-  the inner error. (rest.go:188,266,343,409)
+  the inner error. (rest.go:192,270,347,413,491,596,700,790)
 
 ### Fixed
 

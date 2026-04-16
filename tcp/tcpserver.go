@@ -18,6 +18,7 @@ package tcp
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -117,10 +118,40 @@ func (s *TCPServer) Serve() (err error) {
 					log.Printf("tcp server: recovered panic in listener loop: %v\n%s", r, debug.Stack())
 				}
 			}()
+
+			// Capture the listener into a goroutine-local variable under the
+			// lock. This eliminates the data race: the local copy lives on
+			// the goroutine's stack and cannot race with Close() nilling the
+			// field. Close() calls listener.Close() to unblock Accept().
+			s._mux.RLock()
+			ln := s._tcpListener
+			s._mux.RUnlock()
+
 			for {
 				// perform listener action on connected tcp client
-				if c, e := s._tcpListener.Accept(); e != nil {
-					// error encountered
+				if c, e := ln.Accept(); e != nil {
+					// Check for intentional shutdown (listener closed by Close())
+					if errors.Is(e, net.ErrClosed) {
+						// clean shutdown — fire handler with a normalized message
+						if s.ListenerErrorHandler != nil {
+							s.ListenerErrorHandler(fmt.Errorf("TCP Server Closed"))
+						}
+
+						s._mux.Lock()
+						for _, v := range s._clients {
+							if v != nil {
+								_ = v.Close()
+							}
+						}
+						s._clients = nil
+						s._clientEnd = nil
+						s._serving = false
+						s._mux.Unlock()
+
+						return
+					}
+
+					// error encountered (not a clean close)
 					if s.ListenerErrorHandler != nil {
 						if strings.Contains(strings.ToLower(e.Error()), "closed") {
 							s.ListenerErrorHandler(fmt.Errorf("TCP Server Closed"))
@@ -186,16 +217,17 @@ func (s *TCPServer) Close() {
 		return
 	}
 
-	// store listener reference before acquiring lock
 	s._mux.Lock()
 	listener := s._tcpListener
-	s._tcpListener = nil
-	s._mux.Unlock()
-
-	// close listener outside mutex to avoid blocking
+	// Close the listener while holding the lock. This unblocks Accept()
+	// on the goroutine's local copy (same underlying net.Listener), causing
+	// it to return net.ErrClosed and exit cleanly. Setting _tcpListener to
+	// nil afterward prevents double-close on a second Close() call.
 	if listener != nil {
 		_ = listener.Close()
 	}
+	s._tcpListener = nil
+	s._mux.Unlock()
 
 	s._mux.Lock()
 	defer s._mux.Unlock()

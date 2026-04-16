@@ -28,17 +28,11 @@ type serverOpts struct {
 	clientErrorHandler   func(clientIP string, err error)
 }
 
-// safeCloseServer shuts down a TCPServer without triggering the data race
-// in tcpserver.go. The production code reads s._tcpListener at line 116
-// without holding _mux. Any write to _tcpListener (even under _mux) races
-// with that read. To work around this we:
-//   1. Read the listener reference under the lock (safe: goroutine only reads the field)
-//   2. Close the listener (Accept returns error, goroutine exits via return)
-//   3. Wait for the ListenerErrorHandler to fire (proves goroutine exited)
-//   4. Clean up client maps under the lock
-//
-// We intentionally do NOT write to _tcpListener — the goroutine never loops
-// back to read it because the error path in Accept causes it to return.
+// safeCloseServer shuts down a TCPServer and waits for the listener goroutine
+// to exit. The production Close() method is now race-free (the listener goroutine
+// holds a local copy of the net.Listener obtained under _mux, and Close() calls
+// listener.Close() to unblock Accept()). This helper adds the synchronization
+// wait via listenerDone channel that tests need to avoid teardown races.
 func safeCloseServer(srv *TCPServer, listenerDone <-chan struct{}) {
 	if srv == nil {
 		return
@@ -550,4 +544,65 @@ func TestServerSurvivesClientHandlerPanic(t *testing.T) {
 // atomicAddInt32 wraps sync/atomic.AddInt32 for readability in test closures.
 func atomicAddInt32(addr *int32, delta int32) int32 {
 	return atomic.AddInt32(addr, delta)
+}
+
+// TestTCPServer_ConcurrentClose_NoRace verifies that calling Close() while
+// the listener goroutine is blocked in Accept() does not trigger a data race.
+// Before the fix (A1-F3), the listener goroutine read s._tcpListener without
+// holding _mux, racing with Close() which wrote s._tcpListener = nil under
+// _mux. The fix captures the listener into a goroutine-local variable under
+// the lock, so Close() only needs to call listener.Close() to unblock Accept().
+//
+// This test MUST be run with -race to be meaningful.
+func TestTCPServer_ConcurrentClose_NoRace(t *testing.T) {
+	port := getFreePort(t)
+
+	listenerDone := make(chan struct{}, 1)
+
+	srv := &TCPServer{
+		Port: port,
+		ListenerErrorHandler: func(err error) {
+			select {
+			case listenerDone <- struct{}{}:
+			default:
+			}
+		},
+		ClientReceiveHandler: func(string, []byte, func([]byte, string) error) {},
+		ClientErrorHandler:   func(string, error) {},
+		ReadDeadlineDuration: 300 * time.Millisecond,
+		ReaderYieldDuration:  5 * time.Millisecond,
+	}
+
+	if err := srv.Serve(); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+
+	// Give the listener goroutine time to enter Accept().
+	time.Sleep(50 * time.Millisecond)
+
+	// Close from the main goroutine while Accept() is blocking in the
+	// listener goroutine. Under -race, the old code would report a data
+	// race on _tcpListener here. The fix eliminates the race.
+	srv.Close()
+
+	// Wait for the listener goroutine to exit cleanly.
+	select {
+	case <-listenerDone:
+		// success — listener exited cleanly
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for listener goroutine to exit after Close()")
+	}
+
+	// Verify server state is cleaned up (read _serving under the lock to
+	// avoid a race with the listener goroutine's cleanup path).
+	srv._mux.RLock()
+	serving := srv._serving
+	srv._mux.RUnlock()
+	if serving {
+		t.Error("expected _serving to be false after Close()")
+	}
+	clients := srv.GetConnectedClients()
+	if len(clients) != 0 {
+		t.Errorf("expected 0 connected clients after Close, got %d", len(clients))
+	}
 }

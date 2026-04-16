@@ -64,6 +64,38 @@ import (
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
 
+// defaultSESCallTimeout bounds any single SES SDK call that would
+// otherwise execute without a deadline. Applied in ensureSESCtx when
+// the caller does not supply its own timeOutDuration. 30 seconds is
+// consistent with wrapper/sns/sns.go defaultSNSCallTimeout and
+// wrapper/kms/kms.go defaultKMSCallTimeout.
+const defaultSESCallTimeout = 30 * time.Second
+
+// ensureSESCtx normalizes the (segCtx, segCtxSet, timeOutDuration)
+// triple into a single (ctx, cancel) pair so every SES SDK call has
+// an upper-bound deadline:
+//
+//  1. Caller-supplied timeout: timeOutDuration[0] wins, applied to
+//     segCtx (or context.Background() if segCtx is nil).
+//  2. Xray segment ctx set (segCtxSet && segCtx != nil): segCtx
+//     wrapped in WithTimeout(defaultSESCallTimeout).
+//  3. Neither: context.Background() with defaultSESCallTimeout.
+//
+// Callers MUST invoke the returned cancel before returning.
+func ensureSESCtx(segCtx context.Context, segCtxSet bool, timeOutDuration []time.Duration) (context.Context, context.CancelFunc) {
+	if len(timeOutDuration) > 0 {
+		parent := segCtx
+		if parent == nil {
+			parent = context.Background()
+		}
+		return context.WithTimeout(parent, timeOutDuration[0])
+	}
+	if segCtxSet && segCtx != nil {
+		return context.WithTimeout(segCtx, defaultSESCallTimeout)
+	}
+	return context.WithTimeout(context.Background(), defaultSESCallTimeout)
+}
+
 // ================================================================================================================
 // STRUCTS
 // ================================================================================================================
@@ -786,21 +818,13 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 	// compose input
 	input := &ses.GetSendQuotaInput{}
 
-	// get send quota from ses
+	// SP-010 pass-6 A1-F1 (2026-04-16): bounded via ensureSESCtx —
+	// same pattern as wrapper/sns/sns.go ensureSNSCtx.
 	var output *ses.GetSendQuotaOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.GetSendQuotaWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.GetSendQuotaWithContext(segCtx, input)
-		} else {
-			output, err = client.GetSendQuota(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.GetSendQuotaWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -902,18 +926,9 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 	// send out email
 	var output *ses.SendEmailOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.SendEmailWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.SendEmailWithContext(segCtx, input)
-		} else {
-			output, err = client.SendEmail(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.SendEmailWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate output
 	if err != nil {
@@ -1028,18 +1043,9 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 	// send out email
 	var output *ses.SendRawEmailOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.SendRawEmailWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.SendRawEmailWithContext(segCtx, input)
-		} else {
-			output, err = client.SendRawEmail(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.SendRawEmailWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate output
 	if err != nil {
@@ -1141,18 +1147,9 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 	}
 
 	// create template action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.CreateTemplateWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.CreateTemplateWithContext(segCtx, input)
-		} else {
-			_, err = client.CreateTemplate(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.CreateTemplateWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1245,18 +1242,9 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 	}
 
 	// update template action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.UpdateTemplateWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.UpdateTemplateWithContext(segCtx, input)
-		} else {
-			_, err = client.UpdateTemplate(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.UpdateTemplateWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1311,19 +1299,10 @@ func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Durati
 		TemplateName: aws.String(templateName),
 	}
 
-	// update template action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.DeleteTemplateWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.DeleteTemplateWithContext(segCtx, input)
-		} else {
-			_, err = client.DeleteTemplate(input)
-		}
-	}
+	// delete template action
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.DeleteTemplateWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1480,18 +1459,9 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 	// perform action
 	var output *ses.SendTemplatedEmailOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.SendTemplatedEmailWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.SendTemplatedEmailWithContext(segCtx, input)
-		} else {
-			output, err = client.SendTemplatedEmail(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.SendTemplatedEmailWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1671,18 +1641,9 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 	// perform action
 	var output *ses.SendBulkTemplatedEmailOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.SendBulkTemplatedEmailWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.SendBulkTemplatedEmailWithContext(segCtx, input)
-		} else {
-			output, err = client.SendBulkTemplatedEmail(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.SendBulkTemplatedEmailWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1807,18 +1768,9 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.CreateCustomVerificationEmailTemplateWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.CreateCustomVerificationEmailTemplateWithContext(segCtx, input)
-		} else {
-			_, err = client.CreateCustomVerificationEmailTemplate(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.CreateCustomVerificationEmailTemplateWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1920,18 +1872,9 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.UpdateCustomVerificationEmailTemplateWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.UpdateCustomVerificationEmailTemplateWithContext(segCtx, input)
-		} else {
-			_, err = client.UpdateCustomVerificationEmailTemplate(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.UpdateCustomVerificationEmailTemplateWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1987,18 +1930,9 @@ func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOut
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = client.DeleteCustomVerificationEmailTemplateWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = client.DeleteCustomVerificationEmailTemplateWithContext(segCtx, input)
-		} else {
-			_, err = client.DeleteCustomVerificationEmailTemplate(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = client.DeleteCustomVerificationEmailTemplateWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2070,18 +2004,9 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 	// perform action
 	var output *ses.SendCustomVerificationEmailOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = client.SendCustomVerificationEmailWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = client.SendCustomVerificationEmailWithContext(segCtx, input)
-		} else {
-			output, err = client.SendCustomVerificationEmail(input)
-		}
-	}
+	callCtx, callCancel := ensureSESCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = client.SendCustomVerificationEmailWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {

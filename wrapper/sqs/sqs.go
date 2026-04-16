@@ -61,6 +61,38 @@ import (
 	awsxray "github.com/aws/aws-xray-sdk-go/xray"
 )
 
+// defaultSQSCallTimeout bounds any single SQS SDK call that would
+// otherwise execute without a deadline. Applied in ensureSQSCtx when
+// the caller does not supply its own timeOutDuration. 30 seconds is
+// consistent with wrapper/sns/sns.go defaultSNSCallTimeout and
+// wrapper/kms/kms.go defaultKMSCallTimeout.
+const defaultSQSCallTimeout = 30 * time.Second
+
+// ensureSQSCtx normalizes the (segCtx, segCtxSet, timeOutDuration)
+// triple into a single (ctx, cancel) pair so every SQS SDK call has
+// an upper-bound deadline:
+//
+//  1. Caller-supplied timeout: timeOutDuration[0] wins, applied to
+//     segCtx (or context.Background() if segCtx is nil).
+//  2. Xray segment ctx set (segCtxSet && segCtx != nil): segCtx
+//     wrapped in WithTimeout(defaultSQSCallTimeout).
+//  3. Neither: context.Background() with defaultSQSCallTimeout.
+//
+// Callers MUST invoke the returned cancel before returning.
+func ensureSQSCtx(segCtx context.Context, segCtxSet bool, timeOutDuration []time.Duration) (context.Context, context.CancelFunc) {
+	if len(timeOutDuration) > 0 {
+		parent := segCtx
+		if parent == nil {
+			parent = context.Background()
+		}
+		return context.WithTimeout(parent, timeOutDuration[0])
+	}
+	if segCtxSet && segCtx != nil {
+		return context.WithTimeout(segCtx, defaultSQSCallTimeout)
+	}
+	return context.WithTimeout(context.Background(), defaultSQSCallTimeout)
+}
+
 // ================================================================================================================
 // STRUCTS
 // ================================================================================================================
@@ -696,21 +728,13 @@ func (s *SQS) CreateQueue(queueName string,
 		input.Attributes = s.toAwsCreateQueueAttributes(attributes)
 	}
 
-	// perform action
+	// SP-010 pass-6 A1-F1 (2026-04-16): bounded via ensureSQSCtx —
+	// same pattern as wrapper/sns/sns.go ensureSNSCtx.
 	var output *awssqs.CreateQueueOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.CreateQueueWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.CreateQueueWithContext(segCtx, input)
-		} else {
-			output, err = cli.CreateQueue(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.CreateQueueWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -769,18 +793,9 @@ func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (q
 	// perform action
 	var output *awssqs.GetQueueUrlOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.GetQueueUrlWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.GetQueueUrlWithContext(segCtx, input)
-		} else {
-			output, err = cli.GetQueueUrl(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.GetQueueUrlWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -851,18 +866,9 @@ func (s *SQS) PurgeQueue(queueUrl string, timeOutDuration ...time.Duration) (err
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = cli.PurgeQueueWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = cli.PurgeQueueWithContext(segCtx, input)
-		} else {
-			_, err = cli.PurgeQueue(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = cli.PurgeQueueWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -916,18 +922,9 @@ func (s *SQS) DeleteQueue(queueUrl string, timeOutDuration ...time.Duration) (er
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = cli.DeleteQueueWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = cli.DeleteQueueWithContext(segCtx, input)
-		} else {
-			_, err = cli.DeleteQueue(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = cli.DeleteQueueWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1003,18 +1000,9 @@ func (s *SQS) ListQueues(queueNamePrefix string,
 	// perform action
 	var output *awssqs.ListQueuesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.ListQueuesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.ListQueuesWithContext(segCtx, input)
-		} else {
-			output, err = cli.ListQueues(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.ListQueuesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1096,18 +1084,9 @@ func (s *SQS) ListDeadLetterSourceQueues(queueUrl string,
 	// perform action
 	var output *awssqs.ListDeadLetterSourceQueuesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.ListDeadLetterSourceQueuesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.ListDeadLetterSourceQueuesWithContext(segCtx, input)
-		} else {
-			output, err = cli.ListDeadLetterSourceQueues(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.ListDeadLetterSourceQueuesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1270,18 +1249,9 @@ func (s *SQS) GetQueueAttributes(queueUrl string,
 	// perform action
 	var output *awssqs.GetQueueAttributesOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.GetQueueAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.GetQueueAttributesWithContext(segCtx, input)
-		} else {
-			output, err = cli.GetQueueAttributes(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.GetQueueAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1436,18 +1406,9 @@ func (s *SQS) SetQueueAttributes(queueUrl string,
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = cli.SetQueueAttributesWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = cli.SetQueueAttributesWithContext(segCtx, input)
-		} else {
-			_, err = cli.SetQueueAttributes(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = cli.SetQueueAttributesWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1554,18 +1515,9 @@ func (s *SQS) SendMessage(queueUrl string,
 	// perform action
 	var output *awssqs.SendMessageOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.SendMessageWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.SendMessageWithContext(segCtx, input)
-		} else {
-			output, err = cli.SendMessage(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.SendMessageWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1731,18 +1683,9 @@ func (s *SQS) SendMessageFifo(queueUrl string,
 	// perform action
 	var output *awssqs.SendMessageOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.SendMessageWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.SendMessageWithContext(segCtx, input)
-		} else {
-			output, err = cli.SendMessage(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.SendMessageWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1852,18 +1795,9 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 	// perform action
 	var output *awssqs.SendMessageBatchOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.SendMessageBatchWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.SendMessageBatchWithContext(segCtx, input)
-		} else {
-			output, err = cli.SendMessageBatch(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.SendMessageBatchWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -1982,18 +1916,9 @@ func (s *SQS) SendMessageBatchFifo(queueUrl string,
 	// perform action
 	var output *awssqs.SendMessageBatchOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.SendMessageBatchWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.SendMessageBatchWithContext(segCtx, input)
-		} else {
-			output, err = cli.SendMessageBatch(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.SendMessageBatchWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2203,18 +2128,9 @@ func (s *SQS) ReceiveMessage(queueUrl string,
 	// perform action
 	var output *awssqs.ReceiveMessageOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.ReceiveMessageWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.ReceiveMessageWithContext(segCtx, input)
-		} else {
-			output, err = cli.ReceiveMessage(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.ReceiveMessageWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2303,18 +2219,9 @@ func (s *SQS) ChangeMessageVisibility(queueUrl string,
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = cli.ChangeMessageVisibilityWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = cli.ChangeMessageVisibilityWithContext(segCtx, input)
-		} else {
-			_, err = cli.ChangeMessageVisibility(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = cli.ChangeMessageVisibilityWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2417,18 +2324,9 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 	// perform action
 	var output *awssqs.ChangeMessageVisibilityBatchOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.ChangeMessageVisibilityBatchWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.ChangeMessageVisibilityBatchWithContext(segCtx, input)
-		} else {
-			output, err = cli.ChangeMessageVisibilityBatch(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.ChangeMessageVisibilityBatchWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2508,18 +2406,9 @@ func (s *SQS) DeleteMessage(queueUrl string,
 	}
 
 	// perform action
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		_, err = cli.DeleteMessageWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			_, err = cli.DeleteMessageWithContext(segCtx, input)
-		} else {
-			_, err = cli.DeleteMessage(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	_, err = cli.DeleteMessageWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {
@@ -2611,18 +2500,9 @@ func (s *SQS) DeleteMessageBatch(queueUrl string,
 	// perform action
 	var output *awssqs.DeleteMessageBatchOutput
 
-	if len(timeOutDuration) > 0 {
-		ctx, cancel := context.WithTimeout(segCtx, timeOutDuration[0])
-		defer cancel()
-
-		output, err = cli.DeleteMessageBatchWithContext(ctx, input)
-	} else {
-		if segCtxSet {
-			output, err = cli.DeleteMessageBatchWithContext(segCtx, input)
-		} else {
-			output, err = cli.DeleteMessageBatch(input)
-		}
-	}
+	callCtx, callCancel := ensureSQSCtx(segCtx, segCtxSet, timeOutDuration)
+	output, err = cli.DeleteMessageBatchWithContext(callCtx, input)
+	callCancel()
 
 	// evaluate result
 	if err != nil {

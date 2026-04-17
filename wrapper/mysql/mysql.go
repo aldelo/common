@@ -510,13 +510,21 @@ func (svr *MySql) GetDsn() (string, error) {
 		str += "&timeout=" + svr.ConnectTimeout
 	}
 
-	if util.LenTrim(svr.ReadTimeout) > 0 {
-		str += "&readTimeout=" + svr.ReadTimeout
+	// P3-N1: apply production-safe default of 30s when unset, matching the
+	// posture that ConnectTimeout takes upstream (explicit caller value OR
+	// bounded default). An unbounded ReadTimeout or WriteTimeout can leak
+	// goroutines indefinitely when the MySQL endpoint hangs mid-packet.
+	readTimeout := svr.ReadTimeout
+	if util.LenTrim(readTimeout) == 0 {
+		readTimeout = "30s"
 	}
+	str += "&readTimeout=" + readTimeout
 
-	if util.LenTrim(svr.WriteTimeout) > 0 {
-		str += "&writeTimeout=" + svr.WriteTimeout
+	writeTimeout := svr.WriteTimeout
+	if util.LenTrim(writeTimeout) == 0 {
+		writeTimeout = "30s"
 	}
+	str += "&writeTimeout=" + writeTimeout
 
 	if svr.RejectReadOnly {
 		str += "&rejectReadOnly=true"
@@ -620,21 +628,38 @@ func (svr *MySql) openNormal() error {
 		return err
 	}
 
-	if svr.MaxOpenConns > 0 {
-		newDB.SetMaxOpenConns(svr.MaxOpenConns)
+	// P2-N4: configure connection pool for production safety with
+	// sensible defaults when caller passes zero — matches the SQL Server
+	// wrapper pattern (sqlserver.go:439-455). Without defaults, a zero
+	// MaxOpenConns lets sqlx issue unlimited simultaneous connections,
+	// which has caused "too many connections" errors against Aurora in
+	// production for callers that forgot to tune these knobs.
+	//
+	// - MaxOpenConns prevents resource exhaustion on the MySQL server
+	// - MaxIdleConns balances connection reuse with memory usage
+	// - MaxConnIdleTime recycles long-idle pool entries
+	// - ConnMaxLifetime forces reconnection to pick up DNS/endpoint changes
+	maxOpen := svr.MaxOpenConns
+	if maxOpen == 0 {
+		maxOpen = 25
 	}
+	newDB.SetMaxOpenConns(maxOpen)
 
-	if svr.MaxIdleConns > 0 {
-		if svr.MaxIdleConns <= svr.MaxOpenConns || svr.MaxOpenConns == 0 {
-			newDB.SetMaxIdleConns(svr.MaxIdleConns)
-		} else {
-			newDB.SetMaxIdleConns(svr.MaxOpenConns)
-		}
+	maxIdle := svr.MaxIdleConns
+	if maxIdle == 0 {
+		maxIdle = 5
 	}
+	// clamp MaxIdleConns to MaxOpenConns so sqlx does not treat it as ignored
+	if maxIdle > maxOpen {
+		maxIdle = maxOpen
+	}
+	newDB.SetMaxIdleConns(maxIdle)
 
-	if svr.MaxConnIdleTime > 0 {
-		newDB.SetConnMaxIdleTime(svr.MaxConnIdleTime)
+	connIdleTime := svr.MaxConnIdleTime
+	if connIdleTime == 0 {
+		connIdleTime = 10 * time.Minute
 	}
+	newDB.SetConnMaxIdleTime(connIdleTime)
 
 	// P2-4: recycle connections every 5 minutes so Aurora failover / DNS changes
 	// do not leave the pool holding stale connections to dead endpoints.

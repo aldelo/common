@@ -497,8 +497,10 @@ func TestGetDsn_MinimalRequired(t *testing.T) {
 		t.Fatalf("GetDsn() error = %v", err)
 	}
 
-	// Port omitted (0), defaults for charset and collation
-	want := "user:pass@(localhost)/mydb?charset=utf8mb4&collation=utf8mb4_general_ci&parseTime=true"
+	// Port omitted (0), defaults for charset/collation, and production-safe
+	// 30s defaults applied to readTimeout/writeTimeout (P3-N1, 2026-04-17).
+	// ConnectTimeout remains opt-in so its key is absent.
+	want := "user:pass@(localhost)/mydb?charset=utf8mb4&collation=utf8mb4_general_ci&parseTime=true&readTimeout=30s&writeTimeout=30s"
 	if dsn != want {
 		t.Errorf("GetDsn() = %q, want %q", dsn, want)
 	}
@@ -703,60 +705,67 @@ func TestGetDsn_ParseTimeAlwaysTrue(t *testing.T) {
 	}
 }
 
+// TestGetDsn_TimeoutOptions verifies DSN timeout serialization.
+// Post-P3-N1 (2026-04-17): readTimeout and writeTimeout ALWAYS appear in the
+// DSN — either the operator-supplied value or the production-safe 30s default.
+// Only ConnectTimeout remains opt-in (empty → no timeout= key in DSN) because
+// connect-time hangs are covered by the database/sql driver's DialTimeout and
+// a blocking connect is typically caught by upstream network monitoring long
+// before an in-flight read/write hang would be.
 func TestGetDsn_TimeoutOptions(t *testing.T) {
 	tests := []struct {
-		name         string
-		connect      string
-		read         string
-		write        string
-		wantTimeout  bool
-		wantRead     bool
-		wantWrite    bool
+		name            string
+		connect         string
+		read            string
+		write           string
+		wantTimeout     bool   // ConnectTimeout remains opt-in
+		wantReadValue   string // readTimeout= always present; what value?
+		wantWriteValue  string // writeTimeout= always present; what value?
 	}{
 		{
-			name:        "all timeouts set",
-			connect:     "30s",
-			read:        "10s",
-			write:       "15s",
-			wantTimeout: true,
-			wantRead:    true,
-			wantWrite:   true,
+			name:           "all timeouts set — operator values honored",
+			connect:        "30s",
+			read:           "10s",
+			write:          "15s",
+			wantTimeout:    true,
+			wantReadValue:  "10s",
+			wantWriteValue: "15s",
 		},
 		{
-			name:        "no timeouts",
-			connect:     "",
-			read:        "",
-			write:       "",
-			wantTimeout: false,
-			wantRead:    false,
-			wantWrite:   false,
+			name:           "no timeouts — defaults applied to read/write, connect absent",
+			connect:        "",
+			read:           "",
+			write:          "",
+			wantTimeout:    false,
+			wantReadValue:  "30s",
+			wantWriteValue: "30s",
 		},
 		{
-			name:        "only connect timeout",
-			connect:     "5s",
-			read:        "",
-			write:       "",
-			wantTimeout: true,
-			wantRead:    false,
-			wantWrite:   false,
+			name:           "only connect timeout — read/write take defaults",
+			connect:        "5s",
+			read:           "",
+			write:          "",
+			wantTimeout:    true,
+			wantReadValue:  "30s",
+			wantWriteValue: "30s",
 		},
 		{
-			name:        "only read timeout",
-			connect:     "",
-			read:        "10s",
-			write:       "",
-			wantTimeout: false,
-			wantRead:    true,
-			wantWrite:   false,
+			name:           "only read timeout — writeTimeout takes default",
+			connect:        "",
+			read:           "10s",
+			write:          "",
+			wantTimeout:    false,
+			wantReadValue:  "10s",
+			wantWriteValue: "30s",
 		},
 		{
-			name:        "only write timeout",
-			connect:     "",
-			read:        "",
-			write:       "15s",
-			wantTimeout: false,
-			wantRead:    false,
-			wantWrite:   true,
+			name:           "only write timeout — readTimeout takes default",
+			connect:        "",
+			read:           "",
+			write:          "15s",
+			wantTimeout:    false,
+			wantReadValue:  "30s",
+			wantWriteValue: "15s",
 		},
 	}
 
@@ -778,26 +787,20 @@ func TestGetDsn_TimeoutOptions(t *testing.T) {
 			}
 
 			hasTimeout := strings.Contains(dsn, "timeout=")
-			hasRead := strings.Contains(dsn, "readTimeout=")
-			hasWrite := strings.Contains(dsn, "writeTimeout=")
-
 			if tt.wantTimeout && !hasTimeout {
 				t.Errorf("DSN %q missing timeout=", dsn)
 			}
 			if !tt.wantTimeout && hasTimeout {
 				t.Errorf("DSN %q has unexpected timeout=", dsn)
 			}
-			if tt.wantRead && !hasRead {
-				t.Errorf("DSN %q missing readTimeout=", dsn)
+
+			wantReadKV := "readTimeout=" + tt.wantReadValue
+			if !strings.Contains(dsn, wantReadKV) {
+				t.Errorf("DSN %q missing %q", dsn, wantReadKV)
 			}
-			if !tt.wantRead && hasRead {
-				t.Errorf("DSN %q has unexpected readTimeout=", dsn)
-			}
-			if tt.wantWrite && !hasWrite {
-				t.Errorf("DSN %q missing writeTimeout=", dsn)
-			}
-			if !tt.wantWrite && hasWrite {
-				t.Errorf("DSN %q has unexpected writeTimeout=", dsn)
+			wantWriteKV := "writeTimeout=" + tt.wantWriteValue
+			if !strings.Contains(dsn, wantWriteKV) {
+				t.Errorf("DSN %q missing %q", dsn, wantWriteKV)
 			}
 		})
 	}

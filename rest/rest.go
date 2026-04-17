@@ -61,6 +61,14 @@ var clientTlsConfig *tls.Config
 // PROCESS-GLOBAL: shared by all consumers in the same process.
 var clientTimeoutSeconds int
 
+// sharedTransport is the process-wide *http.Transport reused by every rest.* call.
+// Sharing one Transport is what makes TCP keep-alives and TLS session resumption
+// work across calls — constructing a Transport per request (plus CloseIdleConnections)
+// forces a fresh TCP+TLS handshake every time, which is the core cost P1-PERF-1 targets.
+// PROCESS-GLOBAL: set to nil when clientTlsConfig changes so the next call rebuilds it.
+// MUST be accessed under mu (Lock to mutate, RLock to read).
+var sharedTransport *http.Transport
+
 // cloneClientTlsConfig returns a deep copy of the current clientTlsConfig,
 // or nil if no TLS config is set. Must be called under mu.RLock (or mu.Lock).
 // The clone prevents cross-consumer interference when the http.Transport
@@ -92,6 +100,7 @@ func AppendServerCAPemFiles(caPemFilePath ...string) error {
 		defer mu.Unlock()
 
 		serverCaPems = append(serverCaPems, caPemFilePath...)
+		sharedTransport = nil // TLS config changed — force transport rebuild on next call
 		return newClientTlsCAsConfig()
 	} else {
 		return nil
@@ -108,6 +117,7 @@ func ResetServerCAPemFiles(caPemFilePath ...string) error {
 
 	serverCaPems = []string{}
 	clientTlsConfig = nil
+	sharedTransport = nil // TLS config changed — force transport rebuild on next call
 
 	if len(caPemFilePath) > 0 {
 		serverCaPems = append(serverCaPems, caPemFilePath...)
@@ -134,22 +144,47 @@ func newClientTlsCAsConfig() error {
 	}
 }
 
-// newHttpClient creates an HTTP client with proper transport configuration.
-// Note: For high-throughput scenarios, consider using a shared http.Client at the application level.
-func newHttpClient(timeout int, tlsCfg *tls.Config) *http.Client {
-	// Configure transport with connection pooling limits to prevent socket exhaustion
-	tr := &http.Transport{
+// getSharedTransport returns the process-wide *http.Transport, building it lazily
+// on first use or after clientTlsConfig has been replaced (sharedTransport set to nil).
+// One Transport is shared across every call so TCP keep-alives and TLS session tickets
+// persist between requests. The Transport's TLSClientConfig holds a private clone of
+// clientTlsConfig — subsequent http.Transport handshake mutations stay isolated from
+// the process-global source config.
+func getSharedTransport() *http.Transport {
+	mu.RLock()
+	tr := sharedTransport
+	mu.RUnlock()
+	if tr != nil {
+		return tr
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	// Double-check under write lock — another goroutine may have built it already.
+	if sharedTransport != nil {
+		return sharedTransport
+	}
+	tlsCfg := cloneClientTlsConfig()
+	tr = &http.Transport{
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 10,
 		IdleConnTimeout:     90 * time.Second,
 	}
-
 	if tlsCfg != nil {
 		tr.TLSClientConfig = tlsCfg
 	}
+	sharedTransport = tr
+	return tr
+}
 
+// newHttpClient returns an *http.Client wrapping the shared process-wide Transport
+// with a per-call Timeout. The Client struct itself is cheap (~80 bytes); all the
+// heavy state — idle-connection pool, DNS cache, TLS session cache — lives on the
+// Transport and is reused across calls. Callers MUST NOT call CloseIdleConnections
+// on the returned Client: doing so would wipe the shared pool for every other caller.
+func newHttpClient(timeout int) *http.Client {
 	return &http.Client{
-		Transport: tr,
+		Transport: getSharedTransport(),
 		Timeout:   time.Duration(timeout) * time.Second,
 	}
 }
@@ -164,7 +199,6 @@ type HeaderKeyValue struct {
 func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -174,7 +208,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	}
 
 	// create http client
-	client := newHttpClient(timeout, tlsCfg)
+	client := newHttpClient(timeout)
 
 	// create http request from client
 	var req *http.Request
@@ -208,10 +242,6 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 		// but worth logging for observability in case of resource leaks.
 		log.Printf("rest.GET: resp.Body.Close error: %v", closeErr)
 	}
-	resp.Close = true
-
-	// clean up stale connections
-	client.CloseIdleConnections()
 
 	if err != nil {
 		// when read error, even if 200, still return error
@@ -236,7 +266,6 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -246,7 +275,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	}
 
 	// create http client
-	client := newHttpClient(timeout, tlsCfg)
+	client := newHttpClient(timeout)
 
 	// create http request from client
 	var req *http.Request
@@ -288,10 +317,6 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	if closeErr := resp.Body.Close(); closeErr != nil {
 		log.Printf("rest.POST: resp.Body.Close error: %v", closeErr)
 	}
-	resp.Close = true
-
-	// clean up stale connections
-	client.CloseIdleConnections()
 
 	if err != nil {
 		// when read error, even if 200, still return error
@@ -315,7 +340,6 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode int, responseBody string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -325,7 +349,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	}
 
 	// create http client
-	client := newHttpClient(timeout, tlsCfg)
+	client := newHttpClient(timeout)
 
 	// create http request from client
 	var req *http.Request
@@ -367,10 +391,6 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	if closeErr := resp.Body.Close(); closeErr != nil {
 		log.Printf("rest.PUT: resp.Body.Close error: %v", closeErr)
 	}
-	resp.Close = true
-
-	// clean up stale connections
-	client.CloseIdleConnections()
 
 	if err != nil {
 		// when read error, even if 200, still return error
@@ -394,7 +414,6 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -404,7 +423,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	}
 
 	// create http client
-	client := newHttpClient(timeout, tlsCfg)
+	client := newHttpClient(timeout)
 	// create http request from client
 	var req *http.Request
 
@@ -435,10 +454,6 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	if closeErr := resp.Body.Close(); closeErr != nil {
 		log.Printf("rest.DELETE: resp.Body.Close error: %v", closeErr)
 	}
-	resp.Close = true
-
-	// clean up stale connections
-	client.CloseIdleConnections()
 
 	if err != nil {
 		// when read error, even if 200, still return error
@@ -461,7 +476,6 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -471,7 +485,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	}
 
 	// create http client
-	client := newHttpClient(timeout, tlsCfg)
+	client := newHttpClient(timeout)
 	// create http request from client
 	var req *http.Request
 
@@ -514,10 +528,6 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	if closeErr := resp.Body.Close(); closeErr != nil {
 		log.Printf("rest.GETProtoBuf: resp.Body.Close error: %v", closeErr)
 	}
-	resp.Close = true
-
-	// clean up stale connections
-	client.CloseIdleConnections()
 
 	if err != nil {
 		// when read error, even if 200, still return error
@@ -555,7 +565,6 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -565,7 +574,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	}
 
 	// create http client
-	client := newHttpClient(timeout, tlsCfg)
+	client := newHttpClient(timeout)
 	// marshal proto message to bytes
 	if requestProtoBufObjectPtr == nil {
 
@@ -621,10 +630,6 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	if closeErr := resp.Body.Close(); closeErr != nil {
 		log.Printf("rest.POSTProtoBuf: resp.Body.Close error: %v", closeErr)
 	}
-	resp.Close = true
-
-	// clean up stale connections
-	client.CloseIdleConnections()
 
 	if err != nil {
 		// when read error, even if 200, still return error
@@ -661,7 +666,6 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr proto.Message, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -671,7 +675,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	}
 
 	// create http client
-	client := newHttpClient(timeout, tlsCfg)
+	client := newHttpClient(timeout)
 	// marshal proto message to bytes
 	if requestProtoBufObjectPtr == nil {
 
@@ -727,10 +731,6 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	if closeErr := resp.Body.Close(); closeErr != nil {
 		log.Printf("rest.PUTProtoBuf: resp.Body.Close error: %v", closeErr)
 	}
-	resp.Close = true
-
-	// clean up stale connections
-	client.CloseIdleConnections()
 
 	if err != nil {
 		// when read error, even if 200, still return error
@@ -766,7 +766,6 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjectPtr proto.Message) (statusCode int, err error) {
 	mu.RLock()
 	timeout := clientTimeoutSeconds
-	tlsCfg := cloneClientTlsConfig()
 	mu.RUnlock()
 
 	if timeout <= 0 {
@@ -776,7 +775,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	}
 
 	// create http client
-	client := newHttpClient(timeout, tlsCfg)
+	client := newHttpClient(timeout)
 	// create http request from client
 	var req *http.Request
 
@@ -819,10 +818,6 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	if closeErr := resp.Body.Close(); closeErr != nil {
 		log.Printf("rest.DELETEProtoBuf: resp.Body.Close error: %v", closeErr)
 	}
-	resp.Close = true
-
-	// clean up stale connections
-	client.CloseIdleConnections()
 
 	if err != nil {
 		// when read error, even if 200, still return error

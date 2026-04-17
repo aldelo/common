@@ -3,9 +3,11 @@ package rest
 import (
 	"crypto/tls"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -435,6 +437,111 @@ func TestCloneClientTlsConfigIsolation(t *testing.T) {
 		t.Errorf("Global clientTlsConfig.MinVersion = %d, was mutated by clone — isolation failure", clientTlsConfig.MinVersion)
 	}
 	mu.RUnlock()
+}
+
+// TestGET_ConnectionReuseAcrossCalls_P1PERF1 verifies that sequential GET calls
+// reuse the same TCP connection via the shared *http.Transport. The previous
+// implementation constructed a new Transport per call and then called
+// CloseIdleConnections, forcing a fresh TCP+TLS handshake per request — which
+// this test would catch by observing one StateNew connection per GET.
+//
+// Expectation: 10 GETs against the same host should open at most 2 TCP
+// connections (1 expected under ideal keep-alive; allow 1 extra for scheduler
+// races in the test harness). With the unpooled pre-v1.8.8 code, newConns == 10.
+func TestGET_ConnectionReuseAcrossCalls_P1PERF1(t *testing.T) {
+	var newConns int64
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			atomic.AddInt64(&newConns, 1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+
+	// Reset the shared transport so TLS-config invalidation from prior tests
+	// can't leak into this test. Then prime it with the first call.
+	mu.Lock()
+	sharedTransport = nil
+	mu.Unlock()
+
+	const calls = 10
+	for i := 0; i < calls; i++ {
+		statusCode, _, err := GET(server.URL, nil)
+		if err != nil {
+			t.Fatalf("GET #%d returned error: %v", i, err)
+		}
+		if statusCode != http.StatusOK {
+			t.Fatalf("GET #%d statusCode = %d, expected 200", i, statusCode)
+		}
+	}
+
+	got := atomic.LoadInt64(&newConns)
+	if got > 2 {
+		t.Errorf("connection reuse broken: %d TCP connections opened across %d sequential GETs (expected <=2). "+
+			"This indicates the shared Transport is being discarded or CloseIdleConnections is being called.",
+			got, calls)
+	}
+}
+
+// TestSharedTransport_SingletonAcrossCalls_P1PERF1 verifies that getSharedTransport
+// returns the SAME *http.Transport pointer across calls — proving Transport state
+// (idle conn pool, TLS session cache) is actually shared.
+func TestSharedTransport_SingletonAcrossCalls_P1PERF1(t *testing.T) {
+	mu.Lock()
+	sharedTransport = nil
+	mu.Unlock()
+
+	first := getSharedTransport()
+	if first == nil {
+		t.Fatal("getSharedTransport() returned nil on first call")
+	}
+
+	second := getSharedTransport()
+	if second != first {
+		t.Errorf("getSharedTransport() returned a different pointer on second call: first=%p second=%p — singleton broken", first, second)
+	}
+}
+
+// TestSharedTransport_RebuildAfterTlsConfigChange_P1PERF1 verifies that
+// AppendServerCAPemFiles / ResetServerCAPemFiles invalidate sharedTransport
+// so subsequent calls pick up the new TLS config. Without invalidation, a
+// config refresh would be silently ignored for every pooled connection.
+func TestSharedTransport_RebuildAfterTlsConfigChange_P1PERF1(t *testing.T) {
+	mu.Lock()
+	sharedTransport = nil
+	origConfig := clientTlsConfig
+	mu.Unlock()
+
+	defer func() {
+		mu.Lock()
+		clientTlsConfig = origConfig
+		sharedTransport = nil
+		mu.Unlock()
+	}()
+
+	first := getSharedTransport()
+
+	// Simulate a TLS config change the same way ResetServerCAPemFiles does.
+	if err := ResetServerCAPemFiles(); err != nil {
+		t.Fatalf("ResetServerCAPemFiles() returned error: %v", err)
+	}
+
+	mu.RLock()
+	invalidated := sharedTransport
+	mu.RUnlock()
+	if invalidated != nil {
+		t.Error("ResetServerCAPemFiles did NOT invalidate sharedTransport — next call would use stale TLS config")
+	}
+
+	second := getSharedTransport()
+	if second == first {
+		t.Error("getSharedTransport() returned the same Transport after TLS config change — rebuild did not happen")
+	}
 }
 
 // TestCloneClientTlsConfigIsDistinctPointer verifies the clone is a different

@@ -42,6 +42,7 @@ package apc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
@@ -184,7 +185,7 @@ func (k *PaymentCryptoData) connectInternal() error {
 
 	httpCli, httpErr := h2.NewHttp2Client()
 	if httpErr != nil {
-		return errors.New("Connect to PaymentCryptoData Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to PaymentCryptoData Failed: (AWS Session Error) Create Custom Http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection and keep session object in struct
@@ -195,7 +196,7 @@ func (k *PaymentCryptoData) connectInternal() error {
 		})
 	if err != nil {
 		// aws session error
-		return errors.New("Connect To PaymentCryptoData Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To PaymentCryptoData Failed: (AWS Session Error) %w", err)
 	}
 
 	client := pycryptoData.New(sess)
@@ -289,7 +290,7 @@ func (k *PaymentCryptoData) encrypt(plainText string, encryptionAttributes *pycr
 	}
 
 	if e != nil {
-		err = errors.New("encrypt with PaymentCryptoData key Failed: " + e.Error())
+		err = fmt.Errorf("encrypt with PaymentCryptoData key Failed: %w", e)
 		return "", err
 	}
 	if encryptedOutput == nil {
@@ -351,7 +352,7 @@ func (k *PaymentCryptoData) decrypt(cipherText string, decryptionAttributes *pyc
 	}
 
 	if e != nil {
-		err = errors.New("decrypt with PaymentCryptoData Key Failed: " + e.Error())
+		err = fmt.Errorf("decrypt with PaymentCryptoData Key Failed: %w", e)
 		return "", err
 	}
 

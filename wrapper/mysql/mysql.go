@@ -2683,7 +2683,7 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 	}
 
 	if err != nil {
-		err = errors.New("ExecByOrdinalParams() Error: " + err.Error())
+		err = fmt.Errorf("ExecByOrdinalParams() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -2695,7 +2695,7 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 		newID, err = result.LastInsertId()
 
 		if err != nil {
-			err = errors.New("ExecByOrdinalParams() Get LastInsertId() Error: " + err.Error())
+			err = fmt.Errorf("ExecByOrdinalParams() Get LastInsertId() Error: %w", err)
 			return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
@@ -2707,7 +2707,7 @@ func (svr *MySql) ExecByOrdinalParams(actionQuery string, args ...interface{}) M
 	affected, err = result.RowsAffected()
 
 	if err != nil {
-		err = errors.New("ExecByOrdinalParams() Get RowsAffected() Error: " + err.Error())
+		err = fmt.Errorf("ExecByOrdinalParams() Get RowsAffected() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -2772,7 +2772,7 @@ func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...inter
 	}
 
 	if err != nil {
-		err = errors.New("ExecByOrdinalParams() Error: " + err.Error())
+		err = fmt.Errorf("ExecByOrdinalParams() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -2784,7 +2784,7 @@ func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...inter
 		newID, err = result.LastInsertId()
 
 		if err != nil {
-			err = errors.New("ExecByOrdinalParams() Get LastInsertId() Error: " + err.Error())
+			err = fmt.Errorf("ExecByOrdinalParams() Get LastInsertId() Error: %w", err)
 			return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
@@ -2796,7 +2796,7 @@ func (t *MySqlTransaction) ExecByOrdinalParams(actionQuery string, args ...inter
 	affected, err = result.RowsAffected()
 
 	if err != nil {
-		err = errors.New("ExecByOrdinalParams() Get RowsAffected() Error: " + err.Error())
+		err = fmt.Errorf("ExecByOrdinalParams() Get RowsAffected() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -2872,7 +2872,7 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 	}
 
 	if err != nil {
-		err = errors.New("ExecByNamedMapParam() Error: " + err.Error())
+		err = fmt.Errorf("ExecByNamedMapParam() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -2884,7 +2884,7 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 		newID, err = result.LastInsertId()
 
 		if err != nil {
-			err = errors.New("ExecByNamedMapParam() Get LastInsertId() Error: " + err.Error())
+			err = fmt.Errorf("ExecByNamedMapParam() Get LastInsertId() Error: %w", err)
 			return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
@@ -2896,7 +2896,7 @@ func (svr *MySql) ExecByNamedMapParam(actionQuery string, args map[string]interf
 	affected, err = result.RowsAffected()
 
 	if err != nil {
-		err = errors.New("ExecByNamedMapParam() Get RowsAffected() Error: " + err.Error())
+		err = fmt.Errorf("ExecByNamedMapParam() Get RowsAffected() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -2972,7 +2972,7 @@ func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[stri
 	}
 
 	if err != nil {
-		err = errors.New("ExecByNamedMapParam() Error: " + err.Error())
+		err = fmt.Errorf("ExecByNamedMapParam() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -2984,7 +2984,7 @@ func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[stri
 		newID, err = result.LastInsertId()
 
 		if err != nil {
-			err = errors.New("ExecByNamedMapParam() Get LastInsertId() Error: " + err.Error())
+			err = fmt.Errorf("ExecByNamedMapParam() Get LastInsertId() Error: %w", err)
 			return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
@@ -2996,7 +2996,7 @@ func (t *MySqlTransaction) ExecByNamedMapParam(actionQuery string, args map[stri
 	affected, err = result.RowsAffected()
 
 	if err != nil {
-		err = errors.New("ExecByNamedMapParam() Get RowsAffected() Error: " + err.Error())
+		err = fmt.Errorf("ExecByNamedMapParam() Get RowsAffected() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -3067,7 +3067,7 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 	}
 
 	if err != nil {
-		err = errors.New("ExecByStructParam() Error: " + err.Error())
+		err = fmt.Errorf("ExecByStructParam() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -3079,7 +3079,7 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 		newID, err = result.LastInsertId()
 
 		if err != nil {
-			err = errors.New("ExecByStructParam() Get LastInsertId() Error: " + err.Error())
+			err = fmt.Errorf("ExecByStructParam() Get LastInsertId() Error: %w", err)
 			return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
@@ -3091,7 +3091,7 @@ func (svr *MySql) ExecByStructParam(actionQuery string, args interface{}) MySqlR
 	affected, err = result.RowsAffected()
 
 	if err != nil {
-		err = errors.New("ExecByStructParam() Get RowsAffected() Error: " + err.Error())
+		err = fmt.Errorf("ExecByStructParam() Get RowsAffected() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -3161,7 +3161,7 @@ func (t *MySqlTransaction) ExecByStructParam(actionQuery string, args interface{
 	}
 
 	if err != nil {
-		err = errors.New("ExecByStructParam() Error: " + err.Error())
+		err = fmt.Errorf("ExecByStructParam() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -3173,7 +3173,7 @@ func (t *MySqlTransaction) ExecByStructParam(actionQuery string, args interface{
 		newID, err = result.LastInsertId()
 
 		if err != nil {
-			err = errors.New("ExecByStructParam() Get LastInsertId() Error: " + err.Error())
+			err = fmt.Errorf("ExecByStructParam() Get LastInsertId() Error: %w", err)
 			return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
@@ -3185,7 +3185,7 @@ func (t *MySqlTransaction) ExecByStructParam(actionQuery string, args interface{
 	affected, err = result.RowsAffected()
 
 	if err != nil {
-		err = errors.New("ExecByStructParam() Get RowsAffected() Error: " + err.Error())
+		err = fmt.Errorf("ExecByStructParam() Get RowsAffected() Error: %w", err)
 		return MySqlResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 

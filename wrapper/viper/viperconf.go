@@ -18,6 +18,7 @@ package viper
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -146,7 +147,7 @@ func (v *ViperConf) Init() (bool, error) {
 			// config file not found, ignore error
 			return false, nil
 		}
-		return false, errors.New("Init Config Failed: (ReadInConfig Action) " + err.Error())
+		return false, fmt.Errorf("Init Config Failed: (ReadInConfig Action) %w", err)
 	}
 
 	return true, nil
@@ -244,7 +245,7 @@ func (v *ViperConf) Unmarshal(outputStructPtr interface{}, key ...string) error 
 	}
 
 	if err != nil {
-		return errors.New("Unmarshal Config To Struct Failed: (Unmarshal Error) " + err.Error())
+		return fmt.Errorf("Unmarshal Config To Struct Failed: (Unmarshal Error) %w", err)
 	}
 
 	return nil
@@ -339,7 +340,7 @@ func (v *ViperConf) Save() error {
 			return errors.New("Save Config Failed: (WriteConfig Action) Config File Name Must Not Be Same as Folder Name")
 		}
 
-		return errors.New("Save Config Failed: (WriteConfig Action) " + err.Error())
+		return fmt.Errorf("Save Config Failed: (WriteConfig Action) %w", err)
 	}
 
 	return nil

@@ -1307,7 +1307,7 @@ func (svr *SQLite) ExecByOrdinalParams(actionQuery string, args ...interface{}) 
 	}
 
 	if err != nil {
-		err = errors.New("ExecByOrdinalParams() Error: " + err.Error())
+		err = fmt.Errorf("ExecByOrdinalParams() Error: %w", err)
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -1316,7 +1316,7 @@ func (svr *SQLite) ExecByOrdinalParams(actionQuery string, args ...interface{}) 
 	if isInsert {
 		newID, err = result.LastInsertId()
 		if err != nil {
-			err = errors.New("ExecByOrdinalParams() Get LastInsertId() Error: " + err.Error())
+			err = fmt.Errorf("ExecByOrdinalParams() Get LastInsertId() Error: %w", err)
 			return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
@@ -1328,7 +1328,7 @@ func (svr *SQLite) ExecByOrdinalParams(actionQuery string, args ...interface{}) 
 	affected, err = result.RowsAffected()
 
 	if err != nil {
-		err = errors.New("ExecByOrdinalParams() Get RowsAffected() Error: " + err.Error())
+		err = fmt.Errorf("ExecByOrdinalParams() Get RowsAffected() Error: %w", err)
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -1392,7 +1392,7 @@ func (svr *SQLite) ExecByNamedMapParam(actionQuery string, args map[string]inter
 	}
 
 	if err != nil {
-		err = errors.New("ExecByNamedMapParam() Error: " + err.Error())
+		err = fmt.Errorf("ExecByNamedMapParam() Error: %w", err)
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -1402,7 +1402,7 @@ func (svr *SQLite) ExecByNamedMapParam(actionQuery string, args map[string]inter
 		newID, err = result.LastInsertId()
 
 		if err != nil {
-			err = errors.New("ExecByNamedMapParam() Get LastInsertId() Error: " + err.Error())
+			err = fmt.Errorf("ExecByNamedMapParam() Get LastInsertId() Error: %w", err)
 			return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
@@ -1414,7 +1414,7 @@ func (svr *SQLite) ExecByNamedMapParam(actionQuery string, args map[string]inter
 	affected, err = result.RowsAffected()
 
 	if err != nil {
-		err = errors.New("ExecByNamedMapParam() Get RowsAffected() Error: " + err.Error())
+		err = fmt.Errorf("ExecByNamedMapParam() Get RowsAffected() Error: %w", err)
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -1473,7 +1473,7 @@ func (svr *SQLite) ExecByStructParam(actionQuery string, args interface{}) SQLit
 	}
 
 	if err != nil {
-		err = errors.New("ExecByStructParam() Error: " + err.Error())
+		err = fmt.Errorf("ExecByStructParam() Error: %w", err)
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 
@@ -1483,7 +1483,7 @@ func (svr *SQLite) ExecByStructParam(actionQuery string, args interface{}) SQLit
 		newID, err = result.LastInsertId()
 
 		if err != nil {
-			err = errors.New("ExecByStructParam() Get LastInsertId() Error: " + err.Error())
+			err = fmt.Errorf("ExecByStructParam() Get LastInsertId() Error: %w", err)
 			return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 		}
 	}
@@ -1495,7 +1495,7 @@ func (svr *SQLite) ExecByStructParam(actionQuery string, args interface{}) SQLit
 	affected, err = result.RowsAffected()
 
 	if err != nil {
-		err = errors.New("ExecByStructParam() Get RowsAffected() Error: " + err.Error())
+		err = fmt.Errorf("ExecByStructParam() Get RowsAffected() Error: %w", err)
 		return SQLiteResult{RowsAffected: 0, NewlyInsertedID: 0, Err: err}
 	}
 

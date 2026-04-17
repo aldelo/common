@@ -43,6 +43,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"sync"
@@ -237,7 +238,7 @@ func (s *S3) connectInternal() error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return errors.New("Connect to S3 Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to S3 Failed: (AWS Session Error) Create Custom Http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection and keep session object in struct
@@ -253,7 +254,7 @@ func (s *S3) connectInternal() error {
 
 	if sess, err := session.NewSession(cfg); err != nil {
 		// aws session error
-		return errors.New("Connect To S3 Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To S3 Failed: (AWS Session Error) %w", err)
 	} else {
 		// aws session obtained
 		s.sess = sess
@@ -403,7 +404,7 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 	f, openErr := os.Open(sourceFilePath)
 	if openErr != nil {
 		// open file failed
-		err = errors.New("S3 UploadFile Failed: (Open Source File) " + openErr.Error())
+		err = fmt.Errorf("S3 UploadFile Failed: (Open Source File) %w", openErr)
 		return "", err
 	}
 	defer f.Close()
@@ -423,7 +424,7 @@ func (s *S3) UploadFile(timeOutDuration *time.Duration, sourceFilePath string, t
 	// evaluate result
 	if err != nil {
 		// upload error
-		err = errors.New("S3 UploadFile Failed: (Upload Source File) " + err.Error())
+		err = fmt.Errorf("S3 UploadFile Failed: (Upload Source File) %w", err)
 		return "", err
 	}
 
@@ -531,7 +532,7 @@ func (s *S3) Upload(timeOutDuration *time.Duration, data []byte, targetKey strin
 	// evaluate result
 	if err != nil {
 		// upload error
-		err = errors.New("S3 Upload Failed: (Upload Bytes) " + err.Error())
+		err = fmt.Errorf("S3 Upload Failed: (Upload Bytes) %w", err)
 		return "", err
 	} else {
 		// upload success
@@ -652,7 +653,7 @@ func (s *S3) DownloadFile(timeOutDuration *time.Duration, writeToFilePath string
 			return "", true, nil
 		}
 
-		err = errors.New("S3 DownloadFile Failed: (Download File) " + err.Error())
+		err = fmt.Errorf("S3 DownloadFile Failed: (Download File) %w", err)
 		return "", false, err
 	}
 
@@ -754,7 +755,7 @@ func (s *S3) Download(timeOutDuration *time.Duration, targetKey string, targetFo
 			return nil, true, nil
 		}
 
-		err = errors.New("S3 Download Failed: (Download Bytes) " + err.Error())
+		err = fmt.Errorf("S3 Download Failed: (Download Bytes) %w", err)
 		return nil, false, err
 	}
 
@@ -846,7 +847,7 @@ func (s *S3) Delete(timeOutDuration *time.Duration, targetKey string, targetFold
 	// evaluate result
 	if err != nil {
 		// delete error
-		err = errors.New("S3 Delete Failed: (Delete Object) " + err.Error())
+		err = fmt.Errorf("S3 Delete Failed: (Delete Object) %w", err)
 		return false, err
 	} else {
 		// delete successful
@@ -949,7 +950,7 @@ func (s *S3) DeleteBatch(timeOutDuration *time.Duration, targetKeys []string) (d
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("S3 Delete Batch Failed: (Delete Objects) " + err.Error())
+		err = fmt.Errorf("S3 Delete Batch Failed: (Delete Objects) %w", err)
 		return nil, nil, err
 	} else {
 		if len(output.Deleted) > 0 {
@@ -1070,7 +1071,7 @@ func (s *S3) ListFileKeys(timeOutDuration *time.Duration, nextToken string, maxR
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("S3 List File Keys Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("S3 List File Keys Failed: (List Action) %w", err)
 		return nil, "", err
 	} else {
 		for _, v := range output.Contents {

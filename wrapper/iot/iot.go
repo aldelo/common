@@ -42,6 +42,7 @@ package iot
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
@@ -160,14 +161,14 @@ func (s *IoT) connectInternal(ctx context.Context) error {
 
 	httpCli, httpErr := h2.NewHttp2Client()
 	if httpErr != nil {
-		return errors.New("Connect to IoT Failed: (AWS Session Error) " + "Create Custom http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to IoT Failed: (AWS Session Error) Create Custom http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(region.Key()))
 	if err != nil {
 		// aws session error
-		return errors.New("Connect to IoT Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect to IoT Failed: (AWS Session Error) %w", err)
 	}
 
 	// create cached objects for shared use

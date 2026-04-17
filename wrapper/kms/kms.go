@@ -278,7 +278,7 @@ func (k *KMS) connectInternal() error {
 
 	httpCli, httpErr := h2.NewHttp2Client()
 	if httpErr != nil {
-		return errors.New("Connect to KMS Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to KMS Failed: (AWS Session Error) Create Custom Http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection and keep session object in struct
@@ -298,7 +298,7 @@ func (k *KMS) connectInternal() error {
 	sess, err := session.NewSession(cfg)
 	if err != nil {
 		// aws session error
-		return errors.New("Connect To KMS Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To KMS Failed: (AWS Session Error) %w", err)
 	}
 
 	cli := kms.New(sess)
@@ -418,7 +418,7 @@ func (k *KMS) EncryptViaCmkAes256(plainText string) (cipherText string, err erro
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("EncryptViaCmkAes256 with KMS CMK Failed: (Symmetric Encrypt) " + e.Error())
+		err = fmt.Errorf("EncryptViaCmkAes256 with KMS CMK Failed: (Symmetric Encrypt) %w", e)
 		return "", err
 	}
 
@@ -462,7 +462,7 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("ReEncryptViaCmkAes256 with KMS CMK Failed: " + cliErr.Error())
+		err = fmt.Errorf("ReEncryptViaCmkAes256 with KMS CMK Failed: %w", cliErr)
 		return "", err
 	}
 
@@ -489,7 +489,7 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 	cipherBytes, ce := util.HexToByte(sourceCipherText)
 
 	if ce != nil {
-		err = errors.New("ReEncryptViaCmkAes256 with KMS CMK Failed: (Unmarshal Source CipherText Hex To Byte) " + ce.Error())
+		err = fmt.Errorf("ReEncryptViaCmkAes256 with KMS CMK Failed: (Unmarshal Source CipherText Hex To Byte) %w", ce)
 		return "", err
 	}
 
@@ -511,7 +511,7 @@ func (k *KMS) ReEncryptViaCmkAes256(sourceCipherText string, targetKmsKeyName st
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("ReEncryptViaCmkAes256 with KMS CMK Failed: (Symmetric ReEncrypt) " + e.Error())
+		err = fmt.Errorf("ReEncryptViaCmkAes256 with KMS CMK Failed: (Symmetric ReEncrypt) %w", e)
 		return "", err
 	}
 
@@ -587,7 +587,7 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 	cipherBytes, ce := util.HexToByte(cipherText)
 
 	if ce != nil {
-		err = errors.New("DecryptViaCmkAes256 with KMS CMK Failed: (Unmarshal CipherText Hex To Byte) " + ce.Error())
+		err = fmt.Errorf("DecryptViaCmkAes256 with KMS CMK Failed: (Unmarshal CipherText Hex To Byte) %w", ce)
 		return "", err
 	}
 
@@ -607,7 +607,7 @@ func (k *KMS) DecryptViaCmkAes256(cipherText string) (plainText string, err erro
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("DecryptViaCmkAes256 with KMS CMK Failed: (Symmetric Decrypt) " + e.Error())
+		err = fmt.Errorf("DecryptViaCmkAes256 with KMS CMK Failed: (Symmetric Decrypt) %w", e)
 		return "", err
 	}
 
@@ -728,7 +728,7 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("GenerateEncryptionDecryptionKeyRsa2048 with KMS CMK Failed: " + cliErr.Error())
+		err = fmt.Errorf("GenerateEncryptionDecryptionKeyRsa2048 with KMS CMK Failed: %w", cliErr)
 		return nil, err
 	}
 
@@ -746,7 +746,7 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("GenerateEncryptionDecryptionKeyRsa2048 with KMS CMK Failed: (RSA Key Create Fail) " + e.Error())
+		err = fmt.Errorf("GenerateEncryptionDecryptionKeyRsa2048 with KMS CMK Failed: (RSA Key Create Fail) %w", e)
 		return nil, err
 	}
 
@@ -803,7 +803,7 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: " + cliErr.Error())
+		err = fmt.Errorf("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: %w", cliErr)
 		return nil, err
 	}
 
@@ -826,7 +826,7 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: (RSA Key Create Fail) " + e.Error())
+		err = fmt.Errorf("GenerateSignVerifyKeyRsa2048 with KMS CMK Failed: (RSA Key Create Fail) %w", e)
 		return nil, err
 	}
 
@@ -880,7 +880,7 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: " + cliErr.Error())
+		err = fmt.Errorf("KeyDeleteWithAlias with KMS CMK Failed: %w", cliErr)
 		return nil, err
 	}
 
@@ -922,14 +922,14 @@ func (k *KMS) KeyDeleteWithAlias(alias string, PendingWindowInDays int64) (outpu
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
+		err = fmt.Errorf("KeyDeleteWithAlias with KMS CMK Failed: (RSA Key Delete Fail) %w", e)
 		return nil, err
 	}
 	_, e = cli.DeleteAlias(&kms.DeleteAliasInput{
 		AliasName: aws.String(aliasName),
 	})
 	if e != nil {
-		err = errors.New("KeyDeleteWithAlias with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
+		err = fmt.Errorf("KeyDeleteWithAlias with KMS CMK Failed: (RSA Key Delete Fail) %w", e)
 		return nil, err
 	}
 
@@ -960,7 +960,7 @@ func (k *KMS) KeyDeleteWithArnID(arn string, PendingWindowInDays int64) (output 
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("KeyDeleteWithArnID with KMS CMK Failed: " + cliErr.Error())
+		err = fmt.Errorf("KeyDeleteWithArnID with KMS CMK Failed: %w", cliErr)
 		return nil, err
 	}
 
@@ -986,7 +986,7 @@ func (k *KMS) KeyDeleteWithArnID(arn string, PendingWindowInDays int64) (output 
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("KeyDeleteWithArnID with KMS CMK Failed: (RSA Key Delete Fail) " + e.Error())
+		err = fmt.Errorf("KeyDeleteWithArnID with KMS CMK Failed: (RSA Key Delete Fail) %w", e)
 		return nil, err
 	}
 
@@ -1078,7 +1078,7 @@ func (k *KMS) EncryptViaCmkRsa2048(plainText string) (cipherText string, err err
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("EncryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric Encrypt) " + e.Error())
+		err = fmt.Errorf("EncryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric Encrypt) %w", e)
 		return "", err
 	}
 
@@ -1116,7 +1116,7 @@ func (k *KMS) GetRSAPublicKey(alias string) (output *kms.GetPublicKeyOutput, err
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("GetRSAPublicKey with KMS CMK Failed: " + cliErr.Error())
+		err = fmt.Errorf("GetRSAPublicKey with KMS CMK Failed: %w", cliErr)
 		return nil, err
 	}
 
@@ -1172,7 +1172,7 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("ReEncryptViaCmkRsa2048 with KMS CMK Failed: " + cliErr.Error())
+		err = fmt.Errorf("ReEncryptViaCmkRsa2048 with KMS CMK Failed: %w", cliErr)
 		return "", err
 	}
 
@@ -1199,7 +1199,7 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 	cipherBytes, ce := util.HexToByte(sourceCipherText)
 
 	if ce != nil {
-		err = errors.New("ReEncryptViaCmkRsa2048 with KMS CMK Failed: (Unmarshal Source CipherText Hex To Byte) " + ce.Error())
+		err = fmt.Errorf("ReEncryptViaCmkRsa2048 with KMS CMK Failed: (Unmarshal Source CipherText Hex To Byte) %w", ce)
 		return "", err
 	}
 
@@ -1221,7 +1221,7 @@ func (k *KMS) ReEncryptViaCmkRsa2048(sourceCipherText string, targetKmsKeyName s
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("ReEncryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric ReEncrypt) " + e.Error())
+		err = fmt.Errorf("ReEncryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric ReEncrypt) %w", e)
 		return "", err
 	}
 
@@ -1297,7 +1297,7 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	cipherBytes, ce := util.HexToByte(cipherText)
 
 	if ce != nil {
-		err = errors.New("DecryptViaCmkRsa2048 with KMS CMK Failed: (Unmarshal CipherText Hex To Byte) " + ce.Error())
+		err = fmt.Errorf("DecryptViaCmkRsa2048 with KMS CMK Failed: (Unmarshal CipherText Hex To Byte) %w", ce)
 		return "", err
 	}
 
@@ -1317,7 +1317,7 @@ func (k *KMS) DecryptViaCmkRsa2048(cipherText string) (plainText string, err err
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("DecryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric Decrypt) " + e.Error())
+		err = fmt.Errorf("DecryptViaCmkRsa2048 with KMS CMK Failed: (Asymmetric Decrypt) %w", e)
 		return "", err
 	}
 
@@ -1364,7 +1364,7 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: " + cliErr.Error())
+		err = fmt.Errorf("decryptViaCmkRsa2048Base with KMS CMK Failed: %w", cliErr)
 		return "", err
 	}
 
@@ -1384,7 +1384,7 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 	cipherBytes, ce := util.HexToByte(cipherText)
 
 	if ce != nil {
-		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: (Unmarshal CipherText Hex To Byte) " + ce.Error())
+		err = fmt.Errorf("decryptViaCmkRsa2048Base with KMS CMK Failed: (Unmarshal CipherText Hex To Byte) %w", ce)
 		return "", err
 	}
 
@@ -1404,7 +1404,7 @@ func (k *KMS) decryptViaCmkRsa2048Base(cipherText, encryptionAlgorithm string) (
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("decryptViaCmkRsa2048Base with KMS CMK Failed: (Asymmetric Decrypt) " + e.Error())
+		err = fmt.Errorf("decryptViaCmkRsa2048Base with KMS CMK Failed: (Asymmetric Decrypt) %w", e)
 		return "", err
 	}
 
@@ -1450,7 +1450,7 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("SignViaCmkRsa2048 with KMS Failed: " + cliErr.Error())
+		err = fmt.Errorf("SignViaCmkRsa2048 with KMS Failed: %w", cliErr)
 		return "", err
 	}
 
@@ -1485,7 +1485,7 @@ func (k *KMS) SignViaCmkRsa2048(dataToSign string) (signature string, err error)
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("SignViaCmkRsa2048 with KMS Failed: (Sign Action) " + e.Error())
+		err = fmt.Errorf("SignViaCmkRsa2048 with KMS Failed: (Sign Action) %w", e)
 		return "", err
 	}
 
@@ -1534,7 +1534,7 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("VerifyViaCmkRsa2048 with KMS Failed: " + cliErr.Error())
+		err = fmt.Errorf("VerifyViaCmkRsa2048 with KMS Failed: %w", cliErr)
 		return false, err
 	}
 
@@ -1559,7 +1559,7 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 	signatureBytes, ce := util.HexToByte(signatureToVerify)
 
 	if ce != nil {
-		err = errors.New("VerifyViaCmkRsa2048 with KMS Failed: (Marshal SignatureToVerify Hex To Byte) " + ce.Error())
+		err = fmt.Errorf("VerifyViaCmkRsa2048 with KMS Failed: (Marshal SignatureToVerify Hex To Byte) %w", ce)
 		return false, err
 	}
 
@@ -1581,7 +1581,7 @@ func (k *KMS) VerifyViaCmkRsa2048(dataToVerify string, signatureToVerify string)
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("VerifyViaCmkRsa2048 with KMS Failed: (Verify Action) " + e.Error())
+		err = fmt.Errorf("VerifyViaCmkRsa2048 with KMS Failed: (Verify Action) %w", e)
 		return false, err
 	}
 
@@ -1628,7 +1628,7 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("GenerateDataKeyAes256 with KMS Failed: " + cliErr.Error())
+		err = fmt.Errorf("GenerateDataKeyAes256 with KMS Failed: %w", cliErr)
 		return "", err
 	}
 
@@ -1657,7 +1657,7 @@ func (k *KMS) GenerateDataKeyAes256() (cipherKey string, err error) {
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("GenerateDataKeyAes256 with KMS Failed: (Gen Data Key) " + e.Error())
+		err = fmt.Errorf("GenerateDataKeyAes256 with KMS Failed: (Gen Data Key) %w", e)
 		return "", err
 	}
 
@@ -1736,7 +1736,7 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("EncryptWithDataKeyAes256 with KMS Failed: " + cliErr.Error())
+		err = fmt.Errorf("EncryptWithDataKeyAes256 with KMS Failed: %w", cliErr)
 		return "", err
 	}
 
@@ -1761,7 +1761,7 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 	cipherBytes, ce := util.HexToByte(cipherKey)
 
 	if ce != nil {
-		err = errors.New("EncryptWithDataKeyAes256 with KMS Failed: (Unmarshal CipherKey Hex To Byte) " + ce.Error())
+		err = fmt.Errorf("EncryptWithDataKeyAes256 with KMS Failed: (Unmarshal CipherKey Hex To Byte) %w", ce)
 		return "", err
 	}
 
@@ -1781,7 +1781,7 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("EncryptWithDataKeyAes256 with KMS Failed: (Decrypt Data Key) " + e.Error())
+		err = fmt.Errorf("EncryptWithDataKeyAes256 with KMS Failed: (Decrypt Data Key) %w", e)
 		return "", err
 	}
 
@@ -1813,7 +1813,7 @@ func (k *KMS) EncryptWithDataKeyAes256(plainText string, cipherKey string) (ciph
 
 	// evaluate encrypted result
 	if e != nil {
-		err = errors.New("EncryptWithDataKeyAes256 with KMS Failed: (Encrypt Data) " + e.Error())
+		err = fmt.Errorf("EncryptWithDataKeyAes256 with KMS Failed: (Encrypt Data) %w", e)
 		return "", err
 	} else {
 		cipherText = buf
@@ -1870,7 +1870,7 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	// validate
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("DecryptWithDataKeyAes256 with KMS Failed: " + cliErr.Error())
+		err = fmt.Errorf("DecryptWithDataKeyAes256 with KMS Failed: %w", cliErr)
 		return "", err
 	}
 
@@ -1895,7 +1895,7 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	cipherBytes, ce := util.HexToByte(cipherKey)
 
 	if ce != nil {
-		err = errors.New("DecryptWithDataKeyAes256 with KMS Failed: (Unmarshal CipherKey Hex To Byte) " + ce.Error())
+		err = fmt.Errorf("DecryptWithDataKeyAes256 with KMS Failed: (Unmarshal CipherKey Hex To Byte) %w", ce)
 		return "", err
 	}
 
@@ -1915,7 +1915,7 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	kmsCancel()
 
 	if e != nil {
-		err = errors.New("DecryptWithDataKeyAes256 with KMS Failed: (Decrypt Data Key) " + e.Error())
+		err = fmt.Errorf("DecryptWithDataKeyAes256 with KMS Failed: (Decrypt Data Key) %w", e)
 		return "", err
 	}
 
@@ -1947,7 +1947,7 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 
 	// evaluate decrypted result
 	if e != nil {
-		err = errors.New("DecryptWithDataKeyAes256 with KMS Failed: (Decrypt Data) " + e.Error())
+		err = fmt.Errorf("DecryptWithDataKeyAes256 with KMS Failed: (Decrypt Data) %w", e)
 		return "", err
 	} else {
 		plainText = buf
@@ -1975,7 +1975,7 @@ func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk 
 	// validate client
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("ImportECCP256SignVerifyKey with KMS Failed: " + cliErr.Error())
+		err = fmt.Errorf("ImportECCP256SignVerifyKey with KMS Failed: %w", cliErr)
 		return "", err
 	}
 
@@ -2091,7 +2091,7 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 
 	cli, cliErr := k.getClient()
 	if cliErr != nil {
-		err = errors.New("ECDH with KMS Failed: " + cliErr.Error())
+		err = fmt.Errorf("ECDH with KMS Failed: %w", cliErr)
 		return nil, err
 	}
 
@@ -2119,7 +2119,7 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 	//derive temp ECC public key
 	eccPubBytes, e1 := base64.StdEncoding.DecodeString(ephemeralPublicKeyB64)
 	if e1 != nil {
-		return nil, errors.New("ECDH with KMS Failed: Invalid Base64 Public Key, " + e1.Error())
+		return nil, fmt.Errorf("ECDH with KMS Failed: Invalid Base64 Public Key, %w", e1)
 	}
 
 	//eccPubKey, err := parseECCPublicKey(eccPubBytes)

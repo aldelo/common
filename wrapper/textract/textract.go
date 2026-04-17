@@ -42,6 +42,7 @@ package textract
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -217,13 +218,13 @@ func (s *Textract) connectInternal(ctx context.Context) error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return errors.New("Connect to Textract Failed: (AWS Session Error) " + "Create Custom http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to Textract Failed: (AWS Session Error) Create Custom http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection
 	if cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(region.Key())); err != nil {
 		// aws session error
-		return errors.New("Connect to Textract Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect to Textract Failed: (AWS Session Error) %w", err)
 	} else {
 		// create cached objects for shared use
 		cli := textract.NewFromConfig(cfg)

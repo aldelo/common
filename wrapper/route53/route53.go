@@ -42,6 +42,7 @@ package route53
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -177,7 +178,7 @@ func (r *Route53) connectInternal() error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return errors.New("Connect to Route53 Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to Route53 Failed: (AWS Session Error) Create Custom Http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection and keep session object in struct
@@ -191,7 +192,7 @@ func (r *Route53) connectInternal() error {
 
 	if sess, err := session.NewSession(cfg); err != nil {
 		// aws session error
-		return errors.New("Connect To Route53 Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To Route53 Failed: (AWS Session Error) %w", err)
 	} else {
 		// aws session obtained
 		r.sess = sess
@@ -343,7 +344,7 @@ func (r *Route53) CreateUpdateResourceRecordset(hostedZoneID string, url string,
 	r.r53ClientMutex.RUnlock()
 
 	if err != nil {
-		err = errors.New("CreateUpdateResourceRecordset Failed: " + err.Error())
+		err = fmt.Errorf("CreateUpdateResourceRecordset Failed: %w", err)
 		return err
 	} else {
 		return nil
@@ -456,7 +457,7 @@ func (r *Route53) DeleteResourceRecordset(hostedZoneID string, url string, ip st
 	r.r53ClientMutex.RUnlock()
 
 	if err != nil {
-		err = errors.New("DeleteResourceRecordset Failed: " + err.Error())
+		err = fmt.Errorf("DeleteResourceRecordset Failed: %w", err)
 		return err
 	} else {
 		return nil

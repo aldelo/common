@@ -19,6 +19,7 @@ package hystrixgo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -299,7 +300,7 @@ func (c *CircuitBreaker) Go(run RunLogic,
 		}
 
 		if err != nil {
-			return nil, errors.New("Exec Async for '" + c.CommandName + "' Failed: (Go Action) " + err.Error())
+			return nil, fmt.Errorf("Exec Async for '%s' Failed: (Go Action) %w", c.CommandName, err)
 		} else {
 			return output, nil
 		}
@@ -308,7 +309,7 @@ func (c *CircuitBreaker) Go(run RunLogic,
 		// not using circuit breaker - pass thru
 		//
 		if obj, err := run(dataIn); err != nil {
-			return nil, errors.New("Exec Directly for '" + c.CommandName + "' Failed: (Non-CircuitBreaker Go Action) " + err.Error())
+			return nil, fmt.Errorf("Exec Directly for '%s' Failed: (Non-CircuitBreaker Go Action) %w", c.CommandName, err)
 		} else {
 			return obj, nil
 		}
@@ -412,7 +413,7 @@ func (c *CircuitBreaker) GoC(ctx context.Context,
 		}
 
 		if err != nil {
-			return nil, errors.New("Exec with Context Async for '" + c.CommandName + "' Failed: (GoC Action) " + err.Error())
+			return nil, fmt.Errorf("Exec with Context Async for '%s' Failed: (GoC Action) %w", c.CommandName, err)
 		} else {
 			return output, nil
 		}
@@ -421,7 +422,7 @@ func (c *CircuitBreaker) GoC(ctx context.Context,
 		// not using circuit breaker - pass thru
 		//
 		if obj, err := run(dataIn, ctx); err != nil {
-			return nil, errors.New("Exec with Context Directly for '" + c.CommandName + "' Failed: (Non-CircuitBreaker GoC Action) " + err.Error())
+			return nil, fmt.Errorf("Exec with Context Directly for '%s' Failed: (Non-CircuitBreaker GoC Action) %w", c.CommandName, err)
 		} else {
 			return obj, nil
 		}
@@ -499,14 +500,14 @@ func (c *CircuitBreaker) Do(run RunLogic, fallback FallbackLogic, dataIn interfa
 					return er
 				}
 			}); err != nil {
-			return nil, errors.New("Exec Synchronous for '" + c.CommandName + "' Failed: (Do Action) " + err.Error())
+			return nil, fmt.Errorf("Exec Synchronous for '%s' Failed: (Do Action) %w", c.CommandName, err)
 		} else {
 			return result, nil
 		}
 	} else {
 		// non circuit breaker - pass thru
 		if obj, err := run(dataIn); err != nil {
-			return nil, errors.New("Exec Directly for '" + c.CommandName + "' Failed: (Non-CircuitBreaker Do Action) " + err.Error())
+			return nil, fmt.Errorf("Exec Directly for '%s' Failed: (Non-CircuitBreaker Do Action) %w", c.CommandName, err)
 		} else {
 			return obj, nil
 		}
@@ -589,14 +590,14 @@ func (c *CircuitBreaker) DoC(ctx context.Context, run RunLogic, fallback Fallbac
 					return er
 				}
 			}); err != nil {
-			return nil, errors.New("Exec with Context Synchronous for '" + c.CommandName + "' Failed: (DoC Action) " + err.Error())
+			return nil, fmt.Errorf("Exec with Context Synchronous for '%s' Failed: (DoC Action) %w", c.CommandName, err)
 		} else {
 			return result, nil
 		}
 	} else {
 		// non circuit breaker - pass thru
 		if obj, err := run(dataIn, ctx); err != nil {
-			return nil, errors.New("Exec with Context Directly for '" + c.CommandName + "' Failed: (Non-CircuitBreaker DoC Action) " + err.Error())
+			return nil, fmt.Errorf("Exec with Context Directly for '%s' Failed: (Non-CircuitBreaker DoC Action) %w", c.CommandName, err)
 		} else {
 			return obj, nil
 		}
@@ -713,7 +714,7 @@ func (c *CircuitBreaker) StartStatsdCollector(appName string, statsdIp string, s
 
 	// register statsd
 	if err != nil {
-		return errors.New("Start Statsd Collector Failed: (Init Statsd Collector Action) " + err.Error())
+		return fmt.Errorf("Start Statsd Collector Failed: (Init Statsd Collector Action) %w", err)
 	} else {
 		metricCollector.Registry.Register(sdc.NewStatsdCollector)
 		return nil

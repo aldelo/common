@@ -229,7 +229,7 @@ func (a *DynamoDBProjectedAttributesSet) BuildProjectionParameters() (projection
 	var expr expression.Expression
 
 	if expr, err = expression.NewBuilder().WithProjection(proj).Build(); err != nil {
-		return nil, nil, errors.New("BuildProjectionParameters Failed: (Expression Build) " + err.Error())
+		return nil, nil, fmt.Errorf("BuildProjectionParameters Failed: (Expression Build) %w", err)
 	}
 
 	// expression built, return result
@@ -369,7 +369,7 @@ func (r *DynamoDBMultiGetRequestResponse) UnmarshalResultItems(ddbResultItemAttr
 	}
 
 	if err := dynamodbattribute.UnmarshalListOfMaps(ddbResultItemAttributes, r.ResultItemsSlicePtr); err != nil {
-		return errors.New("UnmarshalResultItems Failed: (Unmarshal) " + err.Error())
+		return fmt.Errorf("UnmarshalResultItems Failed: (Unmarshal) %w", err)
 	} else {
 		// success
 		r.ResultItemsCount = len(ddbResultItemAttributes)
@@ -403,7 +403,7 @@ func (u *DynamoDBUnprocessedItemsAndKeys) UnmarshalPutItems(resultItemsPtr inter
 	}
 
 	if err := dynamodbattribute.UnmarshalListOfMaps(u.PutItems, resultItemsPtr); err != nil {
-		return errors.New("UnmarshalPutItems Failed: (Unmarshal) " + err.Error())
+		return fmt.Errorf("UnmarshalPutItems Failed: (Unmarshal) %w", err)
 	} else {
 		// success
 		return nil
@@ -539,7 +539,7 @@ func (p *DynamoDBTransactionWritePutItemsSet) MarshalPutItems() (result []map[st
 	// loop thru each put item to marshal
 	for _, v := range itemsIf {
 		if m, e := dynamodbattribute.MarshalMap(v); e != nil {
-			return nil, errors.New("MarshalPutItems Failed: (Marshal) " + e.Error())
+			return nil, fmt.Errorf("MarshalPutItems Failed: (Marshal) %w", e)
 		} else {
 			if m != nil {
 				result = append(result, m)
@@ -816,7 +816,7 @@ func (g *DynamoDBTransactionReads) UnmarshalResultItems(itemResponses []*dynamod
 	}
 
 	if err := dynamodbattribute.UnmarshalListOfMaps(ddbResultItemAttributes, g.ResultItemsSlicePtr); err != nil {
-		return errors.New("UnmarshalResultItems Failed: (Unmarshal) " + err.Error())
+		return fmt.Errorf("UnmarshalResultItems Failed: (Unmarshal) %w", err)
 	} else {
 		// success
 		g.ResultItemsCount = len(ddbResultItemAttributes)
@@ -1397,7 +1397,7 @@ func (d *DynamoDB) connectInternal() error {
 			MaxRetries: aws.Int(3),
 		})
 	if err != nil {
-		return errors.New("Connect To DynamoDB Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To DynamoDB Failed: (AWS Session Error) %w", err)
 	}
 
 	// re-acquire lock to assign the connection
@@ -1470,7 +1470,7 @@ func (d *DynamoDB) enableDaxInternal() error {
 
 	if err != nil {
 		d.cnDax = nil
-		return errors.New("Enable Dax Failed: " + err.Error())
+		return fmt.Errorf("Enable Dax Failed: %w", err)
 	}
 
 	// default skip dax to false

@@ -42,6 +42,7 @@ package cognito
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -163,7 +164,7 @@ func (s *Cognito) connectInternal(ctx context.Context) error {
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithHTTPClient(httpCli), config.WithRegion(s.AwsRegion.Key()))
 	if err != nil {
 		// aws session error
-		return errors.New("Connect to Cognito Failed: " + err.Error())
+		return fmt.Errorf("Connect to Cognito Failed: %w", err)
 	}
 
 	// create cached object for shared use

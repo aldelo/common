@@ -1154,7 +1154,7 @@ func RsaAesPublicKeyEncryptAndSign(plainText string, recipientPublicKeyHexOrPem 
 	aesKey, err1 := Generate32ByteRandomKey(Sha256(util.NewUUID(), util.CurrentDateTime()))
 
 	if err1 != nil {
-		return "", errors.New("Dynamic AES New Key Error: " + err1.Error())
+		return "", fmt.Errorf("Dynamic AES New Key Error: %w", err1)
 	}
 
 	//
@@ -1163,7 +1163,7 @@ func RsaAesPublicKeyEncryptAndSign(plainText string, recipientPublicKeyHexOrPem 
 	signature, err2 := RsaPrivateKeySign(plainText, senderPrivateKeyHexOrPem)
 
 	if err2 != nil {
-		return "", errors.New("Dynamic AES Siganture Error: " + err2.Error())
+		return "", fmt.Errorf("Dynamic AES Siganture Error: %w", err2)
 	}
 
 	//
@@ -1173,7 +1173,7 @@ func RsaAesPublicKeyEncryptAndSign(plainText string, recipientPublicKeyHexOrPem 
 	aesEncryptedData, err3 := AesGcmEncrypt(plainText+ascii.AsciiToString(ascii.VT)+senderPublicKeyHexOrPem+ascii.AsciiToString(ascii.VT)+signature, aesKey)
 
 	if err3 != nil {
-		return "", errors.New("Dynamic AES Data Encrypt Error: " + err3.Error())
+		return "", fmt.Errorf("Dynamic AES Data Encrypt Error: %w", err3)
 	}
 
 	//
@@ -1182,7 +1182,7 @@ func RsaAesPublicKeyEncryptAndSign(plainText string, recipientPublicKeyHexOrPem 
 	aesEncryptedKey, err4 := RsaPublicKeyEncrypt(aesKey, recipientPublicKeyHexOrPem)
 
 	if err4 != nil {
-		return "", errors.New("Dynamic AES Key Encrypt Error: " + err4.Error())
+		return "", fmt.Errorf("Dynamic AES Key Encrypt Error: %w", err4)
 	}
 
 	//
@@ -1291,7 +1291,7 @@ func RsaAesPrivateKeyDecryptAndVerify(encryptedData string, recipientPrivateKeyH
 	aesKey, err1 := RsaPrivateKeyDecrypt(aesKeyEncrypted, recipientPrivateKeyHexOrPem)
 
 	if err1 != nil {
-		return "", "", errors.New("Decrypt AES Key Error: " + err1.Error())
+		return "", "", fmt.Errorf("Decrypt AES Key Error: %w", err1)
 	}
 
 	//
@@ -1300,7 +1300,7 @@ func RsaAesPrivateKeyDecryptAndVerify(encryptedData string, recipientPrivateKeyH
 	aesData, err2 := AesGcmDecrypt(aesDataEncrypted, aesKey)
 
 	if err2 != nil {
-		return "", "", errors.New("Decrypt AES Data Error: " + err2.Error())
+		return "", "", fmt.Errorf("Decrypt AES Data Error: %w", err2)
 	}
 
 	if util.LenTrim(aesData) <= 1028 {
@@ -1349,7 +1349,7 @@ func RsaAesPrivateKeyDecryptAndVerify(encryptedData string, recipientPrivateKeyH
 		plainText = ""
 		senderPublicKeyHexOrPem = ""
 
-		return "", "", errors.New("Decrypted AES Data Not Valid: (Signature Not Authenticated) " + err3.Error())
+		return "", "", fmt.Errorf("Decrypted AES Data Not Valid: (Signature Not Authenticated) %w", err3)
 	}
 
 	//
@@ -1446,7 +1446,7 @@ func decodeLenPrefixedField(data string, offset int) (field string, nextOffset i
 	}
 	var n uint32
 	if _, scanErr := fmt.Sscanf(data[offset:offset+8], "%08X", &n); scanErr != nil {
-		return "", 0, errors.New("length prefix not valid hex: " + scanErr.Error())
+		return "", 0, fmt.Errorf("length prefix not valid hex: %w", scanErr)
 	}
 	start := offset + 8
 	end := start + int(n)
@@ -1511,13 +1511,13 @@ func RsaAesPublicKeyEncryptAndSignHmac(plainText string, recipientPublicKeyHexOr
 	// per-envelope random 32-byte AES key (same derivation as V1)
 	aesKey, err1 := Generate32ByteRandomKey(Sha256(util.NewUUID(), util.CurrentDateTime()))
 	if err1 != nil {
-		return "", errors.New("Dynamic AES New Key Error: " + err1.Error())
+		return "", fmt.Errorf("Dynamic AES New Key Error: %w", err1)
 	}
 
 	// sign the raw plain text with sender private key
 	signature, err2 := RsaPrivateKeySign(plainText, senderPrivateKeyHexOrPem)
 	if err2 != nil {
-		return "", errors.New("Dynamic AES Siganture Error: " + err2.Error())
+		return "", fmt.Errorf("Dynamic AES Siganture Error: %w", err2)
 	}
 
 	// V2 inner plaintext = length-prefixed triple
@@ -1528,13 +1528,13 @@ func RsaAesPublicKeyEncryptAndSignHmac(plainText string, recipientPublicKeyHexOr
 
 	aesEncryptedBody, err3 := AesGcmEncrypt(innerPlaintext, aesKey)
 	if err3 != nil {
-		return "", errors.New("Dynamic AES Data Encrypt Error: " + err3.Error())
+		return "", fmt.Errorf("Dynamic AES Data Encrypt Error: %w", err3)
 	}
 
 	// wrap the AES key under recipient's public key (RSA-OAEP-SHA256)
 	aesEncryptedKey, err4 := RsaPublicKeyEncrypt(aesKey, recipientPublicKeyHexOrPem)
 	if err4 != nil {
-		return "", errors.New("Dynamic AES Key Encrypt Error: " + err4.Error())
+		return "", fmt.Errorf("Dynamic AES Key Encrypt Error: %w", err4)
 	}
 
 	// HMAC binds rsaEncryptedAesKey || aesEncryptedBody at envelope
@@ -1630,7 +1630,7 @@ func RsaAesPrivateKeyDecryptAndVerifyHmac(encryptedData string, recipientPrivate
 	// RSA-decrypt the AES key with recipient private key
 	aesKey, err1 := RsaPrivateKeyDecrypt(aesKeyEncrypted, recipientPrivateKeyHexOrPem)
 	if err1 != nil {
-		return "", "", errors.New("Decrypt AES Key Error: " + err1.Error())
+		return "", "", fmt.Errorf("Decrypt AES Key Error: %w", err1)
 	}
 
 	// CRITICAL: verify HMAC BEFORE invoking AES-GCM decrypt. A
@@ -1646,21 +1646,21 @@ func RsaAesPrivateKeyDecryptAndVerifyHmac(encryptedData string, recipientPrivate
 	// HMAC passed → AES-GCM decrypt the body
 	innerPlaintext, err2 := AesGcmDecrypt(aesBodyEncrypted, aesKey)
 	if err2 != nil {
-		return "", "", errors.New("Decrypt AES Data Error: " + err2.Error())
+		return "", "", fmt.Errorf("Decrypt AES Data Error: %w", err2)
 	}
 
 	// parse three length-prefixed fields
 	pt, off, errF := decodeLenPrefixedField(innerPlaintext, 0)
 	if errF != nil {
-		return "", "", errors.New("Decrypted AES Data Not Valid: plainText field: " + errF.Error())
+		return "", "", fmt.Errorf("Decrypted AES Data Not Valid: plainText field: %w", errF)
 	}
 	spk, off, errF := decodeLenPrefixedField(innerPlaintext, off)
 	if errF != nil {
-		return "", "", errors.New("Decrypted AES Data Not Valid: senderPublicKey field: " + errF.Error())
+		return "", "", fmt.Errorf("Decrypted AES Data Not Valid: senderPublicKey field: %w", errF)
 	}
 	sig, off, errF := decodeLenPrefixedField(innerPlaintext, off)
 	if errF != nil {
-		return "", "", errors.New("Decrypted AES Data Not Valid: signature field: " + errF.Error())
+		return "", "", fmt.Errorf("Decrypted AES Data Not Valid: signature field: %w", errF)
 	}
 	if off != len(innerPlaintext) {
 		return "", "", errors.New("Decrypted AES Data Not Valid: trailing bytes after signature field")
@@ -1678,7 +1678,7 @@ func RsaAesPrivateKeyDecryptAndVerifyHmac(encryptedData string, recipientPrivate
 
 	// verify sender signature against plainText
 	if err3 := RsaPublicKeyVerify(pt, spk, sig); err3 != nil {
-		return "", "", errors.New("Decrypted AES Data Not Valid: (Signature Not Authenticated) " + err3.Error())
+		return "", "", fmt.Errorf("Decrypted AES Data Not Valid: (Signature Not Authenticated) %w", err3)
 	}
 
 	return pt, spk, nil

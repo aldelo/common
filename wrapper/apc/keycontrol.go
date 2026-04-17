@@ -42,6 +42,7 @@ package apc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -175,7 +176,7 @@ func (k *PaymentCryptography) connectInternal() error {
 
 	httpCli, httpErr := h2.NewHttp2Client()
 	if httpErr != nil {
-		return errors.New("Connect to PaymentCryptography Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to PaymentCryptography Failed: (AWS Session Error) Create Custom Http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection and keep session object in struct
@@ -186,7 +187,7 @@ func (k *PaymentCryptography) connectInternal() error {
 		})
 	if err != nil {
 		// aws session error
-		return errors.New("Connect To PaymentCryptography Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To PaymentCryptography Failed: (AWS Session Error) %w", err)
 	}
 
 	client := pycrypto.New(sess)
@@ -297,7 +298,7 @@ func (k *PaymentCryptography) generateRSAKey(KeyAlgorithm string) (keyArn string
 	}
 
 	if e != nil {
-		err = errors.New("generateRSAKey with PaymentCryptography Failed: (Gen Data Key) " + e.Error())
+		err = fmt.Errorf("generateRSAKey with PaymentCryptography Failed: (Gen Data Key) %w", e)
 		return "", err
 	}
 
@@ -370,7 +371,7 @@ func (k *PaymentCryptography) GenerateAES256Key() (keyArn string, err error) {
 	}
 
 	if e != nil {
-		err = errors.New("GenerateAES256Key with PaymentCryptography Failed: (Gen Data Key) " + e.Error())
+		err = fmt.Errorf("GenerateAES256Key with PaymentCryptography Failed: (Gen Data Key) %w", e)
 		return "", err
 	}
 
@@ -427,7 +428,7 @@ func (k *PaymentCryptography) GetRSAPublicKey(keyArn string) (cert, certChain st
 	}
 
 	if e != nil {
-		err = errors.New("GetRSAPublicKey with PaymentCryptography Failed: (Get Data Key) " + e.Error())
+		err = fmt.Errorf("GetRSAPublicKey with PaymentCryptography Failed: (Get Data Key) %w", e)
 		return "", "", err
 	}
 
@@ -487,7 +488,7 @@ func (k *PaymentCryptography) SetKeyAlias(keyArn, KeyAliasName string) (respAlia
 		aliasKeyOutput, e = client.CreateAliasWithContext(segCtx, &aliasInput)
 	}
 	if e != nil {
-		err = errors.New("SetKeyAlias with PaymentCryptography Failed: (CreateAlias) " + e.Error())
+		err = fmt.Errorf("SetKeyAlias with PaymentCryptography Failed: (CreateAlias) %w", e)
 		return
 	}
 	if aliasKeyOutput != nil {
@@ -830,7 +831,7 @@ func (k *PaymentCryptography) ListAlias() (output *pycrypto.ListAliasesOutput, e
 	aliasOutput, e = client.ListAliases(aliasInput)
 
 	if e != nil {
-		err = errors.New("ListAlias with PaymentCryptography Failed: (ListAlias) " + e.Error())
+		err = fmt.Errorf("ListAlias with PaymentCryptography Failed: (ListAlias) %w", e)
 		return
 	}
 	return aliasOutput, nil
@@ -855,7 +856,7 @@ func (k *PaymentCryptography) ListAliasNextPage(nextTK string) (output *pycrypto
 	aliasOutput, e = client.ListAliases(aliasInput)
 
 	if e != nil {
-		err = errors.New("ListAliasNextPage with PaymentCryptography Failed: (ListAlias) " + e.Error())
+		err = fmt.Errorf("ListAliasNextPage with PaymentCryptography Failed: (ListAlias) %w", e)
 		return
 	}
 	return aliasOutput, nil
@@ -885,7 +886,7 @@ func (k *PaymentCryptography) GetKey(keyArn string) (output *pycrypto.GetKeyOutp
 	aliasOutput, e = client.GetKey(aliasInput)
 
 	if e != nil {
-		err = errors.New("GetKey with PaymentCryptography Failed: (GetKey) " + e.Error())
+		err = fmt.Errorf("GetKey with PaymentCryptography Failed: (GetKey) %w", e)
 		return
 	}
 	return aliasOutput, nil
@@ -915,7 +916,7 @@ func (k *PaymentCryptography) GetKeyByAlias(keyAlias string) (output *pycrypto.G
 	aliasOutput, e = client.GetAlias(aliasInput)
 
 	if e != nil {
-		err = errors.New("GetKeyByAlias with PaymentCryptography Failed: (GetKeyByAlias) " + e.Error())
+		err = fmt.Errorf("GetKeyByAlias with PaymentCryptography Failed: (GetKeyByAlias) %w", e)
 		return
 	}
 	return aliasOutput, nil
@@ -936,7 +937,7 @@ func (k *PaymentCryptography) ListKeys() (output *pycrypto.ListKeysOutput, err e
 	aliasOutput, e = client.ListKeys(aliasInput)
 
 	if e != nil {
-		err = errors.New("ListKeys with PaymentCryptography Failed: (ListKeys) " + e.Error())
+		err = fmt.Errorf("ListKeys with PaymentCryptography Failed: (ListKeys) %w", e)
 		return
 	}
 	return aliasOutput, nil
@@ -964,7 +965,7 @@ func (k *PaymentCryptography) StopKeyUsage(keyArn string) (err error) {
 	_, e = client.StopKeyUsage(reqInput)
 
 	if e != nil {
-		err = errors.New("DisableKey with PaymentCryptography Failed: (DisableKey) " + e.Error())
+		err = fmt.Errorf("DisableKey with PaymentCryptography Failed: (DisableKey) %w", e)
 		return
 	}
 	//if respOutput != nil {
@@ -995,7 +996,7 @@ func (k *PaymentCryptography) StartKeyUsage(keyArn string) (err error) {
 	_, e = client.StartKeyUsage(reqInput)
 
 	if e != nil {
-		err = errors.New("EnableKey with PaymentCryptography Failed: (StartKeyUsage) " + e.Error())
+		err = fmt.Errorf("EnableKey with PaymentCryptography Failed: (StartKeyUsage) %w", e)
 		return
 	}
 	//if respOutput != nil {
@@ -1026,7 +1027,7 @@ func (k *PaymentCryptography) DeleteKey(keyArn string) (err error) {
 	_, e = client.DeleteKey(reqInput)
 
 	if e != nil {
-		err = errors.New("DeleteKey with PaymentCryptography Failed: (DeleteKey) " + e.Error())
+		err = fmt.Errorf("DeleteKey with PaymentCryptography Failed: (DeleteKey) %w", e)
 		return
 	}
 
@@ -1055,7 +1056,7 @@ func (k *PaymentCryptography) DeleteAlias(aliasName string) (err error) {
 	_, e = client.DeleteAlias(reqInput)
 
 	if e != nil {
-		err = errors.New("DeleteAlias with PaymentCryptography Failed: (DeleteAlias) " + e.Error())
+		err = fmt.Errorf("DeleteAlias with PaymentCryptography Failed: (DeleteAlias) %w", e)
 		return
 	}
 	return nil

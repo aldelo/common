@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -56,7 +57,7 @@ func (c *Csv) Open(path string) error {
 	c.f, err = os.Open(path)
 
 	if err != nil {
-		return errors.New("Open File Failed: " + err.Error())
+		return fmt.Errorf("Open File Failed: %w", err)
 	}
 
 	// open bufio reader
@@ -96,7 +97,7 @@ func (c *Csv) SkipHeaderRow() error {
 	_, _, err := c.r.ReadLine()
 
 	if err != nil {
-		return errors.New("Skip Header Row Failed: " + err.Error())
+		return fmt.Errorf("Skip Header Row Failed: %w", err)
 	}
 
 	return nil
@@ -171,7 +172,7 @@ func (c *Csv) ReadCsv() (eof bool, record []string, err error) {
 	c.TriedCount++
 
 	if err != nil {
-		return false, []string{}, errors.New("Read Csv Row Failed: " + err.Error())
+		return false, []string{}, fmt.Errorf("Read Csv Row Failed: %w", err)
 	}
 
 	if len(record) <= 0 {

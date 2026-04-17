@@ -42,6 +42,7 @@ package sqs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -336,7 +337,7 @@ func (s *SQS) connectInternal() error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return errors.New("Connect to SQS Failed: (AWS Session Error) " + "Create Custom http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to SQS Failed: (AWS Session Error) Create Custom http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection
@@ -355,7 +356,7 @@ func (s *SQS) connectInternal() error {
 
 	if sess, err := session.NewSession(cfg); err != nil {
 		// aws session error
-		return errors.New("Connect to SQS Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect to SQS Failed: (AWS Session Error) %w", err)
 	} else {
 		// create cached objects for shared use
 		cli := awssqs.New(sess)
@@ -738,7 +739,7 @@ func (s *SQS) CreateQueue(queueName string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("CreateQueue Failed: (Create Action) " + err.Error())
+		err = fmt.Errorf("CreateQueue Failed: (Create Action) %w", err)
 		return "", err
 	} else {
 		queueUrl = aws.StringValue(output.QueueUrl)
@@ -812,7 +813,7 @@ func (s *SQS) GetQueueUrl(queueName string, timeOutDuration ...time.Duration) (q
 		} else {
 			// error
 			notFound = true
-			err = errors.New("GetQueueUrl Failed: (Get Action) " + err.Error())
+			err = fmt.Errorf("GetQueueUrl Failed: (Get Action) %w", err)
 			return "", notFound, err
 
 		}
@@ -872,7 +873,7 @@ func (s *SQS) PurgeQueue(queueUrl string, timeOutDuration ...time.Duration) (err
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("PurgeQueue Failed: (Purge Action) " + err.Error())
+		err = fmt.Errorf("PurgeQueue Failed: (Purge Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -928,7 +929,7 @@ func (s *SQS) DeleteQueue(queueUrl string, timeOutDuration ...time.Duration) (er
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("DeleteQueue Failed: (Delete Action) " + err.Error())
+		err = fmt.Errorf("DeleteQueue Failed: (Delete Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -1006,7 +1007,7 @@ func (s *SQS) ListQueues(queueNamePrefix string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ListQueues Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("ListQueues Failed: (List Action) %w", err)
 		return nil, "", err
 	} else {
 		queueUrlsList = aws.StringValueSlice(output.QueueUrls)
@@ -1090,7 +1091,7 @@ func (s *SQS) ListDeadLetterSourceQueues(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ListDeadLetterSourceQueues Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("ListDeadLetterSourceQueues Failed: (List Action) %w", err)
 		return nil, "", err
 	} else {
 		queueUrlsList = aws.StringValueSlice(output.QueueUrls)
@@ -1255,7 +1256,7 @@ func (s *SQS) GetQueueAttributes(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("GetQueueAttributes Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("GetQueueAttributes Failed: (Get Action) %w", err)
 		return nil, err
 	} else {
 		attributes = s.fromAwsGetQueueAttributes(output.Attributes)
@@ -1412,7 +1413,7 @@ func (s *SQS) SetQueueAttributes(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SetQueueAttributes Failed: (Set Action) " + err.Error())
+		err = fmt.Errorf("SetQueueAttributes Failed: (Set Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -1521,7 +1522,7 @@ func (s *SQS) SendMessage(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SendMessage Failed: (Send Action) " + err.Error())
+		err = fmt.Errorf("SendMessage Failed: (Send Action) %w", err)
 		return nil, err
 	} else {
 		result = &SQSMessageResult{
@@ -1689,7 +1690,7 @@ func (s *SQS) SendMessageFifo(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SendMessageFifo Failed: (Send Action) " + err.Error())
+		err = fmt.Errorf("SendMessageFifo Failed: (Send Action) %w", err)
 		return nil, err
 	} else {
 		result = &SQSMessageResult{
@@ -1801,7 +1802,7 @@ func (s *SQS) SendMessageBatch(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SendMessageBatch Failed: (Send Action) " + err.Error())
+		err = fmt.Errorf("SendMessageBatch Failed: (Send Action) %w", err)
 		return nil, nil, err
 	} else {
 		if len(output.Successful) > 0 {
@@ -1922,7 +1923,7 @@ func (s *SQS) SendMessageBatchFifo(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SendMessageBatchFifo Failed: (Send Action) " + err.Error())
+		err = fmt.Errorf("SendMessageBatchFifo Failed: (Send Action) %w", err)
 		return nil, nil, err
 	} else {
 		if len(output.Successful) > 0 {
@@ -2134,7 +2135,7 @@ func (s *SQS) ReceiveMessage(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ReceiveMessage Failed: (Receive Action) " + err.Error())
+		err = fmt.Errorf("ReceiveMessage Failed: (Receive Action) %w", err)
 		return nil, err
 	} else {
 		for _, v := range output.Messages {
@@ -2225,7 +2226,7 @@ func (s *SQS) ChangeMessageVisibility(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ChangeMessageVisibility Failed: (Change Action) " + err.Error())
+		err = fmt.Errorf("ChangeMessageVisibility Failed: (Change Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -2330,7 +2331,7 @@ func (s *SQS) ChangeMessageVisibilityBatch(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ChangeMessageVisibilityBatch Failed: (Change Action) " + err.Error())
+		err = fmt.Errorf("ChangeMessageVisibilityBatch Failed: (Change Action) %w", err)
 		return nil, nil, err
 	} else {
 		if len(output.Successful) > 0 {
@@ -2412,7 +2413,7 @@ func (s *SQS) DeleteMessage(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("DeleteMessage Failed: (Delete Action) " + err.Error())
+		err = fmt.Errorf("DeleteMessage Failed: (Delete Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -2506,7 +2507,7 @@ func (s *SQS) DeleteMessageBatch(queueUrl string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("DeleteMessageBatch Failed: (Delete Action) " + err.Error())
+		err = fmt.Errorf("DeleteMessageBatch Failed: (Delete Action) %w", err)
 		return nil, nil, err
 	} else {
 		if len(output.Successful) > 0 {

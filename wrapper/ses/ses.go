@@ -363,7 +363,7 @@ func (s *SES) connectInternal() error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return errors.New("Connect to SES Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to SES Failed: (AWS Session Error) Create Custom Http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection and keep session object in struct
@@ -383,7 +383,7 @@ func (s *SES) connectInternal() error {
 	sess, err := session.NewSession(cfg)
 	if err != nil {
 		// aws session error
-		return errors.New("Connect To SES Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To SES Failed: (AWS Session Error) %w", err)
 	}
 
 	// create cached objects for shared use
@@ -780,7 +780,7 @@ func (s *SES) handleSESError(err error) error {
 			return errors.New("[AWS] " + aerr.Code() + " - " + aerr.Message())
 		} else {
 			// other error
-			return errors.New("[General] " + err.Error())
+			return fmt.Errorf("[General] %w", err)
 		}
 	} else {
 		return nil
@@ -828,7 +828,7 @@ func (s *SES) GetSendQuota(timeOutDuration ...time.Duration) (sq *SendQuota, err
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("GetSendQuota Failed: " + err.Error())
+		err = fmt.Errorf("GetSendQuota Failed: %w", err)
 		return nil, err
 	}
 
@@ -910,7 +910,7 @@ func (s *SES) SendEmail(email *Email, timeOutDuration ...time.Duration) (message
 	input, err = email.GenerateSendEmailInput()
 
 	if err != nil {
-		err = errors.New("SendEmail Failed: " + err.Error())
+		err = fmt.Errorf("SendEmail Failed: %w", err)
 		return "", err
 	}
 
@@ -1029,7 +1029,7 @@ func (s *SES) SendRawEmail(email *Email, attachmentFileName string, attachmentCo
 	input, err = email.GenerateSendRawEmailInput(attachmentFileName, attachmentContentType, attachmentData)
 
 	if err != nil {
-		err = errors.New("SendRawEmail Failed: " + err.Error())
+		err = fmt.Errorf("SendRawEmail Failed: %w", err)
 		return "", err
 	}
 
@@ -1160,7 +1160,7 @@ func (s *SES) CreateTemplate(templateName string, subjectPart string, textPart s
 	// evaluate result
 	if err != nil {
 		// failure
-		err = errors.New("CreateTemplate Failed: (Create Template Action) " + err.Error())
+		err = fmt.Errorf("CreateTemplate Failed: (Create Template Action) %w", err)
 		return err
 	} else {
 		// success
@@ -1255,7 +1255,7 @@ func (s *SES) UpdateTemplate(templateName string, subjectPart string, textPart s
 	// evaluate result
 	if err != nil {
 		// failure
-		err = errors.New("UpdateTemplate Failed: (Update Template Action) " + err.Error())
+		err = fmt.Errorf("UpdateTemplate Failed: (Update Template Action) %w", err)
 		return err
 	} else {
 		// success
@@ -1313,7 +1313,7 @@ func (s *SES) DeleteTemplate(templateName string, timeOutDuration ...time.Durati
 	// evaluate result
 	if err != nil {
 		// failure
-		err = errors.New("DeleteTemplate Failed: (Delete Template Action) " + err.Error())
+		err = fmt.Errorf("DeleteTemplate Failed: (Delete Template Action) %w", err)
 		return err
 	} else {
 		// success
@@ -1473,7 +1473,7 @@ func (s *SES) SendTemplateEmail(senderEmail string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SendTemplateEmailFailed: (Send Action) " + err.Error())
+		err = fmt.Errorf("SendTemplateEmailFailed: (Send Action) %w", err)
 		return "", err
 	}
 
@@ -1657,7 +1657,7 @@ func (s *SES) SendBulkTemplateEmail(senderEmail string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SendBulkTemplateEmail Failed: (Send Action) " + err.Error())
+		err = fmt.Errorf("SendBulkTemplateEmail Failed: (Send Action) %w", err)
 		return nil, 0, err
 	}
 
@@ -1785,7 +1785,7 @@ func (s *SES) CreateCustomVerificationEmailTemplate(templateName string,
 	// evaluate result
 	if err != nil {
 		// error
-		err = errors.New("CreateCustomVerificationEmailTemplate Failed: (Create Template Action) " + err.Error())
+		err = fmt.Errorf("CreateCustomVerificationEmailTemplate Failed: (Create Template Action) %w", err)
 		return err
 	} else {
 		// success
@@ -1889,7 +1889,7 @@ func (s *SES) UpdateCustomVerificationEmailTemplate(templateName string,
 	// evaluate result
 	if err != nil {
 		// error
-		err = errors.New("UpdateCustomVerificationEmailTemplate Failed: (Update Template Action) " + err.Error())
+		err = fmt.Errorf("UpdateCustomVerificationEmailTemplate Failed: (Update Template Action) %w", err)
 		return err
 	} else {
 		// success
@@ -1946,7 +1946,7 @@ func (s *SES) DeleteCustomVerificationEmailTemplate(templateName string, timeOut
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("DeleteCustomVerificationEmailTemplate Failed: (Delete Template Action) " + err.Error())
+		err = fmt.Errorf("DeleteCustomVerificationEmailTemplate Failed: (Delete Template Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -2021,7 +2021,7 @@ func (s *SES) SendCustomVerificationEmail(templateName string, toEmailAddress st
 	// evaluate result
 	if err != nil {
 		// failure
-		err = errors.New("SendCustomVerificationEmail Failed: (Send Action) " + err.Error())
+		err = fmt.Errorf("SendCustomVerificationEmail Failed: (Send Action) %w", err)
 		return "", err
 	}
 

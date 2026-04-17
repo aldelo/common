@@ -103,7 +103,7 @@ func (z *ZapLog) Init() error {
 	}
 
 	if err != nil {
-		return errors.New("Init Logger Failed: " + err.Error())
+		return fmt.Errorf("Init Logger Failed: %w", err)
 	}
 
 	// init zap sugared logger

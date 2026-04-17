@@ -47,6 +47,7 @@ import (
 	"sync"
 
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/aldelo/common/wrapper/redis/redisbitop"
@@ -345,14 +346,14 @@ func (r *Redis) connectInternal() error {
 		r.cnWriter = nil
 		_ = r.cnReader.Close()
 		r.cnReader = nil
-		return errors.New("Connect To Redis Failed: (Writer Endpoint) ping failed: " + err.Error())
+		return fmt.Errorf("Connect To Redis Failed: (Writer Endpoint) ping failed: %w", err)
 	}
 	if err := r.cnReader.Ping(ctx).Err(); err != nil {
 		_ = r.cnWriter.Close()
 		r.cnWriter = nil
 		_ = r.cnReader.Close()
 		r.cnReader = nil
-		return errors.New("Connect To Redis Failed: (Reader Endpoint) ping failed: " + err.Error())
+		return fmt.Errorf("Connect To Redis Failed: (Reader Endpoint) ping failed: %w", err)
 	}
 
 	// once writer and readers are all connected, set reference to helper struct objects
@@ -451,7 +452,7 @@ func (r *Redis) handleStatusCmd(statusCmd *redis.StatusCmd, errorTextPrefix ...s
 	} else {
 		if statusCmd.Err() != nil {
 			// has error encountered
-			return errors.New(prefix + statusCmd.Err().Error())
+			return fmt.Errorf("%s%w", prefix, statusCmd.Err())
 		} else {
 			// no error encountered
 			return nil
@@ -477,12 +478,12 @@ func (r *Redis) handleStringStatusCmd(statusCmd *redis.StatusCmd, errorTextPrefi
 				return "", true, nil
 			} else {
 				// has error encountered
-				return "", false, errors.New(prefix + statusCmd.Err().Error())
+				return "", false, fmt.Errorf("%s%w", prefix, statusCmd.Err())
 			}
 		} else {
 			// no error encountered
 			if val, err = statusCmd.Result(); err != nil {
-				return "", false, errors.New(prefix + "[Result to String Errored] " + err.Error())
+				return "", false, fmt.Errorf("%s[Result to String Errored] %w", prefix, err)
 			} else {
 				return val, false, nil
 			}
@@ -504,7 +505,7 @@ func (r *Redis) handleBoolCmd(boolCmd *redis.BoolCmd, errorTextPrefix ...string)
 	} else {
 		if boolCmd.Err() != nil {
 			// has error encountered
-			return false, errors.New(prefix + boolCmd.Err().Error())
+			return false, fmt.Errorf("%s%w", prefix, boolCmd.Err())
 		} else {
 			// no error encountered
 			return boolCmd.Val(), nil
@@ -530,12 +531,12 @@ func (r *Redis) handleIntCmd(intCmd *redis.IntCmd, errorTextPrefix ...string) (v
 				return 0, true, nil
 			} else {
 				// other error
-				return 0, false, errors.New(prefix + intCmd.Err().Error())
+				return 0, false, fmt.Errorf("%s%w", prefix, intCmd.Err())
 			}
 		} else {
 			// no error encountered
 			if val, err = intCmd.Result(); err != nil {
-				return 0, false, errors.New(prefix + "[Result to Int64 Errored] " + err.Error())
+				return 0, false, fmt.Errorf("%s[Result to Int64 Errored] %w", prefix, err)
 			} else {
 				return val, false, nil
 			}
@@ -555,11 +556,11 @@ func (r *Redis) handleIntCmd2(intCmd *redis.IntCmd, errorTextPrefix ...string) e
 		return errors.New(prefix + "Redis IntCmd Result Yielded Nil")
 	} else {
 		if intCmd.Err() != nil {
-			return errors.New(prefix + intCmd.Err().Error())
+			return fmt.Errorf("%s%w", prefix, intCmd.Err())
 		} else {
 			// no error encountered
 			if val, err := intCmd.Result(); err != nil {
-				return errors.New(prefix + "[Result to Int64 Errored] " + err.Error())
+				return fmt.Errorf("%s[Result to Int64 Errored] %w", prefix, err)
 			} else {
 				if val == 0 {
 					// fail
@@ -591,12 +592,12 @@ func (r *Redis) handleFloatCmd(floatCmd *redis.FloatCmd, errorTextPrefix ...stri
 				return 0.00, true, nil
 			} else {
 				// other error
-				return 0.00, false, errors.New(prefix + floatCmd.Err().Error())
+				return 0.00, false, fmt.Errorf("%s%w", prefix, floatCmd.Err())
 			}
 		} else {
 			// no error encountered
 			if val, err = floatCmd.Result(); err != nil {
-				return 0.00, false, errors.New(prefix + "[Result to Float64 Errored] " + err.Error())
+				return 0.00, false, fmt.Errorf("%s[Result to Float64 Errored] %w", prefix, err)
 			} else {
 				return val, false, nil
 			}
@@ -622,12 +623,12 @@ func (r *Redis) handleTimeCmd(timeCmd *redis.TimeCmd, errorTextPrefix ...string)
 				return time.Time{}, true, nil
 			} else {
 				// other error
-				return time.Time{}, false, errors.New(prefix + timeCmd.Err().Error())
+				return time.Time{}, false, fmt.Errorf("%s%w", prefix, timeCmd.Err())
 			}
 		} else {
 			// no error encountered
 			if val, err = timeCmd.Result(); err != nil {
-				return time.Time{}, false, errors.New(prefix + "[Result to Time Errored] " + err.Error())
+				return time.Time{}, false, fmt.Errorf("%s[Result to Time Errored] %w", prefix, err)
 			} else {
 				return val, false, nil
 			}
@@ -653,12 +654,12 @@ func (r *Redis) handleDurationCmd(durationCmd *redis.DurationCmd, errorTextPrefi
 				return 0, true, nil
 			} else {
 				// other error
-				return 0, false, errors.New(prefix + durationCmd.Err().Error())
+				return 0, false, fmt.Errorf("%s%w", prefix, durationCmd.Err())
 			}
 		} else {
 			// no error encountered
 			if val, err = durationCmd.Result(); err != nil {
-				return 0, false, errors.New(prefix + "[Result to Duration Errored] " + err.Error())
+				return 0, false, fmt.Errorf("%s[Result to Duration Errored] %w", prefix, err)
 			} else {
 				return val, false, nil
 			}
@@ -684,12 +685,12 @@ func (r *Redis) handleStringCmd2(stringCmd *redis.StringCmd, errorTextPrefix ...
 				return "", true, nil
 			} else {
 				// other error
-				return "", false, errors.New(prefix + stringCmd.Err().Error())
+				return "", false, fmt.Errorf("%s%w", prefix, stringCmd.Err())
 			}
 		} else {
 			// no error encountered
 			if val, err = stringCmd.Result(); err != nil {
-				return "", false, errors.New(prefix + "[Result to String Errored] " + err.Error())
+				return "", false, fmt.Errorf("%s[Result to String Errored] %w", prefix, err)
 			} else {
 				return val, false, nil
 			}
@@ -723,7 +724,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 				return true, nil
 			} else {
 				// other error
-				return false, errors.New(prefix + stringCmd.Err().Error())
+				return false, fmt.Errorf("%s%w", prefix, stringCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
@@ -735,7 +736,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					return false, errors.New(prefix + "[Result to Bool Errored] Output Object Pointer Type Assertion to *bool Failed")
 				}
 				if val, e := stringCmd.Result(); e != nil {
-					return false, errors.New(prefix + "[Result to Bool Errored] " + e.Error())
+					return false, fmt.Errorf("%s[Result to Bool Errored] %w", prefix, e)
 				} else {
 					// success
 					if output, success := util.ParseBool(val); !success {
@@ -752,7 +753,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					return false, errors.New(prefix + "[Result to Int Errored] Output Object Pointer Type Assertion to *int Failed")
 				}
 				if val, e := stringCmd.Int(); e != nil {
-					return false, errors.New(prefix + "[Result to Int Errored] " + e.Error())
+					return false, fmt.Errorf("%s[Result to Int Errored] %w", prefix, e)
 				} else {
 					// success
 					*dst = val
@@ -765,7 +766,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					return false, errors.New(prefix + "[Result to Int64 Errored] Output Object Pointer Type Assertion to *int64 Failed")
 				}
 				if val, e := stringCmd.Int64(); e != nil {
-					return false, errors.New(prefix + "[Result to Int64 Errored] " + e.Error())
+					return false, fmt.Errorf("%s[Result to Int64 Errored] %w", prefix, e)
 				} else {
 					// success
 					*dst = val
@@ -778,7 +779,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					return false, errors.New(prefix + "[Result to Float64 Errored] Output Object Pointer Type Assertion to *float64 Failed")
 				}
 				if val, e := stringCmd.Float64(); e != nil {
-					return false, errors.New(prefix + "[Result to Float64 Errored] " + e.Error())
+					return false, fmt.Errorf("%s[Result to Float64 Errored] %w", prefix, e)
 				} else {
 					// success
 					*dst = val
@@ -791,7 +792,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					return false, errors.New(prefix + "[Result to Bytes Errored] Output Object Pointer Type Assertion to *[]byte Failed")
 				}
 				if val, e := stringCmd.Bytes(); e != nil {
-					return false, errors.New(prefix + "[Result to Bytes Errored] " + e.Error())
+					return false, fmt.Errorf("%s[Result to Bytes Errored] %w", prefix, e)
 				} else {
 					// success
 					*dst = val
@@ -800,7 +801,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 			case redisdatatype.Json:
 				// result to json
 				if str, e := stringCmd.Result(); e != nil {
-					return false, errors.New(prefix + "[Result to Json Errored] " + e.Error())
+					return false, fmt.Errorf("%s[Result to Json Errored] %w", prefix, e)
 				} else {
 					// ready to unmarshal json to object
 					// found str value,
@@ -810,7 +811,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					} else {
 						if err = util.UnmarshalJSON(str, outputObjectPtr); err != nil {
 							// unmarshal error
-							return false, errors.New(prefix + "[Result to Json Errored] Unmarshal Json Failed " + err.Error())
+							return false, fmt.Errorf("%s[Result to Json Errored] Unmarshal Json Failed %w", prefix, err)
 						} else {
 							// unmarshal success
 							return false, nil
@@ -824,7 +825,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					return false, errors.New(prefix + "[Result to Time Errored] Output Object Pointer Type Assertion to *time.Time Failed")
 				}
 				if val, e := stringCmd.Time(); e != nil {
-					return false, errors.New(prefix + "[Result to Time Errored] " + e.Error())
+					return false, fmt.Errorf("%s[Result to Time Errored] %w", prefix, e)
 				} else {
 					// success
 					*dst = val
@@ -837,7 +838,7 @@ func (r *Redis) handleStringCmd(stringCmd *redis.StringCmd, outputDataType redis
 					return false, errors.New(prefix + "[Result to String Errored] Output Object Pointer Type Assertion to *string Failed")
 				}
 				if str, e := stringCmd.Result(); e != nil {
-					return false, errors.New(prefix + "[Result to String Errored] " + e.Error())
+					return false, fmt.Errorf("%s[Result to String Errored] %w", prefix, e)
 				} else {
 					// success
 					*dst = str
@@ -866,13 +867,13 @@ func (r *Redis) handleSliceCmd(sliceCmd *redis.SliceCmd, errorTextPrefix ...stri
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + sliceCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, sliceCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputSlice, err = sliceCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to Slice Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to Slice Errored] %w", prefix, err)
 			} else {
 				// success
 				return outputSlice, false, nil
@@ -899,13 +900,13 @@ func (r *Redis) handleStringSliceCmd(stringSliceCmd *redis.StringSliceCmd, error
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + stringSliceCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, stringSliceCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputSlice, err = stringSliceCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to String Slice Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to String Slice Errored] %w", prefix, err)
 			} else {
 				// success
 				return outputSlice, false, nil
@@ -932,13 +933,13 @@ func (r *Redis) handleIntSliceCmd(intSliceCmd *redis.IntSliceCmd, errorTextPrefi
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + intSliceCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, intSliceCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputSlice, err = intSliceCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to Int64 Slice Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to Int64 Slice Errored] %w", prefix, err)
 			} else {
 				// success
 				return outputSlice, false, nil
@@ -965,13 +966,13 @@ func (r *Redis) handleBoolSliceCmd(boolSliceCmd *redis.BoolSliceCmd, errorTextPr
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + boolSliceCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, boolSliceCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputSlice, err = boolSliceCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to Bool Slice Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to Bool Slice Errored] %w", prefix, err)
 			} else {
 				// success
 				if len(outputSlice) > 0 {
@@ -1002,13 +1003,13 @@ func (r *Redis) handleZSliceCmd(zSliceCmd *redis.ZSliceCmd, errorTextPrefix ...s
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + zSliceCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, zSliceCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputSlice, err = zSliceCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to Z Slice Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to Z Slice Errored] %w", prefix, err)
 			} else {
 				// success
 				if len(outputSlice) > 0 {
@@ -1039,13 +1040,13 @@ func (r *Redis) handleXMessageSliceCmd(xmessageSliceCmd *redis.XMessageSliceCmd,
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + xmessageSliceCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, xmessageSliceCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputSlice, err = xmessageSliceCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to XMessage Slice Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to XMessage Slice Errored] %w", prefix, err)
 			} else {
 				// success
 				if len(outputSlice) > 0 {
@@ -1076,13 +1077,13 @@ func (r *Redis) handleXStreamSliceCmd(xstreamSliceCmd *redis.XStreamSliceCmd, er
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + xstreamSliceCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, xstreamSliceCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputSlice, err = xstreamSliceCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to XStream Slice Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to XStream Slice Errored] %w", prefix, err)
 			} else {
 				// success
 				if len(outputSlice) > 0 {
@@ -1113,13 +1114,13 @@ func (r *Redis) handleXInfoGroupsCmd(xinfoGroupsCmd *redis.XInfoGroupsCmd, error
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + xinfoGroupsCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, xinfoGroupsCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputSlice, err = xinfoGroupsCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to XInfoGroups Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to XInfoGroups Errored] %w", prefix, err)
 			} else {
 				// success
 				if len(outputSlice) > 0 {
@@ -1150,7 +1151,7 @@ func (r *Redis) handleScanCmd(scanCmd *redis.ScanCmd, errorTextPrefix ...string)
 				return nil, 0, nil
 			} else {
 				// other error
-				return nil, 0, errors.New(prefix + scanCmd.Err().Error())
+				return nil, 0, fmt.Errorf("%s%w", prefix, scanCmd.Err())
 			}
 		} else {
 			// no error encountered
@@ -1177,13 +1178,13 @@ func (r *Redis) handleXPendingCmd(xpendingCmd *redis.XPendingCmd, errorTextPrefi
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + xpendingCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, xpendingCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if output, err = xpendingCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to XPending Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to XPending Errored] %w", prefix, err)
 			} else {
 				// success
 				if output != nil {
@@ -1214,13 +1215,13 @@ func (r *Redis) handleXPendingExtCmd(xpendingExtCmd *redis.XPendingExtCmd, error
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + xpendingExtCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, xpendingExtCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputSlice, err = xpendingExtCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to XPendingExt Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to XPendingExt Errored] %w", prefix, err)
 			} else {
 				// success
 				if len(outputSlice) > 0 {
@@ -1251,13 +1252,13 @@ func (r *Redis) handleStringIntMapCmd(stringIntMapCmd *redis.StringIntMapCmd, er
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + stringIntMapCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, stringIntMapCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputMap, err = stringIntMapCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to String-Int-Map Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to String-Int-Map Errored] %w", prefix, err)
 			} else {
 				// success
 				return outputMap, false, nil
@@ -1284,13 +1285,13 @@ func (r *Redis) handleStringStringMapCmd(stringStringMapCmd *redis.StringStringM
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + stringStringMapCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, stringStringMapCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputMap, err = stringStringMapCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to String-String-Map Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to String-String-Map Errored] %w", prefix, err)
 			} else {
 				// success
 				return outputMap, false, nil
@@ -1317,13 +1318,13 @@ func (r *Redis) handleStringStructMapCmd(stringStructMapCmd *redis.StringStructM
 				return nil, true, nil
 			} else {
 				// other error
-				return nil, false, errors.New(prefix + stringStructMapCmd.Err().Error())
+				return nil, false, fmt.Errorf("%s%w", prefix, stringStructMapCmd.Err())
 			}
 		} else {
 			// no error, evaluate result
 			if outputMap, err = stringStructMapCmd.Result(); err != nil {
 				// error
-				return nil, false, errors.New(prefix + "[Result to String-Struct-Map Errored] " + err.Error())
+				return nil, false, fmt.Errorf("%s[Result to String-Struct-Map Errored] %w", prefix, err)
 			} else {
 				// success
 				return outputMap, false, nil
@@ -1488,7 +1489,7 @@ func (r *Redis) SetJson(key string, jsonObject interface{}, expires ...time.Dura
 		return errors.New("Redis SetJson Failed: Redis receiver is nil")
 	}
 	if val, err := util.MarshalJSONCompact(jsonObject); err != nil {
-		return errors.New("Redis Set Failed: (Marshal Json) " + err.Error())
+		return fmt.Errorf("Redis Set Failed: (Marshal Json) %w", err)
 	} else {
 		return r.SetBase(key, val, redissetcondition.Normal, expires...)
 	}
@@ -1550,7 +1551,7 @@ func (r *Redis) getBaseInternal(snap redisConnSnapshot, key string) (cmd *redis.
 			return nil, true, nil
 		} else {
 			// other error
-			return nil, false, errors.New("Redis Get Failed: (Get Method) " + cmd.Err().Error())
+			return nil, false, fmt.Errorf("Redis Get Failed: (Get Method) %w", cmd.Err())
 		}
 	} else {
 		// value found - return actual StringCmd

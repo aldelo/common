@@ -452,7 +452,7 @@ func (s *SNS) connectInternal() error {
 
 	httpCli, httpErr := h2.NewHttp2Client()
 	if httpErr != nil {
-		return errors.New("Connect to SNS Failed: (AWS Session Error) " + "Create Custom Http2 Client Errored = " + httpErr.Error())
+		return fmt.Errorf("Connect to SNS Failed: (AWS Session Error) Create Custom Http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection and keep session object in struct
@@ -463,7 +463,7 @@ func (s *SNS) connectInternal() error {
 		})
 	if err != nil {
 		// aws session error
-		return errors.New("Connect To SNS Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To SNS Failed: (AWS Session Error) %w", err)
 	}
 
 	cli := sns.New(sess)
@@ -842,7 +842,7 @@ func (s *SNS) CreateTopic(topicName string, attributes map[snscreatetopicattribu
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("CreateTopic Failed: (Create Action) " + err.Error())
+		err = fmt.Errorf("CreateTopic Failed: (Create Action) %w", err)
 		return "", err
 	}
 
@@ -902,7 +902,7 @@ func (s *SNS) DeleteTopic(topicArn string, timeOutDuration ...time.Duration) (er
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("DeleteTopic Failed: (Delete Action) " + err.Error())
+		err = fmt.Errorf("DeleteTopic Failed: (Delete Action) %w", err)
 		return err
 	}
 
@@ -970,7 +970,7 @@ func (s *SNS) ListTopics(nextToken string, timeOutDuration ...time.Duration) (to
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ListTopics Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("ListTopics Failed: (List Action) %w", err)
 		return nil, "", err
 	}
 
@@ -1066,7 +1066,7 @@ func (s *SNS) GetTopicAttributes(topicArn string, timeOutDuration ...time.Durati
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("GetTopicAttributes Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("GetTopicAttributes Failed: (Get Action) %w", err)
 		return nil, err
 	}
 
@@ -1138,7 +1138,7 @@ func (s *SNS) SetTopicAttribute(topicArn string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SetTopicAttribute Failed: (Set Action) " + err.Error())
+		err = fmt.Errorf("SetTopicAttribute Failed: (Set Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -1307,7 +1307,7 @@ func (s *SNS) Subscribe(topicArn string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("Subscribe Failed: (Subscribe Action) " + err.Error())
+		err = fmt.Errorf("Subscribe Failed: (Subscribe Action) %w", err)
 		return "", err
 	}
 
@@ -1371,7 +1371,7 @@ func (s *SNS) Unsubscribe(subscriptionArn string, timeOutDuration ...time.Durati
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("Unsubscribe Failed: (Unsubscribe Action) " + err.Error())
+		err = fmt.Errorf("Unsubscribe Failed: (Unsubscribe Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -1459,7 +1459,7 @@ func (s *SNS) ConfirmSubscription(topicArn string, token string, timeOutDuration
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ConfirmSubscription Failed: (ConfirmSubscription Action) " + err.Error())
+		err = fmt.Errorf("ConfirmSubscription Failed: (ConfirmSubscription Action) %w", err)
 		return "", err
 	}
 
@@ -1528,7 +1528,7 @@ func (s *SNS) ListSubscriptions(nextToken string, timeOutDuration ...time.Durati
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ListSubscriptions Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("ListSubscriptions Failed: (List Action) %w", err)
 		return nil, "", err
 	}
 
@@ -1624,7 +1624,7 @@ func (s *SNS) ListSubscriptionsByTopic(topicArn string, nextToken string, timeOu
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ListSubscriptionsByTopic Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("ListSubscriptionsByTopic Failed: (List Action) %w", err)
 		return nil, "", err
 	}
 
@@ -1729,7 +1729,7 @@ func (s *SNS) GetSubscriptionAttributes(subscriptionArn string, timeOutDuration 
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("GetSubscriptionAttributes Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("GetSubscriptionAttributes Failed: (Get Action) %w", err)
 		return nil, err
 	}
 
@@ -1801,7 +1801,7 @@ func (s *SNS) SetSubscriptionAttribute(subscriptionArn string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SetSubscriptionAttribute Failed: (Set Action) " + err.Error())
+		err = fmt.Errorf("SetSubscriptionAttribute Failed: (Set Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -1963,7 +1963,7 @@ func (s *SNS) Publish(topicArn string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("Publish Failed: (Publish Action) " + err.Error())
+		err = fmt.Errorf("Publish Failed: (Publish Action) %w", err)
 		return "", err
 	} else {
 		messageId = aws.StringValue(output.MessageId)
@@ -2056,7 +2056,7 @@ func (s *SNS) SendSMS(phoneNumber string,
 	}
 
 	if err = validateE164Phone(phoneNumber); err != nil {
-		err = errors.New("SendSMS Failed: " + err.Error())
+		err = fmt.Errorf("SendSMS Failed: %w", err)
 		return "", err
 	}
 
@@ -2088,7 +2088,7 @@ func (s *SNS) SendSMS(phoneNumber string,
 	}
 
 	if err = validateSenderID(s.getSMSSenderName()); err != nil {
-		err = errors.New("SendSMS Failed: " + err.Error())
+		err = fmt.Errorf("SendSMS Failed: %w", err)
 		return "", err
 	}
 
@@ -2129,7 +2129,7 @@ func (s *SNS) SendSMS(phoneNumber string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SendSMS Failed: (SMS Send Action) " + err.Error())
+		err = fmt.Errorf("SendSMS Failed: (SMS Send Action) %w", err)
 		return "", err
 	} else {
 		messageId = aws.StringValue(output.MessageId)
@@ -2180,7 +2180,7 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 	}
 
 	if err = validateE164Phone(phoneNumber); err != nil {
-		err = errors.New("OptInPhoneNumber Failed: " + err.Error())
+		err = fmt.Errorf("OptInPhoneNumber Failed: %w", err)
 		return err
 	}
 
@@ -2202,7 +2202,7 @@ func (s *SNS) OptInPhoneNumber(phoneNumber string, timeOutDuration ...time.Durat
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("OptInPhoneNumber Failed: (Action) " + err.Error())
+		err = fmt.Errorf("OptInPhoneNumber Failed: (Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -2256,7 +2256,7 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 	}
 
 	if err = validateE164Phone(phoneNumber); err != nil {
-		err = errors.New("CheckIfPhoneNumberIsOptedOut Failed: " + err.Error())
+		err = fmt.Errorf("CheckIfPhoneNumberIsOptedOut Failed: %w", err)
 		return false, err
 	}
 
@@ -2280,7 +2280,7 @@ func (s *SNS) CheckIfPhoneNumberIsOptedOut(phoneNumber string, timeOutDuration .
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("CheckIfPhoneNumberIsOptedOut Failed: (Action) " + err.Error())
+		err = fmt.Errorf("CheckIfPhoneNumberIsOptedOut Failed: (Action) %w", err)
 		return false, err
 	} else {
 		optedOut = aws.BoolValue(output.IsOptedOut)
@@ -2360,7 +2360,7 @@ func (s *SNS) ListPhoneNumbersOptedOut(nextToken string, timeOutDuration ...time
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ListPhoneNumbersOptedOut Failed: (Action) " + err.Error())
+		err = fmt.Errorf("ListPhoneNumbersOptedOut Failed: (Action) %w", err)
 		return nil, "", err
 	}
 
@@ -2482,7 +2482,7 @@ func (s *SNS) CreatePlatformApplication(name string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("CreatePlatformApplication Failed: (Create Action) " + err.Error())
+		err = fmt.Errorf("CreatePlatformApplication Failed: (Create Action) %w", err)
 		return "", err
 	} else {
 		platformApplicationArn = aws.StringValue(output.PlatformApplicationArn)
@@ -2546,7 +2546,7 @@ func (s *SNS) DeletePlatformApplication(platformApplicationArn string, timeOutDu
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("DeletePlatformApplication Failed: (Delete Action) " + err.Error())
+		err = fmt.Errorf("DeletePlatformApplication Failed: (Delete Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -2614,7 +2614,7 @@ func (s *SNS) ListPlatformApplications(nextToken string, timeOutDuration ...time
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ListPlatformApplications Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("ListPlatformApplications Failed: (List Action) %w", err)
 		return nil, "", err
 	}
 
@@ -2693,7 +2693,7 @@ func (s *SNS) GetPlatformApplicationAttributes(platformApplicationArn string, ti
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("GetPlatformApplicationAttributes Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("GetPlatformApplicationAttributes Failed: (Get Action) %w", err)
 		return nil, err
 	}
 
@@ -2761,7 +2761,7 @@ func (s *SNS) SetPlatformApplicationAttributes(platformApplicationArn string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SetPlatformApplicationAttributes Failed: (Set Action) " + err.Error())
+		err = fmt.Errorf("SetPlatformApplicationAttributes Failed: (Set Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -2858,7 +2858,7 @@ func (s *SNS) CreatePlatformEndpoint(platformApplicationArn string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("CreatePlatformEndpoint Failed: (Create Action) " + err.Error())
+		err = fmt.Errorf("CreatePlatformEndpoint Failed: (Create Action) %w", err)
 		return "", err
 	} else {
 		endpointArn = aws.StringValue(output.EndpointArn)
@@ -2922,7 +2922,7 @@ func (s *SNS) DeletePlatformEndpoint(endpointArn string, timeOutDuration ...time
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("DeletePlatformEndpoint Failed: (Delete Action) " + err.Error())
+		err = fmt.Errorf("DeletePlatformEndpoint Failed: (Delete Action) %w", err)
 		return err
 	} else {
 		return nil
@@ -3001,7 +3001,7 @@ func (s *SNS) ListEndpointsByPlatformApplication(platformApplicationArn string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("ListEndpointsByPlatformApplication Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("ListEndpointsByPlatformApplication Failed: (List Action) %w", err)
 		return nil, "", err
 	}
 
@@ -3091,7 +3091,7 @@ func (s *SNS) GetPlatformEndpointAttributes(endpointArn string, timeOutDuration 
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("GetPlatformEndpointAttributes Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("GetPlatformEndpointAttributes Failed: (Get Action) %w", err)
 		return nil, err
 	} else {
 		attributes = s.fromAwsEndpointAttributes(output.Attributes)
@@ -3160,7 +3160,7 @@ func (s *SNS) SetPlatformEndpointAttributes(endpointArn string,
 
 	// evaluate result
 	if err != nil {
-		err = errors.New("SetPlatformEndpointAttributes Failed: (Set Action) " + err.Error())
+		err = fmt.Errorf("SetPlatformEndpointAttributes Failed: (Set Action) %w", err)
 		return err
 	} else {
 		return nil

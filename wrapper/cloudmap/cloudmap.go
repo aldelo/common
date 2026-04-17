@@ -258,7 +258,7 @@ func (sd *CloudMap) connectInternal() error {
 			HTTPClient: httpCli,
 		}); err != nil {
 		// aws session error
-		return errors.New("Connect To CloudMap Failed: (AWS Session Error) " + err.Error())
+		return fmt.Errorf("Connect To CloudMap Failed: (AWS Session Error) %w", err)
 	} else {
 		// create cached objects for shared use
 		sd.sdClient = servicediscovery.New(sess)
@@ -546,7 +546,7 @@ func (sd *CloudMap) CreatePrivateDnsNamespace(name string,
 	output, err = sdClient.CreatePrivateDnsNamespaceWithContext(callCtx, input)
 
 	if err != nil {
-		err = errors.New("CloudMap CreatePrivateDnsNamespace Failed: (Create Action) " + err.Error())
+		err = fmt.Errorf("CloudMap CreatePrivateDnsNamespace Failed: (Create Action) %w", err)
 		return "", err
 	}
 
@@ -665,7 +665,7 @@ func (sd *CloudMap) CreatePublicDnsNamespace(name string,
 	output, err = sdClient.CreatePublicDnsNamespaceWithContext(callCtx, input)
 
 	if err != nil {
-		err = errors.New("CloudMap CreatePublicDnsNamespace Failed: (Create Action) " + err.Error())
+		err = fmt.Errorf("CloudMap CreatePublicDnsNamespace Failed: (Create Action) %w", err)
 		return "", err
 	}
 
@@ -749,7 +749,7 @@ func (sd *CloudMap) GetNamespace(namespaceId string, timeOutDuration ...time.Dur
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap GetNamespace Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("CloudMap GetNamespace Failed: (Get Action) %w", err)
 		return nil, err
 	}
 
@@ -882,7 +882,7 @@ func (sd *CloudMap) ListNamespaces(filter *sdnamespacefilter.SdNamespaceFilter,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap ListNamespaces Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("CloudMap ListNamespaces Failed: (List Action) %w", err)
 		return nil, "", err
 	}
 
@@ -1026,7 +1026,7 @@ func (sd *CloudMap) ListNamespacesPages(filter *sdnamespacefilter.SdNamespaceFil
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap ListNamespacesPages Failed: (ListPages Action) " + err.Error())
+		err = fmt.Errorf("CloudMap ListNamespacesPages Failed: (ListPages Action) %w", err)
 		return nil, "", err
 	}
 
@@ -1103,7 +1103,7 @@ func (sd *CloudMap) DeleteNamespace(namespaceId string, timeOutDuration ...time.
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap DeleteNamespace Failed: (Delete Action) " + err.Error())
+		err = fmt.Errorf("CloudMap DeleteNamespace Failed: (Delete Action) %w", err)
 		return "", err
 	}
 
@@ -1333,7 +1333,7 @@ func (sd *CloudMap) CreateService(name string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap CreateService Failed: (Create Action) " + err.Error())
+		err = fmt.Errorf("CloudMap CreateService Failed: (Create Action) %w", err)
 		return nil, err
 	}
 
@@ -1526,7 +1526,7 @@ func (sd *CloudMap) UpdateService(serviceId string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap UpdateService Failed: (Update Action) " + err.Error())
+		err = fmt.Errorf("CloudMap UpdateService Failed: (Update Action) %w", err)
 		return "", err
 	}
 
@@ -1609,7 +1609,7 @@ func (sd *CloudMap) GetService(serviceId string, timeOutDuration ...time.Duratio
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap GetService Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("CloudMap GetService Failed: (Get Action) %w", err)
 		return nil, err
 	}
 
@@ -1742,7 +1742,7 @@ func (sd *CloudMap) ListServices(filter []string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap ListServices Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("CloudMap ListServices Failed: (List Action) %w", err)
 		return nil, "", err
 	}
 
@@ -1886,7 +1886,7 @@ func (sd *CloudMap) ListServicesPages(filter []string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap ListServicesPages Failed: (ListPages Action) " + err.Error())
+		err = fmt.Errorf("CloudMap ListServicesPages Failed: (ListPages Action) %w", err)
 		return nil, "", err
 	}
 
@@ -1962,7 +1962,7 @@ func (sd *CloudMap) DeleteService(serviceId string, timeOutDuration ...time.Dura
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap DeleteService Failed: (Delete Action) " + err.Error())
+		err = fmt.Errorf("CloudMap DeleteService Failed: (Delete Action) %w", err)
 		return err
 	}
 
@@ -2110,7 +2110,7 @@ func (sd *CloudMap) RegisterInstance(serviceId string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap RegisterInstance Failed: (Register Action) " + err.Error())
+		err = fmt.Errorf("CloudMap RegisterInstance Failed: (Register Action) %w", err)
 		return "", err
 	}
 
@@ -2221,7 +2221,7 @@ func (sd *CloudMap) UpdateInstanceCustomHealthStatus(instanceId string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap UpdateInstanceCustomHealthStatus Failed: (Update Action) " + err.Error())
+		err = fmt.Errorf("CloudMap UpdateInstanceCustomHealthStatus Failed: (Update Action) %w", err)
 		return err
 	}
 
@@ -2310,7 +2310,7 @@ func (sd *CloudMap) DeregisterInstance(instanceId string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap DeregisterInstance Failed: (Deregister Action) " + err.Error())
+		err = fmt.Errorf("CloudMap DeregisterInstance Failed: (Deregister Action) %w", err)
 		return "", err
 	}
 
@@ -2402,7 +2402,7 @@ func (sd *CloudMap) GetInstance(instanceId string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap GetInstance Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("CloudMap GetInstance Failed: (Get Action) %w", err)
 		return nil, err
 	}
 
@@ -2526,7 +2526,7 @@ func (sd *CloudMap) GetInstancesHealthStatus(serviceId string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap GetInstancesHealthStatus Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("CloudMap GetInstancesHealthStatus Failed: (Get Action) %w", err)
 		return nil, "", err
 	}
 
@@ -2669,7 +2669,7 @@ func (sd *CloudMap) GetInstancesHealthStatusPages(serviceId string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap GetInstancesHealthStatusPages Failed: (ListPages Action) " + err.Error())
+		err = fmt.Errorf("CloudMap GetInstancesHealthStatusPages Failed: (ListPages Action) %w", err)
 		return nil, "", err
 	}
 
@@ -2789,7 +2789,7 @@ func (sd *CloudMap) DiscoverInstances(namespaceName string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap DiscoverInstances Failed: (Discover Action) " + err.Error())
+		err = fmt.Errorf("CloudMap DiscoverInstances Failed: (Discover Action) %w", err)
 		return nil, err
 	}
 
@@ -2902,7 +2902,7 @@ func (sd *CloudMap) ListInstances(serviceId string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap ListInstances Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("CloudMap ListInstances Failed: (List Action) %w", err)
 		return nil, "", err
 	}
 
@@ -3026,7 +3026,7 @@ func (sd *CloudMap) ListInstancesPages(serviceId string,
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap ListInstancesPages Failed: (ListPages Action) " + err.Error())
+		err = fmt.Errorf("CloudMap ListInstancesPages Failed: (ListPages Action) %w", err)
 		return nil, "", err
 	}
 
@@ -3110,7 +3110,7 @@ func (sd *CloudMap) GetOperation(operationId string, timeOutDuration ...time.Dur
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap GetOperation Failed: (Get Action) " + err.Error())
+		err = fmt.Errorf("CloudMap GetOperation Failed: (Get Action) %w", err)
 		return nil, err
 	}
 
@@ -3291,7 +3291,7 @@ func (sd *CloudMap) ListOperations(filter map[sdoperationfilter.SdOperationFilte
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap ListOperations Failed: (List Action) " + err.Error())
+		err = fmt.Errorf("CloudMap ListOperations Failed: (List Action) %w", err)
 		return nil, "", err
 	}
 
@@ -3483,7 +3483,7 @@ func (sd *CloudMap) ListOperationsPages(filter map[sdoperationfilter.SdOperation
 
 	if err != nil {
 		// handle error
-		err = errors.New("CloudMap ListOperationsPages Failed: (ListPages Action) " + err.Error())
+		err = fmt.Errorf("CloudMap ListOperationsPages Failed: (ListPages Action) %w", err)
 		return nil, "", err
 	}
 

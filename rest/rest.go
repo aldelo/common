@@ -180,7 +180,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	var req *http.Request
 
 	if req, err = http.NewRequest("GET", url, nil); err != nil {
-		return 0, "", errors.New("Create New Http GET Request Failed: " + err.Error())
+		return 0, "", fmt.Errorf("Create New Http GET Request Failed: %w", err)
 	}
 
 	// add headers to request if any
@@ -194,7 +194,7 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		return httpInternalErrorStatus, "", errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get Error] " + err.Error())
+		return httpInternalErrorStatus, "", fmt.Errorf("[%d - Http Get Error] %w", httpInternalErrorStatus, err)
 	}
 
 	// evaluate response
@@ -252,7 +252,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	var req *http.Request
 
 	if req, err = http.NewRequest("POST", url, bytes.NewBuffer([]byte(requestBody))); err != nil {
-		return 0, "", errors.New("Create New Http Post Request Failed: " + err.Error())
+		return 0, "", fmt.Errorf("Create New Http Post Request Failed: %w", err)
 	}
 
 	// add headers to request if any
@@ -276,7 +276,7 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		return httpInternalErrorStatus, "", errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post Error] " + err.Error())
+		return httpInternalErrorStatus, "", fmt.Errorf("[%d - Http Post Error] %w", httpInternalErrorStatus, err)
 	}
 
 	// evaluate response
@@ -331,7 +331,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	var req *http.Request
 
 	if req, err = http.NewRequest("PUT", url, bytes.NewBuffer([]byte(requestBody))); err != nil {
-		return 0, "", errors.New("Create New Http Put Request Failed: " + err.Error())
+		return 0, "", fmt.Errorf("Create New Http Put Request Failed: %w", err)
 	}
 
 	// add headers to request if any
@@ -355,7 +355,7 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		return httpInternalErrorStatus, "", errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put Error] " + err.Error())
+		return httpInternalErrorStatus, "", fmt.Errorf("[%d - Http Put Error] %w", httpInternalErrorStatus, err)
 	}
 
 	// evaluate response
@@ -409,7 +409,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	var req *http.Request
 
 	if req, err = http.NewRequest("DELETE", url, nil); err != nil {
-		return 0, "", errors.New("Create New Http Delete Request Failed: " + err.Error())
+		return 0, "", fmt.Errorf("Create New Http Delete Request Failed: %w", err)
 	}
 
 	// add headers to request if any
@@ -423,7 +423,7 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	var resp *http.Response
 
 	if resp, err = client.Do(req); err != nil {
-		return httpInternalErrorStatus, "", errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete Error] " + err.Error())
+		return httpInternalErrorStatus, "", fmt.Errorf("[%d - Http Delete Error] %w", httpInternalErrorStatus, err)
 	}
 
 	// evaluate response
@@ -477,7 +477,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 
 	if req, err = http.NewRequest("GET", url, nil); err != nil {
 
-		return 0, errors.New("Create New Http GET ProtoBuf Request Failed: " + err.Error())
+		return 0, fmt.Errorf("Create New Http GET ProtoBuf Request Failed: %w", err)
 	}
 
 	// add headers to request if any
@@ -502,7 +502,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 
 	if resp, err = client.Do(req); err != nil {
 
-		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get ProtoBuf Error] " + err.Error())
+		return httpInternalErrorStatus, fmt.Errorf("[%d - Http Get ProtoBuf Error] %w", httpInternalErrorStatus, err)
 	}
 
 	// evaluate response
@@ -534,7 +534,7 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
 
-			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Get ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
+			return httpInternalErrorStatus, fmt.Errorf("[%d - Http Get ProtoBuf Error] Unmarshal ProtoBuf Response Failed: %w", httpInternalErrorStatus, err)
 		}
 	}
 
@@ -576,7 +576,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 
 	if err2 != nil {
 
-		return 0, errors.New("Request ProtoBuf Object Marshaling Failed: " + err2.Error())
+		return 0, fmt.Errorf("Request ProtoBuf Object Marshaling Failed: %w", err2)
 	}
 
 	// create http request from client
@@ -584,7 +584,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 
 	if err3 != nil {
 
-		return 0, errors.New("Create New Http Post ProtoBuf Request Failed: " + err3.Error())
+		return 0, fmt.Errorf("Create New Http Post ProtoBuf Request Failed: %w", err3)
 	}
 
 	// add headers to request if any
@@ -609,7 +609,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 
 	if resp, err = client.Do(req); err != nil {
 
-		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post ProtoBuf Error] " + err.Error())
+		return httpInternalErrorStatus, fmt.Errorf("[%d - Http Post ProtoBuf Error] %w", httpInternalErrorStatus, err)
 	}
 
 	// evaluate response
@@ -640,7 +640,7 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
 
-			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Post ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
+			return httpInternalErrorStatus, fmt.Errorf("[%d - Http Post ProtoBuf Error] Unmarshal ProtoBuf Response Failed: %w", httpInternalErrorStatus, err)
 		}
 	}
 
@@ -682,7 +682,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 
 	if err2 != nil {
 
-		return 0, errors.New("Request ProtoBuf Object Marshaling Failed: " + err2.Error())
+		return 0, fmt.Errorf("Request ProtoBuf Object Marshaling Failed: %w", err2)
 	}
 
 	// create http request from client
@@ -690,7 +690,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 
 	if err3 != nil {
 
-		return 0, errors.New("Create New Http PUT ProtoBuf Request Failed: " + err3.Error())
+		return 0, fmt.Errorf("Create New Http PUT ProtoBuf Request Failed: %w", err3)
 	}
 
 	// add headers to request if any
@@ -715,7 +715,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 
 	if resp, err = client.Do(req); err != nil {
 
-		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put ProtoBuf Error] " + err.Error())
+		return httpInternalErrorStatus, fmt.Errorf("[%d - Http Put ProtoBuf Error] %w", httpInternalErrorStatus, err)
 	}
 
 	// evaluate response
@@ -746,7 +746,7 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
 
-			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Put ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
+			return httpInternalErrorStatus, fmt.Errorf("[%d - Http Put ProtoBuf Error] Unmarshal ProtoBuf Response Failed: %w", httpInternalErrorStatus, err)
 		}
 	}
 
@@ -782,7 +782,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 
 	if req, err = http.NewRequest("DELETE", url, nil); err != nil {
 
-		return 0, errors.New("Create New Http Delete ProtoBuf Request Failed: " + err.Error())
+		return 0, fmt.Errorf("Create New Http Delete ProtoBuf Request Failed: %w", err)
 	}
 
 	// add headers to request if any
@@ -807,7 +807,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 
 	if resp, err = client.Do(req); err != nil {
 
-		return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete ProtoBuf Error] " + err.Error())
+		return httpInternalErrorStatus, fmt.Errorf("[%d - Http Delete ProtoBuf Error] %w", httpInternalErrorStatus, err)
 	}
 
 	// evaluate response
@@ -839,7 +839,7 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	if outResponseProtoBufObjectPtr != nil {
 		if err = proto.Unmarshal(respBytes, outResponseProtoBufObjectPtr); err != nil {
 
-			return httpInternalErrorStatus, errors.New("[" + strconv.Itoa(httpInternalErrorStatus) + " - Http Delete ProtoBuf Error] Unmarshal ProtoBuf Response Failed: " + err.Error())
+			return httpInternalErrorStatus, fmt.Errorf("[%d - Http Delete ProtoBuf Error] Unmarshal ProtoBuf Response Failed: %w", httpInternalErrorStatus, err)
 		}
 	}
 

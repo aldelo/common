@@ -62,7 +62,8 @@ import (
 )
 
 // keysDeprecationOnce ensures the KEYS deprecation warning is logged at most once per process lifetime.
-var keysDeprecationOnce sync.Once
+// Pointer type so tests can reset it without triggering copylocks.
+var keysDeprecationOnce = &sync.Once{}
 
 // KeysDeprecationHook is a callback invoked the first time the deprecated Keys method is called.
 // It defaults to logging a warning via the standard log package.
@@ -99,6 +100,11 @@ type Redis struct {
 
 	// TLS is supported by Redis starting with version 6 as an optional feature
 	EnableTLS bool
+
+	// DefaultTTL is applied to Set operations when the caller passes a zero TTL.
+	// A zero DefaultTTL (the default) preserves existing behavior: keys never expire.
+	// Set this at connection time to enforce a baseline expiration for all keys.
+	DefaultTTL time.Duration
 
 	// Connection pool configuration (optional, defaults will be used if not set)
 	// PoolSize: maximum number of socket connections (default: 10 total connections)
@@ -1395,6 +1401,12 @@ func (r *Redis) setBaseInternal(snap redisConnSnapshot, key string, val interfac
 
 	if len(expires) > 0 {
 		expireDuration = expires[0]
+	}
+
+	// Apply DefaultTTL when the caller did not specify a TTL.
+	// Caller-specified TTL > 0 always wins; DefaultTTL is a baseline, not a cap.
+	if expireDuration == 0 && r.DefaultTTL > 0 {
+		expireDuration = r.DefaultTTL
 	}
 
 	switch setCondition {

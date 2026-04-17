@@ -771,7 +771,7 @@ func TestKeys_DeprecationWarning_FiresOnce(t *testing.T) {
 	KeysDeprecationHook = func() {
 		callCount.Add(1)
 	}
-	keysDeprecationOnce = sync.Once{}
+	keysDeprecationOnce = &sync.Once{}
 
 	// Use a nil UTILS receiver: the deprecation hook fires before the nil-receiver guard,
 	// so we can verify sync.Once behavior without needing a live Redis connection.
@@ -804,7 +804,7 @@ func TestKeys_DeprecationWarning_NilReceiver(t *testing.T) {
 	KeysDeprecationHook = func() {
 		fired.Store(true)
 	}
-	keysDeprecationOnce = sync.Once{}
+	keysDeprecationOnce = &sync.Once{}
 
 	var u *UTILS // nil receiver
 	_, _, err := u.Keys("*")
@@ -901,5 +901,146 @@ func TestScanKeys_WithCountHint(t *testing.T) {
 	}
 	if len(keys) < 2 {
 		t.Fatalf("expected at least 2 keys, got %d", len(keys))
+	}
+}
+
+// ================================================================================================================
+// 13. DefaultTTL behavior
+// ================================================================================================================
+
+// connectTestRedisWithDefaultTTL creates a connected Redis instance with a DefaultTTL set.
+// It skips the test if Redis is not available on localhost:6379.
+func connectTestRedisWithDefaultTTL(t *testing.T, defaultTTL time.Duration) *Redis {
+	t.Helper()
+
+	r := &Redis{
+		AwsRedisWriterEndpoint: "localhost:6379",
+		AwsRedisReaderEndpoint: "localhost:6379",
+		DefaultTTL:             defaultTTL,
+	}
+
+	if err := r.Connect(); err != nil {
+		t.Skipf("Redis not available, skipping integration test: %v", err)
+	}
+
+	return r
+}
+
+func TestDefaultTTL_AppliedWhenCallerPassesZero(t *testing.T) {
+	// DefaultTTL=30s, caller passes no TTL => key should get a TTL applied
+	r := connectTestRedisWithDefaultTTL(t, 30*time.Second)
+	defer r.Disconnect()
+
+	key := testKeyPrefix + "defaultttl:applied"
+	cleanupKeys(t, r, key)
+
+	// Set without explicit TTL — DefaultTTL should kick in
+	err := r.Set(key, "should-expire")
+	if err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	// Verify a TTL was applied (should be between 1 and 30 seconds)
+	ttlVal, notFound, err := r.TTL.TTL(key, false)
+	if err != nil {
+		t.Fatalf("TTL check failed: %v", err)
+	}
+	if notFound {
+		t.Fatal("expected key to exist for TTL check")
+	}
+	if ttlVal < 1 || ttlVal > 30 {
+		t.Fatalf("expected TTL between 1 and 30 seconds (from DefaultTTL), got %d", ttlVal)
+	}
+}
+
+func TestDefaultTTL_CallerTTLWins(t *testing.T) {
+	// DefaultTTL=30s, caller explicitly passes 120s => caller's 120s must be used
+	r := connectTestRedisWithDefaultTTL(t, 30*time.Second)
+	defer r.Disconnect()
+
+	key := testKeyPrefix + "defaultttl:callerwins"
+	cleanupKeys(t, r, key)
+
+	// Set with explicit TTL that differs from DefaultTTL
+	err := r.Set(key, "caller-wins", 120*time.Second)
+	if err != nil {
+		t.Fatalf("Set with explicit TTL failed: %v", err)
+	}
+
+	// Verify the caller's TTL is used, not DefaultTTL
+	ttlVal, notFound, err := r.TTL.TTL(key, false)
+	if err != nil {
+		t.Fatalf("TTL check failed: %v", err)
+	}
+	if notFound {
+		t.Fatal("expected key to exist for TTL check")
+	}
+	// TTL should be well above 30 (the DefaultTTL) — between 100 and 120
+	if ttlVal < 100 || ttlVal > 120 {
+		t.Fatalf("expected TTL between 100 and 120 seconds (caller-specified), got %d", ttlVal)
+	}
+}
+
+func TestDefaultTTL_ZeroDefault_PreservesExistingBehavior(t *testing.T) {
+	// DefaultTTL=0 (default), caller passes no TTL => key should have no expiration
+	r := connectTestRedis(t) // DefaultTTL is zero (default)
+	defer r.Disconnect()
+
+	key := testKeyPrefix + "defaultttl:noexpire"
+	cleanupKeys(t, r, key)
+
+	// Set without TTL — no DefaultTTL configured, so key should persist indefinitely
+	err := r.Set(key, "lives-forever")
+	if err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	// TTL should be -1 (no expiration)
+	ttlVal, notFound, err := r.TTL.TTL(key, false)
+	if err != nil {
+		t.Fatalf("TTL check failed: %v", err)
+	}
+	if notFound {
+		t.Fatal("expected key to exist for TTL check")
+	}
+	if ttlVal != -1 {
+		t.Fatalf("expected TTL=-1 (no expiration) when DefaultTTL is zero, got %d", ttlVal)
+	}
+}
+
+func TestDefaultTTL_AppliedToTypedSetMethods(t *testing.T) {
+	// Verify DefaultTTL propagates through SetInt, SetBool, SetJson, etc.
+	// All typed Set* methods funnel through setBaseInternal, so if DefaultTTL
+	// works for one, it works for all — but we verify SetInt and SetBool
+	// as representative samples.
+	r := connectTestRedisWithDefaultTTL(t, 60*time.Second)
+	defer r.Disconnect()
+
+	keyInt := testKeyPrefix + "defaultttl:int"
+	keyBool := testKeyPrefix + "defaultttl:bool"
+	cleanupKeys(t, r, keyInt, keyBool)
+
+	// SetInt without TTL
+	if err := r.SetInt(keyInt, 42); err != nil {
+		t.Fatalf("SetInt failed: %v", err)
+	}
+	ttlVal, _, err := r.TTL.TTL(keyInt, false)
+	if err != nil {
+		t.Fatalf("TTL check for int key failed: %v", err)
+	}
+	if ttlVal < 1 || ttlVal > 60 {
+		t.Fatalf("expected TTL between 1 and 60 seconds for SetInt, got %d", ttlVal)
+	}
+
+	// SetBool without TTL
+	if err := r.SetBool(keyBool, true); err != nil {
+		t.Fatalf("SetBool failed: %v", err)
+	}
+	ttlVal, _, err = r.TTL.TTL(keyBool, false)
+	if err != nil {
+		t.Fatalf("TTL check for bool key failed: %v", err)
+	}
+	if ttlVal < 1 || ttlVal > 60 {
+		t.Fatalf("expected TTL between 1 and 60 seconds for SetBool, got %d", ttlVal)
 	}
 }

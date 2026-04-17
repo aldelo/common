@@ -12,6 +12,58 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ---
 
+## [v1.8.6] — 2026-04-17
+
+Patch release. Error-wrapping hardening — completes the **P2-N5**
+deferral from the `v1.8.5` ship checkpoint. No observable contract
+change: `.Error()` string output is byte-identical to `v1.8.5`, only
+the error-chain is now walkable via `errors.Is` / `errors.As` at the
+converted sites. Consumers that log or return `.Error()` strings see
+zero difference; consumers that want to inspect underlying error
+types (an upgrade path, not a regression) gain that ability.
+
+Coordinated-sibling release with `connector v1.8.6` (which picks up
+this bump and completes its own 3-site conversion at
+`adapters/resolver/resolver.go`, `client/client.go`).
+
+### Fixed
+
+- **P2-N5 error-chain wrapping (9 sites across 3 files):** convert
+  `fmt.Errorf("...: %v", err)` → `fmt.Errorf("...: %w", err)` where
+  the formatted argument is a genuine Go `error` value. Sites:
+  - `helper-net.go:52` — TCP listen failure
+  - `helper-net.go:512` — ReCAPTCHA request-build failure
+  - `helper-net.go:522` — ReCAPTCHA HTTP call failure
+  - `helper-net.go:529` — ReCAPTCHA response-read failure
+  - `helper-net.go:610` — HTTP request body read-limit exceeded
+  - `helper-net.go:621` — HTTP body read+close dual-error (uses
+    `errors.Join(readErr, closeErr)` so both underlying errors
+    remain walkable via `errors.Is` / `errors.As`)
+  - `helper-reflect.go:1288` — struct-field value conversion failure
+  - `wrapper/waf2/waf2.go:476` — `UpdateIPSet` optimistic-lock retry
+    exhaustion
+  - `wrapper/waf2/waf2.go:630` — `UpdateRegexPatternsSet` optimistic-lock
+    retry exhaustion
+
+  **Not converted (intentional):** panic-recovery sites using `%v` on
+  `interface{}` values from `recover()` remain `%v` — `%w` would
+  produce `%!w(...)` for non-error values. Non-error formatting sites
+  (e.g., `reflect.Type`, `fmt.Stringer`, `%T` type names) are
+  unaffected by this migration.
+
+### Verification
+
+- `go test ./...` — 55/55 packages pass (zero regressions vs `v1.8.5`
+  baseline)
+- `go build ./...` clean; `go vet ./...` clean
+- Behavioral parity confirmed: `.Error()` output format preserved at
+  every converted site. The sole output-string change is at
+  `helper-net.go:621` (previously `"read error: %v; close error: %v"`
+  → now `"http body read+close failed: %w"` wrapping
+  `errors.Join(readErr, closeErr)`) — part of the same chain
+  restructuring. No downstream workspace repo parses this message;
+  verified via workspace-wide grep before committing.
+
 ## [v1.8.5] — 2026-04-17
 
 Patch release. Repairs the release-artifact discipline gap introduced at

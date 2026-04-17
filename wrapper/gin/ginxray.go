@@ -137,8 +137,10 @@ func traceRequestData(c *gin.Context, seg *awsxray.Segment) {
 		// SEC-002 (2026-04-16): raw request body removed from xray metadata —
 		// POST payloads can contain PII (emails, names, phone numbers, payment
 		// data). Logging raw bodies to xray traces creates a PII exposure risk.
-		// See A1-F6.
-		_, _ = util.ReadHttpRequestBody(req)
+		// See A1-F6. The prior body-read call was also dropped: reading here
+		// without using the result still allocates a full body buffer and
+		// rewraps req.Body in NopCloser on every request, and nothing
+		// downstream relies on that rewrap.
 	} else {
 		seg.Unlock()
 	}

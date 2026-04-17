@@ -348,7 +348,9 @@ func (s *TCPServer) WriteToClient(writeData []byte, clientIP string) error {
 
 	// write data to tcp client connection
 	if s.WriteDeadLineDuration > 0 {
-		_ = c.SetWriteDeadline(time.Now().Add(s.WriteDeadLineDuration))
+		if dlErr := c.SetWriteDeadline(time.Now().Add(s.WriteDeadLineDuration)); dlErr != nil {
+			log.Printf("TCPServer.WriteToClient: SetWriteDeadline error for client %s: %v", clientIP, dlErr)
+		}
 		defer c.SetWriteDeadline(time.Time{})
 	}
 
@@ -416,10 +418,14 @@ func (s *TCPServer) handleClientConnection(conn net.Conn, clientIP string) {
 		default:
 			// read data from client continuously
 			readBytes := make([]byte, readBufferSize)
-			_ = conn.SetReadDeadline(time.Now().Add(readDeadline))
+			if dlErr := conn.SetReadDeadline(time.Now().Add(readDeadline)); dlErr != nil {
+				log.Printf("TCPServer.handleClientConnection: SetReadDeadline error for client %s: %v", clientIP, dlErr)
+			}
 
 			if _, e := conn.Read(readBytes); e != nil {
-				_ = conn.SetReadDeadline(time.Time{})
+				if rErr := conn.SetReadDeadline(time.Time{}); rErr != nil {
+					log.Printf("TCPServer.handleClientConnection: SetReadDeadline reset (err path) for client %s: %v", clientIP, rErr)
+				}
 
 				errInfo := strings.ToLower(e.Error())
 				timeout := strings.Contains(errInfo, "timeout")
@@ -446,7 +452,9 @@ func (s *TCPServer) handleClientConnection(conn net.Conn, clientIP string) {
 				return
 
 			} else {
-				_ = conn.SetReadDeadline(time.Time{})
+				if rErr := conn.SetReadDeadline(time.Time{}); rErr != nil {
+					log.Printf("TCPServer.handleClientConnection: SetReadDeadline reset (ok path) for client %s: %v", clientIP, rErr)
+				}
 
 				// read ok
 				if s.ClientReceiveHandler != nil {

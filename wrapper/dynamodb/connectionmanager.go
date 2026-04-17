@@ -197,6 +197,13 @@ func (scm *ServiceConnectionManager) shutdown() {
 			defer timeout.Stop()
 
 			go func() {
+				// Panic recovery keeps house style consistent — every spawn site in
+				// common must not leak a panic into the runtime's default handler.
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("ServiceConnectionManager.shutdown: waiter goroutine recovered panic: %v", r)
+					}
+				}()
 				scm.wg.Wait()
 				close(done)
 			}()

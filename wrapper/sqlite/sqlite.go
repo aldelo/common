@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 	"sync"
@@ -1596,9 +1597,18 @@ func (svr *SQLite) ExecByOrdinalParamsContext(ctx context.Context, actionQuery s
 	}
 
 	rtn := SQLiteResult{}
-	rtn.RowsAffected, _ = result.RowsAffected()
+	if n, raErr := result.RowsAffected(); raErr != nil {
+		// go-sqlite3 always returns nil here; log for observability if that ever changes.
+		log.Printf("SQLite.ExecContext: RowsAffected error (non-fatal): %v", raErr)
+	} else {
+		rtn.RowsAffected = n
+	}
 	if isInsert {
-		rtn.NewlyInsertedID, _ = result.LastInsertId()
+		if id, liErr := result.LastInsertId(); liErr != nil {
+			log.Printf("SQLite.ExecContext: LastInsertId error (non-fatal): %v", liErr)
+		} else {
+			rtn.NewlyInsertedID = id
+		}
 	}
 	return rtn
 }
@@ -1793,9 +1803,17 @@ func (t *SQLiteTransaction) ExecByOrdinalParams(actionQuery string, args ...inte
 	}
 
 	rtn := SQLiteResult{}
-	rtn.RowsAffected, _ = result.RowsAffected()
+	if n, raErr := result.RowsAffected(); raErr != nil {
+		log.Printf("SQLiteTransaction.Exec: RowsAffected error (non-fatal): %v", raErr)
+	} else {
+		rtn.RowsAffected = n
+	}
 	if isInsert {
-		rtn.NewlyInsertedID, _ = result.LastInsertId()
+		if id, liErr := result.LastInsertId(); liErr != nil {
+			log.Printf("SQLiteTransaction.Exec: LastInsertId error (non-fatal): %v", liErr)
+		} else {
+			rtn.NewlyInsertedID = id
+		}
 	}
 	return rtn
 }

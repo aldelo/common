@@ -238,6 +238,12 @@ func ParseFromExcelDate(s string, format string) time.Time {
 	if v < 1 {
 		return time.Time{}
 	}
+	// Excel's max valid serial is 2958465 (9999-12-31). Anything above it rolls
+	// past Go's time.Time representable range — return zero rather than produce
+	// garbage wrapped-around dates.
+	if v > 2958465 {
+		return time.Time{}
+	}
 
 	days, frac := math.Modf(v) // split whole days and fractional day
 	serial := int(days)

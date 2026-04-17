@@ -74,7 +74,24 @@ func Generate32ByteRandomKey(passphrase string) (string, error) {
 // FNV HELPERS
 // ================================================================================================================
 
-// FnvHashDigit returns persistent hash digit value, limited by the digit limit parameter
+// FnvHashDigit returns a deterministic FNV-1a hash digit derived from data,
+// clamped to the inclusive range [1, digitLimit-1]. It NEVER returns 0 and
+// NEVER returns digitLimit-1 — the result lives strictly inside the open
+// interval (0, digitLimit).
+//
+// Concretely, the returned value is (fnv32a(data) mod (digitLimit-1)) + 1.
+// If digitLimit < 2 it is silently raised to 2, so the minimum output range
+// is the single value {1}.
+//
+// IMPORTANT: callers that need a uniform 0-based distribution over [0, N)
+// (e.g., modulo-based shard assignment, 0-indexed bucketing, array indices)
+// will see skew — bucket 0 is never filled and bucket digitLimit-1 is never
+// filled. For those use cases, derive the index differently (e.g.,
+// int(fnv32a(data) % uint32(N))) rather than calling this function.
+//
+// Preserved as-is for v1.x per workspace rule #10 (contract stability across
+// 36+ consumer repos). Any change to the range would require a coordinated
+// major-version release.
 func FnvHashDigit(data string, digitLimit int) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(data))

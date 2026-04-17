@@ -163,7 +163,11 @@ func (c *TCPClient) Write(data []byte) error {
 	}
 
 	if writeDeadlineDuration > 0 {
-		_ = _tcpConn.SetWriteDeadline(time.Now().Add(writeDeadlineDuration))
+		if dlErr := _tcpConn.SetWriteDeadline(time.Now().Add(writeDeadlineDuration)); dlErr != nil {
+			// Without a deadline the Write below can block indefinitely — log so
+			// operators see socket-hang causes (closed conn, broken pipe) early.
+			log.Printf("TCPClient.Write: SetWriteDeadline error: %v", dlErr)
+		}
 		defer _tcpConn.SetWriteDeadline(time.Time{})
 	}
 
@@ -195,7 +199,9 @@ func (c *TCPClient) Read() (data []byte, timeout bool, err error) {
 	if readDeadlineDuration >= minReadDeadlineDuration*time.Millisecond && readDeadlineDuration <= maxReadDeadlineDuration*time.Millisecond {
 		readDeadLine = readDeadlineDuration
 	}
-	_ = _tcpConn.SetReadDeadline(time.Now().Add(readDeadLine))
+	if dlErr := _tcpConn.SetReadDeadline(time.Now().Add(readDeadLine)); dlErr != nil {
+		log.Printf("TCPClient.Read: SetReadDeadline error: %v", dlErr)
+	}
 	defer _tcpConn.SetReadDeadline(time.Time{})
 
 	if readBufferSize == 0 || readBufferSize > maxPortNumber {

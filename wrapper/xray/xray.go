@@ -183,7 +183,11 @@ func XRayServiceOn() bool {
 
 // DisableTracing disables xray tracing
 func DisableTracing() {
-	_ = os.Setenv("AWS_XRAY_SDK_DISABLED", "TRUE")
+	if err := os.Setenv("AWS_XRAY_SDK_DISABLED", "TRUE"); err != nil {
+		// Setenv only fails on invalid name/value on POSIX; log so operators
+		// see why tracing continued after a disable call.
+		log.Printf("XRay.DisableTracing: os.Setenv error: %v", err)
+	}
 
 	_mu.Lock()
 	_xrayServiceOn = false
@@ -192,7 +196,9 @@ func DisableTracing() {
 
 // EnableTracing re-enables xray tracing
 func EnableTracing() {
-	_ = os.Setenv("AWS_XRAY_SDK_DISABLED", "FALSE")
+	if err := os.Setenv("AWS_XRAY_SDK_DISABLED", "FALSE"); err != nil {
+		log.Printf("XRay.EnableTracing: os.Setenv error: %v", err)
+	}
 
 	_mu.Lock()
 	_xrayServiceOn = true

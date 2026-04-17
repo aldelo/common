@@ -1333,11 +1333,14 @@ func (d *DynamoDB) Connect(parentSegment ...*xray.XRayParentSegment) (err error)
 			d._parentSegmentMutex.Unlock()
 		}
 
-		_ = awsxray.Configure(awsxray.Config{
+		if cfgErr := awsxray.Configure(awsxray.Config{
 			LogLevel:               "silent", // disable x-ray logging completely
 			LogFormat:              "",
 			ContextMissingStrategy: ctxmissing.NewDefaultIgnoreErrorStrategy(),
-		})
+		}); cfgErr != nil {
+			// Misconfigured xray causes traces to fail silently on every call — log once at Connect.
+			log.Printf("DynamoDB.Connect: awsxray.Configure error (traces may be missing): %v", cfgErr)
+		}
 
 		seg := xray.NewSegment("DynamoDB-Connect", d.getParentSegment())
 		defer seg.Close()

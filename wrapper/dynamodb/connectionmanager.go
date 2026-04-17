@@ -214,10 +214,27 @@ func (scm *ServiceConnectionManager) shutdown() {
 			case <-timeout.C:
 				log.Printf("ServiceConnectionManager.shutdown: timeout waiting for operations after %s; %d still active",
 					scm.shutdownWaitTimeout, scm.GetCurrentLoad())
-				// NOTE: the waiter goroutine above will exit once all tracked
-				// operations finish (wg counter hits zero). On timeout, it is
-				// NOT leaked indefinitely — it simply outlives this function
-				// call until the remaining operations complete.
+				// NOTE (by design): the waiter goroutine above exits once all
+				// tracked operations finish (wg counter hits zero). On timeout,
+				// it is NOT leaked independently in the common case — it
+				// simply outlives this function call until the remaining
+				// operations complete and wg.Wait returns.
+				//
+				// Caveat: if a tracked operation is genuinely stuck (e.g.
+				// blocked on network I/O that never returns and has no
+				// upstream deadline), its wg.Done is never called, and the
+				// waiter remains parked on wg.Wait() for the lifetime of the
+				// process. In that case the waiter is a parasite on the stuck
+				// operation — it does NOT represent a NEW leak beyond what
+				// the stuck operation already represents. Callers that need
+				// bounded reclamation under arbitrary-stuck conditions must
+				// enforce per-operation context deadlines upstream of wg.Add
+				// so stuck operations abort on their own.
+				//
+				// Rule #10 (workspace): v1.x observable contract — do not
+				// replace the waiter with a force-abort path without a
+				// coordinated consumer sweep; callers today assume operations
+				// complete cleanly after shutdown timeout.
 				return
 			}
 		} else {

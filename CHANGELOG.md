@@ -12,6 +12,200 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ---
 
+## [v1.8.5] — pending
+
+Patch release. Repairs the release-artifact discipline gap introduced at
+`v1.8.4` (CHANGELOG entry missing, corresponding connector `go.mod`
+pin stale, DynamoDB `SuppressError` contract change undocumented) and
+closes the remaining deep-review findings the `v1.8.4` audit surfaced
+after the tag was cut. This is a workspace **rule #15 / rule #16**
+remediation release — the code changes are low-risk, the CHANGELOG
+changes are the load-bearing deliverable.
+
+No observable helper contract change from `v1.8.4`. Every public function
+signature is preserved. The `DynamoDB*WithRetry` contract change noted
+below **was already shipped in `v1.8.4`** (commit `fcba9d6`) — the
+documentation here is retrospective, not an additional break.
+
+### Fixed
+
+- **Swallowed errors, P2-N1/N2/N3 series:**
+  - `wrapper/zap/zaplog.go:77` `Sync()` error now logs at warn level
+    instead of discarding — important for exit-path diagnostics when
+    log buffer flush fails. (P2-N2)
+  - `wrapper/kms/kms.go` three `ScheduleKeyDeletion` callsites
+    (lines 768, 848, 2013) now log failure instead of discarding both
+    return values. Silent key-schedule failures previously surfaced
+    only via AWS console drift. (P2-N3)
+- **MySQL pool defaults on zero (P2-N4):** `mysql.go` now enforces
+  sane defaults when `MaxOpenConns`/`MaxIdleConns`/`ConnMaxLifetime`
+  are zero, matching the SQL Server pattern from `v1.8.4` DB-F4.
+  Unblocks production deployments that omit these tuning knobs.
+- **MySQL ReadTimeout/WriteTimeout defaults (P3-N1):** New sane
+  production defaults applied when zero, preventing goroutine leaks
+  on network hangs.
+- **Gin TrustedProxies default (P3-N2):** `gin.go` no longer trusts
+  all proxies by default. New `TrustedProxies` configuration field
+  with `[]string{}` (fail-closed) default. Consumers behind a known
+  load balancer must explicitly allow-list proxy CIDRs. Matches the
+  `v1.8.4` CORS fail-closed hardening pattern.
+- **HttpStatusErrorHandler PII risk documented (P3-N3):** godoc on
+  `gin.go:304` explicitly warns that the raw panic detail passed to
+  the callback MUST be sanitized before being written to any
+  user-visible surface. Accompanies the `v1.8.4` SR-NEW-4 fix which
+  scrubbed the framework-internal leak path.
+
+## [v1.8.4] — 2026-04-16
+
+Patch release. Coordinated-sibling release with `connector v1.8.4`.
+Closes the full **deep-review pass-3 (v1.8.3 post-remediation) +
+pass-2 full-codebase audit** findings: 3 P1, 8 P2, 10 P3, plus the
+`v1.8.3` pass-2 follow-through (EH-1, SR-NEW-1/2/4, DB-F1/AD-1, etc.)
+and the quarterly dependency sweep. This is the largest patch release
+in the `v1.8.x` line — 20 commits spanning six wrapper subsystems,
+net correctness-positive, no new public API surface.
+
+**⚠️ BEHAVIORAL CHANGE REQUIRING CONSUMER REVIEW — DynamoDB
+`*WithRetry` error propagation (DB-F1 / AD-1).** 10 `*WithRetry`
+methods in `wrapper/dynamodb/dynamodb.go` changed their retry-exhaustion
+return value from `nil` to a real error. See the dedicated section
+below — this is the first observable-contract change in the `v1.8.x`
+patch line and consumers MUST audit their callsites before upgrading.
+
+For ~99% of callsites (those that simply pass the error up via
+`if err != nil`) the change is correctness-positive: a silent "all
+retries exhausted" that previously masked failures now surfaces. The
+breaking sub-case is callsites that explicitly checked `err == nil`
+as success-after-retry without inspecting the returned item — those
+now observe an error where they previously did not. A migration
+grep recipe is included below.
+
+### Changed — observable contract (review before upgrading)
+
+- **DynamoDB `*WithRetry` retry-exhaustion contract (DB-F1 / AD-1,
+  commit `fcba9d6`):** The `GetItem`, `PutItem`, `UpdateItem`,
+  `DeleteItem`, `Query`, `Scan`, `BatchGetItem`, `BatchWriteItem`,
+  `TransactWriteItems`, and `TransactGetItems` `*WithRetry` variants
+  previously returned `nil` error after retry exhaustion if
+  `SuppressError: true` was set on the inner `DynamoDBError` — the
+  intent was to let callers ignore transient throttling, but it also
+  hid permanent failures. The new contract always returns a non-nil
+  error (`DynamoDBError{SuppressError:false}`) after retry exhaustion;
+  the `SuppressError` flag now only suppresses *logging*, not the
+  final error propagation. Godoc at lines 115-117 of `dynamodb.go`
+  documents the new contract; 18 WARN sites around the retry loops
+  trace the exhaustion paths.
+
+  **Migration recipe for consumers:**
+  ```
+  # Grep for callsites that rely on err-nil-as-success after retry:
+  grep -rn '\*WithRetry' your-project/ | while read callsite; do
+    # Inspect each — if the next-line pattern is `if err != nil`,
+    # no change needed. If it's `if result == nil` or direct
+    # dereference without err check, the callsite must be updated
+    # to handle the new error return.
+  done
+  ```
+
+  Correctness-positive for the 99% case. Breaking for callsites that
+  drop `err` and rely on `SuppressError` as a blanket "ignore this".
+
+- **REST error wrapping (wrapper/rest):** 187 `fmt.Errorf` sites
+  across `rest`, `cloudmap`, `redis`, `sns`, and related wrappers
+  migrated from `%v` to `%w` for proper error-chain preservation
+  (P2-1, commits `5ff15ef` + `084bb2c`). Callers using
+  `errors.Is` / `errors.As` on returned errors now see the full
+  wrapped chain. No signature change — pure observable-error
+  behavior change. The ~1% of callers that string-match error
+  messages may need to adjust, but `errors.Is`/`errors.As` is
+  the intended idiom.
+
+- **REST TLS config cloning (AD-2, commit `49d5118`):** `rest`
+  wrapper now clones the caller-supplied `*tls.Config` on read,
+  preventing cross-consumer interference when a shared config
+  is passed. Callers that mutated the config post-pass to affect
+  in-flight requests will observe that the mutation no longer
+  applies — the intended semantics were always "config is a
+  snapshot at registration".
+
+- **Redis `KEYS` command deprecated (commit `1b23e69`):** `KEYS`
+  is now deprecated; new `ScanKeys` alternative uses non-blocking
+  `SCAN` with configurable batch size. `KEYS` still works but
+  emits a deprecation warning on first use per process lifetime.
+
+### Fixed
+
+- **P1-1 KMS deadline enforcement (xray-on path, commit `5399b6d`):**
+  `ensureKMSCtx` now applies `context.WithTimeout` on the xray-enabled
+  branch — same bug class as `v1.8.2` A1-F1 SES/SQS but in KMS. All
+  KMS SDK callsites now observe their intended deadline regardless of
+  the xray toggle. Closes the "remaining AWS wrapper" gap.
+- **EH-1 xray Init contract tests (commit `d7cc2f7`):** New test pair
+  covering `xray.Init()` self-enable when `SetXRayServiceOn` is unset,
+  and SDK-disabled callsite behavior. Pinned the contract exposed
+  across 50+ wrapper init paths.
+- **EH-3 helper struct-tag parse warnings (commit `013a19c`):** Invalid
+  struct tag parse values no longer silently return the zero value —
+  `helper` now logs a warning before defaulting. Covers 200+ reflection
+  callsites.
+- **SR-NEW-1 / SR-NEW-2 gin recovery + rate limiter (commit `4ab8aff`):**
+  Gin recovery middleware no longer leaks goroutine-state detail to
+  the HTTP response. Rate limiter no longer drops in-flight requests
+  when bucket fill is concurrent with consume.
+- **SR-NEW-4 gin binding error client leak (commit `9455056`):**
+  Gin `ShouldBindJSON`/`ShouldBindXML` no longer returns the raw
+  parser internal detail (field names, file offsets) to the HTTP
+  client. Parsed error is logged server-side; client sees a
+  generic "bad request" unless the caller explicitly opts into
+  detail exposure.
+- **CT-NEW-1 / CT-NEW-2 TCP config race (commit `65f4f29`):** Config
+  reads in `TCPServer` goroutines now synchronize under the existing
+  `_cfgMu` — companion to the `v1.8.3` `_tcpListener` race fix.
+- **DB-F2 / DB-F3 DynamoDB warnings (commit `41ab53b`):** Unbounded
+  `Scan` operations now log a warning at callsite. Silent timeout
+  clamping in `*WithTimeout` variants now logs when the caller's
+  requested timeout exceeds the AWS-enforced maximum.
+- **DB-F4 SQL Server pool defaults (commit `f40991e`):** Production
+  defaults for `MaxOpenConns`/`MaxIdleConns`/`ConnMaxLifetime` when
+  zero. Counterpart to the MySQL P2-N4 fix scheduled for `v1.8.5`.
+- **P2-2 REST resp.Body.Close error log (commit `3afd0ad`):** 8
+  `rest.GET/POST/PUT/DELETE` Close-error sites now log at warn
+  level instead of discarding — matches the P2-N1 connector
+  `client.go` fix pattern.
+- **P2-4 / P2-5 MySQL connection recycling + query timeout defaults
+  (commit `7d0c443`):** `ConnMaxIdleTime` now defaults to 30min;
+  query timeout default now respects the pool's configured
+  `ConnMaxLifetime` floor. Mitigates long-lived stale connection
+  leaks observed in production ~18h after startup.
+- **P2-6 Redis DefaultTTL + copylocks test fix (commit `805f72d`):**
+  New `DefaultTTL` config field allows global TTL for `SET` without
+  explicit TTL. Also fixes `vet copylocks` warning in test fixtures.
+
+### Documented
+
+- **P2-7 tcp/xray intentional time.Sleep (commit `dd46b5e`):** The
+  two remaining `time.Sleep` sites in `wrapper/tcp` and `wrapper/xray`
+  are documented as intentional (test-synchronization safe, not
+  production code paths). Closes the P1-2 connector pattern extension.
+- **BL-2 / BL-3 hystrix-go global-state semantics (commit `bc31d54`):**
+  Godoc clarifying that `hystrix.SetLogger` and `hystrix.FlushAll`
+  mutate process-global state — concurrent callers in multi-tenant
+  test harnesses must serialize. Accompanies the `feedback_no_god_file_refactor`
+  directive to not restructure hystrix-go itself.
+- **P2-6 REST error wrapping line numbers (commit `f14315d`):** The
+  `v1.8.3` CHANGELOG entry for REST error wrapping cited the wrong
+  line numbers and omitted two callsites. Corrected here for audit
+  accuracy.
+
+### Dependency maintenance
+
+- **Quarterly dependency sweep (commit `669e8eb`):** 30 modules
+  updated to current-minor. `govulncheck` reports 0 active
+  vulnerabilities. ~165 stale transitive/pinned deps remain
+  (intentional — see `redigo` pin in `go.mod` line 98).
+
+---
+
 ## [v1.8.3] — 2026-04-16
 
 Patch release. Closes all pass-6 contrarian findings (22 total) and the

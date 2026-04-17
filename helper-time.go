@@ -530,24 +530,33 @@ func CurrentTime() string {
 }
 
 // DaysDiff gets the days difference between from and to date
+//
+// Contract: Go integer division truncates toward zero, so the signed
+// result is the whole-day difference rounded TOWARD ZERO (not floor).
+// Examples: a 25-hour span returns 1; a -25-hour span returns -1
+// (not -2). Callers expecting floor semantics for negative spans
+// must adjust explicitly. Rule #10 (workspace): v1.x contract.
 func DaysDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
 	return int(d / (24 * time.Hour))
 }
 
-// HoursDiff gets the hours difference between from and to date
+// HoursDiff gets the hours difference between from and to date.
+// Truncates toward zero for negative spans — see DaysDiff contract note.
 func HoursDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
 	return int(d / time.Hour)
 }
 
-// MinutesDiff gets the minutes difference between from and to date
+// MinutesDiff gets the minutes difference between from and to date.
+// Truncates toward zero for negative spans — see DaysDiff contract note.
 func MinutesDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
 	return int(d / time.Minute)
 }
 
-// SecondsDiff gets the seconds difference between from and to date
+// SecondsDiff gets the seconds difference between from and to date.
+// Truncates toward zero for negative spans — see DaysDiff contract note.
 func SecondsDiff(timeFrom time.Time, timeTo time.Time) int {
 	d := timeTo.Sub(timeFrom)
 	return int(d / time.Second)

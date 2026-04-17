@@ -190,7 +190,29 @@ func RightTrimLF(s string) string {
 	return s
 }
 
-// Padding will pad the data with specified char either to the left or right
+// Padding will pad the data with specified char either to the left or right.
+//
+// Contract: totalSize is a RUNE count (not a byte count) — uses
+// utf8.RuneCountInString for the length delta and strings.Repeat on a
+// single rune for the fill. This is DIFFERENT from Left/Right/Mid in
+// this file, which are byte-indexed.
+//
+// Cross-family caveat: for multi-byte UTF-8 input, the composition
+// Padding(s, N, …) then Left(padded, N) may return fewer than N runes,
+// because Left counts bytes. For ASCII inputs (byte == rune) the two
+// families compose as expected; for the payment-processing domain's
+// typical ASCII-only data this is the observed behavior.
+//
+// Callers needing byte-counted padding should pad manually with
+// strings.Repeat against len(data). Callers needing rune-indexed
+// slicing (to pair with Padding cleanly) should operate on []rune(s)
+// directly — no rune-indexed Left/Right/Mid companion is provided in
+// v1.x.
+//
+// Rule #10 (workspace): preserve observable contracts across
+// minor-version bumps — the rune-count semantics here and the byte-index
+// semantics of Left/Right/Mid are both v1.x contracts and must not be
+// reconciled in a minor release.
 func Padding(data string, totalSize int, padRight bool, padChar string) string {
 	result := data
 

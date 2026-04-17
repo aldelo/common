@@ -877,7 +877,7 @@ func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBCondi
 			//
 			// create slice string from uniqueFields map, and set into dataPtr's UniqueFields Slice String attribute if present
 			//
-			uniqueFieldsSlice := make([]string, 0)
+			uniqueFieldsSlice := make([]string, 0, len(uniqueFields))
 			for k, v := range uniqueFields {
 				if util.LenTrim(k) > 0 && v != nil && util.LenTrim(v.UniqueFieldName) > 0 && util.LenTrim(v.UniqueFieldIndex) > 0 {
 					uniqueFieldsSlice = append(uniqueFieldsSlice, fmt.Sprintf("%s;;;%s;;;%s", k, v.UniqueFieldName, v.UniqueFieldIndex))
@@ -930,7 +930,7 @@ func (c *Crud) Set(dataPtr interface{}, conditionExpressionSet ...*DynamoDBCondi
 				//
 				// loop through all unique fields from crud object to add to crud unique record slice for put into dynamodb
 				//
-				uniqueRecords := make([]*CrudUniqueRecord, 0)
+				uniqueRecords := make([]*CrudUniqueRecord, 0, len(uniqueFields))
 
 				for k, v := range uniqueFields {
 					if util.LenTrim(k) > 0 && v != nil && util.LenTrim(v.UniqueFieldName) > 0 && util.LenTrim(v.UniqueFieldIndex) > 0 {
@@ -1001,8 +1001,8 @@ func (c *Crud) prepareBatchSetParams(
 		return nil, nil, nil, nil
 	}
 
-	put := make([]*DynamoDBTransactionWritePutItemsSet, 0)
-	del := make([]*DynamoDBTableKeys, 0)
+	put := make([]*DynamoDBTransactionWritePutItemsSet, 0, 1) // at most one putItemsSet appended below
+	del := make([]*DynamoDBTableKeys, 0, len(deleteKeys))
 
 	if putItems != nil {
 		var conditionExpression string
@@ -1165,7 +1165,7 @@ func (c *Crud) BatchSetEx(
 			for _, perTable := range unprocessed {
 				if perTable != nil {
 					if len(perTable.PutItems) > 0 {
-						puts := make([]*PkSkValuePair, 0)
+						puts := make([]*PkSkValuePair, 0, len(perTable.PutItems))
 
 						for _, v := range perTable.PutItems {
 							if len(v) > 0 {
@@ -1191,7 +1191,7 @@ func (c *Crud) BatchSetEx(
 					}
 
 					if len(perTable.DeleteKeys) > 0 {
-						dels := make([]*PkSkValuePair, 0)
+						dels := make([]*PkSkValuePair, 0, len(perTable.DeleteKeys))
 
 						for _, v := range perTable.DeleteKeys {
 							if v != nil {
@@ -1888,7 +1888,7 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 	// parse multi-clause expressions and preserve order (SET / REMOVE / ADD / DELETE)
 	sections := splitUpdateSections(updateExpression)
 	var setExpression, removeExpression string
-	otherSections := make([]string, 0) // ADD/DELETE (and others) preserved
+	otherSections := make([]string, 0, len(sections)) // ADD/DELETE (and others) preserved
 	for _, s := range sections {
 		switch s.Action {
 		case "SET":
@@ -1999,8 +1999,8 @@ func (c *Crud) Update(pkValue string, skValue string, updateExpression string, c
 
 	// --- Handle SET with possible unique index updates ---
 	doUpdateItemNonTransactional := true
-	putItemsCrudUniqueRecords := make([]*CrudUniqueRecord, 0)
-	deleteKeys := make([]*DynamoDBTableKeys, 0)
+	putItemsCrudUniqueRecords := make([]*CrudUniqueRecord, 0, len(uniqueFieldsMap))
+	deleteKeys := make([]*DynamoDBTableKeys, 0, len(uniqueFieldsMap))
 
 	// setPathUpdatedFields tracks which unique fields had their values changed in the SET path,
 	// so the REMOVE path can use the updated indexes instead of stale ones from uniqueFieldsMap.
@@ -2336,7 +2336,7 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 		return fmt.Errorf("Delete From Data Store Failed: (GetUniqueFieldsFromSource) %s", crudErr.Error())
 	} else {
 		if len(oldUniqueFields) > 0 {
-			deleteKeys := make([]*DynamoDBTableKeys, 0)
+			deleteKeys := make([]*DynamoDBTableKeys, 0, len(oldUniqueFields)+1) // +1 for the primary delete appended later
 
 			for _, crudFieldAndIndex := range oldUniqueFields {
 				if crudFieldAndIndex != nil && util.LenTrim(crudFieldAndIndex.UniqueFieldIndex) > 0 {
@@ -2358,7 +2358,8 @@ func (c *Crud) Delete(pkValue string, skValue string) (err error) {
 				if len(deleteKeys) > maxTxnItems {
 					// FIX: gracefully handle >limit deletes by chunking while ensuring the main item is deleted in the first batch
 					uniqueDeletes := deleteKeys[:len(deleteKeys)-1] // exclude primary item
-					batches := make([][]*DynamoDBTableKeys, 0)
+					// +2 batches (round up + primary-reserved first batch) covers the worst case without a reallocation.
+					batches := make([][]*DynamoDBTableKeys, 0, (len(uniqueDeletes)/maxTxnItems)+2)
 					cursor := 0
 
 					for cursor < len(uniqueDeletes) {

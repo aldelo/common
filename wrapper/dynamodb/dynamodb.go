@@ -208,7 +208,7 @@ func (a *DynamoDBProjectedAttributesSet) BuildProjectionParameters() (projection
 	}
 
 	// define projected attributes
-	projectedAttributeNames := make([]expression.NameBuilder, 0)
+	projectedAttributeNames := make([]expression.NameBuilder, 0, len(a.ProjectedAttributes))
 
 	for i := 0; i < len(a.ProjectedAttributes); i++ {
 		projectedAttributeNames = append(projectedAttributeNames, expression.Name(a.ProjectedAttributes[i]))
@@ -306,7 +306,7 @@ func (r *DynamoDBMultiGetRequestResponse) MarshalSearchKeyValueMaps() (result []
 		return nil, errors.New("MarshalSearchKeyValueMaps Failed: (Validate) " + "SKName Empty")
 	}
 
-	result = make([]map[string]*dynamodb.AttributeValue, 0)
+	result = make([]map[string]*dynamodb.AttributeValue, 0, len(r.SearchKeys))
 
 	// loop thru each search key to marshal
 	if util.LenTrim(r.SKName) > 0 {
@@ -697,7 +697,7 @@ func (g *DynamoDBTransactionReads) MarshalSearchKeyValueMaps() (result []map[str
 		return nil, errors.New("MarshalSearchKeyValueMaps Failed: (Validate) " + "SKName Empty")
 	}
 
-	result = make([]map[string]*dynamodb.AttributeValue, 0)
+	result = make([]map[string]*dynamodb.AttributeValue, 0, len(g.SearchKeys))
 
 	// loop thru each search key to marshal
 	g.resultItemKeyMutex.Lock()
@@ -765,7 +765,7 @@ func (g *DynamoDBTransactionReads) UnmarshalResultItems(itemResponses []*dynamod
 		return nil
 	}
 
-	ddbResultItemAttributes := make([]map[string]*dynamodb.AttributeValue, 0)
+	ddbResultItemAttributes := make([]map[string]*dynamodb.AttributeValue, 0, len(itemResponses))
 
 	g.resultItemKeyMutex.RLock()
 	keysCopy := append([]string(nil), g.resultItemKey...)
@@ -774,33 +774,45 @@ func (g *DynamoDBTransactionReads) UnmarshalResultItems(itemResponses []*dynamod
 	// loop thru itemKey to find matches from itemResponses, then extract the item attributes to ddbResultItemAttributes when matched
 	skDefined := util.LenTrim(g.SKName) > 0
 
+	// P2-PERF-5 (2026-04-17): pre-concatenate each response's "pk.sk" key
+	// once, lowercased, so the inner loop no longer allocates a new string
+	// per (key, response) pair. For N=100 keys and M=100 responses, the old
+	// code produced 10,000 Sprintf-style concat allocations; now it produces
+	// M (lowercased keys) + 1 (lowercased target) per outer iteration.
+	type responseKey struct {
+		key  string // lowercased pk+"."+sk
+		item map[string]*dynamodb.AttributeValue
+	}
+	responseKeys := make([]responseKey, 0, len(itemResponses))
+	for _, itemResponse := range itemResponses {
+		if itemResponse == nil || itemResponse.Item == nil {
+			continue
+		}
+		pkAttr := itemResponse.Item[g.PKName]
+		var skAttr *dynamodb.AttributeValue
+		if skDefined {
+			skAttr = itemResponse.Item[g.SKName]
+		}
+		pkValue := ""
+		skValue := ""
+		if pkAttr != nil {
+			pkValue = aws.StringValue(pkAttr.S)
+		}
+		if skAttr != nil {
+			skValue = aws.StringValue(skAttr.S)
+		}
+		responseKeys = append(responseKeys, responseKey{
+			key:  strings.ToLower(pkValue + "." + skValue),
+			item: itemResponse.Item,
+		})
+	}
+
 	for _, itemKey := range keysCopy {
-		for _, itemResponse := range itemResponses {
-			if itemResponse != nil {
-				if itemResponse.Item != nil {
-					pkAttr := itemResponse.Item[g.PKName]
-
-					var skAttr *dynamodb.AttributeValue
-					if skDefined {
-						skAttr = itemResponse.Item[g.SKName]
-					}
-
-					pkValue := ""
-					skValue := ""
-
-					if pkAttr != nil {
-						pkValue = aws.StringValue(pkAttr.S)
-					}
-
-					if skAttr != nil {
-						skValue = aws.StringValue(skAttr.S)
-					}
-
-					if strings.EqualFold(itemKey, pkValue+"."+skValue) {
-						// match
-						ddbResultItemAttributes = append(ddbResultItemAttributes, itemResponse.Item)
-					}
-				}
+		itemKeyLower := strings.ToLower(itemKey) // single allocation per outer iteration
+		for _, rk := range responseKeys {
+			if rk.key == itemKeyLower {
+				// match — preserves the prior strings.EqualFold semantics via case-folded compare
+				ddbResultItemAttributes = append(ddbResultItemAttributes, rk.item)
 			}
 		}
 	}
@@ -8868,7 +8880,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 		//
 		// prepare transaction get items request
 		//
-		transGetItems := make([]*dynamodb.TransactGetItem, 0)
+		transGetItems := make([]*dynamodb.TransactGetItem, 0, searchCount)
 
 		for _, searchSet := range getItems {
 			//
@@ -9093,7 +9105,7 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 	//
 	// prepare transaction get items request
 	//
-	transGetItems := make([]*dynamodb.TransactGetItem, 0)
+	transGetItems := make([]*dynamodb.TransactGetItem, 0, searchCount)
 
 	for _, searchSet := range getItems {
 		//

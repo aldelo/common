@@ -99,9 +99,14 @@ type XRayParentSegment struct {
 // aws xray helper functions
 // ================================================================================================================
 
-// indicates if xray service tracing is on or off
-var _xrayServiceOn bool
-var _mu sync.RWMutex
+// indicates if xray service tracing is on or off.
+//
+// P3-PERF-7 (2026-04-17): migrated from `bool` guarded by a sync.RWMutex to
+// atomic.Bool. Every wrapper operation (DynamoDB, Redis, MySQL, S3, etc.)
+// calls tracingEnabled() at the top; under the old RLock the check cost
+// ~15-25ns per call. atomic.Load is ~1ns. The mutex only ever protected
+// this single flag, so atomic is a safe drop-in.
+var _xrayServiceOn atomic.Bool
 
 // central helper that honors env-based disable switch.
 func tracingEnabled() bool {
@@ -109,10 +114,7 @@ func tracingEnabled() bool {
 		return false
 	}
 
-	_mu.RLock()
-	defer _mu.RUnlock()
-
-	return _xrayServiceOn
+	return _xrayServiceOn.Load()
 }
 
 // Init will configure xray daemon address and service version
@@ -140,18 +142,16 @@ func Init(daemonAddr string, serviceVersion string) error {
 		ServiceVersion: serviceVersion,
 	})
 
-	_mu.Lock()
-	defer _mu.Unlock()
 	if err != nil {
-		_xrayServiceOn = false //ensure off on failure
+		_xrayServiceOn.Store(false) // ensure off on failure
 		return err
 	}
 
 	// honor AWS_XRAY_SDK_DISABLED to avoid enabling when globally disabled
 	if strings.EqualFold(os.Getenv("AWS_XRAY_SDK_DISABLED"), "true") {
-		_xrayServiceOn = false
+		_xrayServiceOn.Store(false)
 	} else {
-		_xrayServiceOn = true // enable tracing after successful init
+		_xrayServiceOn.Store(true) // enable tracing after successful init
 	}
 
 	return nil
@@ -162,18 +162,14 @@ func Init(daemonAddr string, serviceVersion string) error {
 // the service is set to on during its init, open, or connect etc actions,
 // existing objects are not affected by this function action
 func SetXRayServiceOn() {
-	_mu.Lock()
-	defer _mu.Unlock()
-	_xrayServiceOn = true
+	_xrayServiceOn.Store(true)
 }
 
 // SetXRayServiceOff turns off xray service for new objects,
 // so that wrappers and code supporting xray will not start using xray for tracing when it is init, connect or open,
 // existing objects are not affected by this function action
 func SetXRayServiceOff() {
-	_mu.Lock()
-	defer _mu.Unlock()
-	_xrayServiceOn = false
+	_xrayServiceOn.Store(false)
 }
 
 // XRayServiceOn returns whether xray tracing service is on or off
@@ -189,9 +185,7 @@ func DisableTracing() {
 		log.Printf("XRay.DisableTracing: os.Setenv error: %v", err)
 	}
 
-	_mu.Lock()
-	_xrayServiceOn = false
-	_mu.Unlock()
+	_xrayServiceOn.Store(false)
 }
 
 // EnableTracing re-enables xray tracing
@@ -200,9 +194,7 @@ func EnableTracing() {
 		log.Printf("XRay.EnableTracing: os.Setenv error: %v", err)
 	}
 
-	_mu.Lock()
-	_xrayServiceOn = true
-	_mu.Unlock()
+	_xrayServiceOn.Store(true)
 }
 
 // GetXRayHeader gets header from http.request,

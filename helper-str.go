@@ -330,70 +330,54 @@ func ParseKeyValue(s string, delimiter string, key *string, val *string) error {
 	return nil
 }
 
+// P3-L3-1/P3-L3-2 (2026-04-17): these patterns were compiled on every call.
+// Compiling once at package init removes a redundant regexp.Compile + AST
+// build + NFA construction per invocation (~1-2µs + ~1KB allocations).
+// The (string, error) return contracts are preserved; err is now always nil
+// because MustCompile panics at init if any pattern is invalid (none are).
+var (
+	extractNumericPattern                    = regexp.MustCompile("[^0-9]+")
+	extractAlphaPattern                      = regexp.MustCompile("[^A-Za-z]+")
+	extractAlphaNumericPattern               = regexp.MustCompile("[^A-Za-z0-9]+")
+	extractHexPattern                        = regexp.MustCompile("[^A-Fa-f0-9]+")
+	extractAlphaNumericUnderscoreDashPattern = regexp.MustCompile("[^A-Za-z0-9_-]+")
+	extractAlphaNumericPrintableSymPattern   = regexp.MustCompile("[^ -~]+")
+
+	isAlphanumericOnlyPattern         = regexp.MustCompile("^[A-Za-z0-9]+$")
+	isAlphanumericAndSpaceOnlyPattern = regexp.MustCompile("^[A-Za-z0-9 ]+$")
+	isBase64OnlyPattern               = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)
+	isHexOnlyPattern                  = regexp.MustCompile("^[A-Fa-f0-9]+$")
+	isNumericIntOnlyPattern           = regexp.MustCompile("^[0-9]+$")
+)
+
 // ExtractNumeric will extract only 0-9 out of string to be returned
 func ExtractNumeric(s string) (string, error) {
-	exp, err := regexp.Compile("[^0-9]+")
-
-	if err != nil {
-		return "", err
-	}
-
-	return exp.ReplaceAllString(s, ""), nil
+	return extractNumericPattern.ReplaceAllString(s, ""), nil
 }
 
 // ExtractAlpha will extract A-Z out of string to be returned
 func ExtractAlpha(s string) (string, error) {
-	exp, err := regexp.Compile("[^A-Za-z]+")
-
-	if err != nil {
-		return "", err
-	}
-
-	return exp.ReplaceAllString(s, ""), nil
+	return extractAlphaPattern.ReplaceAllString(s, ""), nil
 }
 
 // ExtractAlphaNumeric will extract only A-Z, a-z, and 0-9 out of string to be returned
 func ExtractAlphaNumeric(s string) (string, error) {
-	exp, err := regexp.Compile("[^A-Za-z0-9]+")
-
-	if err != nil {
-		return "", err
-	}
-
-	return exp.ReplaceAllString(s, ""), nil
+	return extractAlphaNumericPattern.ReplaceAllString(s, ""), nil
 }
 
 // ExtractHex will extract only A-F, a-f, and 0-9 out of string to be returned
 func ExtractHex(s string) (string, error) {
-	exp, err := regexp.Compile("[^A-Fa-f0-9]+")
-
-	if err != nil {
-		return "", err
-	}
-
-	return exp.ReplaceAllString(s, ""), nil
+	return extractHexPattern.ReplaceAllString(s, ""), nil
 }
 
 // ExtractAlphaNumericUnderscoreDash will extract only A-Z, a-z, 0-9, _, - out of string to be returned
 func ExtractAlphaNumericUnderscoreDash(s string) (string, error) {
-	exp, err := regexp.Compile("[^A-Za-z0-9_-]+")
-
-	if err != nil {
-		return "", err
-	}
-
-	return exp.ReplaceAllString(s, ""), nil
+	return extractAlphaNumericUnderscoreDashPattern.ReplaceAllString(s, ""), nil
 }
 
 // ExtractAlphaNumericPrintableSymbols will extra A-Z, a-z, 0-9, and printable symbols
 func ExtractAlphaNumericPrintableSymbols(s string) (string, error) {
-	exp, err := regexp.Compile("[^ -~]+")
-
-	if err != nil {
-		return "", err
-	}
-
-	return exp.ReplaceAllString(s, ""), nil
+	return extractAlphaNumericPrintableSymPattern.ReplaceAllString(s, ""), nil
 }
 
 // ExtractByRegex will extract string based on regex expression,
@@ -418,13 +402,7 @@ func IsAlphanumericOnly(s string) bool {
 	if len(s) == 0 {
 		return true
 	}
-
-	exp, err := regexp.Compile("^[A-Za-z0-9]+$")
-	if err != nil {
-		return false
-	}
-
-	return exp.MatchString(s)
+	return isAlphanumericOnlyPattern.MatchString(s)
 }
 
 // IsAlphanumericAndSpaceOnly checks if the input string is A-Z, a-z, 0-9, and space
@@ -433,13 +411,7 @@ func IsAlphanumericAndSpaceOnly(s string) bool {
 	if len(s) == 0 {
 		return true
 	}
-
-	exp, err := regexp.Compile("^[A-Za-z0-9 ]+$")
-	if err != nil {
-		return false
-	}
-
-	return exp.MatchString(s)
+	return isAlphanumericAndSpaceOnlyPattern.MatchString(s)
 }
 
 // IsBase64Only checks if the input string is a-z, A-Z, 0-9, +, /, =
@@ -458,12 +430,7 @@ func IsBase64Only(s string) bool {
 		clean += strings.Repeat("=", 4-m)
 	}
 
-	exp, err := regexp.Compile(`^[A-Za-z0-9+/]+={0,2}$`)
-	if err != nil {
-		return false
-	}
-
-	if !exp.MatchString(clean) {
+	if !isBase64OnlyPattern.MatchString(clean) {
 		return false
 	}
 
@@ -481,14 +448,8 @@ func IsHexOnly(s string) bool {
 	if len(s) == 0 {
 		return true
 	}
-
-	exp, err := regexp.Compile("^[A-Fa-f0-9]+$")
-	if err != nil {
-		return false
-	}
-
 	// Removed even-length enforcement so validation matches the stated contract
-	return exp.MatchString(s)
+	return isHexOnlyPattern.MatchString(s)
 }
 
 // IsNumericIntOnly checks if the input string is 0-9 only
@@ -500,12 +461,7 @@ func IsNumericIntOnly(s string) bool {
 		return true
 	}
 
-	exp, err := regexp.Compile("^[0-9]+$")
-	if err != nil {
-		return false
-	}
-
-	return exp.MatchString(s)
+	return isNumericIntOnlyPattern.MatchString(s)
 }
 
 // IsNumericFloat64 checks if string is float

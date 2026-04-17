@@ -660,3 +660,62 @@ func TestTimeoutClamping_WarningLogged(t *testing.T) {
 		}, "[WARN] DynamoDB TransactionWriteItemsWithRetry timeout 45s clamped to maximum 30s for table clamp-test-table")
 	})
 }
+
+// stringerFunc adapts a func() string to fmt.Stringer without heap-escaping
+// the closure on every call (it escapes once at test setup — acceptable for
+// tests; production callers pass *dynamodb.PutItemInput which has a real
+// String() method).
+type stringerFunc func() string
+
+func (s stringerFunc) String() string { return s() }
+
+// TestSetLastExecuteParamsPayload_DefaultEnabled_P1PERF2 pins the v1.8.6
+// observable contract for LastExecuteParamsPayload: with the default zero
+// value of DisableLastExecuteParamsPayload (false), setLastExecuteParamsPayload
+// MUST record the prefix + stringer.String() concatenation into the public
+// LastExecuteParamsPayload field so downstream consumers that read it for
+// diagnostic logging continue to see the same payload they saw in v1.8.6.
+//
+// Regression guard for P1-PERF-2 (v1.8.7): the opt-out flag must default to
+// "record" so no caller loses diagnostics without explicitly opting out.
+// If a future refactor flips the sense of the flag or removes the helper,
+// this test fails and the regression is caught at build time.
+func TestSetLastExecuteParamsPayload_DefaultEnabled_P1PERF2(t *testing.T) {
+	called := 0
+	stringer := stringerFunc(func() string {
+		called++
+		return "FAKE_INPUT"
+	})
+	d := &DynamoDB{}
+	d.setLastExecuteParamsPayload("TestOp = ", stringer)
+	if called != 1 {
+		t.Fatalf("stringer.String() calls = %d, want 1 (default path must record)", called)
+	}
+	if got, want := d.LastExecuteParamsPayload, "TestOp = FAKE_INPUT"; got != want {
+		t.Fatalf("LastExecuteParamsPayload = %q, want %q — default contract broken", got, want)
+	}
+}
+
+// TestSetLastExecuteParamsPayload_DisabledSkipsAllocation_P1PERF2 verifies the
+// opt-out path: when DisableLastExecuteParamsPayload is true, the helper MUST
+// NOT call stringer.String() (so no allocation, no mutex acquisition, no GC
+// pressure) and the field MUST remain untouched.
+//
+// This is the whole point of P1-PERF-2: at 10K DDB ops/s, every String() call
+// that can be skipped is allocation avoided on the hot path.
+func TestSetLastExecuteParamsPayload_DisabledSkipsAllocation_P1PERF2(t *testing.T) {
+	called := 0
+	stringer := stringerFunc(func() string {
+		called++
+		return "FAKE_INPUT"
+	})
+	d := &DynamoDB{DisableLastExecuteParamsPayload: true}
+	d.LastExecuteParamsPayload = "SENTINEL"
+	d.setLastExecuteParamsPayload("TestOp = ", stringer)
+	if called != 0 {
+		t.Fatalf("stringer.String() calls = %d, want 0 (disabled path must not serialize)", called)
+	}
+	if got, want := d.LastExecuteParamsPayload, "SENTINEL"; got != want {
+		t.Fatalf("LastExecuteParamsPayload = %q, want %q — disabled path must not mutate field", got, want)
+	}
+}

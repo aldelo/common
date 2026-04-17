@@ -961,9 +961,16 @@ func (g *Gin) setupPerClientIpQpsMiddleware(rg gin.IRoutes, qps int, burst int, 
 					g._limiterCache.Set(k, limiter, expire)
 				}
 
-				ok = limiter.(*rate.Limiter).Allow()
+				// P1-CMN-L2-1: comma-ok guards against future cache-type misuse;
+				// panicking mid-middleware would take down the whole handler chain.
+				rl, typeOK := limiter.(*rate.Limiter)
+				if !typeOK {
+					log.Println("Gin limiter cache invariant violated: unexpected type, aborting 500")
+					cc.AbortWithStatus(500)
+					return
+				}
 
-				if !ok {
+				if !rl.Allow() {
 					abort(cc)
 					return
 				}

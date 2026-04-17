@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	ginlib "github.com/gin-gonic/gin"
+	cache "github.com/patrickmn/go-cache"
 
 	"github.com/aldelo/common/wrapper/gin/ginbindtype"
 	"github.com/aldelo/common/wrapper/gin/gingzipcompression"
@@ -715,5 +717,46 @@ func TestNewRouteFunc_BindingError_NoDetailLeak(t *testing.T) {
 		if bytes.Contains(w.Body.Bytes(), []byte(leak)) {
 			t.Errorf("response body contains internal detail %q — binding error leaked to client", leak)
 		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// P1-CMN-L2-1: per-client QPS middleware must not panic on cache type miss.
+// --------------------------------------------------------------------------
+
+// TestPerClientIpQps_CacheTypeMiss_AbortsWith500_NoPanic verifies the
+// comma-ok guard on the *rate.Limiter type assertion at gin.go:964.
+// Before the fix, a cache value of unexpected type would trigger
+// "interface conversion: string is not *rate.Limiter" and crash the
+// whole handler chain. After the fix, the middleware aborts with 500.
+func TestPerClientIpQps_CacheTypeMiss_AbortsWith500_NoPanic(t *testing.T) {
+	g := &Gin{_limiterCache: cache.New(5*time.Minute, 10*time.Minute)}
+
+	engine := ginlib.New()
+	_ = engine.SetTrustedProxies(nil)
+	rg := engine.Group("/")
+	g.setupPerClientIpQpsMiddleware(rg, 100, 10, 5*time.Minute)
+
+	// Poison: insert a non-Limiter value under the expected ClientIP key,
+	// simulating cache-type invariant violation.
+	g._limiterCache.Set("192.168.1.100", "not-a-limiter", 5*time.Minute)
+
+	rg.GET("/rl", func(c *ginlib.Context) {
+		c.String(200, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/rl", nil)
+	req.RemoteAddr = "192.168.1.100:12345"
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("middleware panicked on cache type miss (comma-ok missing): %v", r)
+		}
+	}()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != 500 {
+		t.Errorf("status = %d, want 500 (cache-type invariant violation → abort 500)", w.Code)
 	}
 }

@@ -20,8 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -635,7 +637,16 @@ func (c *CircuitBreaker) StartStreamHttpServer(port ...int) error {
 			Handler: c.streamHandler,
 		}
 
-		go c.httpServer.ListenAndServe()
+		go func(srv *http.Server) {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("hystrixgo stream server: recovered panic in ListenAndServe: %v\n%s", r, debug.Stack())
+				}
+			}()
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("hystrixgo stream server: ListenAndServe exited with error: %v", err)
+			}
+		}(c.httpServer)
 	}
 
 	return nil

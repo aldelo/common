@@ -876,6 +876,12 @@ type DynamoDB struct {
 	LastExecuteParamsPayload      string
 	LastExecuteParamsPayloadMutex sync.RWMutex
 
+	// DisableLastExecuteParamsPayload, when true, skips the per-operation
+	// diagnostic payload recording to avoid input.String() allocation and
+	// LastExecuteParamsPayloadMutex contention on the hot path.
+	// Default false preserves the v1.8.6 observable contract.
+	DisableLastExecuteParamsPayload bool
+
 	_parentSegment      *xray.XRayParentSegment
 	_parentSegmentMutex sync.RWMutex
 }
@@ -883,6 +889,20 @@ type DynamoDB struct {
 // =====================================================================================================================
 // Internal Utility Helpers
 // =====================================================================================================================
+
+// setLastExecuteParamsPayload records the stringified operation input for
+// diagnostics. Gated by DisableLastExecuteParamsPayload so the caller only
+// pays the stringer.String() allocation and mutex acquisition when the
+// diagnostic channel is enabled (default).
+func (d *DynamoDB) setLastExecuteParamsPayload(prefix string, stringer fmt.Stringer) {
+	if d.DisableLastExecuteParamsPayload {
+		return
+	}
+	payload := prefix + stringer.String()
+	d.LastExecuteParamsPayloadMutex.Lock()
+	d.LastExecuteParamsPayload = payload
+	d.LastExecuteParamsPayloadMutex.Unlock()
+}
 
 func (d *DynamoDB) getStringPtrOrNil(s string) *string {
 	if util.LenTrim(s) > 0 {
@@ -2072,9 +2092,7 @@ func (d *DynamoDB) do_Query(input *dynamodb.QueryInput, pagedQuery bool, pagedQu
 			return nil, execErr
 		}
 
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = input.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("", input)
 
 		return result, nil
 	}
@@ -2356,9 +2374,7 @@ func (d *DynamoDB) do_Scan(input *dynamodb.ScanInput, pagedQuery bool, pagedQuer
 			return nil, execErr
 		}
 
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = input.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("", input)
 
 		return result, nil
 	}
@@ -2940,9 +2956,7 @@ func (d *DynamoDB) putItemWithTrace(item interface{}, timeOutDuration *time.Dura
 			}
 
 			// record params payload
-			d.LastExecuteParamsPayloadMutex.Lock()
-			d.LastExecuteParamsPayload = "PutItem = " + input.String()
-			d.LastExecuteParamsPayloadMutex.Unlock()
+			d.setLastExecuteParamsPayload("PutItem = ", input)
 
 			subTrace := trace.NewSubSegment("PutItem_Do")
 			defer subTrace.Close()
@@ -3031,9 +3045,7 @@ func (d *DynamoDB) putItemNormal(item interface{}, timeOutDuration *time.Duratio
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "PutItem = " + input.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("PutItem = ", input)
 
 		// save into dynamodb table
 		if timeOutDuration != nil {
@@ -3338,9 +3350,7 @@ func (d *DynamoDB) updateItemWithTrace(pkValue string, skValue string,
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "UpdateItem = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("UpdateItem = ", params)
 
 		// execute dynamodb service
 		var err error
@@ -3479,9 +3489,7 @@ func (d *DynamoDB) updateItemNormal(pkValue string, skValue string,
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "UpdateItem = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("UpdateItem = ", params)
 
 	// execute dynamodb service
 	var err error
@@ -3685,9 +3693,7 @@ func (d *DynamoDB) removeItemAttributeWithTrace(pkValue string, skValue string, 
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "RemoveItemAttribute = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("RemoveItemAttribute = ", params)
 
 		// execute dynamodb service
 		var err error
@@ -3794,9 +3800,7 @@ func (d *DynamoDB) removeItemAttributeNormal(pkValue string, skValue string, rem
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "RemoveItemAttribute = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("RemoveItemAttribute = ", params)
 
 	// execute dynamodb service
 	var err error
@@ -3981,9 +3985,7 @@ func (d *DynamoDB) deleteItemWithTrace(pkValue string, skValue string, timeOutDu
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "DeleteItem = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("DeleteItem = ", params)
 
 		var err error
 
@@ -4066,9 +4068,7 @@ func (d *DynamoDB) deleteItemNormal(pkValue string, skValue string, timeOutDurat
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "DeleteItem = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("DeleteItem = ", params)
 
 	var err error
 
@@ -4337,9 +4337,7 @@ func (d *DynamoDB) getItemWithTrace(resultItemPtr interface{},
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "GetItem = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("GetItem = ", params)
 
 		// execute get item action
 		var result *dynamodb.GetItemOutput
@@ -4495,9 +4493,7 @@ func (d *DynamoDB) getItemNormal(resultItemPtr interface{},
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "GetItem = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("GetItem = ", params)
 
 	// execute get item action
 	var result *dynamodb.GetItemOutput
@@ -4825,9 +4821,7 @@ func (d *DynamoDB) queryPaginationDataWithTrace(
 		params.Limit = aws.Int64(itemsPerPage)
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "QueryPaginationDataWithTrace = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("QueryPaginationDataWithTrace = ", params)
 
 		subTrace := trace.NewSubSegment("QueryPaginationDataWithTrace_Do")
 		defer subTrace.Close()
@@ -4960,9 +4954,7 @@ func (d *DynamoDB) queryPaginationDataNormal(
 	params.Limit = aws.Int64(itemsPerPage)
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "QueryPaginationDataNormal = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("QueryPaginationDataNormal = ", params)
 
 	if timeOutDuration != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
@@ -5290,9 +5282,7 @@ func (d *DynamoDB) queryItemsWithTrace(resultItemsPtr interface{},
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "QueryItems = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("QueryItems = ", params)
 
 		subTrace := trace.NewSubSegment("QueryItems_Do")
 		defer subTrace.Close()
@@ -5513,9 +5503,7 @@ func (d *DynamoDB) queryItemsNormal(resultItemsPtr interface{},
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "QueryItems = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("QueryItems = ", params)
 
 	if timeOutDuration != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeOutDuration)
@@ -6146,9 +6134,7 @@ func (d *DynamoDB) scanItemsWithTrace(resultItemsPtr interface{},
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "ScanItems = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("ScanItems = ", params)
 
 		subTrace := trace.NewSubSegment("ScanItems_Do")
 		defer subTrace.Close()
@@ -6313,9 +6299,7 @@ func (d *DynamoDB) scanItemsNormal(resultItemsPtr interface{},
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "ScanItems = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("ScanItems = ", params)
 
 	// create timeout context
 	if timeOutDuration != nil {
@@ -6795,9 +6779,7 @@ func (d *DynamoDB) batchWriteItemsWithTrace(putItemsSet []*DynamoDBTransactionWr
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "BatchWriteItems = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("BatchWriteItems = ", params)
 
 		// execute batch write action
 		var result *dynamodb.BatchWriteItemOutput
@@ -7048,9 +7030,7 @@ func (d *DynamoDB) batchWriteItemsNormal(putItemsSet []*DynamoDBTransactionWrite
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "BatchWriteItems = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("BatchWriteItems = ", params)
 
 	// execute batch write action
 	var result *dynamodb.BatchWriteItemOutput
@@ -7639,9 +7619,7 @@ func (d *DynamoDB) batchGetItemsWithTrace(timeOutDuration *time.Duration, multiG
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "BatchGetItems = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("BatchGetItems = ", params)
 
 		// retry unprocessedkeys with bounded backoff and aggregate responses
 		combinedResponses := make(map[string][]map[string]*dynamodb.AttributeValue)
@@ -7927,9 +7905,7 @@ func (d *DynamoDB) batchGetItemsNormal(timeOutDuration *time.Duration, multiGetR
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "BatchGetItems = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("BatchGetItems = ", params)
 
 	combinedResponses := make(map[string][]map[string]*dynamodb.AttributeValue)
 	maxAttempts := 5
@@ -8417,9 +8393,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "TransactionWriteItems = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("TransactionWriteItems = ", params)
 
 		// execute transaction write operation
 		var err1 error
@@ -8617,9 +8591,7 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "TransactionWriteItems = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("TransactionWriteItems = ", params)
 
 	// execute transaction write operation
 	var err1 error
@@ -8942,9 +8914,7 @@ func (d *DynamoDB) transactionGetItemsWithTrace(timeOutDuration *time.Duration, 
 		}
 
 		// record params payload
-		d.LastExecuteParamsPayloadMutex.Lock()
-		d.LastExecuteParamsPayload = "TransactionGetItems = " + params.String()
-		d.LastExecuteParamsPayloadMutex.Unlock()
+		d.setLastExecuteParamsPayload("TransactionGetItems = ", params)
 
 		// execute transaction get operation
 		var result *dynamodb.TransactGetItemsOutput
@@ -9165,9 +9135,7 @@ func (d *DynamoDB) transactionGetItemsNormal(timeOutDuration *time.Duration, get
 	}
 
 	// record params payload
-	d.LastExecuteParamsPayloadMutex.Lock()
-	d.LastExecuteParamsPayload = "TransactionGetItems = " + params.String()
-	d.LastExecuteParamsPayloadMutex.Unlock()
+	d.setLastExecuteParamsPayload("TransactionGetItems = ", params)
 
 	// execute transaction get operation
 	var result *dynamodb.TransactGetItemsOutput

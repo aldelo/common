@@ -17,6 +17,7 @@ package mysql
  */
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -635,7 +636,9 @@ func (svr *MySql) openNormal() error {
 		newDB.SetConnMaxIdleTime(svr.MaxConnIdleTime)
 	}
 
-	newDB.SetConnMaxLifetime(0)
+	// P2-4: recycle connections every 5 minutes so Aurora failover / DNS changes
+	// do not leave the pool holding stale connections to dead endpoints.
+	newDB.SetConnMaxLifetime(5 * time.Minute)
 
 	// set db and lastPing under lock
 	svr.mux.Lock()
@@ -751,7 +754,9 @@ func (svr *MySql) openWithXRay() (err error) {
 		newDB.SetConnMaxIdleTime(svr.MaxConnIdleTime)
 	}
 
-	newDB.SetConnMaxLifetime(0)
+	// P2-4: recycle connections every 5 minutes so Aurora failover / DNS changes
+	// do not leave the pool holding stale connections to dead endpoints.
+	newDB.SetConnMaxLifetime(5 * time.Minute)
 
 	// set db and lastPing under lock
 	svr.mux.Lock()
@@ -948,7 +953,10 @@ func (svr *MySql) GetStructSlice(dest interface{}, query string, args ...interfa
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		err = db.Select(dest, query, args...)
+		// P2-5: add default 30s timeout so non-XRay queries cannot hang forever
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		err = db.SelectContext(ctx, dest, query, args...)
 	} else {
 		trace := xray.NewSegment("MySql-Select-GetStructSlice", parentSeg)
 		defer trace.Close()
@@ -1071,7 +1079,10 @@ func (svr *MySql) GetStruct(dest interface{}, query string, args ...interface{})
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		err = db.Get(dest, query, args...)
+		// P2-5: add default 30s timeout so non-XRay queries cannot hang forever
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		err = db.GetContext(ctx, dest, query, args...)
 	} else {
 		trace := xray.NewSegment("MySql-Select-GetStruct", parentSeg)
 		defer trace.Close()
@@ -1206,7 +1217,10 @@ func (svr *MySql) GetRowsByOrdinalParams(query string, args ...interface{}) (*sq
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		rows, err = db.Queryx(query, args...)
+		// P2-5: add default 30s timeout so non-XRay queries cannot hang forever
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		rows, err = db.QueryxContext(ctx, query, args...)
 	} else {
 		trace := xray.NewSegment("MySql-Select-GetRowsByOrdinalParams", parentSeg)
 		defer trace.Close()
@@ -1355,7 +1369,10 @@ func (svr *MySql) GetRowsByNamedMapParam(query string, args map[string]interface
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		rows, err = db.NamedQuery(query, args)
+		// P2-5: add default 30s timeout so non-XRay queries cannot hang forever
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		rows, err = db.NamedQueryContext(ctx, query, args)
 	} else {
 		trace := xray.NewSegment("MySql-Select-GetRowsByNamedMapParam", parentSeg)
 		defer trace.Close()
@@ -1510,7 +1527,10 @@ func (svr *MySql) GetRowsByStructParam(query string, args interface{}) (*sqlx.Ro
 	// not in transaction mode
 	// query using db object
 	if !xray.XRayServiceOn() {
-		rows, err = db.NamedQuery(query, args)
+		// P2-5: add default 30s timeout so non-XRay queries cannot hang forever
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		rows, err = db.NamedQueryContext(ctx, query, args)
 	} else {
 		trace := xray.NewSegment("MySql-Select-GetRowsByStructParam", parentSeg)
 		defer trace.Close()

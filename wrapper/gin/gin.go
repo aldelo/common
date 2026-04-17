@@ -86,8 +86,30 @@ type Gin struct {
 	// define html template renderer
 	HtmlTemplateRenderer *GinTemplate
 
-	// define http status error handler
+	// define http status error handler.
+	//
+	// SECURITY NOTE: the `trace` argument may contain sensitive data derived from panic
+	// recovery — request bodies, stack frames referencing internal file paths, or error
+	// messages that include database rows, auth headers, or PII. Handlers that return
+	// `trace` to the caller (e.g. via c.String(500, trace)) WILL leak that data over the
+	// wire. Production handlers should log `trace` server-side and return a generic
+	// message (e.g. "Internal Server Error") to the client. The built-in fallback at
+	// line ~304 already does this correctly — custom implementations must preserve that
+	// separation.
 	HttpStatusErrorHandler func(status int, trace string, c *gin.Context)
+
+	// TrustedProxies is the allow-list of proxy CIDRs whose X-Forwarded-For / X-Real-IP
+	// headers gin will trust when resolving c.ClientIP(). Default is nil, which this
+	// wrapper interprets as fail-closed: SetTrustedProxies is called with []string{},
+	// meaning gin trusts NO proxies and c.ClientIP() falls back to the raw
+	// net.RemoteAddr. This prevents per-client rate-limit bypass via spoofed
+	// X-Forwarded-For headers (each forged header would otherwise mint a fresh limiter
+	// bucket, defeating clientKeyFromRequest).
+	//
+	// Operators running behind a known load balancer MUST populate this explicitly with
+	// the LB's CIDR (e.g. []string{"10.0.0.0/8"} for a private-VPC ALB). The zero value
+	// is intentionally safe-by-default rather than convenient-by-default.
+	TrustedProxies []string
 
 	// web server instance
 	_ginEngine    *gin.Engine
@@ -399,6 +421,24 @@ func (g *Gin) RunServer() error {
 
 	if g.Port > 65535 {
 		return fmt.Errorf("Run Web Server Failed: %s", "Port Number Cannot Exceed 65535")
+	}
+
+	// P3-N2 (2026-04-17): apply TrustedProxies in fail-closed mode.
+	// When g.TrustedProxies is nil or empty, we pass []string{} to gin — this disables
+	// ALL forwarded-for / real-ip header trust, so c.ClientIP() (used by
+	// clientKeyFromRequest for per-client rate limiting) falls back to net.RemoteAddr.
+	// Without this call, gin defaults to trusting every proxy ("0.0.0.0/0", "::/0"),
+	// letting an attacker mint unlimited rate-limit buckets by rotating a spoofed
+	// X-Forwarded-For header.
+	//
+	// Operators who legitimately run behind a load balancer MUST populate
+	// g.TrustedProxies with the LB's CIDR BEFORE calling RunServer.
+	proxies := g.TrustedProxies
+	if proxies == nil {
+		proxies = []string{}
+	}
+	if err := g._ginEngine.SetTrustedProxies(proxies); err != nil {
+		return fmt.Errorf("Run Web Server Failed: SetTrustedProxies errored: %s", err.Error())
 	}
 
 	// setup html template renderer
@@ -892,8 +932,15 @@ func (g *Gin) setupMaxLimitMiddleware(rg gin.IRoutes, maxLimit int) {
 }
 
 // clientKeyFromRequest derives the rate-limiter key from the client IP.
-// Uses c.ClientIP() which respects gin's TrustedProxies configuration,
-// preventing rate-limit bypass via spoofed X-Forwarded-For headers.
+//
+// Security: this relies on gin's TrustedProxies allow-list, which RunServer
+// configures from Gin.TrustedProxies (default = fail-closed empty slice, see
+// P3-N2). When the allow-list is empty or does not contain the upstream proxy,
+// c.ClientIP() returns net.RemoteAddr (the raw TCP peer), which cannot be
+// spoofed without controlling the network layer. Operators deploying behind a
+// load balancer MUST populate Gin.TrustedProxies with the LB's CIDR, otherwise
+// every request appears to originate from the LB itself and all clients share
+// a single rate-limiter bucket.
 func clientKeyFromRequest(c *gin.Context) string {
 	return c.ClientIP()
 }

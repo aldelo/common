@@ -473,7 +473,7 @@ LockRetry:
 	}
 
 	// provide clear retry-exhausted error
-	return fmt.Errorf("Update IP Set Failed after %d optimistic-lock retries: %v", wafLockMaxRetry, lastErr)
+	return fmt.Errorf("Update IP Set Failed after %d optimistic-lock retries: %w", wafLockMaxRetry, lastErr)
 }
 
 // UpdateRegexPatternSet will update an existing RegexPatternSet with new regex patterns specified
@@ -627,5 +627,5 @@ LockRetry:
 	}
 
 	// clearer exhausted-retry error
-	return fmt.Errorf("Update Regex Patterns Set Failed after %d optimistic-lock retries: %v", wafLockMaxRetry, lastErr)
+	return fmt.Errorf("Update Regex Patterns Set Failed after %d optimistic-lock retries: %w", wafLockMaxRetry, lastErr)
 }

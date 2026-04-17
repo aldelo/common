@@ -1285,7 +1285,7 @@ func GetStructFieldValue(input interface{}, fieldName string) (string, error) {
 
 	// return string value
 	if fieldValueStr, _, err := ReflectValueToString(fieldValue, "true", "false", false, false, "", false); err != nil {
-		return "", fmt.Errorf("Field %q Value Conversion Failed: %v", fieldName, err)
+		return "", fmt.Errorf("Field %q Value Conversion Failed: %w", fieldName, err)
 	} else {
 		return fieldValueStr, nil
 	}

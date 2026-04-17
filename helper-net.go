@@ -49,7 +49,7 @@ const (
 // GetNetListener triggers the specified port to listen via tcp
 func GetNetListener(port uint) (net.Listener, error) {
 	if l, e := net.Listen("tcp", fmt.Sprintf(":%d", port)); e != nil {
-		return nil, fmt.Errorf("Listen Tcp on Port %d Failed: %v", port, e)
+		return nil, fmt.Errorf("Listen Tcp on Port %d Failed: %w", port, e)
 	} else {
 		return l, nil
 	}
@@ -509,7 +509,7 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 
 	req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, "https://www.google.com/recaptcha/api/siteverify", strings.NewReader(form.Encode()))
 	if reqErr != nil {
-		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Request Build Failed: %v", reqErr)
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Request Build Failed: %w", reqErr)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -519,14 +519,14 @@ func VerifyGoogleReCAPTCHAv2(response string, secret string) (success bool, chal
 		if ctx.Err() == context.DeadlineExceeded {
 			return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: timeout after %s", recaptchaVerifyTimeout)
 		}
-		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: %v", httpErr)
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Failed: %w", httpErr)
 	}
 	defer httpResp.Body.Close()
 
 	limitedResp := io.LimitReader(httpResp.Body, maxReCaptchaBodyBytes+1)
 	bodyBytes, readErr := io.ReadAll(limitedResp)
 	if readErr != nil {
-		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Read Failed: %v", readErr)
+		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Read Failed: %w", readErr)
 	}
 	if int64(len(bodyBytes)) > maxReCaptchaBodyBytes {
 		return false, time.Time{}, "", fmt.Errorf("ReCAPTCHA Service Response Failed: body exceeds %d bytes", maxReCaptchaBodyBytes)
@@ -607,7 +607,7 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 		body = body[:maxRequestBodyBytes]
 		// Prefer a clear size error; if there was also a read error, include it.
 		if readErr != nil {
-			readErr = fmt.Errorf("Http Request Body exceeds limit of %d bytes; read error: %v", maxRequestBodyBytes, readErr)
+			readErr = fmt.Errorf("Http Request Body exceeds limit of %d bytes; read error: %w", maxRequestBodyBytes, readErr)
 		} else {
 			readErr = fmt.Errorf("Http Request Body exceeds limit of %d bytes", maxRequestBodyBytes)
 		}
@@ -617,8 +617,9 @@ func ReadHttpRequestBody(req *http.Request) ([]byte, error) {
 	req.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	// Prefer reporting the read error; if none, surface close error if present.
+	// When both are present, errors.Join keeps both walkable via errors.Is/errors.As.
 	if readErr != nil && closeErr != nil {
-		return body, fmt.Errorf("read error: %v; close error: %v", readErr, closeErr)
+		return body, fmt.Errorf("http body read+close failed: %w", errors.Join(readErr, closeErr))
 	}
 	if readErr != nil {
 		return body, readErr

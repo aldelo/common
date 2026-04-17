@@ -11,6 +11,8 @@ package redis
  */
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -748,5 +750,156 @@ func TestOperations_AfterDisconnect(t *testing.T) {
 	_, _, err = r.Get(testKeyPrefix + "should:fail")
 	if err == nil {
 		t.Fatal("expected error when calling Get after Disconnect")
+	}
+}
+
+// ================================================================================================================
+// 11. Keys deprecation warning
+// ================================================================================================================
+
+func TestKeys_DeprecationWarning_FiresOnce(t *testing.T) {
+	// Reset the package-level sync.Once so we can observe the deprecation hook in this test,
+	// regardless of test execution order. Restore original state on cleanup.
+	origOnce := keysDeprecationOnce
+	origHook := KeysDeprecationHook
+	t.Cleanup(func() {
+		keysDeprecationOnce = origOnce
+		KeysDeprecationHook = origHook
+	})
+
+	var callCount atomic.Int32
+	KeysDeprecationHook = func() {
+		callCount.Add(1)
+	}
+	keysDeprecationOnce = sync.Once{}
+
+	// Use a nil UTILS receiver: the deprecation hook fires before the nil-receiver guard,
+	// so we can verify sync.Once behavior without needing a live Redis connection.
+	var u *UTILS
+
+	// First call should trigger the deprecation hook exactly once
+	_, _, _ = u.Keys("*")
+	if callCount.Load() != 1 {
+		t.Fatalf("expected deprecation hook to fire once on first Keys call, got %d", callCount.Load())
+	}
+
+	// Second call should NOT trigger the hook again (sync.Once guarantees this)
+	_, _, _ = u.Keys("*")
+	if callCount.Load() != 1 {
+		t.Fatalf("expected deprecation hook to fire only once, got %d calls", callCount.Load())
+	}
+}
+
+func TestKeys_DeprecationWarning_NilReceiver(t *testing.T) {
+	// Verify the deprecation hook fires even when the UTILS receiver is nil (before the nil check),
+	// so operators always see the warning regardless of caller mistakes.
+	origOnce := keysDeprecationOnce
+	origHook := KeysDeprecationHook
+	t.Cleanup(func() {
+		keysDeprecationOnce = origOnce
+		KeysDeprecationHook = origHook
+	})
+
+	var fired atomic.Bool
+	KeysDeprecationHook = func() {
+		fired.Store(true)
+	}
+	keysDeprecationOnce = sync.Once{}
+
+	var u *UTILS // nil receiver
+	_, _, err := u.Keys("*")
+	if err == nil {
+		t.Fatal("expected error for nil UTILS receiver")
+	}
+	if !fired.Load() {
+		t.Fatal("expected deprecation hook to fire even with nil UTILS receiver")
+	}
+}
+
+// ================================================================================================================
+// 12. ScanKeys — SCAN-based alternative to Keys
+// ================================================================================================================
+
+func TestScanKeys_BasicPattern(t *testing.T) {
+	r := connectTestRedis(t)
+	defer r.Disconnect()
+
+	key1 := testKeyPrefix + "scankeys:alpha"
+	key2 := testKeyPrefix + "scankeys:beta"
+	key3 := testKeyPrefix + "scankeys:gamma"
+	cleanupKeys(t, r, key1, key2, key3)
+
+	_ = r.Set(key1, "1")
+	_ = r.Set(key2, "2")
+	_ = r.Set(key3, "3")
+
+	keys, err := r.UTILS.ScanKeys(testKeyPrefix + "scankeys:*")
+	if err != nil {
+		t.Fatalf("ScanKeys failed: %v", err)
+	}
+	if len(keys) < 3 {
+		t.Fatalf("expected at least 3 keys, got %d: %v", len(keys), keys)
+	}
+
+	// Verify all expected keys are present
+	found := map[string]bool{}
+	for _, k := range keys {
+		found[k] = true
+	}
+	for _, expected := range []string{key1, key2, key3} {
+		if !found[expected] {
+			t.Errorf("expected key %q in ScanKeys result, not found", expected)
+		}
+	}
+}
+
+func TestScanKeys_NoMatch(t *testing.T) {
+	r := connectTestRedis(t)
+	defer r.Disconnect()
+
+	keys, err := r.UTILS.ScanKeys(testKeyPrefix + "scankeys:nonexistent:*")
+	if err != nil {
+		t.Fatalf("ScanKeys failed: %v", err)
+	}
+	if keys != nil {
+		t.Fatalf("expected nil for no matches, got %v", keys)
+	}
+}
+
+func TestScanKeys_EmptyMatch(t *testing.T) {
+	// Empty match validation happens before any Redis call, so no connection needed.
+	u := &UTILS{core: &Redis{}}
+	_, err := u.ScanKeys("")
+	if err == nil {
+		t.Fatal("expected error for empty match pattern")
+	}
+}
+
+func TestScanKeys_NilReceiver(t *testing.T) {
+	var u *UTILS
+	_, err := u.ScanKeys("*")
+	if err == nil {
+		t.Fatal("expected error for nil UTILS receiver")
+	}
+}
+
+func TestScanKeys_WithCountHint(t *testing.T) {
+	r := connectTestRedis(t)
+	defer r.Disconnect()
+
+	key1 := testKeyPrefix + "scanhint:one"
+	key2 := testKeyPrefix + "scanhint:two"
+	cleanupKeys(t, r, key1, key2)
+
+	_ = r.Set(key1, "a")
+	_ = r.Set(key2, "b")
+
+	// Use a very small count hint to exercise multiple SCAN iterations
+	keys, err := r.UTILS.ScanKeys(testKeyPrefix+"scanhint:*", 1)
+	if err != nil {
+		t.Fatalf("ScanKeys with count hint failed: %v", err)
+	}
+	if len(keys) < 2 {
+		t.Fatalf("expected at least 2 keys, got %d", len(keys))
 	}
 }

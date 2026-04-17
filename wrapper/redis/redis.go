@@ -42,6 +42,7 @@ package redis
 import (
 	"context"
 	"crypto/tls"
+	"log"
 	"strings"
 	"sync"
 
@@ -58,6 +59,18 @@ import (
 
 	util "github.com/aldelo/common"
 )
+
+// keysDeprecationOnce ensures the KEYS deprecation warning is logged at most once per process lifetime.
+var keysDeprecationOnce sync.Once
+
+// KeysDeprecationHook is a callback invoked the first time the deprecated Keys method is called.
+// It defaults to logging a warning via the standard log package.
+// Tests may replace this to capture the deprecation event without inspecting log output.
+var KeysDeprecationHook func() = func() {
+	log.Println("[WARN] Redis UTILS.Keys() is deprecated: the KEYS command performs an O(N) full keyspace scan " +
+		"that blocks the Redis event loop and can cause latency spikes in production. " +
+		"Use UTILS.ScanKeys() or UTILS.Scan() instead, which use the cursor-based SCAN command.")
+}
 
 // ================================================================================================================
 // STRUCTS
@@ -10654,6 +10667,12 @@ func (u *UTILS) scanInternal(snap redisConnSnapshot, cursor uint64, match string
 	return u.core.handleScanCmd(cmd, "Redis Scan Failed: ")
 }
 
+// Deprecated: Keys uses the Redis KEYS command which performs an O(N) scan of the entire keyspace,
+// blocking the Redis event loop for the duration. On a production instance with millions of keys
+// this can cause multi-second latency spikes for all clients.
+// Use [UTILS.ScanKeys] (full collection) or [UTILS.Scan] (cursor-based iteration) instead,
+// both of which use the incremental SCAN command that yields the event loop between batches.
+//
 // Keys returns all keys matching given pattern (use with extreme care, use for debugging only, may slow production system down significantly)
 //
 // start iteration = cursor set to 0
@@ -10670,6 +10689,13 @@ func (u *UTILS) scanInternal(snap redisConnSnapshot, cursor uint64, match string
 //		6) h[a-b]llo = [a-b] represents any char match between the a-b range (hallo, hbllo match, but hcllo not match)
 //		7) Use \ to escape special characters if needing to match verbatim
 func (u *UTILS) Keys(match string) (valKeys []string, notFound bool, err error) {
+	// Emit a one-time deprecation warning so operators can detect usage in production logs.
+	keysDeprecationOnce.Do(func() {
+		if KeysDeprecationHook != nil {
+			KeysDeprecationHook()
+		}
+	})
+
 	if u == nil {
 		return nil, false, errors.New("Redis UTILS Keys Failed: UTILS receiver is nil")
 	}
@@ -10730,6 +10756,56 @@ func (u *UTILS) keysInternal(snap redisConnSnapshot, match string) (valKeys []st
 
 	cmd := snap.reader.Keys(snap.reader.Context(), match)
 	return u.core.handleStringSliceCmd(cmd, "Redis Keys Failed: ")
+}
+
+// ScanKeys returns all keys matching the given pattern using the incremental SCAN command.
+// Unlike [UTILS.Keys], ScanKeys does not block the Redis event loop because SCAN yields
+// between batches. This makes it safe to use in production.
+//
+// countHint suggests how many keys Redis should return per SCAN iteration (default 100 if <= 0).
+// The actual number returned per iteration may vary; Redis treats count as a hint, not a hard limit.
+//
+// match uses the same glob-style patterns as [UTILS.Keys]:
+//
+//	1) h?llo = ? represents any single char match
+//	2) h*llo = * represents any single or more char match
+//	3) h[ae]llo = [ae] represents char inside [ ] that are to match
+//	4) h[^e]llo = [^e] represents any char other than e to match
+//	5) h[a-b]llo = [a-b] represents any char match between the a-b range
+//	6) Use \ to escape special characters if needing to match verbatim
+func (u *UTILS) ScanKeys(match string, countHint ...int64) (allKeys []string, err error) {
+	if u == nil {
+		return nil, errors.New("Redis UTILS ScanKeys Failed: UTILS receiver is nil")
+	}
+	if u.core == nil {
+		return nil, errors.New("Redis UTILS ScanKeys Failed: Redis core is nil")
+	}
+	if len(match) == 0 {
+		return nil, errors.New("Redis UTILS ScanKeys Failed: Match is Required")
+	}
+
+	var count int64 = 100
+	if len(countHint) > 0 && countHint[0] > 0 {
+		count = countHint[0]
+	}
+
+	var cursor uint64
+	for {
+		var keys []string
+		keys, cursor, err = u.Scan(cursor, match, count)
+		if err != nil {
+			return nil, err
+		}
+		allKeys = append(allKeys, keys...)
+		if cursor == 0 {
+			break
+		}
+	}
+
+	if len(allKeys) == 0 {
+		return nil, nil
+	}
+	return allKeys, nil
 }
 
 // RandomKey returns a random key from redis

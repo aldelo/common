@@ -12,7 +12,7 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ---
 
-## [v1.8.5] — pending
+## [v1.8.5] — 2026-04-17
 
 Patch release. Repairs the release-artifact discipline gap introduced at
 `v1.8.4` (CHANGELOG entry missing, corresponding connector `go.mod`

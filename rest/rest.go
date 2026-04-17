@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -202,7 +203,11 @@ func GET(url string, headers []*HeaderKeyValue) (statusCode int, body string, er
 	var respBytes []byte
 
 	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	_ = resp.Body.Close()
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		// Body close errors are typically benign (already-drained connection)
+		// but worth logging for observability in case of resource leaks.
+		log.Printf("rest.GET: resp.Body.Close error: %v", closeErr)
+	}
 	resp.Close = true
 
 	// clean up stale connections
@@ -280,7 +285,9 @@ func POST(url string, headers []*HeaderKeyValue, requestBody string) (statusCode
 	var respBytes []byte
 
 	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	_ = resp.Body.Close()
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		log.Printf("rest.POST: resp.Body.Close error: %v", closeErr)
+	}
 	resp.Close = true
 
 	// clean up stale connections
@@ -357,7 +364,9 @@ func PUT(url string, headers []*HeaderKeyValue, requestBody string) (statusCode 
 	var respBytes []byte
 
 	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	_ = resp.Body.Close()
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		log.Printf("rest.PUT: resp.Body.Close error: %v", closeErr)
+	}
 	resp.Close = true
 
 	// clean up stale connections
@@ -423,7 +432,9 @@ func DELETE(url string, headers []*HeaderKeyValue) (statusCode int, body string,
 	var respBytes []byte
 
 	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	_ = resp.Body.Close()
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		log.Printf("rest.DELETE: resp.Body.Close error: %v", closeErr)
+	}
 	resp.Close = true
 
 	// clean up stale connections
@@ -500,7 +511,9 @@ func GETProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufObjec
 	var respBytes []byte
 
 	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	_ = resp.Body.Close()
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		log.Printf("rest.GETProtoBuf: resp.Body.Close error: %v", closeErr)
+	}
 	resp.Close = true
 
 	// clean up stale connections
@@ -605,7 +618,9 @@ func POSTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPt
 	var respBytes []byte
 
 	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	_ = resp.Body.Close()
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		log.Printf("rest.POSTProtoBuf: resp.Body.Close error: %v", closeErr)
+	}
 	resp.Close = true
 
 	// clean up stale connections
@@ -709,7 +724,9 @@ func PUTProtoBuf(url string, headers []*HeaderKeyValue, requestProtoBufObjectPtr
 	var respBytes []byte
 
 	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	_ = resp.Body.Close()
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		log.Printf("rest.PUTProtoBuf: resp.Body.Close error: %v", closeErr)
+	}
 	resp.Close = true
 
 	// clean up stale connections
@@ -799,7 +816,9 @@ func DELETEProtoBuf(url string, headers []*HeaderKeyValue, outResponseProtoBufOb
 	var respBytes []byte
 
 	respBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	_ = resp.Body.Close()
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		log.Printf("rest.DELETEProtoBuf: resp.Body.Close error: %v", closeErr)
+	}
 	resp.Close = true
 
 	// clean up stale connections

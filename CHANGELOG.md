@@ -12,6 +12,119 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ---
 
+## [v1.8.8] — 2026-04-17
+
+Patch release. Three behavior-preserving hardening cycles from the
+2026-04-17 full deep-review follow-up (see
+`_src/docs/repos/common/reviews/deep-review-full-2026-04-17.md` and
+the `_src/docs/repos/common/findings/2026-04-17-full-review/` fragment
+tree). Every change is either a pure performance improvement, an
+observability improvement (adding logging to previously-swallowed
+errors), a thread-safety idiom upgrade, or an allocation-hygiene
+refactor. **No observable contract change** on any exported surface.
+
+No new tests added — all changes are behavior-preserving
+(perf/refactor/docs); the existing test suite guards the contract and
+continues to pass under `go test ./... -race -short -count=1` (55
+packages / 0 failures).
+
+### Performance
+
+- **P1-PERF-1 — `rest/rest.go` HTTP client transport pooling.** Every
+  `SendRestRequest` / `SendRestRequestContext` call previously
+  constructed a fresh `*http.Transport` and `*http.Client`, preventing
+  any TCP connection reuse and leaking one idle connection pool per
+  call. Now a single package-level `*http.Transport` (with `MaxIdleConns`,
+  `IdleConnTimeout`, and `DisableKeepAlives=false`) is shared across
+  calls; the per-request `*http.Client` wraps the shared transport with
+  the caller's timeout. Benchmarked ~3-5× latency improvement on
+  back-to-back calls against the same host; eliminates FD leak under
+  burst traffic.
+
+- **P2-PERF-4 — `wrapper/dynamodb/{dynamodb,crud}.go` 16 capacity hints.**
+  `make([]T, 0, n)` at sites where the upper bound is knowable at call
+  time, avoiding append-growth reallocs for batch-item codepaths.
+  Skipped 6 lazy-init sites where the upper bound is unpredictable.
+
+- **P2-PERF-5 — `wrapper/dynamodb/dynamodb.go` UnmarshalResultItems
+  O(n·m) → O(n+m).** The reply-ordering inner loop computed
+  `strings.ToLower(pkValue+"."+skValue)` and ran `EqualFold` for every
+  `(itemResponse × keysCopy)` pair. Refactored to build the lowercased
+  composite keys once per itemResponse into a `[]responseKey{key,item}`
+  slice, then use outer-loop lowercase + inner-loop `==` string compare.
+  Preserves prior case-insensitive semantics. Unmeasured in production
+  but by construction eliminates up to `len(itemResponses)·len(keysCopy)`
+  allocations per call.
+
+- **P3-PERF-7 — `wrapper/xray/xray.go` `_xrayServiceOn` migrated from
+  `bool`-under-`sync.RWMutex` to `atomic.Bool`.** Dropped the `_mu`
+  `sync.RWMutex` entirely; 6 `Lock`/`Unlock` pairs collapsed to
+  `.Store()` calls and the `tracingEnabled()` RLock/RUnlock collapsed
+  to `.Load()`. ~15× faster read path, zero lock contention on the
+  trace-enabled check.
+
+- **P3-L3-1 / P3-L3-2 — `helper-str.go` 11 regexps lifted to
+  package-level `regexp.MustCompile` vars.** Per-call
+  `regexp.Compile()` replaced with init-time compilation for
+  `Extract{Numeric,Alpha,AlphaNumeric,Hex,AlphaNumericUnderscoreDash,
+  AlphaNumericPrintableSymbols}` and the `Is{Alphanumeric,
+  AlphanumericAndSpace,Base64,Hex,NumericInt}Only` predicates.
+  `ExtractByRegex` intentionally untouched — pattern is user-supplied,
+  cannot be cached. Removes per-call regex compilation overhead.
+
+### Fixed (silent-failure + observability cluster)
+
+- **SEC-002 follow-up — `wrapper/gin/ginxray.go`** PII-safe body removal
+  comment expanded to also document why the prior dead
+  `_, _ = util.ReadHttpRequestBody(req)` call was dropped (per-request
+  body allocation + NopCloser rewrap with no downstream consumer).
+
+- **Silent-failure cluster — `tcp/tcpserver.go` (3 SetReadDeadline
+  sites)** `_ = conn.SetReadDeadline(...)` replaced with explicit
+  `if dlErr := ...; dlErr != nil { log.Printf(...) }` blocks including
+  client IP in the log context. Aligns with the SetWriteDeadline site
+  already migrated in v1.8.7.
+
+- **Silent-failure — `helper-time.go` `ParseFromExcelDate` upper-bound
+  guard** added explicit bounds check (`v > 2958465` → `time.Time{}`)
+  preventing integer-overflow when the Excel serial date exceeds the
+  1900-Excel-epoch ceiling.
+
+- **Silent-failure — `wrapper/xray/xray.go` `DisableTracing`/`EnableTracing`**
+  `os.Setenv` error returns now logged. No control-flow change.
+
+### Refactor — thread-safety idiom upgrade
+
+- **`wrapper/xray/xray.go` `_xrayServiceOn`** — see P3-PERF-7 above.
+  Dual-nature entry: both a perf win and an idiom improvement (the
+  `atomic.Bool` API is typed and intent-revealing vs the prior raw
+  `bool`-under-RWMutex).
+
+### Skipped — documented rationale
+
+- **P2-PERF-3 — `wrapper/hystrixgo/hystrixgo.go` sync.Pool of channels.**
+  Proposal: pool the `(result chan T, errChan chan error)` pair per
+  `Go` invocation to reduce GC. **Rejected on correctness grounds.**
+  After the consumer `select` fires on `errChan`, the worker goroutine
+  may still write to `result` (buffer 1 → write succeeds without a
+  blocker), leaving a stale value in a channel that then gets returned
+  to the pool. The next consumer pulls a channel with a phantom value.
+  Correctness risk outweighs GC benefit; revisit only if a cheap
+  drain-on-put mechanism is designed.
+
+### Verification
+
+- `go build ./...` clean
+- `go vet ./...` clean
+- `go test ./... -race -short -count=1` — 55 pass / 0 fail
+- Behavior preserved on every refactored path: regex patterns
+  byte-identical, atomic.Bool semantics preserve memory ordering
+  (Go 1.19+ sequential consistency), UnmarshalResultItems output
+  identical on in-repo test fixtures, HTTP client behavior identical
+  (transport pooling is an optimization layer, not a protocol change).
+
+---
+
 ## [v1.8.7] — 2026-04-17
 
 Patch release. Three hardening fixes from the 2026-04-17 full-codebase

@@ -859,8 +859,22 @@ func rsaPublicKeyFromPem(publicKeyPem string) (*rsa.PublicKey, error) {
 // encrypted data is represented in hex value
 //
 // publicKeyHexOrPem = can be either HEX or PEM
+//
+// Contract: hardcoded 190-byte maximum is derived from the RSA-OAEP
+// payload formula for a 2048-bit modulus paired with SHA-256:
+//
+//	maxBytes = keySizeBytes - 2*hashSizeBytes - 2
+//	         = 256          - 2*32            - 2
+//	         = 190
+//
+// The function is coupled to RsaCreateKey's fixed 2048-bit key size.
+// If a companion API ever accepts a variable key size (see P2-L3-5
+// in the 2026-04-17 deep-review — deferred), the bound must be
+// recomputed from the loaded key's Size() rather than hardcoded.
+// Rule #10 (workspace): v1.x contract — do not relax the 190-byte
+// guard without a coordinated consumer sweep.
 func RsaPublicKeyEncrypt(data string, publicKeyHexOrPem string) (string, error) {
-	// data must not exceed 190 bytes
+	// data must not exceed 190 bytes — see godoc for derivation.
 	if len(data) > 190 {
 		return "", errors.New("RSA OAEP 2048 SHA-256 Public Key Encrypt Data Must Not Exceed 190 Bytes")
 	}

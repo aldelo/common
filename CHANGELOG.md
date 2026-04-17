@@ -12,6 +12,74 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ---
 
+## [v1.8.7] — 2026-04-17
+
+Patch release. Three hardening fixes from the 2026-04-17 full-codebase
+deep review (see `_src/docs/repos/common/reviews/deep-review-full-2026-04-17.md`).
+No observable contract change on the default code path — every fix is
+either defensive (panic-recovery, type-assertion safety) or opt-out
+(DynamoDB diagnostic payload gate defaults to the v1.8.6 behavior).
+
+### Fixed
+
+- **P1-CMN-L2-1 — `wrapper/gin/gin.go:964` unchecked type assertion in
+  per-client IP QPS limiter middleware.** The cached limiter value was
+  type-asserted with `limiter.(*rate.Limiter).Allow()` — a panic on
+  any future code path that poisoned the cache with a non-`*rate.Limiter`
+  value. Replaced with comma-ok form; on cache invariant violation the
+  middleware now logs and aborts the request with HTTP 500 instead of
+  panicking. Regression test `TestPerClientIpQps_CacheTypeMiss_AbortsWith500_NoPanic`
+  at `wrapper/gin/gin_test.go` poisons the cache with a string and
+  verifies no panic + 500 response.
+
+- **P1-PERF-2 — `wrapper/dynamodb/dynamodb.go` (26 sites) per-operation
+  diagnostic payload allocation gate.** Every DynamoDB operation
+  (PutItem, GetItem, UpdateItem, DeleteItem, Query, Scan,
+  BatchWriteItem, BatchGetItem, TransactWriteItems, TransactGetItems,
+  RemoveItemAttribute, and the pagination variants) called
+  `d.LastExecuteParamsPayload = "<Op> = " + input.String()` under the
+  write mutex. At 10K DDB ops/s this is 5–500 MB/s of diagnostic string
+  allocations written and immediately overwritten; the write-mutex
+  serialized concurrent DDB ops on the same `*DynamoDB` instance at the
+  recording point. New field `DynamoDB.DisableLastExecuteParamsPayload bool`
+  (default `false` preserves v1.8.6 observable contract) and helper
+  `setLastExecuteParamsPayload(prefix string, stringer fmt.Stringer)`
+  gate the `.String()` call + concat + mutex acquisition behind the
+  opt-out flag. Callers that never read `LastExecuteParamsPayload` for
+  diagnostics can set the flag to `true` for zero-alloc, zero-contention
+  operation on the hot path. Two regression tests pin the default
+  (`TestSetLastExecuteParamsPayload_DefaultEnabled_P1PERF2`) and opt-out
+  (`TestSetLastExecuteParamsPayload_DisabledSkipsAllocation_P1PERF2`)
+  paths. 26 call sites collapsed from 3-line Lock/Assign/Unlock blocks
+  to 1-line helper calls.
+
+- **P2-CMN-C2 — `wrapper/hystrixgo/hystrixgo.go:638` missing panic
+  recovery and error logging on `ListenAndServe` goroutine.** The
+  dashboard stream server was spawned as `go c.httpServer.ListenAndServe()`
+  with no recovery and no error log — a panic inside
+  `hystrix.StreamHandler.ServeHTTP` would silently crash the goroutine,
+  and bind-failures were swallowed. Wrapped in a named `go func(srv *http.Server)`
+  with `defer recover()` + `debug.Stack()` (matching the house style
+  in `tcp/tcpserver.go:115-120`) and an `errors.Is(err, http.ErrServerClosed)`
+  gate so clean `Shutdown()` exits stay quiet while genuine failures
+  (port in use, permission denied, etc.) are logged.
+
+### Notes on Observable Contract (Rule #10)
+
+| Fix | Default Path Behavior | Observable Δ for existing callers? |
+|---|---|---|
+| P1-CMN-L2-1 (gin limiter) | Happy path unchanged; panic replaced with HTTP 500 at invariant-violation | Only under an invariant violation, which no current code path triggers. Net safer. |
+| P1-PERF-2 (DDB payload) | `DisableLastExecuteParamsPayload == false` is default; payload recorded identically to v1.8.6 | **Zero.** Consumers reading `d.LastExecuteParamsPayload` see identical strings. |
+| P2-CMN-C2 (hystrix) | Happy path unchanged; panics now recovered; clean shutdown still quiet | **Zero** for clean operation; genuine failures become visible (net positive). |
+
+### Sibling-Release Note
+
+A coordinated `connector` release is planned to pick up this bump; this
+CHANGELOG does NOT pre-announce the connector tag per workspace rule #15
+(release narrative must not precede delivery artifact).
+
+---
+
 ## [v1.8.6] — 2026-04-17
 
 Patch release. Error-wrapping hardening — completes the **P2-N5**

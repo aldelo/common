@@ -72,9 +72,15 @@ func (z *ZapLog) Init() error {
 	z.mu.Lock()
 	defer z.mu.Unlock()
 
-	// gracefully close previous logger to avoid FD leaks on re-init
+	// gracefully close previous logger to avoid FD leaks on re-init.
+	// Sync() flushing failure on re-init is diagnostically important: it
+	// indicates the previous logger's buffered writes may have been lost.
+	// We emit to stderr because we are in the middle of replacing the
+	// logger itself — there is no safe logger to route through.
 	if z.zapLogger != nil {
-		_ = z.zapLogger.Sync()
+		if serr := z.zapLogger.Sync(); serr != nil {
+			fmt.Fprintf(os.Stderr, "zaplog.Init: previous logger Sync failed: %v\n", serr)
+		}
 		z.zapLogger = nil
 		z.sugarLogger = nil
 	}

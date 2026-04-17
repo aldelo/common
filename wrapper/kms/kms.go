@@ -50,6 +50,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -764,11 +765,16 @@ func (k *KMS) GenerateEncryptionDecryptionKeyRsa2048(keyName string, keyPolicyJS
 
 	_, err = cli.CreateAlias(aliasInput)
 	if err != nil {
-		// Best-effort cleanup: schedule the orphaned key for deletion
-		_, _ = cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
+		// Best-effort cleanup: schedule the orphaned key for deletion.
+		// A cleanup failure here leaves an unaliased KMS key in PendingDeletion
+		// limbo — operators must reconcile via AWS console. Logging is required
+		// so the orphan is observable rather than silent.
+		if _, delErr := cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
 			KeyId:               encryptedOutput.KeyMetadata.KeyId,
 			PendingWindowInDays: aws.Int64(7),
-		})
+		}); delErr != nil {
+			log.Printf("KMS GenerateKeyAes256 cleanup ScheduleKeyDeletion failed for keyId=%s: %v", aws.StringValue(encryptedOutput.KeyMetadata.KeyId), delErr)
+		}
 		return nil, err
 	}
 
@@ -844,11 +850,16 @@ func (k *KMS) GenerateSignVerifyKeyRsa2048(keyName string, keyPolicy interface{}
 
 	_, err = cli.CreateAlias(aliasInput)
 	if err != nil {
-		// Best-effort cleanup: schedule the orphaned key for deletion
-		_, _ = cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
+		// Best-effort cleanup: schedule the orphaned key for deletion.
+		// A cleanup failure here leaves an unaliased KMS key in PendingDeletion
+		// limbo — operators must reconcile via AWS console. Logging is required
+		// so the orphan is observable rather than silent.
+		if _, delErr := cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
 			KeyId:               encryptedOutput.KeyMetadata.KeyId,
 			PendingWindowInDays: aws.Int64(7),
-		})
+		}); delErr != nil {
+			log.Printf("KMS GenerateSignVerifyKeyRsa2048 cleanup ScheduleKeyDeletion failed for keyId=%s: %v", aws.StringValue(encryptedOutput.KeyMetadata.KeyId), delErr)
+		}
 		return nil, err
 	}
 
@@ -2007,13 +2018,18 @@ func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk 
 		return "", errors.New("key ID is empty")
 	}
 
-	// deferred cleanup: schedule orphaned key for deletion if function returns an error
+	// deferred cleanup: schedule orphaned key for deletion if function returns an error.
+	// A cleanup failure here leaves an unaliased KMS key in PendingDeletion limbo —
+	// operators must reconcile via AWS console. Logging is required so the orphan is
+	// observable rather than silent.
 	defer func() {
 		if err != nil && keyID != "" {
-			_, _ = cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
+			if _, delErr := cli.ScheduleKeyDeletion(&kms.ScheduleKeyDeletionInput{
 				KeyId:               aws.String(keyID),
 				PendingWindowInDays: aws.Int64(7),
-			})
+			}); delErr != nil {
+				log.Printf("KMS ImportECCP256SignVerifyKey cleanup ScheduleKeyDeletion failed for keyId=%s: %v", keyID, delErr)
+			}
 		}
 	}()
 

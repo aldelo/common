@@ -519,7 +519,11 @@ func TestServerSurvivesClientHandlerPanic(t *testing.T) {
 	}
 	waitForAccept(t, acceptCh)
 	_, _ = conn1.Write([]byte("trigger-panic"))
-	time.Sleep(300 * time.Millisecond) // allow panic + recovery
+	// Wait for the panic recovery to complete before closing client 1.
+	// The server's per-client goroutine recovers the panic and returns,
+	// so a short poll for the listener to still be accepting is sufficient.
+	// We verify recovery worked by connecting client 2 below.
+	time.Sleep(300 * time.Millisecond) // P2-7: kept — no observable signal for in-goroutine panic recovery completion
 	_ = conn1.Close()
 
 	// Client 2: proves the listener loop survived the panic.
@@ -577,7 +581,10 @@ func TestTCPServer_ConcurrentClose_NoRace(t *testing.T) {
 		t.Fatalf("Serve: %v", err)
 	}
 
-	// Give the listener goroutine time to enter Accept().
+	// P2-7: kept — the listener goroutine must be blocked inside Accept()
+	// before Close() is called for the race-detection test to be meaningful.
+	// There is no observable signal for "goroutine is now inside Accept()";
+	// a channel-based readiness flag would require production code changes.
 	time.Sleep(50 * time.Millisecond)
 
 	// Close from the main goroutine while Accept() is blocking in the
@@ -689,11 +696,13 @@ func TestTCPServer_ConcurrentConfigMutation_NoRace(t *testing.T) {
 				}
 			}
 			srv._mux.Unlock()
-			time.Sleep(time.Millisecond)
+			time.Sleep(time.Millisecond) // P2-7: kept — throttle to prevent busy-spin in writer goroutine
 		}
 	}()
 
-	// Let the mutation and reads overlap for a meaningful window.
+	// P2-7: kept — race-detection tests require a wall-clock overlap window
+	// between concurrent readers and writers. Event-driven replacement would
+	// change what the -race detector observes.
 	time.Sleep(200 * time.Millisecond)
 
 	close(stop)

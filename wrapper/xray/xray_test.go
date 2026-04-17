@@ -382,7 +382,9 @@ func TestLogXrayAddFailure_RateLimit(t *testing.T) {
 		t.Errorf("XrayFailureTotal() = %d; want 11", got)
 	}
 
-	// Wait for the interval to elapse, then trigger another log.
+	// P2-7: kept — this sleep is testing the rate-limit interval behavior;
+	// the test must wait for the real wall-clock interval (50ms, set above)
+	// to elapse before verifying that a new log line is emitted.
 	time.Sleep(60 * time.Millisecond)
 	LogXrayAddFailure("rate-test", errors.New("after-interval"))
 

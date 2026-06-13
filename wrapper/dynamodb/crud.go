@@ -1421,7 +1421,7 @@ func (c *Crud) Query(keyExpression *QueryExpression, pagedDataPtrSlice interface
 		_ddb.TimeOutDuration(_timeout), indexName,
 		keyCondition, keyValues, nil); e != nil {
 		// query error
-		return nil, fmt.Errorf("Query From Data Store Failed: (QueryPaged) %s", e.Error())
+		return nil, fmt.Errorf("Query From Data Store Failed: (QueryPaged) %w", e)
 	} else {
 		// query success
 		return dataList, nil
@@ -1795,7 +1795,9 @@ func (c *Crud) QueryPaginationData(itemsPerPage int64, keyExpression *QueryExpre
 	// query pagination data against dynamodb table
 	if pData, e := _ddb.QueryPaginationDataWithRetry(_actionRetries, _ddb.TimeOutDuration(_timeout), indexNamePtr, itemsPerPage, keyCondition, nil, keyValues); e != nil {
 		// query error
-		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (QueryPaged) %s", e.Error())
+		// %w (not %s) so errors.Is(err, ErrResultSetTooLarge) works: *DynamoDBError
+		// now Unwraps to the sentinel when the fail-stop cap was hit.
+		return nil, fmt.Errorf("QueryPaginationData From Data Store Failed: (QueryPaged) %w", e)
 	} else {
 		// query success
 		if len(pData) > 0 {

@@ -46,6 +46,7 @@ package dynamodb
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -253,5 +254,107 @@ func TestWarnDefaults_ContractPin(t *testing.T) {
 	}
 	if defaultWarnPagedItems != 100000 {
 		t.Errorf("defaultWarnPagedItems = %d, want 100000", defaultWarnPagedItems)
+	}
+}
+
+// =============================================================================
+// Remediation of contrarian-review findings (detection-contract + boundary)
+// =============================================================================
+
+// TestDynamoDBError_Unwrap_ResultSetTooLarge pins the detectability fix for the
+// *DynamoDBError boundary. The WithRetry entry points return *DynamoDBError; a
+// caller (incl. the crud layer wrapping with %w) must be able to use
+// errors.Is(err, ErrResultSetTooLarge). Since the struct is flat, Unwrap() must
+// surface the sentinel exactly when the ResultSetTooLarge flag is set, and never
+// otherwise (so unrelated *DynamoDBError values don't spuriously match).
+func TestDynamoDBError_Unwrap_ResultSetTooLarge(t *testing.T) {
+	capped := &DynamoDBError{ErrorMessage: "x", ResultSetTooLarge: true}
+	if !errors.Is(capped, ErrResultSetTooLarge) {
+		t.Error("errors.Is(*DynamoDBError{ResultSetTooLarge:true}, ErrResultSetTooLarge) = false, want true")
+	}
+	// and through a %w wrapper, as the crud layer now wraps it
+	wrapped := fmt.Errorf("crud layer: %w", capped)
+	if !errors.Is(wrapped, ErrResultSetTooLarge) {
+		t.Error("errors.Is through %w wrapper = false, want true — crud-layer detection broken")
+	}
+	ordinary := &DynamoDBError{ErrorMessage: "some other failure"}
+	if errors.Is(ordinary, ErrResultSetTooLarge) {
+		t.Error("an ordinary *DynamoDBError must NOT match ErrResultSetTooLarge")
+	}
+}
+
+// TestRewrapNonRetryable_PreservesFlags guards the P1 bug the contrarian review
+// found: QueryPaginationDataWithRetry re-wrapped a non-retryable *DynamoDBError
+// into a fresh one that copied ONLY ErrorMessage, silently dropping
+// ResultSetTooLarge (and TransactionConditionalCheckFailed). The detection flag
+// is the documented mechanism on this path, so it MUST survive the re-wrap.
+func TestRewrapNonRetryable_PreservesFlags(t *testing.T) {
+	src := &DynamoDBError{
+		ErrorMessage:                      "do_Query... fail-stop",
+		ResultSetTooLarge:                 true,
+		TransactionConditionalCheckFailed: true,
+	}
+	got := rewrapNonRetryable("QueryPaginationDataWithRetry Failed: ", src)
+	if got == nil {
+		t.Fatal("rewrapNonRetryable returned nil")
+	}
+	if !got.ResultSetTooLarge {
+		t.Error("ResultSetTooLarge dropped by re-wrap — the exact P1 bug this guards")
+	}
+	if !got.TransactionConditionalCheckFailed {
+		t.Error("TransactionConditionalCheckFailed dropped by re-wrap")
+	}
+	if got.AllowRetry {
+		t.Error("re-wrapped non-retryable error must keep AllowRetry=false")
+	}
+	if !strings.Contains(got.ErrorMessage, "QueryPaginationDataWithRetry Failed:") || !strings.Contains(got.ErrorMessage, "fail-stop") {
+		t.Errorf("ErrorMessage = %q, want prefix + original", got.ErrorMessage)
+	}
+	if !errors.Is(got, ErrResultSetTooLarge) {
+		t.Error("re-wrapped error must remain errors.Is-detectable via Unwrap")
+	}
+}
+
+// TestFailStopOnMorePages pins the boundary fix: a fail-stop must fire ONLY when
+// the result set is incomplete (more pages remain beyond the cap). A complete
+// result set whose size lands exactly on the cap is NOT an error — failing it
+// would reject a fully-retrieved, legitimately-complete query (the
+// validation-not-stricter-than-runtime trap, and the cap-of-1 / zero-result
+// false-positive the contrarian review flagged).
+func TestFailStopOnMorePages(t *testing.T) {
+	const capLimit = int64(100)
+	cases := []struct {
+		name      string
+		count     int64
+		morePages bool
+		want      bool
+	}{
+		{"at cap, more pages remain -> fail-stop", 100, true, true},
+		{"over cap, more pages remain -> fail-stop", 250, true, true},
+		{"exactly at cap but COMPLETE -> no fail (never reject a complete set)", 100, false, false},
+		{"over cap but COMPLETE -> no fail", 250, false, false},
+		{"under cap, more pages -> no fail", 99, true, false},
+	}
+	for _, c := range cases {
+		if got := failStopOnMorePages(c.count, capLimit, c.morePages); got != c.want {
+			t.Errorf("%s: failStopOnMorePages(%d, %d, %v) = %v, want %v", c.name, c.count, capLimit, c.morePages, got, c.want)
+		}
+	}
+	// cap=0 (unlimited) never fails, even with more pages
+	if failStopOnMorePages(1<<62, 0, true) {
+		t.Error("cap=0 must be unlimited even when more pages remain")
+	}
+}
+
+// TestScanFailStop_ZeroValueUnlimited pins that the new Scan caps default to 0 =
+// unlimited (same backward-compat contract as the query caps), so the existing
+// ScanPagedItemsWithRetry behavior is preserved for every caller that sets nothing.
+func TestScanFailStop_ZeroValueUnlimited(t *testing.T) {
+	d := &DynamoDB{TableName: "live-edc-tran-2026-06"}
+	if d.MaxScanPagedItems != 0 {
+		t.Errorf("zero-value MaxScanPagedItems = %d, want 0", d.MaxScanPagedItems)
+	}
+	if failStopOnMorePages(1<<62, d.MaxScanPagedItems, true) {
+		t.Error("zero-value scan cap must be unlimited")
 	}
 }

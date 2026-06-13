@@ -123,6 +123,14 @@ type DynamoDBError struct {
 	RetryNeedsBackOff bool
 
 	TransactionConditionalCheckFailed bool
+
+	// ResultSetTooLarge is set true when the failure is the deterministic
+	// fail-stop raised by a query whose result set exceeded a configured cap
+	// (see ErrResultSetTooLarge, MaxQueryPaginationPageWalk, MaxQueryPagedItems).
+	// Because *DynamoDBError is a flat struct with no Unwrap, this flag is how
+	// callers of the *WithRetry entry points detect the cap was hit. It is never
+	// AllowRetry — retrying a deterministic fail-stop only re-incurs the walk.
+	ResultSetTooLarge bool
 }
 
 // Error returns error string of the struct object
@@ -131,6 +139,64 @@ func (e *DynamoDBError) Error() string {
 		return ""
 	}
 	return e.ErrorMessage
+}
+
+// =====================================================================================================================
+// Query result-set fail-stop (latent O(N)/OOM guardrail)
+// =====================================================================================================================
+
+// ErrResultSetTooLarge is the typed sentinel returned (wrapped) when a query
+// read loop is stopped because its result set exceeded a configured hard cap
+// (MaxQueryPaginationPageWalk / MaxQueryPagedItems). Plain-error callers detect
+// it with errors.Is; *DynamoDBError callers detect it via the
+// DynamoDBError.ResultSetTooLarge flag. The fail-stop NEVER truncates.
+var ErrResultSetTooLarge = errors.New("dynamodb query result set exceeded configured fail-stop cap")
+
+// Built-in soft-WARN thresholds. These are early-visibility signals only and
+// never fail a call, so a baked non-zero default is safe. They sit far above a
+// normal partition; crossing one means a partition has grown abnormally large
+// and an operator should consider an explicit hard cap.
+const (
+	defaultWarnPaginationPageWalk int64 = 1000   // ~1000 DynamoDB round-trips in one pre-walk
+	defaultWarnPagedItems         int64 = 100000 // ~100k items accumulated in one gather
+)
+
+// exceedsHardCap reports whether a running count has reached a hard cap. A cap
+// <= 0 means unlimited (the default), so this returns false — preserving the
+// pre-cap behavior for every caller that sets no cap. The boundary is >= (not
+// >) because reaching the cap means the bounded work has already been done.
+func exceedsHardCap(count, capLimit int64) bool {
+	return capLimit > 0 && count >= capLimit
+}
+
+// effectiveWarnThreshold resolves a WarnQuery* field into the threshold to use:
+// 0 -> the built-in default (warn on by default); <0 -> 0 (warn disabled);
+// >0 -> the field value (custom threshold).
+func effectiveWarnThreshold(field, builtinDefault int64) int64 {
+	switch {
+	case field < 0:
+		return 0
+	case field == 0:
+		return builtinDefault
+	default:
+		return field
+	}
+}
+
+// shouldWarnAtCrossing reports whether a running count crossed the warn
+// threshold on this step (prevCount below, newCount at-or-above). It fires
+// exactly once regardless of step size, so neither the per-page pre-walk
+// (step 1) nor the per-page gather (step up to a page of items) spams the log.
+// A threshold <= 0 is disabled and never fires.
+func shouldWarnAtCrossing(prevCount, newCount, warnThreshold int64) bool {
+	return warnThreshold > 0 && prevCount < warnThreshold && newCount >= warnThreshold
+}
+
+// newResultSetTooLargeError builds the fail-stop error wrapping ErrResultSetTooLarge
+// (so errors.Is works) and embedding operator-actionable context.
+func newResultSetTooLargeError(operation string, count, capLimit int64, tableName string) error {
+	return fmt.Errorf("DynamoDB %s fail-stop: result set reached cap (count=%d, cap=%d) for table %s: %w",
+		operation, count, capLimit, tableName, ErrResultSetTooLarge)
 }
 
 //// =====================================================================================================================
@@ -894,6 +960,37 @@ type DynamoDB struct {
 	// Default false preserves the v1.8.6 observable contract.
 	DisableLastExecuteParamsPayload bool
 
+	// Query fail-stop caps (latent O(N)/OOM guardrail).
+	//
+	// Two read paths in this wrapper are unbounded by default:
+	//   - the pre-walk in do_Query_Pagination_Data (drives QueryPaginationData*),
+	//     which walks EVERY page just to collect each page's ExclusiveStartKey;
+	//   - the full-result gather in QueryPagedItemsWithRetry (reached by
+	//     crud.Query when itemsPerPage<=0), which accumulates EVERY matching item.
+	// For a large partition either path can pin CPU (round-trips) or OOM a task.
+	//
+	// MaxQueryPaginationPageWalk caps the number of pages the pre-walk will read.
+	// MaxQueryPagedItems caps the number of items the full-result gather will
+	// accumulate. When the cap is reached the call FAILS-STOP with
+	// ErrResultSetTooLarge — it NEVER truncates (silent truncation of a payment
+	// transaction list is a data-integrity regression).
+	//
+	// Default 0 = unlimited, preserving the pre-cap observable contract for every
+	// existing caller (validation-not-stricter-than-runtime). Opt in per-table by
+	// setting a ceiling ABOVE that table's measured maximum partition size.
+	MaxQueryPaginationPageWalk int64
+	MaxQueryPagedItems         int64
+
+	// Soft-WARN thresholds for the same two paths. Unlike the hard caps these are
+	// purely observational: crossing the threshold logs a single [WARN] and never
+	// fails the call, so a non-zero default is safe (a log has no functional
+	// consequence). Convention:
+	//   0  = use the built-in default (defaultWarnPaginationPageWalk / defaultWarnPagedItems)
+	//   <0 = disabled (no warning)
+	//   >0 = custom threshold
+	WarnQueryPaginationPageWalk int64
+	WarnQueryPagedItems         int64
+
 	_parentSegment      *xray.XRayParentSegment
 	_parentSegmentMutex sync.RWMutex
 }
@@ -1114,6 +1211,9 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			AllowRetry:                        false,
 			RetryNeedsBackOff:                 false,
 			TransactionConditionalCheckFailed: false,
+			// the deterministic result-set fail-stop is surfaced as a typed flag
+			// (no Unwrap on *DynamoDBError) and stays non-retryable.
+			ResultSetTooLarge: errors.Is(err, ErrResultSetTooLarge),
 		}
 	}
 }
@@ -1853,9 +1953,27 @@ func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...a
 
 		paginationData := make([]map[string]*dynamodb.AttributeValue, 0)
 
+		// Fail-stop guardrail for the unbounded pre-walk: bound the number of
+		// pages (DynamoDB round-trips) read. pagesWalked counts every page
+		// regardless of whether it carries a continuation key, so it bounds cost
+		// directly. capErr, when set, fails the call AFTER the walk stops — we
+		// never return the partially-collected pagination data (no truncation).
+		var pagesWalked int64
+		var capErr error
+		warnPages := effectiveWarnThreshold(d.WarnQueryPaginationPageWalk, defaultWarnPaginationPageWalk)
+
 		pageFn := func(pageOutput *dynamodb.QueryOutput, lastPage bool) bool {
 			if err := ctxToUse.Err(); err != nil {
 				return false // honor cancellation if context is done
+			}
+
+			pagesWalked++
+			if shouldWarnAtCrossing(pagesWalked-1, pagesWalked, warnPages) {
+				log.Printf("[WARN] DynamoDB do_Query_Pagination_Data pre-walk crossed %d pages for table %s — partition is growing; consider setting MaxQueryPaginationPageWalk", warnPages, d.TableName)
+			}
+			if exceedsHardCap(pagesWalked, d.MaxQueryPaginationPageWalk) {
+				capErr = newResultSetTooLargeError("do_Query_Pagination_Data", pagesWalked, d.MaxQueryPaginationPageWalk, d.TableName)
+				return false // stop the walk; capErr is returned below
 			}
 
 			if pageOutput == nil {
@@ -1880,6 +1998,9 @@ func (d *DynamoDB) do_Query_Pagination_Data(input *dynamodb.QueryInput, ctx ...a
 
 		if err != nil {
 			return nil, err
+		}
+		if capErr != nil {
+			return nil, capErr
 		}
 		return paginationData, nil
 	}
@@ -5777,6 +5898,11 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 		resultVal.Set(reflect.MakeSlice(resultVal.Type(), 0, 0))
 	}
 
+	// Fail-stop guardrail for the unbounded full-result gather: bound the total
+	// number of items accumulated in memory. When the cap is reached we return
+	// ErrResultSetTooLarge and discard the accumulator — never a truncated slice.
+	warnItems := effectiveWarnThreshold(d.WarnQueryPagedItems, defaultWarnPagedItems)
+
 	for {
 		// We create a new `pagedSlicePtr` variable for each `for` loop iteration instead of reusing the same one
 		// because it is a pointer. When using `reflect.AppendSlice`, only a pointer struct is copied into the slice.
@@ -5799,7 +5925,17 @@ func (d *DynamoDB) QueryPagedItemsWithRetry(maxRetries uint,
 			return nil, fmt.Errorf("QueryPagedItemsWithRetry Failed: %s", e)
 		} else {
 			// append into accumulator
+			prevLen := int64(resultVal.Len())
 			resultVal.Set(reflect.AppendSlice(resultVal, newPagedSlicePtr.Elem()))
+			newLen := int64(resultVal.Len())
+
+			if shouldWarnAtCrossing(prevLen, newLen, warnItems) {
+				log.Printf("[WARN] DynamoDB QueryPagedItemsWithRetry gather crossed %d items for table %s — partition is growing; consider setting MaxQueryPagedItems", warnItems, d.TableName)
+			}
+			if exceedsHardCap(newLen, d.MaxQueryPagedItems) {
+				// fail-stop: discard the accumulator, never truncate
+				return nil, newResultSetTooLargeError("QueryPagedItemsWithRetry", newLen, d.MaxQueryPagedItems, d.TableName)
+			}
 
 			if len(prevEvalKey) == 0 {
 				break

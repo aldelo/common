@@ -172,7 +172,7 @@ func (c *TCPClient) Write(data []byte) error {
 	}
 
 	if _, err := _tcpConn.Write(data); err != nil {
-		return fmt.Errorf("Write Data to TCP Server Failed: %s", err.Error())
+		return fmt.Errorf("Write Data to TCP Server Failed: %w", err)
 	} else {
 		return nil
 	}
@@ -212,9 +212,9 @@ func (c *TCPClient) Read() (data []byte, timeout bool, err error) {
 
 	if _, err = _tcpConn.Read(data); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "timeout") {
-			return nil, true, fmt.Errorf("Read Data From TCP Server Timeout: %s", err)
+			return nil, true, fmt.Errorf("Read Data From TCP Server Timeout: %w", err)
 		} else {
-			return nil, false, fmt.Errorf("Read Data From TCP Server Failed: %s", err)
+			return nil, false, fmt.Errorf("Read Data From TCP Server Failed: %w", err)
 		}
 	} else {
 		return bytes.Trim(data, "\x00"), false, nil

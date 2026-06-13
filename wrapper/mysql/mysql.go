@@ -293,7 +293,7 @@ func (t *MySqlTransaction) Commit() (err error) {
 		// not using xray
 		if e := t.tx.Commit(); e != nil {
 			// on commit error, return error, don't close off transaction
-			err = fmt.Errorf("MySql Commit Transaction Failed, %s", e)
+			err = fmt.Errorf("MySql Commit Transaction Failed, %w", e)
 			return err
 		} else {
 			// transaction commit success
@@ -315,7 +315,7 @@ func (t *MySqlTransaction) Commit() (err error) {
 		subSeg.Capture("Commit-Transaction-Do", func() error {
 			if e := t.tx.Commit(); e != nil {
 				// on commit error, return error, don't close off transaction
-				err = fmt.Errorf("MySql Commit Transaction Failed, %s", e)
+				err = fmt.Errorf("MySql Commit Transaction Failed, %w", e)
 				xray.LogXrayAddFailure("MySQL", subSeg.SafeAddError(err))
 				return err
 			} else {
@@ -390,7 +390,7 @@ func (t *MySqlTransaction) Rollback() (err error) {
 	// perform rollback
 	if t._xrayTxSeg == nil {
 		if e := t.tx.Rollback(); e != nil {
-			err = fmt.Errorf("MySql Rollback Transaction Failed, %s", e)
+			err = fmt.Errorf("MySql Rollback Transaction Failed, %w", e)
 		}
 	} else {
 		subSeg := t._xrayTxSeg.NewSubSegment("Rollback-Transaction")
@@ -398,7 +398,7 @@ func (t *MySqlTransaction) Rollback() (err error) {
 
 		subSeg.Capture("Rollback-Transaction-Do", func() error {
 			if e := t.tx.Rollback(); e != nil {
-				err = fmt.Errorf("MySql Rollback Transaction Failed, %s", e)
+				err = fmt.Errorf("MySql Rollback Transaction Failed, %w", e)
 				xray.LogXrayAddFailure("MySQL", subSeg.SafeAddError(err))
 				return err
 			} else {
@@ -730,7 +730,7 @@ func (svr *MySql) openWithXRay() (err error) {
 		baseDb, e := awsxray.SQLContext("mysql", str)
 
 		if e != nil {
-			err = fmt.Errorf("openWithXRay() Failed During xray.SQLContext(): %s", e.Error())
+			err = fmt.Errorf("openWithXRay() Failed During xray.SQLContext(): %w", e)
 			return err
 		}
 

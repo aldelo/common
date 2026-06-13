@@ -254,7 +254,7 @@ func (w *WAF2) Connect() error {
 	}
 
 	if httpCli, httpErr = h2.NewHttp2Client(); httpErr != nil {
-		return fmt.Errorf("Connect to WAF2 Failed: (AWS Session Error) Create Custom Http2 Client Errored = %s", httpErr.Error())
+		return fmt.Errorf("Connect to WAF2 Failed: (AWS Session Error) Create Custom Http2 Client Errored = %w", httpErr)
 	}
 
 	// establish aws session connection and keep session object in struct
@@ -265,7 +265,7 @@ func (w *WAF2) Connect() error {
 		})
 	if err != nil {
 		// aws session error
-		return fmt.Errorf("Connect To WAF2 Failed: (AWS Session Error) %s", err.Error())
+		return fmt.Errorf("Connect To WAF2 Failed: (AWS Session Error) %w", err)
 	}
 
 	// aws session obtained
@@ -383,7 +383,7 @@ LockRetry:
 					continue // retry same lock attempt
 				}
 
-				return fmt.Errorf("Get IP Set Failed: %s", err.Error())
+				return fmt.Errorf("Get IP Set Failed: %w", err)
 			}
 
 			if getOutput == nil || getOutput.IPSet == nil {
@@ -464,7 +464,7 @@ LockRetry:
 				continue // retry same lock attempt
 			}
 
-			return fmt.Errorf("Update IP Set Failed: %s", err.Error())
+			return fmt.Errorf("Update IP Set Failed: %w", err)
 		}
 	}
 
@@ -565,7 +565,7 @@ LockRetry:
 					retryAttempt++
 					continue // retry same lock attempt
 				}
-				return fmt.Errorf("Get Regex Pattern Set Failed: %s", err.Error())
+				return fmt.Errorf("Get Regex Pattern Set Failed: %w", err)
 			}
 
 			if getOutput == nil || getOutput.RegexPatternSet == nil {
@@ -618,7 +618,7 @@ LockRetry:
 				continue // retry same lock attempt
 			}
 
-			return fmt.Errorf("Update Regex Patterns Set Failed: %s", err.Error())
+			return fmt.Errorf("Update Regex Patterns Set Failed: %w", err)
 		}
 	}
 

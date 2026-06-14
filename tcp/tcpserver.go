@@ -355,7 +355,7 @@ func (s *TCPServer) WriteToClient(writeData []byte, clientIP string) error {
 	}
 
 	if _, e := c.Write(writeData); e != nil {
-		return fmt.Errorf("Write To Client IP %s Failed: %s", clientIP, e.Error())
+		return fmt.Errorf("Write To Client IP %s Failed: %w", clientIP, e)
 	}
 	return nil
 }

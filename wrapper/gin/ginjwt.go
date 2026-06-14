@@ -372,7 +372,7 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 			}
 
 			if err := g.bindInput(c, j.AuthenticateBindingType, loginRequestData); err != nil {
-				return nil, fmt.Errorf("%s: %s", jwt.ErrMissingLoginValues.Error(), err.Error())
+				return nil, fmt.Errorf("%w: %w", jwt.ErrMissingLoginValues, err)
 			}
 
 			if loggedInCredential := j.AuthenticateHandler(loginRequestData); loggedInCredential != nil {
@@ -413,7 +413,7 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("Setup Gin Jwt Middleware Failed: %s", err.Error())
+		return fmt.Errorf("Setup Gin Jwt Middleware Failed: %w", err)
 	}
 
 	if j.AddClaimsHandler != nil {
@@ -554,7 +554,7 @@ func (j *GinJwt) BuildGinJwtMiddleware(g *Gin) error {
 
 	// now init middleware to set default values if required var not set during setup
 	if errInit := authMiddleware.MiddlewareInit(); errInit != nil {
-		return fmt.Errorf("Init Gin Jwt Middleware Failed: %s", errInit.Error())
+		return fmt.Errorf("Init Gin Jwt Middleware Failed: %w", errInit)
 	}
 
 	// setup login route for LoginHandler

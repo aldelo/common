@@ -12,6 +12,47 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ---
 
+## [v1.8.10] — 2026-06-14
+
+Security patch. Clears the GitHub Security tab: 4 CodeQL `go/unsafe-quoting`
+alerts (critical) + 1 Dependabot advisory. No exported-API change; no observable
+contract change.
+
+### Security
+
+- **`wrapper/gin/ginhelper.go` — build error-response JSON via `encoding/json`
+  instead of `fmt.Sprintf` (CodeQL `go/unsafe-quoting`, #12–#15).** The four error
+  helpers (`VerifyGoogleReCAPTCHAv2Failed`, `MarshalQueryParametersFailed`,
+  `ActionServerFailed`, `ActionStatusNotOK`) hand-built their JSON body with a
+  `%s` verb inside a quoted template and a custom `jsonEscapeString` sanitizer.
+  The escaper was correct (so the alerts were not exploitable), but CodeQL cannot
+  model a custom sanitizer, and the pattern was fragile (the `b, _ := json.Marshal`
+  error-discard would fall through to the raw string if it ever returned nil).
+  Replaced with a typed `ginErrorResponse` marshaled via `encoding/json` (a sink
+  CodeQL recognizes as safe) through one `writeGinErrorJSON` helper; removed
+  `jsonEscapeString`. **Output is byte-identical** (struct field order ==
+  declaration order; same `json.Marshal` escaping; `c.String` preserves the prior
+  content type) — pinned by `TestGinErrorHelpers_ByteExactOutput`. Injection-safety
+  pinned by `TestGinErrorHelpers_NoBreakoutUnderInjection` (a breakout payload
+  stays one JSON object, the error round-trips, no attacker key appears). A
+  repo-wide sweep confirmed no other `%s`-into-quoted-context sites.
+
+- **Bumped `github.com/quic-go/quic-go` 0.57.1 → 0.59.1 (GHSA-vvgj-x9jq-8cj9,
+  Dependabot #38).** quic-go ≤ 0.59.0 is vulnerable to HTTP/3 QPACK
+  trailer-expansion memory exhaustion. It is an indirect dependency (pulled by
+  gin / gin-contrib/gzip; this library imports no HTTP/3 code and never serves
+  HTTP/3), so real exposure is low, but the bump is a risk-free transitive update
+  (`go.mod`/`go.sum` only; MVS selects 0.59.1, satisfying gin's `>=0.54.0`).
+
+### Verification
+
+- `go build ./...` / `go vet ./...` / `gofmt` clean
+- `go test ./... -race -short -count=1` — **55 pass / 0 fail** (with the new
+  byte-exact + injection-breakout gin tests; the removed `jsonEscapeString` unit
+  tests were replaced by end-to-end helper tests)
+- Both fixes landed via PRs #81/#82 (CI + CodeQL green) and merged to `master`
+  before tagging
+
 ## [v1.8.9] — 2026-06-14
 
 Patch release. Four independent resiliency/hardening PRs (#77–#80) from a

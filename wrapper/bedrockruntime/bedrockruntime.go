@@ -66,6 +66,13 @@ type BedrockRuntime struct {
 	// custom http2 client options
 	HttpOptions *awshttp2.HttpClientSettings
 
+	// CallTimeout, when > 0, overrides the per-InvokeModel call deadline
+	// (defaultBedrockCallTimeout, 120s). Zero (the default) keeps the built-in
+	// bound, so existing callers are unaffected. Set a larger value for a model
+	// or prompt that legitimately runs longer than 120s, or a smaller value to
+	// fit a tighter caller budget.
+	CallTimeout time.Duration
+
 	// store BedrockRuntime client object
 	bedrockruntimeClient *bedrockruntime.Client
 
@@ -219,17 +226,26 @@ func (s *BedrockRuntime) UpdateParentSegment(parentSegment *xray.XRayParentSegme
 // calls (cf. wrapper/sns defaultSNSCallTimeout = 30s).
 const defaultBedrockCallTimeout = 120 * time.Second
 
+// callTimeout resolves the per-InvokeModel call deadline: the caller-configured
+// CallTimeout when set (> 0), otherwise the built-in defaultBedrockCallTimeout.
+func (s *BedrockRuntime) callTimeout() time.Duration {
+	if s != nil && s.CallTimeout > 0 {
+		return s.CallTimeout
+	}
+	return defaultBedrockCallTimeout
+}
+
 // bedrockCallCtx builds the deadline-bounded context for an InvokeModel call. It
 // preserves the xray segment lineage when a segment is active (so traces stay
 // linked) and otherwise derives from context.Background() — either way the call
-// is bounded by defaultBedrockCallTimeout. The caller MUST defer the returned
-// cancel.
-func bedrockCallCtx(segCtx context.Context, segCtxSet bool) (context.Context, context.CancelFunc) {
+// is bounded by the given timeout (see callTimeout). The caller MUST defer the
+// returned cancel.
+func bedrockCallCtx(segCtx context.Context, segCtxSet bool, timeout time.Duration) (context.Context, context.CancelFunc) {
 	parent := context.Background()
 	if segCtxSet && segCtx != nil {
 		parent = segCtx
 	}
-	return context.WithTimeout(parent, defaultBedrockCallTimeout)
+	return context.WithTimeout(parent, timeout)
 }
 
 func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (responseBody []byte, err error) {
@@ -283,7 +299,7 @@ func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (respon
 	// perform action — always under a deadline so a hung Bedrock endpoint cannot
 	// park this goroutine indefinitely (the xray-on path previously passed the
 	// segment ctx, and the xray-off path context.Background(), both deadline-less).
-	callCtx, callCancel := bedrockCallCtx(segCtx, segCtxSet)
+	callCtx, callCancel := bedrockCallCtx(segCtx, segCtxSet, s.callTimeout())
 	defer callCancel()
 
 	var output *bedrockruntime.InvokeModelOutput

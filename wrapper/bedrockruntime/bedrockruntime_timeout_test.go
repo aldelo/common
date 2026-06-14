@@ -38,7 +38,7 @@ import (
 // was the bug.
 func TestBedrockCallCtx_AlwaysHasDeadline(t *testing.T) {
 	t.Run("no_xray_segment", func(t *testing.T) {
-		ctx, cancel := bedrockCallCtx(nil, false)
+		ctx, cancel := bedrockCallCtx(nil, false, defaultBedrockCallTimeout)
 		defer cancel()
 		dl, ok := ctx.Deadline()
 		if !ok {
@@ -52,7 +52,7 @@ func TestBedrockCallCtx_AlwaysHasDeadline(t *testing.T) {
 	t.Run("xray_segment_set_preserves_lineage_and_deadline", func(t *testing.T) {
 		type ctxKey string
 		parent := context.WithValue(context.Background(), ctxKey("seg"), "x")
-		ctx, cancel := bedrockCallCtx(parent, true)
+		ctx, cancel := bedrockCallCtx(parent, true, defaultBedrockCallTimeout)
 		defer cancel()
 		if _, ok := ctx.Deadline(); !ok {
 			t.Error("no deadline when segCtxSet — xray-on path must also be bounded")
@@ -70,5 +70,38 @@ func TestBedrockCallCtx_AlwaysHasDeadline(t *testing.T) {
 func TestBedrockCallTimeout_ContractPin(t *testing.T) {
 	if defaultBedrockCallTimeout != 120*time.Second {
 		t.Errorf("defaultBedrockCallTimeout = %v, want 120s", defaultBedrockCallTimeout)
+	}
+}
+
+// TestBedrockRuntime_CallTimeout_ZeroUsesDefault pins the opt-in contract: a
+// zero-value CallTimeout (the default for every existing caller) resolves to
+// defaultBedrockCallTimeout, so adding the field changes nothing on a version
+// bump.
+func TestBedrockRuntime_CallTimeout_ZeroUsesDefault(t *testing.T) {
+	s := &BedrockRuntime{}
+	if got := s.callTimeout(); got != defaultBedrockCallTimeout {
+		t.Errorf("callTimeout() with zero CallTimeout = %v, want default %v", got, defaultBedrockCallTimeout)
+	}
+}
+
+// TestBedrockRuntime_CallTimeout_ConfiguredHonored proves a consumer can override
+// the 120s default (e.g. a model/prompt that legitimately needs longer, or a
+// caller with a tighter budget) and that bedrockCallCtx applies the override
+// rather than the default.
+func TestBedrockRuntime_CallTimeout_ConfiguredHonored(t *testing.T) {
+	s := &BedrockRuntime{CallTimeout: 7 * time.Second}
+	if got := s.callTimeout(); got != 7*time.Second {
+		t.Fatalf("callTimeout() = %v, want 7s", got)
+	}
+
+	ctx, cancel := bedrockCallCtx(nil, false, s.callTimeout())
+	defer cancel()
+	dl, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("configured call ctx has no deadline")
+	}
+	// deadline must reflect the 7s override, NOT the 120s default
+	if until := time.Until(dl); until <= 6*time.Second || until > 7*time.Second+time.Second {
+		t.Errorf("deadline in %v, want ~7s (the configured override, not the 120s default)", until)
 	}
 }

@@ -12,6 +12,35 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ---
 
+## [v1.8.11] — 2026-06-14
+
+Security maintenance release. Raises the `go` directive to **1.26.4** to pick up
+8 fixed Go **standard-library** advisories, and bumps `golang.org/x/net` to clear
+the last govulncheck-reported *called* vulnerability. No exported-API change; no
+observable contract change. Coordinated-sibling release with `connector v1.8.11`.
+
+**`go build/vet ./...` clean, `gofmt` clean (no new debt), `go test ./... -race
+-short` all-pass (0 races, 0 fail) under Go 1.26.4, and `govulncheck ./...` now
+reports `No vulnerabilities found` (was: 8 stdlib advisories + GO-2026-5026).**
+
+### Security
+
+- **`go` directive `1.26.2 → 1.26.4`.** Building with the Go 1.26.4 toolchain
+  fixes the standard-library advisories govulncheck flagged at 1.26.2 — including
+  **GO-2026-5037** (`crypto/x509`, inefficient candidate-hostname parsing) and
+  GO-2026-5039 / GO-2026-4986 / GO-2026-4982 / GO-2026-4980 / GO-2026-4977 /
+  GO-2026-4971 (and the `net/http`-path advisories on the SNS/cert code path).
+  **Integrator impact:** consumers building this module now require a Go 1.26.4+
+  toolchain. With the default `GOTOOLCHAIN=auto` this is transparent (the `go`
+  command fetches 1.26.4 automatically) and `go mod tidy` will raise the
+  consumer's own `go` directive to 1.26.4; environments pinned to
+  `GOTOOLCHAIN=local` or air-gapped CI must pre-install Go 1.26.4.
+- **`golang.org/x/net v0.53.0 → v0.55.0`** (`GO-2026-5026`), clearing the one
+  remaining govulncheck *called* vulnerability so the module is CVE-clean as a
+  standalone dependency (matches `connector`, already on x/net 0.55.0). Pulls
+  transitive `golang.org/x/sys 0.43.0 → 0.45.0` and `golang.org/x/text
+  0.36.0 → 0.37.0` via `go mod tidy`.
+
 ## [v1.8.10] — 2026-06-14
 
 Security patch. Clears the GitHub Security tab: 4 CodeQL `go/unsafe-quoting`

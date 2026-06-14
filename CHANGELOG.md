@@ -12,6 +12,97 @@ releases. Breaking changes require a coordinated major-version bump.
 
 ---
 
+## [v1.8.9] — 2026-06-14
+
+Patch release. Four independent resiliency/hardening PRs (#77–#80) from a
+multi-dimension deep review of the DynamoDB and BedrockRuntime wrappers,
+prompted by a downstream gRPC client-pin investigation that surfaced latent
+unbounded-read and hang risks. Every new capability is **opt-in (zero-value =
+prior behavior)**; the one default-timing change (DynamoDB retry backoff) is
+called out under **Changed** with a documented escape hatch. No exported symbol
+was removed, renamed, or retyped; no dependency (`go.mod`/`go.sum`) changed.
+
+All changes carry new tests where behavior was added; the existing suite plus
+the new tests pass under `go test ./... -race -short -count=1` (55 packages /
+0 failures). Each PR was contrarian-deep-reviewed (incl. the merge result),
+and the combined `master` was integration-tested before tagging. Verified
+against unit/`-race` only — not exercised against live AWS.
+
+### Added
+
+- **`wrapper/dynamodb` — opt-in fail-stop caps for unbounded reads (#77).**
+  Two read paths were unbounded by default: the pre-walk in
+  `do_Query_Pagination_Data` (drives `QueryPaginationData*`) and the
+  full-result gather in `QueryPagedItemsWithRetry` / `ScanPagedItemsWithRetry`
+  (reached by `crud.Query` when `itemsPerPage<=0`). For a large partition (or a
+  Scan) either path can pin CPU or OOM a task. New `DynamoDB` fields
+  `MaxQueryPaginationPageWalk`, `MaxQueryPagedItems`, `MaxScanPagedItems`
+  (hard caps) and `WarnQueryPaginationPageWalk`, `WarnQueryPagedItems`,
+  `WarnScanPagedItems` (soft thresholds). On a hard cap the call **fail-stops
+  with the new sentinel `ErrResultSetTooLarge` — it never truncates** (silent
+  truncation of a payment-transaction list is a data-integrity regression).
+  `(*DynamoDBError).Unwrap()` surfaces the sentinel so `errors.Is` works through
+  `%w`-wrapping layers; the `DynamoDBError.ResultSetTooLarge` bool is the direct
+  detection path for `*WithRetry` callers. **Default `0` = unlimited**, so every
+  existing caller is byte-for-byte unaffected; opt in per-table by setting a
+  ceiling ABOVE that table's measured maximum partition size.
+
+- **`wrapper/bedrockruntime` — configurable per-call timeout (#79).** New
+  opt-in `BedrockRuntime.CallTimeout`; `0` (default) keeps the built-in 120s
+  bound. Set larger for a model/prompt that legitimately runs longer, or smaller
+  for a tighter caller budget. (See also the hang fix under **Fixed**.)
+
+- **`wrapper/dynamodb` — retry-timing escape hatch (#78).** New opt-in
+  `DynamoDB.UseLegacyFlatRetryDelay`; `false` (default) uses the new exponential
+  backoff (see **Changed**), `true` restores the exact pre-release flat
+  schedule for a migration window.
+
+### Changed
+
+- **`wrapper/dynamodb` — `*WithRetry` retry timing is now exponential (#78).**
+  The 12 recursive `*WithRetry` methods previously slept a FIXED 500ms (backoff)
+  or 100ms (no-backoff) per attempt; they now use an exponentially growing,
+  capped delay (final-retry cap 2s/500ms), matching the existing BatchWrite
+  UnprocessedItems backoff cap. Additionally, `InternalServerError` is now
+  classified retry-WITH-backoff (was retry-without-backoff), per AWS guidance.
+  **This changes retry *timing* — not which errors retry or how many times — and
+  it activates on version bump without opt-in.** Worst-case ISE recovery wait
+  rises from ~300ms to ~3.5s at `maxRetries=3`. This is not an observable
+  *contract* change (no change to returned data, empty-input, or error-path
+  semantics), but callers with tight timeout budgets wrapping `*WithRetry` calls
+  should review it. **Mitigation:** set `UseLegacyFlatRetryDelay=true` to keep
+  the old flat timing during migration. Known pre-existing limitation: the
+  `*WithRetry` sleep is not context-cancellable; the worst-case uncancellable
+  block rises from 500ms to 2s.
+
+### Fixed
+
+- **`wrapper/bedrockruntime` — `InvokeModel` could hang forever (#79).** The SDK
+  call ran with `context.Background()` (non-xray path) or the bare segment ctx —
+  **no deadline on either path** — so a hung Bedrock endpoint parked the caller's
+  goroutine indefinitely; enough concurrent hangs exhaust the goroutine pool.
+  The call is now always bounded (120s default, or `CallTimeout`), mirroring the
+  fix already in `wrapper/sns` / `wrapper/kms`. xray segment lineage preserved;
+  cancel always deferred.
+
+- **error-chain preservation: `%s` → `%w` in error-wrapping wrappers (#80).**
+  22 `fmt.Errorf(...%s..., err)` sites across `tcp/{tcpclient,tcpserver}.go`,
+  `wrapper/cloudmap`, `wrapper/gin`, `wrapper/gin/ginjwt`, `wrapper/mysql`, and
+  `wrapper/waf2` flattened their cause, breaking `errors.Is`/`errors.As`
+  traversal. Switched to `%w`. Error message text is byte-identical; the only
+  change is that the chain is now traversable. (`ginjwt` login-values error
+  intentionally uses dual `%w` to make both the sentinel and the bind error
+  matchable — Go 1.20+.)
+
+### Verification
+
+- `go build ./...` clean · `go vet ./...` clean · `gofmt` clean on changed files
+- `go test ./... -race -short -count=1` — 55 pass / 0 fail (with the new
+  fail-stop, backoff, escape-hatch, and call-timeout tests)
+- Combined `master` (all four squashed) integration-tested before tagging; the
+  one #77↔#78 struct-field merge conflict was resolved keeping both opt-in
+  field blocks (additive)
+
 ## [v1.8.8] — 2026-04-17
 
 Patch release. Three behavior-preserving hardening cycles from the

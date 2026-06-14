@@ -38,41 +38,51 @@ func BindPostDataFailed(c *gin.Context) {
 	}
 }
 
-// jsonEscapeString returns a JSON-safe escaped string value (without surrounding quotes).
-func jsonEscapeString(s string) string {
-	b, _ := json.Marshal(s)
-	// json.Marshal wraps in quotes; strip them
-	if len(b) >= 2 {
-		return string(b[1 : len(b)-1])
-	}
-	return s
+// ginErrorResponse is the JSON body shape shared by the error-response helpers
+// below. Building the body with encoding/json (rather than hand-interpolating
+// the error value into a JSON template with fmt.Sprintf) makes it injection-safe
+// by construction: a double quote (or any metacharacter) in errInfo is escaped
+// by json.Marshal and cannot break out of the enclosing quotes.
+type ginErrorResponse struct {
+	ErrorType string `json:"errortype"`
+	Error     string `json:"error"`
+}
+
+// writeGinErrorJSON marshals a ginErrorResponse and writes it with the given
+// status. c.String preserves the prior content type and produces byte-identical
+// output to the former fmt.Sprintf form (compact JSON, field order == struct
+// declaration order, same json.Marshal escaping). json.Marshal cannot error for
+// a struct of plain string fields, so the error is safely discarded.
+func writeGinErrorJSON(c *gin.Context, status int, errorType string, errInfo string) {
+	b, _ := json.Marshal(ginErrorResponse{ErrorType: errorType, Error: errInfo})
+	c.String(status, string(b))
 }
 
 // VerifyGoogleReCAPTCHAv2Failed will return a 412 response to caller via gin context
 func VerifyGoogleReCAPTCHAv2Failed(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(412, fmt.Sprintf(`{"errortype":"verify-google-recaptcha-v2","error":"%s"}`, jsonEscapeString(errInfo)))
+		writeGinErrorJSON(c, 412, "verify-google-recaptcha-v2", errInfo)
 	}
 }
 
 // MarshalQueryParametersFailed will return a 412 response to caller via gin context
 func MarshalQueryParametersFailed(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(412, fmt.Sprintf(`{"errortype":"marshal-query-parameters","error":"%s"}`, jsonEscapeString(errInfo)))
+		writeGinErrorJSON(c, 412, "marshal-query-parameters", errInfo)
 	}
 }
 
 // ActionServerFailed will return a 500 response to caller via gin context
 func ActionServerFailed(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(500, fmt.Sprintf(`{"errortype":"action-server-failed","error":"%s"}`, jsonEscapeString(errInfo)))
+		writeGinErrorJSON(c, 500, "action-server-failed", errInfo)
 	}
 }
 
 // ActionStatusNotOK will return a 404 response to caller via gin context
 func ActionStatusNotOK(c *gin.Context, errInfo string) {
 	if c != nil {
-		c.String(404, fmt.Sprintf(`{"errortype":"action-status-not-ok","error":"%s"}`, jsonEscapeString(errInfo)))
+		writeGinErrorJSON(c, 404, "action-status-not-ok", errInfo)
 	}
 }
 

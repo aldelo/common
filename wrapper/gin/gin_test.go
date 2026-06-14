@@ -2,6 +2,7 @@ package gin
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,77 +21,75 @@ func init() {
 }
 
 // --------------------------------------------------------------------------
-// jsonEscapeString tests (unexported pure function)
+// Error-response helpers — byte-exact output + injection-safety
+// (replaced the unexported jsonEscapeString tests after the helpers were
+//  refactored to marshal a typed ginErrorResponse via encoding/json, which
+//  clears the CodeQL go/unsafe-quoting findings on the prior fmt.Sprintf form)
 // --------------------------------------------------------------------------
 
-func TestJsonEscapeString_Plain(t *testing.T) {
-	got := jsonEscapeString("hello world")
-	if got != "hello world" {
-		t.Errorf("plain string: got %q, want %q", got, "hello world")
+// TestGinErrorHelpers_ByteExactOutput pins the exact JSON body bytes so the
+// encoding/json refactor is byte-identical to the former fmt.Sprintf form (no
+// observable-contract change for the 36+ downstream consumers).
+func TestGinErrorHelpers_ByteExactOutput(t *testing.T) {
+	cases := []struct {
+		name   string
+		call   func(c *ginlib.Context)
+		status int
+		want   string
+	}{
+		{"recaptcha", func(c *ginlib.Context) { VerifyGoogleReCAPTCHAv2Failed(c, "captcha invalid") }, 412, `{"errortype":"verify-google-recaptcha-v2","error":"captcha invalid"}`},
+		{"marshal", func(c *ginlib.Context) { MarshalQueryParametersFailed(c, "bad params") }, 412, `{"errortype":"marshal-query-parameters","error":"bad params"}`},
+		{"server", func(c *ginlib.Context) { ActionServerFailed(c, "db timeout") }, 500, `{"errortype":"action-server-failed","error":"db timeout"}`},
+		{"notok", func(c *ginlib.Context) { ActionStatusNotOK(c, "not found info") }, 404, `{"errortype":"action-status-not-ok","error":"not found info"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := ginlib.CreateTestContext(w)
+			tc.call(c)
+			if w.Code != tc.status {
+				t.Errorf("status = %d, want %d", w.Code, tc.status)
+			}
+			if got := w.Body.String(); got != tc.want {
+				t.Errorf("body mismatch\n got: %s\nwant: %s", got, tc.want)
+			}
+		})
 	}
 }
 
-func TestJsonEscapeString_Quotes(t *testing.T) {
-	got := jsonEscapeString(`say "hello"`)
-	want := `say \"hello\"`
-	if got != want {
-		t.Errorf("quotes: got %q, want %q", got, want)
+// TestGinErrorHelpers_NoBreakoutUnderInjection is the security pin for the CodeQL
+// go/unsafe-quoting finding: an errInfo carrying JSON metacharacters must NOT
+// break out of the enclosing quotes. The body must stay exactly one JSON object
+// with keys {errortype, error}, the error must round-trip, and no attacker key
+// may appear.
+func TestGinErrorHelpers_NoBreakoutUnderInjection(t *testing.T) {
+	// classic breakout payload + backslash / newline / tab / HTML metacharacters
+	payload := "\",\"injected\":\"pwned\" with \\backslash \n newline \t tab <html>&"
+	helpers := map[string]func(c *ginlib.Context){
+		"recaptcha": func(c *ginlib.Context) { VerifyGoogleReCAPTCHAv2Failed(c, payload) },
+		"marshal":   func(c *ginlib.Context) { MarshalQueryParametersFailed(c, payload) },
+		"server":    func(c *ginlib.Context) { ActionServerFailed(c, payload) },
+		"notok":     func(c *ginlib.Context) { ActionStatusNotOK(c, payload) },
 	}
-}
-
-func TestJsonEscapeString_Backslash(t *testing.T) {
-	got := jsonEscapeString(`path\to\file`)
-	want := `path\\to\\file`
-	if got != want {
-		t.Errorf("backslash: got %q, want %q", got, want)
-	}
-}
-
-func TestJsonEscapeString_Newline(t *testing.T) {
-	got := jsonEscapeString("line1\nline2")
-	want := `line1\nline2`
-	if got != want {
-		t.Errorf("newline: got %q, want %q", got, want)
-	}
-}
-
-func TestJsonEscapeString_Tab(t *testing.T) {
-	got := jsonEscapeString("col1\tcol2")
-	want := `col1\tcol2`
-	if got != want {
-		t.Errorf("tab: got %q, want %q", got, want)
-	}
-}
-
-func TestJsonEscapeString_Empty(t *testing.T) {
-	got := jsonEscapeString("")
-	if got != "" {
-		t.Errorf("empty string: got %q, want empty", got)
-	}
-}
-
-func TestJsonEscapeString_Unicode(t *testing.T) {
-	got := jsonEscapeString("caf\u00e9")
-	// json.Marshal preserves valid UTF-8 without escaping.
-	if got != "caf\u00e9" {
-		t.Errorf("unicode: got %q, want %q", got, "caf\u00e9")
-	}
-}
-
-func TestJsonEscapeString_ControlChars(t *testing.T) {
-	// Control characters like \x00 should be escaped.
-	got := jsonEscapeString("a\x00b")
-	want := `a\u0000b`
-	if got != want {
-		t.Errorf("control char: got %q, want %q", got, want)
-	}
-}
-
-func TestJsonEscapeString_HTMLChars(t *testing.T) {
-	got := jsonEscapeString("<script>alert('xss')</script>")
-	// json.Marshal escapes < > & by default.
-	if got == "<script>alert('xss')</script>" {
-		t.Error("HTML chars should be escaped by json.Marshal")
+	for name, h := range helpers {
+		t.Run(name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := ginlib.CreateTestContext(w)
+			h(c)
+			var got map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatalf("body is not one valid JSON object (quote breakout!): %v\nbody=%s", err, w.Body.String())
+			}
+			if len(got) != 2 {
+				t.Errorf("expected exactly 2 keys {errortype,error}, got %d: %v", len(got), got)
+			}
+			if got["error"] != payload {
+				t.Errorf("error value did not round-trip\n got: %q\nwant: %q", got["error"], payload)
+			}
+			if _, ok := got["injected"]; ok {
+				t.Error("INJECTION: attacker key 'injected' broke out into the object")
+			}
+		})
 	}
 }
 

@@ -438,7 +438,7 @@ func (g *Gin) RunServer() error {
 		proxies = []string{}
 	}
 	if err := g._ginEngine.SetTrustedProxies(proxies); err != nil {
-		return fmt.Errorf("Run Web Server Failed: SetTrustedProxies errored: %s", err.Error())
+		return fmt.Errorf("Run Web Server Failed: SetTrustedProxies errored: %w", err)
 	}
 
 	// setup html template renderer
@@ -449,7 +449,7 @@ func (g *Gin) RunServer() error {
 	// setup auth middleware
 	if g._ginJwtAuth != nil {
 		if err := g._ginJwtAuth.BuildGinJwtMiddleware(g); err != nil {
-			return fmt.Errorf("Run Web Server Failed: (%s) %s", "Build Auth Middleware Errored", err.Error())
+			return fmt.Errorf("Run Web Server Failed: (%s) %w", "Build Auth Middleware Errored", err)
 		}
 	}
 
@@ -473,7 +473,7 @@ func (g *Gin) RunServer() error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("Web Server '%s' Failed To Start: %s", g.Name, err.Error())
+		return fmt.Errorf("Web Server '%s' Failed To Start: %w", g.Name, err)
 	} else {
 		log.Println("Web Server '" + g.Name + "' Stopped")
 		return nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	awshttp2 "github.com/aldelo/common/wrapper/aws"
 	"github.com/aldelo/common/wrapper/aws/awsregion"
@@ -64,6 +65,20 @@ type BedrockRuntime struct {
 
 	// custom http2 client options
 	HttpOptions *awshttp2.HttpClientSettings
+
+	// CallTimeout, when > 0, overrides the per-InvokeModel call deadline
+	// (defaultBedrockCallTimeout, 120s). Zero (the default) keeps the built-in
+	// bound, so existing callers are unaffected. Set a larger value for a model
+	// or prompt that legitimately runs longer than 120s, or a smaller value to
+	// fit a tighter caller budget.
+	//
+	// Set this at construction (like a constructor parameter) and treat it as
+	// immutable thereafter. It is read lock-free on the InvokeModel path; unlike
+	// HttpOptions/the client (which Connect mutates at runtime under mu), this
+	// field has no internal writer, so a getter under mu would not make a direct
+	// consumer write race-free — mutating it concurrently with an in-flight call
+	// is therefore unsupported.
+	CallTimeout time.Duration
 
 	// store BedrockRuntime client object
 	bedrockruntimeClient *bedrockruntime.Client
@@ -211,6 +226,35 @@ func (s *BedrockRuntime) UpdateParentSegment(parentSegment *xray.XRayParentSegme
 // to generate text, images, and embeddings. For example code, see Invoke model
 // code examples in the Amazon Bedrock User Guide. This operation requires
 // permission for the bedrock:InvokeModel action.
+// defaultBedrockCallTimeout bounds a single InvokeModel SDK call so a hung
+// Bedrock endpoint (AWS outage / network partition) cannot park the caller's
+// goroutine forever. Bedrock model invocations can legitimately take up to ~2
+// minutes for large prompts, so this is generous compared with fast control-plane
+// calls (cf. wrapper/sns defaultSNSCallTimeout = 30s).
+const defaultBedrockCallTimeout = 120 * time.Second
+
+// callTimeout resolves the per-InvokeModel call deadline: the caller-configured
+// CallTimeout when set (> 0), otherwise the built-in defaultBedrockCallTimeout.
+func (s *BedrockRuntime) callTimeout() time.Duration {
+	if s != nil && s.CallTimeout > 0 {
+		return s.CallTimeout
+	}
+	return defaultBedrockCallTimeout
+}
+
+// bedrockCallCtx builds the deadline-bounded context for an InvokeModel call. It
+// preserves the xray segment lineage when a segment is active (so traces stay
+// linked) and otherwise derives from context.Background() — either way the call
+// is bounded by the given timeout (see callTimeout). The caller MUST defer the
+// returned cancel.
+func bedrockCallCtx(segCtx context.Context, segCtxSet bool, timeout time.Duration) (context.Context, context.CancelFunc) {
+	parent := context.Background()
+	if segCtxSet && segCtx != nil {
+		parent = segCtx
+	}
+	return context.WithTimeout(parent, timeout)
+}
+
 func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (responseBody []byte, err error) {
 	if s == nil {
 		return nil, errors.New("BedrockRuntime receiver is nil")
@@ -259,14 +303,14 @@ func (s *BedrockRuntime) InvokeModel(modelId string, requestBody []byte) (respon
 		ContentType: aws.String("application/json"),
 	}
 
-	// perform action
-	var output *bedrockruntime.InvokeModelOutput
+	// perform action — always under a deadline so a hung Bedrock endpoint cannot
+	// park this goroutine indefinitely (the xray-on path previously passed the
+	// segment ctx, and the xray-off path context.Background(), both deadline-less).
+	callCtx, callCancel := bedrockCallCtx(segCtx, segCtxSet, s.callTimeout())
+	defer callCancel()
 
-	if segCtxSet {
-		output, err = client.InvokeModel(segCtx, input)
-	} else {
-		output, err = client.InvokeModel(context.Background(), input)
-	}
+	var output *bedrockruntime.InvokeModelOutput
+	output, err = client.InvokeModel(callCtx, input)
 
 	// evaluate result
 	if err != nil {

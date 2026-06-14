@@ -418,7 +418,7 @@ func (sd *CloudMap) CreateHttpNamespace(name string,
 	output, err = sdClient.CreateHttpNamespaceWithContext(callCtx, input)
 
 	if err != nil {
-		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: (Create Action) %s", err.Error())
+		err = fmt.Errorf("CloudMap CreateHttpNamespace Failed: (Create Action) %w", err)
 		return "", err
 	}
 

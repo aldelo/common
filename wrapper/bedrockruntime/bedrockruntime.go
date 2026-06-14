@@ -71,6 +71,13 @@ type BedrockRuntime struct {
 	// bound, so existing callers are unaffected. Set a larger value for a model
 	// or prompt that legitimately runs longer than 120s, or a smaller value to
 	// fit a tighter caller budget.
+	//
+	// Set this at construction (like a constructor parameter) and treat it as
+	// immutable thereafter. It is read lock-free on the InvokeModel path; unlike
+	// HttpOptions/the client (which Connect mutates at runtime under mu), this
+	// field has no internal writer, so a getter under mu would not make a direct
+	// consumer write race-free — mutating it concurrently with an in-flight call
+	// is therefore unsupported.
 	CallTimeout time.Duration
 
 	// store BedrockRuntime client object

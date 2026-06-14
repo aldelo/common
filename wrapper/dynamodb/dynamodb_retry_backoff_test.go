@@ -146,6 +146,14 @@ func TestRetryDelay_DefaultIsExponential_LegacyFlatRestoresFixed(t *testing.T) {
 			t.Errorf("legacy retryDelay(%d,false)=%v, want flat 100ms", r, got)
 		}
 	}
+
+	// zero budget = no retry = no sleep, in BOTH modes (matches retryBackoffDelay(0,*))
+	if got := def.retryDelay(0, true); got != 0 {
+		t.Errorf("default retryDelay(0,true)=%v, want 0 (no retry, no sleep)", got)
+	}
+	if got := legacy.retryDelay(0, true); got != 0 {
+		t.Errorf("legacy retryDelay(0,true)=%v, want 0 (no retry, no sleep)", got)
+	}
 }
 
 // TestHandleError_InternalServerError_LegacyMode_RestoresImmediateRetry proves the

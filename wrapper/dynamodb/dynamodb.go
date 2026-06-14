@@ -1047,6 +1047,14 @@ type DynamoDB struct {
 	MaxScanPagedItems  int64
 	WarnScanPagedItems int64
 
+	// UseLegacyFlatRetryDelay, when true, restores the pre-exponential-backoff
+	// retry behavior: a FIXED inter-retry sleep (500ms when the error needs
+	// backoff, 100ms otherwise) AND the pre-change InternalServerError
+	// classification (retry-WITHOUT-backoff). It exists as a migration escape
+	// hatch for callers whose timeout budget was calibrated to the old flat
+	// schedule. Default false uses the exponential backoff AWS recommends.
+	UseLegacyFlatRetryDelay bool
+
 	_parentSegment      *xray.XRayParentSegment
 	_parentSegmentMutex sync.RWMutex
 }
@@ -1100,6 +1108,68 @@ func (d *DynamoDB) connectionSnapshot() (cn *dynamodb.DynamoDB, cnDax *dax.Dax, 
 	} else {
 		return nil, nil, true
 	}
+}
+
+// legacyFlatBackoffDelay / legacyFlatNoBackoffDelay are the pre-exponential fixed
+// inter-retry sleeps, restored when DynamoDB.UseLegacyFlatRetryDelay is set.
+const (
+	legacyFlatBackoffDelay   = 500 * time.Millisecond
+	legacyFlatNoBackoffDelay = 100 * time.Millisecond
+)
+
+// retryDelay resolves the inter-retry sleep for a *WithRetry method. By default it
+// uses the exponential schedule (retryBackoffDelay). When the caller opted into
+// UseLegacyFlatRetryDelay, it returns the pre-change fixed delay instead so a
+// migration-window consumer keeps the old timing. Kept as a thin method (rather
+// than threading the flag through retryBackoffDelay) so the exponential math stays
+// a pure, independently-tested function.
+func (d *DynamoDB) retryDelay(remainingRetries uint, needsBackOff bool) time.Duration {
+	if d != nil && d.UseLegacyFlatRetryDelay {
+		if remainingRetries == 0 {
+			return 0
+		}
+		if needsBackOff {
+			return legacyFlatBackoffDelay
+		}
+		return legacyFlatNoBackoffDelay
+	}
+	return retryBackoffDelay(remainingRetries, needsBackOff)
+}
+
+// retryBackoffDelay returns how long a *WithRetry method should sleep before its
+// next attempt. The *WithRetry methods recurse with maxRetries-1, so the delay is
+// derived from the DEPLETING budget (remainingRetries) rather than an attempt
+// counter — no signature change required. delay = ceiling >> remainingRetries,
+// which DOUBLES each step as remainingRetries shrinks, producing classic
+// exponential backoff that is naturally capped at ceiling/2 on the final retry
+// (remainingRetries==1) and floored so early attempts of a large budget still
+// pause. Throttle/5xx (needsBackOff) use a higher ceiling than the transient
+// no-backoff path. remainingRetries is clamped to the same [0,10] band the
+// *WithRetry methods clamp maxRetries to.
+//
+// Previously every retry slept a FIXED 500ms (backoff) or 100ms (no-backoff);
+// under sustained throttling that let many callers retry in lockstep (thundering
+// herd) and never ramped, contrary to the AWS DynamoDB retry guidance.
+func retryBackoffDelay(remainingRetries uint, needsBackOff bool) time.Duration {
+	if remainingRetries == 0 {
+		return 0
+	}
+	if remainingRetries > 10 {
+		remainingRetries = 10
+	}
+
+	ceiling := 4 * time.Second // needsBackOff: final-retry (remaining==1) delay = 2s, matching the BatchWrite UnprocessedItems backoff CAP (the ramp shape differs — this floors early attempts rather than doubling from a fixed base)
+	floor := 100 * time.Millisecond
+	if !needsBackOff {
+		ceiling = 1 * time.Second // transient: final-retry delay = 500ms
+		floor = 50 * time.Millisecond
+	}
+
+	delay := ceiling >> remainingRetries
+	if delay < floor {
+		delay = floor
+	}
+	return delay
 }
 
 // handleError is an internal helper method to evaluate dynamodb error,
@@ -1239,12 +1309,15 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			}
 
 		case dynamodb.ErrCodeInternalServerError:
-			// no error + allow auto retry without backoff
+			// transient server-side fault — AWS recommends retry with EXPONENTIAL
+			// BACKOFF (not immediate); a flat fast retry hammers the partition.
+			// UseLegacyFlatRetryDelay restores the pre-change immediate-retry
+			// classification so a migration-window caller keeps master ISE timing.
 			return &DynamoDBError{
 				ErrorMessage:                      prefix + prefixType + aerr.Code() + " - " + aerr.Message() + " - " + origError,
 				SuppressError:                     true,
 				AllowRetry:                        true,
-				RetryNeedsBackOff:                 false,
+				RetryNeedsBackOff:                 !d.UseLegacyFlatRetryDelay,
 				TransactionConditionalCheckFailed: false,
 			}
 
@@ -3298,11 +3371,7 @@ func (d *DynamoDB) PutItemWithRetry(maxRetries uint, item interface{}, timeOutDu
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
-				if err.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, err.RetryNeedsBackOff))
 
 				log.Println("PutItemWithRetry Failed: " + err.ErrorMessage)
 				return d.PutItemWithRetry(maxRetries-1, item, util.DurationPtr(timeout), conditionExpressionSet...)
@@ -3751,11 +3820,7 @@ func (d *DynamoDB) UpdateItemWithRetry(maxRetries uint,
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
-				if err.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, err.RetryNeedsBackOff))
 
 				log.Println("UpdateItemWithRetry Failed: " + err.ErrorMessage)
 				return d.UpdateItemWithRetry(maxRetries-1, pkValue, skValue, updateExpression, conditionExpression, expressionAttributeNames, expressionAttributeValues, util.DurationPtr(timeout))
@@ -4055,11 +4120,7 @@ func (d *DynamoDB) RemoveItemAttributeWithRetry(maxRetries uint, pkValue string,
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
-				if err.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, err.RetryNeedsBackOff))
 
 				log.Println("RemoveItemAttributeWithRetry Failed: " + err.ErrorMessage)
 				return d.RemoveItemAttributeWithRetry(maxRetries-1, pkValue, skValue, removeExpression, util.DurationPtr(timeout), conditionExpressionSet...)
@@ -4321,11 +4382,7 @@ func (d *DynamoDB) DeleteItemWithRetry(maxRetries uint, pkValue string, skValue 
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
-				if err.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, err.RetryNeedsBackOff))
 
 				log.Println("DeleteItemWithRetry Failed: " + err.ErrorMessage)
 				return d.DeleteItemWithRetry(maxRetries-1, pkValue, skValue, util.DurationPtr(timeout))
@@ -4763,11 +4820,7 @@ func (d *DynamoDB) GetItemWithRetry(maxRetries uint,
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
-				if err.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, err.RetryNeedsBackOff))
 
 				log.Println("GetItemWithRetry Failed: " + err.ErrorMessage)
 				return d.GetItemWithRetry(maxRetries-1, resultItemPtr, pkValue, skValue, util.DurationPtr(timeout), consistentRead, projectedAttributes...)
@@ -4847,11 +4900,7 @@ func (d *DynamoDB) QueryPaginationDataWithRetry(
 		// has error
 		if maxRetries > 0 {
 			if ddbErr.AllowRetry {
-				if ddbErr.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, ddbErr.RetryNeedsBackOff))
 
 				log.Println("QueryPaginationDataWithRetry Failed: " + ddbErr.ErrorMessage)
 				return d.QueryPaginationDataWithRetry(maxRetries-1, util.DurationPtr(timeout), indexName, itemsPerPage, keyConditionExpression, expressionAttributeNames, expressionAttributeValues)
@@ -5774,11 +5823,7 @@ func (d *DynamoDB) QueryItemsWithRetry(maxRetries uint,
 		// has error
 		if maxRetries > 0 {
 			if ddbErr.AllowRetry {
-				if ddbErr.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, ddbErr.RetryNeedsBackOff))
 
 				log.Println("QueryItemsWithRetry Failed: " + ddbErr.ErrorMessage)
 				return d.QueryItemsWithRetry(maxRetries-1,
@@ -6589,11 +6634,7 @@ func (d *DynamoDB) ScanItemsWithRetry(maxRetries uint,
 		// has error
 		if maxRetries > 0 {
 			if ddbErr.AllowRetry {
-				if ddbErr.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, ddbErr.RetryNeedsBackOff))
 
 				log.Println("ScanItemsWithRetry Failed: " + ddbErr.ErrorMessage)
 				return d.ScanItemsWithRetry(maxRetries-1,
@@ -7496,11 +7537,7 @@ func (d *DynamoDB) BatchWriteItemsWithRetry(maxRetries uint,
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
-				if err.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, err.RetryNeedsBackOff))
 
 				log.Println("BatchWriteItemsWithRetry Failed: " + err.ErrorMessage)
 				return d.BatchWriteItemsWithRetry(maxRetries-1, putItemsSet, deleteKeys, util.DurationPtr(timeout))
@@ -8291,11 +8328,7 @@ func (d *DynamoDB) BatchGetItemsWithRetry(maxRetries uint, timeOutDuration *time
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
-				if err.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, err.RetryNeedsBackOff))
 
 				log.Println("BatchGetItemsWithRetry Failed: " + err.ErrorMessage)
 				return d.BatchGetItemsWithRetry(maxRetries-1, util.DurationPtr(timeout), multiGetRequestResponse...)
@@ -8878,11 +8911,7 @@ func (d *DynamoDB) TransactionWriteItemsWithRetry(maxRetries uint,
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
-				if err.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, err.RetryNeedsBackOff))
 
 				log.Println("TransactionWriteItemsWithRetry Failed: " + err.ErrorMessage)
 				return d.TransactionWriteItemsWithRetry(maxRetries-1, util.DurationPtr(timeout), tranItems...)
@@ -9455,11 +9484,7 @@ func (d *DynamoDB) TransactionGetItemsWithRetry(maxRetries uint,
 		// has error
 		if maxRetries > 0 {
 			if err.AllowRetry {
-				if err.RetryNeedsBackOff {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					time.Sleep(100 * time.Millisecond)
-				}
+				time.Sleep(d.retryDelay(maxRetries, err.RetryNeedsBackOff))
 
 				log.Println("TransactionGetItemsWithRetry Failed: " + err.ErrorMessage)
 				return d.TransactionGetItemsWithRetry(maxRetries-1, util.DurationPtr(timeout), getItems...)

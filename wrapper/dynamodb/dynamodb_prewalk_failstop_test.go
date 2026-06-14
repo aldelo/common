@@ -185,9 +185,10 @@ func TestNewResultSetTooLargeError_IsErrorsIsDetectable(t *testing.T) {
 // contract in this file. It pins TWO things at once:
 //
 //   - Detectability across the *DynamoDBError boundary: the WithRetry entry
-//     points return *DynamoDBError (which is a flat struct with no Unwrap), so a
-//     dedicated ResultSetTooLarge bool — mirroring TransactionConditionalCheckFailed
-//     — is how callers of QueryPaginationDataWithRetry detect the fail-stop.
+//     points return *DynamoDBError, so a dedicated ResultSetTooLarge bool —
+//     mirroring TransactionConditionalCheckFailed — is the primary way callers of
+//     QueryPaginationDataWithRetry detect the fail-stop (Unwrap additionally
+//     surfaces ErrResultSetTooLarge for errors.Is through %w layers).
 //   - No retry amplification: the fail-stop is deterministic, so it MUST NOT be
 //     retried. QueryPaginationDataWithRetry recurses only when AllowRetry is
 //     true; a retried walk would re-incur the full bounded walk N times. The

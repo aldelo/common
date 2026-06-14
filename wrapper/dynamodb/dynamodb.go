@@ -128,9 +128,11 @@ type DynamoDBError struct {
 	// ResultSetTooLarge is set true when the failure is the deterministic
 	// fail-stop raised by a query whose result set exceeded a configured cap
 	// (see ErrResultSetTooLarge, MaxQueryPaginationPageWalk, MaxQueryPagedItems).
-	// Because *DynamoDBError is a flat struct with no Unwrap, this flag is how
-	// callers of the *WithRetry entry points detect the cap was hit. It is never
-	// AllowRetry — retrying a deterministic fail-stop only re-incurs the walk.
+	// This flag is the primary detection path for callers of the *WithRetry entry
+	// points, which receive a *DynamoDBError directly. (Unwrap also surfaces
+	// ErrResultSetTooLarge when this flag is set, so errors.Is works through
+	// %w-wrapping layers like crud.Query.) It is never AllowRetry — retrying a
+	// deterministic fail-stop only re-incurs the walk.
 	ResultSetTooLarge bool
 }
 
@@ -1266,7 +1268,7 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			RetryNeedsBackOff:                 false,
 			TransactionConditionalCheckFailed: false,
 			// the deterministic result-set fail-stop is surfaced as a typed flag
-			// (no Unwrap on *DynamoDBError) and stays non-retryable.
+			// (and via Unwrap when set) and stays non-retryable.
 			ResultSetTooLarge: errors.Is(err, ErrResultSetTooLarge),
 		}
 	}

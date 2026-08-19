@@ -47,7 +47,7 @@ func TestHandleError_UnknownRequestFailure_KeepsRequestIDAndStatus(t *testing.T)
 		"dax-req-0123456789",
 	)
 
-	got := d.handleError(err, "DynamoDB TransactionWriteItems Failed:")
+	got := d.handleError(err, transactionWriteItemsErrorPrefix)
 
 	if got == nil {
 		t.Fatal("expected a DynamoDBError, got nil")
@@ -93,45 +93,96 @@ func TestHandleError_TransactionCanceled_SurfacesCancellationReasons(t *testing.
 		Message_: aws.String("Transaction cancelled, please refer cancellation reasons for specific reasons"),
 		CancellationReasons: []*dynamodb.CancellationReason{
 			{Code: aws.String("None")},
+			nil, // a nil entry must not panic
+			{Code: nil, Message: aws.String("no code")}, // a nil code must not panic
 			{
 				Code:    aws.String("ConditionalCheckFailed"),
 				Message: aws.String("The conditional request failed"),
-				// Item is deliberately populated here: it must NOT reach the message.
+				// Item is deliberately populated here: neither its keys nor its values may
+				// reach the message. On a payments table these are card and account data.
 				Item: map[string]*dynamodb.AttributeValue{
-					"CardToken": {S: aws.String("must-not-be-logged")},
+					"CardTokenMustNotAppear": {S: aws.String("value-must-not-be-logged")},
 				},
 			},
-			{Code: aws.String("TransactionConflict"), Message: aws.String("Transaction is ongoing for the item")},
+			{Code: aws.String("TransactionConflict")}, // no message: code alone must still render
 		},
 	}
 
-	got := d.handleError(err, "DynamoDB TransactionWriteItems Failed:")
+	got := d.handleError(err, transactionWriteItemsErrorPrefix)
 
 	if got == nil {
 		t.Fatal("expected a DynamoDBError, got nil")
 	}
 
 	for _, want := range []string{
-		"[1] ConditionalCheckFailed: The conditional request failed",
-		"[2] TransactionConflict: Transaction is ongoing for the item",
+		"[3] ConditionalCheckFailed: The conditional request failed",
+		"[4] TransactionConflict",
 	} {
 		if !strings.Contains(got.ErrorMessage, want) {
 			t.Errorf("ErrorMessage missing reason %q\ngot: %s", want, got.ErrorMessage)
 		}
 	}
 
-	// "None" marks an item that did not cause the cancellation and is noise
-	if strings.Contains(got.ErrorMessage, "[0]") {
-		t.Errorf("ErrorMessage should skip the None reason\ngot: %s", got.ErrorMessage)
+	// "None" and code-less entries mark items that did not cause the cancellation, and are noise
+	for _, unwanted := range []string{"[0]", "[1]", "[2]"} {
+		if strings.Contains(got.ErrorMessage, unwanted) {
+			t.Errorf("ErrorMessage should skip reason %s\ngot: %s", unwanted, got.ErrorMessage)
+		}
 	}
 
-	// item attribute values are card data on a payments table and must never be logged
-	if strings.Contains(got.ErrorMessage, "must-not-be-logged") {
-		t.Errorf("ErrorMessage leaked CancellationReason.Item contents\ngot: %s", got.ErrorMessage)
+	// item keys AND values are card data on a payments table and must never be logged
+	for _, leak := range []string{"CardTokenMustNotAppear", "value-must-not-be-logged"} {
+		if strings.Contains(got.ErrorMessage, leak) {
+			t.Errorf("ErrorMessage leaked CancellationReason.Item (%q)\ngot: %s", leak, got.ErrorMessage)
+		}
+	}
+}
+
+// Regression test for a review finding: TransactionConditionalCheckFailed must NOT be derived
+// from the cancellation reason codes.
+//
+// It is not a diagnostic flag. Crud.Set and Crud.Update turn it into the
+// "[Possible Unique Attribute Duplicate Blocked]" sentinel and four call sites across
+// go-ms-apgs-web-portals-api, go-ms-apgs-fiserv-provider and go-ms-apgs-tsys-transit-provider
+// branch on that text. A single transaction carries both the caller's own ConditionExpression
+// and the uniqueness guard's attribute_not_exists(PK) puts, so deriving the flag from any
+// ConditionalCheckFailed reason would report a failed optimistic concurrency check as a unique
+// key duplicate.
+func TestHandleError_TransactionCanceled_ReasonCodesDoNotSetDuplicateFlag(t *testing.T) {
+	d := &DynamoDB{}
+
+	err := &dynamodb.TransactionCanceledException{
+		// note: the message does NOT mention ConditionalCheckFailed, only the reasons do
+		Message_: aws.String("Transaction cancelled, please refer cancellation reasons for specific reasons"),
+		CancellationReasons: []*dynamodb.CancellationReason{
+			{Code: aws.String("ConditionalCheckFailed"), Message: aws.String("The conditional request failed")},
+		},
 	}
 
-	if !got.TransactionConditionalCheckFailed {
-		t.Error("TransactionConditionalCheckFailed should be set from the reason codes")
+	got := d.handleError(err, transactionWriteItemsErrorPrefix)
+
+	if got == nil {
+		t.Fatal("expected a DynamoDBError, got nil")
+	}
+
+	// the reason is still reported ...
+	if !strings.Contains(got.ErrorMessage, "ConditionalCheckFailed") {
+		t.Errorf("the reason should still be surfaced in the message\ngot: %s", got.ErrorMessage)
+	}
+
+	// ... but it must not be promoted into the duplicate-blocked classification
+	if got.TransactionConditionalCheckFailed {
+		t.Error("TransactionConditionalCheckFailed must not be derived from cancellation reason codes")
+	}
+}
+
+// The prefix attached to every TransactionWriteItems failure must not name a cause. It is
+// applied to any failure of the underlying call, including timeouts and DAX faults.
+func TestTransactionWriteItemsErrorPrefix_IsNeutral(t *testing.T) {
+	for _, banned := range []string{"Canceled", "Cancelled", "Throttl", "Timeout"} {
+		if strings.Contains(transactionWriteItemsErrorPrefix, banned) {
+			t.Errorf("prefix %q names a cause it cannot know (%q)", transactionWriteItemsErrorPrefix, banned)
+		}
 	}
 }
 

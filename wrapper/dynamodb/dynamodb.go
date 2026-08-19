@@ -1178,6 +1178,13 @@ func retryBackoffDelay(remainingRetries uint, needsBackOff bool) time.Duration {
 // notes:
 //
 //	RetryNeedsBackOff = true indicates when doing retry, must wait an arbitrary time duration before retry; false indicates immediate is ok
+//
+// transactionWriteItemsErrorPrefix labels a failed TransactionWriteItems. It must stay neutral:
+// it is attached to ANY failure of the underlying call, so naming a specific cause here asserts
+// something that was never established. It is a constant so both call sites and the test that
+// pins it cannot drift apart.
+const transactionWriteItemsErrorPrefix = "DynamoDB TransactionWriteItems Failed:"
+
 func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError {
 	if err == nil {
 		return &DynamoDBError{
@@ -1296,8 +1303,17 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 
 			// The per item cancellation reasons are what say which item in the transaction failed
 			// and why; aerr.Message() on its own does not. Append the code and message of every
-			// item that actually has a reason, and set the conditional check flag from those codes
-			// rather than relying only on a substring match against the message.
+			// item that actually has a reason.
+			//
+			// transCondCheckFailed is deliberately NOT derived from these codes. It looks like the
+			// more precise source, but it is not a diagnostic flag: Crud.Set and Crud.Update turn
+			// it into the "[Possible Unique Attribute Duplicate Blocked]" sentinel, and callers
+			// branch on that text. A single transaction carries BOTH the caller's own
+			// ConditionExpression on the update and the uniqueness guard's
+			// attribute_not_exists(PK) puts, so a failed optimistic concurrency check
+			// (Result<>:resultOld and friends) would start reporting itself as a unique key
+			// duplicate. Keep the existing message based heuristic; classifying which item failed
+			// needs the reason indices exposed structurally, which is a separate change.
 			//
 			// Deliberately NOT included: CancellationReason.Item. It holds the item's attribute
 			// values, which on a payments table means card and account data, and this string ends
@@ -1317,10 +1333,6 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 					// "None" marks an item that did not cause the cancellation
 					if len(code) == 0 || code == "None" {
 						continue
-					}
-
-					if code == "ConditionalCheckFailed" {
-						transCondCheckFailed = true
 					}
 
 					if msg := aws.StringValue(reason.Message); len(msg) > 0 {
@@ -8731,7 +8743,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 
 		if err1 != nil {
 			success = false
-			err = d.handleError(err1, "DynamoDB TransactionWriteItems Failed:")
+			err = d.handleError(err1, transactionWriteItemsErrorPrefix)
 			return err
 		}
 
@@ -8926,7 +8938,7 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 
 	if err1 != nil {
 		success = false
-		err = d.handleError(err1, "DynamoDB TransactionWriteItems Failed:")
+		err = d.handleError(err1, transactionWriteItemsErrorPrefix)
 		return success, err
 	} else {
 		return true, nil

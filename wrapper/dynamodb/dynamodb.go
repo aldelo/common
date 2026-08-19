@@ -1178,6 +1178,13 @@ func retryBackoffDelay(remainingRetries uint, needsBackOff bool) time.Duration {
 // notes:
 //
 //	RetryNeedsBackOff = true indicates when doing retry, must wait an arbitrary time duration before retry; false indicates immediate is ok
+//
+// transactionWriteItemsErrorPrefix labels a failed TransactionWriteItems. It must stay neutral:
+// it is attached to ANY failure of the underlying call, so naming a specific cause here asserts
+// something that was never established. It is a constant so both call sites and the test that
+// pins it cannot drift apart.
+const transactionWriteItemsErrorPrefix = "DynamoDB TransactionWriteItems Failed:"
+
 func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError {
 	if err == nil {
 		return &DynamoDBError{
@@ -1218,6 +1225,24 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 			origError = "OrigErr = " + aerr.OrigErr().Error()
 		} else {
 			origError = "OrigErr = Nil"
+		}
+
+		// An awserr.RequestFailure carries the service side request id and http status. They are
+		// the only handles AWS support can use to look up what actually happened on their side, and
+		// they cost nothing to keep. This matters most when the code and message carry no
+		// information at all: DAX collapses any server error it cannot map onto a DynamoDB
+		// exception into code "Unknown" with a nil OrigErr, so without the request id such a
+		// failure is not diagnosable by anyone, including AWS.
+		var reqFailure awserr.RequestFailure
+
+		if errors.As(err, &reqFailure) {
+			if requestId := reqFailure.RequestID(); len(requestId) > 0 {
+				origError += ", RequestID = " + requestId
+			}
+
+			if statusCode := reqFailure.StatusCode(); statusCode > 0 {
+				origError += ", HttpStatus = " + fmt.Sprintf("%d", statusCode)
+			}
 		}
 
 		switch aerr.Code() {
@@ -1274,6 +1299,52 @@ func (d *DynamoDB) handleError(err error, errorPrefix ...string) *DynamoDBError 
 
 			if strings.Contains(aerrStr, "ConditionalCheckFailed") {
 				transCondCheckFailed = true
+			}
+
+			// The per item cancellation reasons are what say which item in the transaction failed
+			// and why; aerr.Message() on its own does not. Append the code and message of every
+			// item that actually has a reason.
+			//
+			// transCondCheckFailed is deliberately NOT derived from these codes. It looks like the
+			// more precise source, but it is not a diagnostic flag: Crud.Set and Crud.Update turn
+			// it into the "[Possible Unique Attribute Duplicate Blocked]" sentinel, and callers
+			// branch on that text. A single transaction carries BOTH the caller's own
+			// ConditionExpression on the update and the uniqueness guard's
+			// attribute_not_exists(PK) puts, so a failed optimistic concurrency check
+			// (Result<>:resultOld and friends) would start reporting itself as a unique key
+			// duplicate. Keep the existing message based heuristic; classifying which item failed
+			// needs the reason indices exposed structurally, which is a separate change.
+			//
+			// Deliberately NOT included: CancellationReason.Item. It holds the item's attribute
+			// values, which on a payments table means card and account data, and this string ends
+			// up in logs.
+			var cancelErr *dynamodb.TransactionCanceledException
+
+			if errors.As(err, &cancelErr) && len(cancelErr.CancellationReasons) > 0 {
+				reasons := []string{}
+
+				for i, reason := range cancelErr.CancellationReasons {
+					if reason == nil {
+						continue
+					}
+
+					code := aws.StringValue(reason.Code)
+
+					// "None" marks an item that did not cause the cancellation
+					if len(code) == 0 || code == "None" {
+						continue
+					}
+
+					if msg := aws.StringValue(reason.Message); len(msg) > 0 {
+						reasons = append(reasons, fmt.Sprintf("[%d] %s: %s", i, code, msg))
+					} else {
+						reasons = append(reasons, fmt.Sprintf("[%d] %s", i, code))
+					}
+				}
+
+				if len(reasons) > 0 {
+					aerrStr += " (CancellationReasons: " + strings.Join(reasons, "; ") + ")"
+				}
 			}
 
 			return &DynamoDBError{
@@ -8672,7 +8743,7 @@ func (d *DynamoDB) transactionWriteItemsWithTrace(timeOutDuration *time.Duration
 
 		if err1 != nil {
 			success = false
-			err = d.handleError(err1, "DynamoDB TransactionWriteItems Failed: (Transaction Canceled)")
+			err = d.handleError(err1, transactionWriteItemsErrorPrefix)
 			return err
 		}
 
@@ -8867,7 +8938,7 @@ func (d *DynamoDB) transactionWriteItemsNormal(timeOutDuration *time.Duration, t
 
 	if err1 != nil {
 		success = false
-		err = d.handleError(err1, "DynamoDB TransactionWriteItems Failed: (Transaction Canceled)")
+		err = d.handleError(err1, transactionWriteItemsErrorPrefix)
 		return success, err
 	} else {
 		return true, nil

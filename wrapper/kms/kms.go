@@ -2098,6 +2098,35 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 	if k == nil {
 		return nil, errors.New("KMS receiver is nil")
 	}
+
+	// ECDH was the only method in this package that neither opened an xray
+	// segment nor used the *WithContext SDK calls -- the SP-008 P2-CMN-2 pass
+	// missed it. Connect() instruments the shared client with awsxray.AWS(),
+	// so both SDK calls below reached the xray handlers on a
+	// context.Background() that carries no segment: every call emitted three
+	// "segment cannot be found" records ('kms', 'attempt', 'unmarshal') and,
+	// under the default RUNTIME_ERROR context-missing strategy, would have
+	// panicked instead of logging. Opening the segment here also removes the
+	// tracing blind spot over the key-agreement step.
+	var segCtx context.Context
+	segCtx = nil
+
+	seg := xray.NewSegmentNullable("KMS-ECDH", k.getParentSegment())
+
+	if seg != nil {
+		segCtx = seg.Ctx
+
+		defer seg.Close()
+		defer func() {
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ECDH-KeyArn", keyArn))
+			xray.LogXrayAddFailure("KMS", seg.SafeAddMetadata("KMS-ECDH-Result-SharedSecret-Length", len(sharedSecret)))
+
+			if err != nil {
+				xray.LogXrayAddFailure("KMS", seg.SafeAddError(err))
+			}
+		}()
+	}
+
 	if keyArn == "" {
 		return nil, errors.New("ECDH with KMS Failed: keyArn is required")
 	}
@@ -2111,7 +2140,12 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 		return nil, err
 	}
 
-	descOut, e := cli.DescribeKey(&kms.DescribeKeyInput{KeyId: aws.String(keyArn)})
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	descCtx, descCancel := ensureKMSCtx(segCtx)
+	descOut, e := cli.DescribeKeyWithContext(descCtx, &kms.DescribeKeyInput{KeyId: aws.String(keyArn)})
+	descCancel()
+
 	if e != nil {
 		return nil, fmt.Errorf("ECDH with KMS Failed: describe key: %w", e)
 	}
@@ -2157,7 +2191,12 @@ func (k *KMS) ECDH(keyArn, ephemeralPublicKeyB64 string) (sharedSecret []byte, e
 		Recipient:             nil,
 	}
 
-	outputResp, e2 := cli.DeriveSharedSecret(inputReq)
+	// SP-008 P2-CMN-2: always use *WithContext — ensureKMSCtx yields a
+	// 30s timeout ctx when segCtx is nil.
+	dsCtx, dsCancel := ensureKMSCtx(segCtx)
+	outputResp, e2 := cli.DeriveSharedSecretWithContext(dsCtx, inputReq)
+	dsCancel()
+
 	if e2 != nil {
 		return nil, e2
 	}

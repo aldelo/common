@@ -1968,6 +1968,38 @@ func (k *KMS) DecryptWithDataKeyAes256(cipherText string, cipherKey string) (pla
 	return plainText, nil
 }
 
+// ImportECCP256SignVerifyKey creates an ECC_NIST_P256 KMS key with Origin=EXTERNAL,
+// imports the caller's private key material into it, and points keyAlias at it.
+//
+// ⚠️ The key is deliberately created with KeyUsage = KEY_AGREEMENT, NOT SIGN_VERIFY —
+// the function name is a historical misnomer kept for backwards compatibility with its
+// callers. Do NOT "fix" the KeyUsage to match the name.
+//
+// Why KEY_AGREEMENT is the only correct value here: the sole consumer of these keys is
+// Apple Pay payment-processing certificate decryption. An Apple Pay EC_v1 token is opened
+// by running ECDH between the token's ephemeral public key and this private key, deriving
+// the AES-256-GCM key via the NIST SP 800-56A KDF. That is (k *KMS).ECDH below, which
+// calls kms:DeriveSharedSecret and explicitly rejects any key whose usage is not
+// KEY_AGREEMENT. A SIGN_VERIFY key can never decrypt an Apple Pay token, no matter that
+// the underlying key material is a perfectly valid P-256 private key.
+//
+// Why getting this wrong is expensive: KMS fixes KeyUsage at CreateKey and it can never be
+// changed afterwards, and an alias cannot be repointed from a key of one usage to a key of
+// another. So a wrong value here is unrecoverable in place — it costs a brand new key, a
+// re-import of the key material, and a delete + recreate of the alias. Worse, nothing on
+// the import path fails: CreateKey and ImportKeyMaterial both succeed and the caller
+// reports success. The mismatch only surfaces on the first real transaction, which may be
+// months later.
+//
+// History, so this does not happen a fourth time:
+//   - originally SIGN_VERIFY, when no ECDH support existed;
+//   - ce96157 (2024-10-31) changed it to KEY_AGREEMENT and added ECDH, but left the
+//     function name alone;
+//   - 5c139b9 (2026-03-12, a cross-wrapper cleanup) silently reverted it to SIGN_VERIFY,
+//     almost certainly to make the body agree with the name. Every Apple Pay key created
+//     from v1.7.7 onward was therefore dead on arrival;
+//   - the breakage stayed invisible until 2026-09-22, the first certificate renewal since,
+//     and took live Apple Pay on the Web down.
 func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk *ecdsa.PrivateKey) (keyArn string, err error) {
 	if k == nil {
 		return "", errors.New("KMS receiver is nil")
@@ -1995,12 +2027,15 @@ func (k *KMS) ImportECCP256SignVerifyKey(keyAlias, keyPolicyJson string, eccPvk 
 		CustomKeyStoreId:               nil,
 		Description:                    nil,
 		KeySpec:                        aws.String(kms.KeySpecEccNistP256),
-		KeyUsage:                       aws.String(kms.KeyUsageTypeSignVerify),
-		MultiRegion:                    aws.Bool(false),
-		Origin:                         aws.String(kms.OriginTypeExternal),
-		Policy:                         aws.String(keyPolicyJson),
-		Tags:                           nil,
-		XksKeyId:                       nil,
+		// MUST stay KEY_AGREEMENT despite the function name — see the doc comment above.
+		// kms:DeriveSharedSecret (used by ECDH, the Apple Pay decrypt path) refuses any
+		// other usage, and KeyUsage cannot be altered after the key is created.
+		KeyUsage:    aws.String(kms.KeyUsageTypeKeyAgreement),
+		MultiRegion: aws.Bool(false),
+		Origin:      aws.String(kms.OriginTypeExternal),
+		Policy:      aws.String(keyPolicyJson),
+		Tags:        nil,
+		XksKeyId:    nil,
 	}
 
 	cOutput, e1 := cli.CreateKey(cInput)

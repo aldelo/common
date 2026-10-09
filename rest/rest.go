@@ -69,6 +69,20 @@ var clientTimeoutSeconds int
 // MUST be accessed under mu (Lock to mutate, RLock to read).
 var sharedTransport *http.Transport
 
+// http2SendPingTimeout / http2PingTimeout enable the HTTP/2 connection health check on
+// sharedTransport. When no CA is configured the Transport negotiates HTTP/2, which
+// multiplexes every request onto ONE pooled connection — and a Client.Timeout only
+// cancels the stream, not the connection. If the peer disappears without a FIN/RST
+// (e.g. an ALB node replaced and its IP released), every later request is queued onto
+// the same dead connection until the kernel's TCP retransmission gives up (~15 min on
+// Linux). Pinging an idle connection lets the Transport detect and drop it within
+// SendPingTimeout + PingTimeout, so the next request dials a fresh one.
+// Vars rather than consts so tests can shorten them. MUST be accessed under mu.
+var (
+	http2SendPingTimeout = 15 * time.Second
+	http2PingTimeout     = 10 * time.Second
+)
+
 // cloneClientTlsConfig returns a deep copy of the current clientTlsConfig,
 // or nil if no TLS config is set. Must be called under mu.RLock (or mu.Lock).
 // The clone prevents cross-consumer interference when the http.Transport
@@ -169,6 +183,10 @@ func getSharedTransport() *http.Transport {
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 10,
 		IdleConnTimeout:     90 * time.Second,
+		HTTP2: &http.HTTP2Config{
+			SendPingTimeout: http2SendPingTimeout,
+			PingTimeout:     http2PingTimeout,
+		},
 	}
 	if tlsCfg != nil {
 		tr.TLSClientConfig = tlsCfg
